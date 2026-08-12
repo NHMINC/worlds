@@ -3,7 +3,7 @@ import { Engine, type BodyOverrides, type RigMode, type Tool, type ViewState } f
 import { AmbientMusic } from './audio/ambient';
 import { db, deleteSystem, touchSystem } from './store/db';
 import { exportSystem, importSystem } from './store/exportImport';
-import { CURRENT_GEN_VERSION, generateSystem, type SystemSpec } from './world/systemgen';
+import { CURRENT_GEN_VERSION, effectivePhysics, generateSystem, type SystemSpec } from './world/systemgen';
 import { PALETTE } from './world/palettes';
 import { randomSeedString, uuid } from './world/rng';
 import type {
@@ -14,9 +14,23 @@ import { SystemManager, type NewSystemForm } from './ui/SystemManager';
 import { SettingsModal } from './ui/SettingsModal';
 import { PlaceDialog } from './ui/PlaceDialog';
 import { LabelsOverlay } from './ui/LabelsOverlay';
+import { WorldTagsOverlay, type WorldTagInfo } from './ui/WorldTagsOverlay';
+import { SystemMap, type MapPlanet } from './ui/SystemMap';
 import { FlightHud } from './ui/FlightHud';
+import { InspectorPanel, type InspectedCell } from './ui/InspectorPanel';
+import { geologyFor } from './world/geology';
+import { UNIVERSE } from './world/physics';
+import { METERS_PER_LEVEL } from './world/toygen';
 
 const LAST_SYSTEM_KEY = 'wb_last_system';
+
+// Climate dial bounds: the full physical range, not the comfortable middle.
+// 40 K freezes nitrogen; 600 K is past boil-off. The dial scale stays
+// (T - T_COLD) / (T_HOT - T_COLD), so saved values need no migration.
+const dialOfK = (k: number) => (k - UNIVERSE.T_COLD) / (UNIVERSE.T_HOT - UNIVERSE.T_COLD);
+const kOfDial = (t: number) => UNIVERSE.T_COLD + t * (UNIVERSE.T_HOT - UNIVERSE.T_COLD);
+const CLIMATE_MIN = Math.round(dialOfK(40) * 100) / 100;
+const CLIMATE_MAX = Math.round(dialOfK(600) * 100) / 100;
 
 /** Normalized zoom (0..1, log scale) above which editing tools appear. */
 const EDIT_ZOOM_NORM = 0.65;
@@ -68,8 +82,10 @@ export default function App() {
   const [zoomLabel, setZoomLabel] = useState('0%');
   const [canEdit, setCanEdit] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [placeDialog, setPlaceDialog] = useState<PlaceDialogState | null>(null);
+  const [inspected, setInspected] = useState<InspectedCell | null>(null);
   const [musicOn, setMusicOn] = useState(false);
   const [volume, setVolume] = useState(0.7);
 
@@ -111,6 +127,28 @@ export default function App() {
         for (const fn of frameListeners.current) fn(v);
       },
       onTap: (tapTool, bodyId, cell) => {
+        if (tapTool === 'inspect') {
+          const info = engine.cellInfo(bodyId, cell);
+          const body = specRef.current?.bodies.find((b) => b.id === bodyId);
+          if (!info || !body) return;
+          const waterLevel = engine.waterLevelOf(bodyId);
+          // Geology reads the EFFECTIVE physics: terraforming lawfully
+          // shifts the crust partition (life organics, water subtraction).
+          const phys = effectivePhysics(
+            specRef.current!,
+            body,
+            overridesRef.current.get(bodyId)?.temp,
+          );
+          const geo = geologyFor(body.seed, phys, waterLevel);
+          setInspected({
+            cell,
+            level: info.level,
+            elevationM: (info.level - waterLevel) * METERS_PER_LEVEL,
+            localK: UNIVERSE.T_COLD + info.localTemp01 * (UNIVERSE.T_HOT - UNIVERSE.T_COLD),
+            elements: geo.at(info.dir[0], info.dir[1], info.dir[2], info.level),
+          });
+          return;
+        }
         setPlaceDialog({ mode: tapTool === 'label' ? 'label' : 'object', bodyId, cell });
       },
       onCameraSettled: (cam) => {
@@ -160,6 +198,13 @@ export default function App() {
       }
     });
     const list = await db.systems.orderBy('updatedAt').reverse().toArray();
+    // Systems are named after their star; adopt older placeholder names.
+    for (const s of list) {
+      if (s.name === 'New System') {
+        s.name = generateSystem(s.seed).star.name;
+        await db.systems.update(s.id, { name: s.name });
+      }
+    }
     setSystems(list);
     const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
     const target = list.find((s) => s.id === lastId) ?? list[0];
@@ -204,7 +249,13 @@ export default function App() {
 
   useEffect(() => {
     engineRef.current?.setTool(tool);
+    if (tool !== 'inspect') setInspected(null);
   }, [tool]);
+
+  // A new body under the camera means a stale hex readout.
+  useEffect(() => {
+    setInspected(null);
+  }, [currentBodyId]);
 
   // ------------------------------------------------------------ systems
 
@@ -245,6 +296,10 @@ export default function App() {
   const currentState = bodyStates.get(currentBodyId);
   const dialTemp = currentState?.temp ?? currentBody?.temp ?? 0.5;
   const dialSea = currentState?.seaLevel ?? currentBody?.seaLevel ?? 0.5;
+  // Effective physics for the UI: the climate dial re-runs the pipeline, so
+  // the inspector's classification/ocean/life rows follow the terraforming.
+  const currentPhysics =
+    spec && currentBody ? effectivePhysics(spec, currentBody, currentState?.temp) : undefined;
 
   function setDial(kind: 'temp' | 'seaLevel', value: number): void {
     const s = system;
@@ -353,9 +408,44 @@ export default function App() {
     [],
   );
 
+  const projectBody = useCallback(
+    (bodyId: string) => engineRef.current?.projectBody(bodyId) ?? null,
+    [],
+  );
+
+  const angleOf = useCallback(
+    (bodyId: string) => engineRef.current?.bodyMapAngle(bodyId) ?? 0,
+    [],
+  );
+
+  // One tag per planet (moons live in their parent's neighborhood).
+  const worldTags: WorldTagInfo[] = (spec?.bodies ?? [])
+    .filter((b) => !b.parent)
+    .map((b) => ({
+      id: b.id,
+      name: b.name,
+      color: `rgb(${b.meanColor.map((c) => Math.round(c * 255)).join(',')})`,
+    }));
+
   const palette = PALETTE;
   const bodyDisplayName = (id: string): string =>
     bodyStates.get(id)?.name ?? spec?.bodies.find((b) => b.id === id)?.name ?? '…';
+
+  const cssColor = (c: readonly number[]): string =>
+    `rgb(${c.map((x) => Math.round(x * 255)).join(',')})`;
+  const mapPlanets: MapPlanet[] = (spec?.bodies ?? [])
+    .filter((b) => !b.parent)
+    .map((b) => ({
+      id: b.id,
+      name: bodyDisplayName(b.id),
+      color: cssColor(b.meanColor),
+      kind: b.kind,
+      radius: b.radius,
+      ring: b.kind === 'gas' && Boolean(b.gas?.ring),
+      moons: (spec?.bodies ?? [])
+        .filter((m) => m.parent === b.id)
+        .map((m) => ({ id: m.id, name: bodyDisplayName(m.id), color: cssColor(m.meanColor) })),
+    }));
   const bodyLabels = labels.filter((l) => l.bodyId === currentBodyId);
   const bodyObjects = objects.filter((o) => o.bodyId === currentBodyId);
 
@@ -372,9 +462,15 @@ export default function App() {
           onEditLabel={(l) => setPlaceDialog({ mode: 'label', bodyId: l.bodyId, cell: l.cell, existingLabel: l })}
           onEditObject={(o) => setPlaceDialog({ mode: 'object', bodyId: o.bodyId, cell: o.cell, existingObject: o })}
         />
+        <WorldTagsOverlay
+          tags={worldTags}
+          subscribe={subscribeFrames}
+          project={projectBody}
+          onTravel={(id) => engineRef.current?.travelTo(id)}
+        />
         <FlightHud
           subscribe={subscribeFrames}
-          onEnterOrbit={() => engineRef.current?.enterOrbit()}
+          onEnterOrbit={(style) => engineRef.current?.enterOrbit(undefined, style)}
         />
       </div>
 
@@ -384,6 +480,7 @@ export default function App() {
         tool={tool}
         setTool={setTool}
         canEdit={canEdit}
+        canInspect={mode === 'orbit' && currentBody?.kind === 'rocky'}
         zoomLabel={zoomLabel}
         viewLetterbox={() => engineRef.current?.viewLetterbox()}
         viewFit={() => engineRef.current?.viewFitHeight()}
@@ -394,8 +491,13 @@ export default function App() {
         volume={volume}
         setVolume={handleVolume}
         openManager={() => setManagerOpen(true)}
+        openMap={() => setMapOpen(true)}
         openSettings={() => setSettingsOpen(true)}
       />
+
+      {tool === 'inspect' && mode === 'orbit' && currentBody && (
+        <InspectorPanel body={currentBody} physics={currentPhysics} cell={inspected} onClose={() => setTool('pan')} />
+      )}
 
       {mode === 'orbit' && currentBody?.kind === 'rocky' && (
         <div className="terraform" title="Terraforming dials for this world">
@@ -404,18 +506,18 @@ export default function App() {
             <input
               type="range"
               min={0}
-              max={0.65}
+              max={1}
               step={0.01}
               value={dialSea}
               onChange={(e) => setDial('seaLevel', Number(e.target.value))}
             />
           </label>
           <label>
-            <span>climate</span>
+            <span>climate · {Math.round(kOfDial(dialTemp) - 273)}°C</span>
             <input
               type="range"
-              min={0}
-              max={1}
+              min={CLIMATE_MIN}
+              max={CLIMATE_MAX}
               step={0.01}
               value={dialTemp}
               onChange={(e) => setDial('temp', Number(e.target.value))}
@@ -434,6 +536,19 @@ export default function App() {
           onExport={(id) => void exportSystem(id)}
           onImport={(f) => void handleImport(f)}
           onClose={() => setManagerOpen(false)}
+        />
+      )}
+
+      {mapOpen && spec && (
+        <SystemMap
+          starName={spec.star.name}
+          starColor={spec.star.color}
+          planets={mapPlanets}
+          currentBodyId={currentBodyId}
+          subscribe={subscribeFrames}
+          angleOf={angleOf}
+          onTravel={(id) => engineRef.current?.travelTo(id)}
+          onClose={() => setMapOpen(false)}
         />
       )}
 

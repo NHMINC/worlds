@@ -28,7 +28,15 @@ export interface BiomeStyle {
  * position; flight poses are world-space ship state.
  */
 export type SavedCamera =
-  | { mode: 'orbit'; bodyId: string; q: [number, number, number, number]; d: number }
+  | {
+      mode: 'orbit';
+      bodyId: string;
+      q: [number, number, number, number];
+      d: number;
+      /** 'station' rides an inertial low orbit (terrain streams beneath);
+       * 'geo' hangs over one spot. Older saves default to station. */
+      style?: 'station' | 'geo';
+    }
   | { mode: 'flight'; pos: [number, number, number]; q: [number, number, number, number] };
 
 /**

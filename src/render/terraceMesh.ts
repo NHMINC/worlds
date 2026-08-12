@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import type { GeoGrid } from '../world/geodesic';
 import { LEVEL_COUNT } from '../world/toygen';
-import { LEVEL_GRADIENT, SNOW_COLOR, WATER_DEEP, WATER_SURFACE } from '../world/toyPalette';
+import { LEVEL_GRADIENT, SNOW_COLOR, WATER_DEEP, WATER_SURFACE, type RGB } from '../world/toyPalette';
+import { UNIVERSE } from '../world/physics';
 
 /**
  * The blending skin over the voxel columns (Godus-style):
@@ -166,11 +167,30 @@ precision highp float;
 uniform sampler2D uGrad;   // LEVEL_COUNT x 1 ring gradient
 uniform float uLevels;
 uniform vec3 uSnow;
-uniform float uSnowLine;
 uniform float uWaterLevel;
 uniform float uTime;
 uniform vec3 uLightDir;
 uniform float uWarpFreq;
+// ONE temperature law (mirror of toygen.insolationAt): local temperature is
+// time-averaged insolation. Spinners get a latitude gradient; worlds locked
+// to their star get a substellar gradient — eyeball worlds emerge here with
+// no special case. The snow line and scorch tint follow the local value.
+uniform float uTempBase;   // body temp dial, 0..1
+uniform float uTempSpan;   // insolation span (spin state decides)
+uniform float uTempMode;   // 0 spinner, 1 locked-to-star
+uniform float uSurfStrength; // shoreline foam strength (chemistry decides)
+uniform float uSnowAmount; // 0..1 deposition capacity (reservoir x cycle)
+uniform float uSnowTempBase; // temp dial re-centered on the volatile's freeze point
+uniform float uSeasonGain; // seasonal anomaly gain (UNIVERSE.SEASON_GAIN)
+// Aerial perspective (physics.airExtinction): the air is densest at the
+// ground, thinning as exp(-h/uAirH), and swallows light along the view
+// path (Beer–Lambert) — distant terrain fades into the lit air color at a
+// rate set by pressure and chemistry. uCamPos is in the body's local
+// unit-radius frame (same as the water shader).
+uniform vec3 uCamPos;
+uniform vec3 uAirColor;
+uniform float uAirSigma; // surface extinction per radius of path; 0 = no air
+uniform float uAirH;     // density scale height, planet radii
 varying float vLevel;
 varying vec3 vNormal;
 varying vec3 vPos;
@@ -210,10 +230,42 @@ void main() {
   vec3 c = gradAt(band);
   c = mix(c, gradAt(band + 1.0), smoothstep(1.0 - w, 1.0, f));
 
-  // Snow is an altitude threshold, not a material; the snow line wobbles
-  // with the same noise so caps have playful organic edges.
+  // Local temperature from the insolation law, plus the seasonal anomaly:
+  // sin(latitude) x sin(sun declination). uLightDir is the live sun
+  // direction in the body frame, so its z IS the declination — seasons
+  // scale with axial tilt and vanish for untilted or locked worlds.
+  vec3 dir = normalize(vPos);
+  float insol = uTempMode > 0.5
+    ? dir.x
+    : (sqrt(max(0.0, 1.0 - dir.z * dir.z)) - 0.785) * 1.6;
+  insol += uSeasonGain * dir.z * uLightDir.z;
+  float tLoc = clamp(uTempBase + uTempSpan * insol, 0.0, 1.0);
+
+  // Scorched ground: where the local temperature runs very hot, land above
+  // the waterline bakes toward sun-bleached sand (the dayside of an eyeball
+  // world earns its desert).
+  float arid = smoothstep(0.74, 0.98, tLoc) * step(uWaterLevel, vLevel);
+  float lum = dot(c, vec3(0.333));
+  c = mix(c, vec3(lum) * vec3(1.14, 0.99, 0.7), 0.5 * arid);
+
+  // Snow is fallen weather, not paint: uSnowAmount (reservoir x cycle from
+  // the physics) gates whether anything can settle at all, and a weak cycle
+  // lifts the line so frost clings only to the coldest spots. WHERE it
+  // settles is the local temperature law (same as toygen.snowLineFor),
+  // measured from the WORKING volatile's freeze point (uSnowTempBase) so
+  // methane frost caps peaks over liquid-methane lowlands just as water
+  // snow does over seas. ANCHORED at the freeze point (0.285 on this dial,
+  // the same isotherm that hardens the sea): where the ocean freezes over,
+  // the snow line meets the waterline — coastal land whitens beside its sea
+  // ice, never bare rock against a frozen shore. The line wobbles with the
+  // noise for organic cap edges; the hot-end term clears any peak.
+  float tSnow = clamp(uSnowTempBase + uTempSpan * insol, 0.0, 1.0);
+  float ts = clamp((tSnow - 0.285) / 0.715, 0.0, 1.0);
+  float snowLv = uWaterLevel + 0.5 + 25.1 * ts - 7.4 * ts * ts
+               + 40.0 * max(0.0, ts - 0.75) + 8.0 * (1.0 - uSnowAmount);
   float ws = max(fwidth(vLevel) * 1.2, 1e-4);
-  c = mix(c, uSnow, smoothstep(-ws, ws, vLevel + 0.35 * wob - uSnowLine));
+  float canSnow = smoothstep(0.1, 0.2, uSnowAmount);
+  c = mix(c, uSnow, smoothstep(-ws, ws, vLevel + 0.35 * wob - snowLv) * canSnow);
 
   // Surf (the hero of the water): drawn on the seafloor and read through
   // the translucent sea. Standard stylized-water trick (Wind Waker,
@@ -240,7 +292,10 @@ void main() {
     float strength = 1.0 - smoothstep(0.9, 1.6, depth);
     foam += (0.95 * crest + 0.3 * wash) * strength;
 
-    c = mix(c, vec3(0.97, 1.0, 1.0), clamp(foam, 0.0, 0.9));
+    // Frozen shores keep no surf (same freeze-point-anchored law as the
+    // sea-ice shader: the shifted dial hits 0.285 at the freeze point).
+    float frozen = 1.0 - smoothstep(0.245, 0.315, tSnow);
+    c = mix(c, vec3(0.97, 1.0, 1.0), clamp(foam * uSurfStrength * (1.0 - frozen), 0.0, 0.9));
   }
 
   // Terrace risers self-shade slightly so rings read as tiny cliffs.
@@ -256,13 +311,50 @@ void main() {
   float q = 0.68 + 0.14 * smoothstep(0.02, 0.14, d) + 0.18 * smoothstep(0.45, 0.58, d);
   float day = smoothstep(-0.14, 0.10, d);
   vec3 night = c * vec3(0.24, 0.30, 0.46);
-  gl_FragColor = vec4(mix(night, c * q, day), 1.0);
+  vec3 col = mix(night, c * q, day);
+
+  // Aerial perspective: integrate the exponential density profile along the
+  // camera→fragment path and extinguish by Beer–Lambert. The fade is toward
+  // the LIT air color — distant land dissolves into bright sky by day and
+  // into darkness by night (air doesn't glow on its own).
+  if (uAirSigma > 0.0) {
+    float tau = 0.0;
+    for (int i = 0; i < 8; i++) {
+      vec3 sp = mix(uCamPos, vPos, (float(i) + 0.5) * 0.125);
+      tau += exp(-max(length(sp) - 1.0, 0.0) / uAirH);
+    }
+    tau *= uAirSigma * distance(uCamPos, vPos) * 0.125;
+    float airDay = clamp(dot(dir, uLightDir), 0.0, 1.0);
+    vec3 airC = uAirColor * (0.10 + 0.90 * airDay);
+    col = mix(col, airC, 1.0 - exp(-tau));
+  }
+  gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-export function makeTerrainMaterial(): THREE.ShaderMaterial {
+export interface TerrainMaterialOptions {
+  /** LEVEL_COUNT-stop strata ramp (paletteFor(physics)); home ramp default. */
+  gradient?: RGB[];
+  /** Body temp dial (0..1) — the base of the local temperature field. */
+  tempBase?: number;
+  /** Insolation span; UNIVERSE.TEMP_SPAN_* by spin state. */
+  tempSpan?: number;
+  /** True when the body keeps one face to its star (eyeball law). */
+  lockedToStar?: boolean;
+  /** Shoreline foam strength from ocean chemistry. */
+  surfStrength?: number;
+  /** 0..1 snow deposition capacity (reservoir × precipitation cycle). */
+  snowAmount?: number;
+  /** Temp dial re-centered on the working volatile's freeze point. */
+  snowTempBase?: number;
+  /** Aerial perspective (physics.airExtinction); omit for airless worlds. */
+  air?: { sigma: number; scaleH: number; color: RGB };
+}
+
+export function makeTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.ShaderMaterial {
+  const gradient = opts.gradient ?? LEVEL_GRADIENT;
   const data = new Uint8Array(LEVEL_COUNT * 4);
-  LEVEL_GRADIENT.forEach((c, i) => {
+  gradient.forEach((c, i) => {
     data[i * 4] = Math.round(c[0] * 255);
     data[i * 4 + 1] = Math.round(c[1] * 255);
     data[i * 4 + 2] = Math.round(c[2] * 255);
@@ -280,22 +372,50 @@ export function makeTerrainMaterial(): THREE.ShaderMaterial {
       uGrad: { value: tex },
       uLevels: { value: LEVEL_COUNT },
       uSnow: { value: new THREE.Vector3(...SNOW_COLOR) },
-      uSnowLine: { value: 24 },
-      uWaterLevel: { value: 12.4 },
+      uWaterLevel: { value: 13.4 },
       uTime: { value: 0 },
       uLightDir: { value: new THREE.Vector3(0, 0, 1) },
       uWarpFreq: { value: 40 },
+      uTempBase: { value: opts.tempBase ?? 0.5 },
+      uTempSpan: { value: opts.tempSpan ?? 0.35 },
+      uTempMode: { value: opts.lockedToStar ? 1 : 0 },
+      uSurfStrength: { value: opts.surfStrength ?? 1 },
+      uSnowAmount: { value: opts.snowAmount ?? 1 },
+      uSnowTempBase: { value: opts.snowTempBase ?? opts.tempBase ?? 0.5 },
+      uSeasonGain: { value: UNIVERSE.SEASON_GAIN },
+      uCamPos: { value: new THREE.Vector3(0, 0, 3) },
+      uAirColor: { value: new THREE.Vector3(...(opts.air?.color ?? [0.6, 0.75, 0.9])) },
+      uAirSigma: { value: opts.air?.sigma ?? 0 },
+      uAirH: { value: opts.air?.scaleH ?? 0.05 },
     },
   });
 }
 
+// Sea ice floats with FREEBOARD: frozen regions of the water sphere are
+// lifted above the liquid waterline, so the sheet reads as a raised shelf
+// and its edge becomes a new shore. The vertex law mirrors the fragment
+// freeze law (smooth ramp — the crisp plate edge is fragment work).
 const WATER_VERT = /* glsl */ `
+uniform float uTempBase;
+uniform float uTempSpan;
+uniform float uTempMode;
+uniform float uSeasonGain;
+uniform float uIceFloor;
+uniform float uFreeboard;
+uniform vec3 uLightDir;
 varying vec3 vNormal;
 varying vec3 vPos;
 void main() {
   vNormal = normal;
   vPos = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  float insol = uTempMode > 0.5
+    ? normal.x
+    : (sqrt(max(0.0, 1.0 - normal.z * normal.z)) - 0.785) * 1.6;
+  insol += uSeasonGain * normal.z * uLightDir.z;
+  float tLoc = clamp(uTempBase + uTempSpan * insol, 0.0, 1.0);
+  float lift = max(uIceFloor, 1.0 - smoothstep(0.245, 0.315, tLoc));
+  vec3 p = position * (1.0 + uFreeboard * lift);
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
 }
 `;
 
@@ -323,6 +443,24 @@ uniform float uWaveFreq;
 // scaled and positioned around a sun, so the builtin world-space
 // cameraPosition no longer matches object space.
 uniform vec3 uCamPos;
+// Chemistry and climate (see physics.ts): clarity scales translucency, and
+// the insolation temperature law freezes the fill where it runs cold —
+// polar ice on spinners, nightside ice on locked worlds, whole frozen
+// sheets on iceballs. uTempBase is the FREEZE-SHIFTED dial (measured from
+// the working volatile's freeze point, physics.snowTemp01), so water seas
+// and methane seas harden by the same law; uIceColor carries the sheet's
+// chemistry (glacier blue, dry-ice white, tholin-blushed methane...).
+uniform float uClarity;
+uniform float uTempBase;
+uniform float uTempSpan;
+uniform float uTempMode;
+uniform vec3 uIceColor;
+uniform float uIceFloor; // 1 when melt is impossible (no pressure: ice only sublimates)
+uniform float uSeasonGain;
+// Aerial perspective (physics.airExtinction) — same law as the terrain.
+uniform vec3 uAirColor;
+uniform float uAirSigma;
+uniform float uAirH;
 varying vec3 vNormal;
 varying vec3 vPos;
 
@@ -375,6 +513,25 @@ void main() {
   float gq = clamp((floor(gs) + smoothstep(1.0 - fw, 1.0, fract(gs))) / steps, 0.0, 1.0);
   vec3 c = mix(uDeep, uSurf, gq);
 
+  // The freeze law: local temperature from insolation (with the same
+  // seasonal anomaly as the terrain — sea ice advances and retreats with
+  // the tilt-driven seasons). The threshold sits at the volatile's freeze
+  // point, which on the shifted dial is always 0.285 (physics.snowTemp01).
+  float insol = uTempMode > 0.5
+    ? n0.x
+    : (sqrt(max(0.0, 1.0 - n0.z * n0.z)) - 0.785) * 1.6;
+  insol += uSeasonGain * n0.z * uLightDir.z;
+  float tLoc = clamp(uTempBase + uTempSpan * insol, 0.0, 1.0);
+
+  // Sea ice is PLATES, not a fade: a STATIC noise field (frozen sheets do
+  // not drift) wobbles the freeze isotherm into organic shelf edges, then a
+  // hard cut makes the boundary a shoreline. sig > 0 means frozen.
+  float sIce = vnoise(vPos * (uWaveFreq * 0.22) + vec3(7.3, 2.1, 5.6));
+  float sig = (0.285 - tLoc) * 12.0 + 0.9 * (sIce - 0.5);
+  if (uIceFloor > 0.5) sig = 1.0;
+  float wIce = max(fwidth(sig) * 1.2, 0.04);
+  float ice = smoothstep(-wIce, wIce, sig);
+
   // Hard-edged ripple highlights: two drifting fields multiplied, then cut at
   // a threshold — sparse wobbly patches that morph as they drift.
   float rip = n1 * n2;
@@ -383,7 +540,20 @@ void main() {
   float ripF = m1 * m2;
   float wwF = max(fwidth(ripF) * 1.2, 0.015);
   float hiF = smoothstep(0.36 - wwF, 0.36 + wwF, ripF) * (1.0 - 0.5 * att);
-  c = mix(c, vec3(0.82, 1.0, 1.0), 0.35 * clamp(hi + hiF, 0.0, 1.0));
+  c = mix(c, vec3(0.82, 1.0, 1.0), 0.35 * clamp(hi + hiF, 0.0, 1.0) * (1.0 - ice));
+
+  // Frozen sheet: matte, near-opaque, colored by its chemistry, faintly
+  // banded by STATIC noise (a frozen sheet holds still) so shelves read as
+  // plates rather than paint. The shelf edge wall picks up a shadow line —
+  // the freeboard made visible — and open water laps a bright foam fringe
+  // against it: the ice edge is a shore.
+  float sBand = vnoise(vPos * (uWaveFreq * 0.10) + vec3(3.7, 8.2, 1.4));
+  vec3 iceC = uIceColor * (0.92 + 0.08 * sBand);
+  iceC *= 1.0 - 0.16 * (1.0 - smoothstep(0.0, 0.35, sig));      // shelf wall shading
+  c = mix(c, iceC, ice);
+  float lap = smoothstep(-0.45, -0.08, sig) * (1.0 - ice);      // water side of the edge
+  lap *= 0.55 + 0.45 * n1;                                      // waves slosh against the shelf
+  c = mix(c, vec3(0.93, 0.98, 1.0), 0.5 * lap);
 
   // Stylized sun glint: a crisp-edged patch (not a soft sheen) whose outline
   // dances because the normal rides the same waves.
@@ -397,27 +567,75 @@ void main() {
   float halo = pow(sd, 24.0);
 
   // Day/night: night water sinks to a deep moonlit blue, and the sun glint
-  // only lives on the day side.
+  // only lives on the day side (and never on ice).
   float dayW = smoothstep(-0.14, 0.10, dot(n0, uLightDir));
   c = mix(c * vec3(0.26, 0.32, 0.50), c, dayW);
-  c += vec3(1.0, 0.98, 0.9) * (0.30 * glint + 0.10 * halo) * dayW;
+  c += vec3(1.0, 0.98, 0.9) * (0.30 * glint + 0.10 * halo) * dayW * (1.0 - ice);
 
+  // Clarity from chemistry: glassy seas (methane, pure water) stay
+  // translucent; salt-clouded ones read milkier.
   float alpha = clamp(0.5 + 0.34 * (1.0 - facing) + 0.06 * (m1 - 0.5), 0.0, 0.92);
+  alpha = clamp(alpha * (1.15 - 0.45 * uClarity), 0.0, 0.94);
+  alpha = mix(alpha, 0.97, ice);
+
+  // Aerial perspective, same integral as the terrain: distant water fades
+  // into lit air, and a heavy fog covers whatever lies beneath (alpha rises
+  // with optical depth).
+  if (uAirSigma > 0.0) {
+    float tau = 0.0;
+    for (int i = 0; i < 8; i++) {
+      vec3 sp = mix(uCamPos, vPos, (float(i) + 0.5) * 0.125);
+      tau += exp(-max(length(sp) - 1.0, 0.0) / uAirH);
+    }
+    tau *= uAirSigma * distance(uCamPos, vPos) * 0.125;
+    float fog = 1.0 - exp(-tau);
+    float airDay = clamp(dot(n0, uLightDir), 0.0, 1.0);
+    c = mix(c, uAirColor * (0.10 + 0.90 * airDay), fog);
+    alpha = mix(alpha, 1.0, fog);
+  }
   gl_FragColor = vec4(c, alpha);
 }
 `;
 
-export function makeWaterMaterial(): THREE.ShaderMaterial {
+export interface WaterMaterialOptions {
+  surf?: RGB;
+  deep?: RGB;
+  /** 0 murky .. 1 glassy (physics.hydrosphere.clarity). */
+  clarity?: number;
+  /** FREEZE-SHIFTED temp dial (physics.snowTemp01 + player climate delta). */
+  tempBase?: number;
+  tempSpan?: number;
+  lockedToStar?: boolean;
+  /** Frozen-sheet color from chemistry (physics.hydrosphere.ice). */
+  iceColor?: RGB;
+  /** True when melt is impossible (airless sheets sublimate, never pool). */
+  neverMelts?: boolean;
+  /** Aerial perspective (physics.airExtinction); omit for airless worlds. */
+  air?: { sigma: number; scaleH: number; color: RGB };
+}
+
+export function makeWaterMaterial(opts: WaterMaterialOptions = {}): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     vertexShader: WATER_VERT,
     fragmentShader: WATER_FRAG,
     uniforms: {
-      uSurf: { value: new THREE.Vector3(...WATER_SURFACE) },
-      uDeep: { value: new THREE.Vector3(...WATER_DEEP) },
+      uSurf: { value: new THREE.Vector3(...(opts.surf ?? WATER_SURFACE)) },
+      uDeep: { value: new THREE.Vector3(...(opts.deep ?? WATER_DEEP)) },
       uLightDir: { value: new THREE.Vector3(0, 0, 1) },
       uTime: { value: 0 },
       uWaveFreq: { value: 170 },
       uCamPos: { value: new THREE.Vector3(0, 0, 3) },
+      uClarity: { value: opts.clarity ?? 0.75 },
+      uTempBase: { value: opts.tempBase ?? 0.5 },
+      uTempSpan: { value: opts.tempSpan ?? 0.35 },
+      uTempMode: { value: opts.lockedToStar ? 1 : 0 },
+      uIceColor: { value: new THREE.Vector3(...(opts.iceColor ?? [0.88, 0.92, 0.97])) },
+      uIceFloor: { value: opts.neverMelts ? 1 : 0 },
+      uFreeboard: { value: 0.006 },
+      uSeasonGain: { value: UNIVERSE.SEASON_GAIN },
+      uAirColor: { value: new THREE.Vector3(...(opts.air?.color ?? [0.6, 0.75, 0.9])) },
+      uAirSigma: { value: opts.air?.sigma ?? 0 },
+      uAirH: { value: opts.air?.scaleH ?? 0.05 },
     },
     transparent: true,
     depthWrite: false,

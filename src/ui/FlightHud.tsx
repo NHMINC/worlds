@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import type { ViewState } from '../render/engine';
+import type { OrbitStyle, ViewState } from '../render/engine';
 
 interface Props {
   subscribe: (fn: (v: ViewState) => void) => () => void;
-  onEnterOrbit: () => void;
+  onEnterOrbit: (style: OrbitStyle) => void;
 }
 
 function fmtKm(km: number): string {
@@ -23,6 +23,7 @@ export function FlightHud(props: Props) {
   const distRef = useRef<HTMLSpanElement>(null);
   const speedRef = useRef<HTMLSpanElement>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const geoBtnRef = useRef<HTMLButtonElement>(null);
   const { subscribe } = props;
 
   useEffect(
@@ -37,6 +38,7 @@ export function FlightHud(props: Props) {
         if (distRef.current) distRef.current.textContent = fmtKm(v.flight.distanceKm);
         if (speedRef.current) speedRef.current.textContent = `${v.flight.speedKmS.toFixed(1)} km/s`;
         if (btnRef.current) btnRef.current.disabled = !v.flight.canOrbit;
+        if (geoBtnRef.current) geoBtnRef.current.disabled = !v.flight.canOrbit;
       }),
     [subscribe],
   );
@@ -47,8 +49,21 @@ export function FlightHud(props: Props) {
         <span ref={nameRef} className="hud-name" />
         <span ref={distRef} className="hud-dist" />
         <span ref={speedRef} className="hud-speed" />
-        <button ref={btnRef} className="btn primary hud-orbit" onClick={props.onEnterOrbit}>
-          Enter orbit
+        <button
+          ref={btnRef}
+          className="btn primary hud-orbit"
+          title="Low orbit: circle the world while it turns beneath you"
+          onClick={() => props.onEnterOrbit('station')}
+        >
+          Orbit
+        </button>
+        <button
+          ref={geoBtnRef}
+          className="btn hud-orbit"
+          title="Geostationary: hang over one spot"
+          onClick={() => props.onEnterOrbit('geo')}
+        >
+          Geo
         </button>
       </div>
       <div className="hud-hint">drag to steer · scroll or W/S for thrust · tap a world to visit</div>

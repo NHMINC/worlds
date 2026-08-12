@@ -3,18 +3,22 @@ import { mulberry32, xmur3 } from './rng';
 
 /**
  * Toy onion-world generator. The whole model is one integer per hex column:
- * its level, 0 (bedrock) .. 29 (peak). Color comes purely from the level via
- * the palette gradient; snow and water are altitude thresholds applied at
- * render time, not materials.
+ * its level, 0 (bare bedrock) .. 30 (peak). Level 0 is the unalterable
+ * bedrock floor — a column dug to 0 shows bedrock and can go no deeper;
+ * levels 1-30 are the world's 30 usable/minable material layers. Color comes
+ * purely from the level via the palette gradient; snow and water are
+ * altitude thresholds applied at render time, not materials.
  */
 
 // Generation versioning lives at the system level now (systemgen.ts):
 // this module is part of that pinned contract — changing its output for a
 // given seed requires bumping systemgen's CURRENT_GEN_VERSION.
 
-/** Levels 0..29, bedrock to peak. */
-export const LEVEL_COUNT = 30;
+/** Surface states 0..30: bedrock floor + 30 alterable layers. */
+export const LEVEL_COUNT = 31;
 export const MAX_LEVEL = LEVEL_COUNT - 1;
+/** The unalterable floor: you can dig TO it, never through it. */
+export const BEDROCK_LEVEL = 0;
 
 /** Physical fiction: a hex column is ~300 m across, a layer ~60 m thick. */
 export const HEX_WIDTH_M = 300;
@@ -28,13 +32,14 @@ export const METERS_PER_LEVEL = 60;
  * something to snow-cap. Normalized at build time; relative weights only.
  */
 const TARGET_SHARE = [
-  0.5, 1.2, 2.5, 3.5, 4.5, 5.5, 6.0, 6.0, // 0-7   deep basins
-  5.5, 5.5, 5.5, 5.5,                     // 8-11  shelf rising through sand
-  5.5, 5.5,                               // 12-13 waterline: lagoon + beach
-  5.0, 4.5, 4.0, 3.5, 3.0,                // 14-18 bright grass
-  2.4, 2.0, 1.6, 1.3,                     // 19-22 palm highlands
-  1.0, 0.85, 0.7, 0.6, 0.5,               // 23-27 rocky uplands
-  0.35, 0.25,                             // 28-29 peaks
+  0.2,                                    // 0     bare bedrock: rare abyssal floor
+  0.5, 1.2, 2.5, 3.5, 4.5, 5.5, 6.0, 6.0, // 1-8   deep basins
+  5.5, 5.5, 5.5, 5.5,                     // 9-12  shelf rising through sand
+  5.5, 5.5,                               // 13-14 waterline: lagoon + beach
+  5.0, 4.5, 4.0, 3.5, 3.0,                // 15-19 bright grass
+  2.4, 2.0, 1.6, 1.3,                     // 20-23 palm highlands
+  1.0, 0.85, 0.7, 0.6, 0.5,               // 24-28 rocky uplands
+  0.35, 0.25,                             // 29-30 peaks
 ];
 
 /**
@@ -43,7 +48,7 @@ const TARGET_SHARE = [
  * simply floods greener rings.
  */
 export function waterLevelFor(seaLevel: number): number {
-  return 12.4 + (seaLevel - 0.5) * 20;
+  return 13.4 + (seaLevel - 0.5) * 20;
 }
 
 /**
@@ -51,10 +56,32 @@ export function waterLevelFor(seaLevel: number): number {
  * are snow-draped. Icy pulls snow right down to the waterline, temperate
  * frosts the rocky uplands, hot leaves bare peaks.
  */
-export function snowLineFor(temp: number, waterLevel: number): number {
-  const t = Math.min(1, Math.max(0, temp));
-  // Quadratic through (0, waterline), (0.5, upland rock), (1, above peak).
-  return waterLevel + 0.5 + 25.1 * t - 7.4 * t * t;
+/** The volatile's freeze point on the freeze-anchored snow dial:
+ * (WATER_WIN[0] − T_COLD) / (T_HOT − T_COLD). The sea-ice law in the water
+ * shader hardens the sea below this value; the snow line must MEET the
+ * waterline here so land and sea freeze in agreement. */
+export const FREEZE_DIAL = 0.285;
+
+/**
+ * Altitude above which snow settles, or Infinity when it cannot settle at
+ * all. `snow` is the body's 0..1 deposition capacity from the physics
+ * (reservoir × precipitation cycle): a weak cycle pushes the line up so
+ * frost survives only at the coldest spots, and below a threshold nothing
+ * ever falls. ANCHORED to the volatile's freeze point: at FREEZE_DIAL the
+ * line sits at the waterline (where the sea freezes over, coastal land
+ * whitens too — one isotherm, two surfaces), and it climbs as the local
+ * temperature exceeds it. Mirrored in GLSL in terraceMesh.ts; keep in sync.
+ */
+export function snowLineFor(temp: number, waterLevel: number, snow = 1): number {
+  if (snow < 0.15) return Number.POSITIVE_INFINITY;
+  // Renormalize so 0 = freeze point, 1 = dial top.
+  const t = Math.min(1, Math.max(0, (temp - FREEZE_DIAL) / (1 - FREEZE_DIAL)));
+  // Quadratic through (freeze, waterline), (mid, upland rock), plus a
+  // hot-end term that lifts the line clear of ANY peak: scorched worlds and
+  // eyeball daysides must never wear snow, whatever their sea level.
+  return (
+    waterLevel + 0.5 + 25.1 * t - 7.4 * t * t + 40 * Math.max(0, t - 0.75) + 8 * (1 - snow)
+  );
 }
 
 export class ToyGenerator {
@@ -121,7 +148,7 @@ export class ToyGenerator {
     return e;
   }
 
-  /** Integer level 0..29 for a unit direction. */
+  /** Integer level 0..30 for a unit direction. */
   levelAt(x: number, y: number, z: number): number {
     const v = this.raw(x, y, z);
     // Binary search the cut points (cuts[l] is the top of level l).
@@ -138,4 +165,23 @@ export class ToyGenerator {
 
 export function createToyGenerator(seed: string): ToyGenerator {
   return new ToyGenerator(seed);
+}
+
+/**
+ * ONE temperature law: the local surface temperature is time-averaged
+ * insolation. Free spinners average over their day, so temperature falls
+ * with latitude (equator hot, poles cold). Worlds locked to their star
+ * average nothing: temperature falls with angular distance from the fixed
+ * substellar point (+X in the body frame) — eyeball worlds emerge, no
+ * special case. Mirrored in GLSL in terraceMesh.ts; keep the two in sync.
+ */
+export function insolationAt(x: number, _y: number, z: number, lockedToStar: boolean): number {
+  if (lockedToStar) return x; // cos(angle from substellar), -1..1
+  const cosLat = Math.sqrt(Math.max(0, 1 - z * z));
+  return (cosLat - 0.785) * 1.6; // zero-mean over the sphere, ~-1.26..0.34
+}
+
+/** Local temperature dial from the body dial + the insolation field. */
+export function localTemp01(base: number, span: number, insol: number): number {
+  return Math.min(1, Math.max(0, base + span * insol));
 }

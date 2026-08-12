@@ -1,8 +1,8 @@
 import type { ReactElement } from 'react';
 import type { RigMode, Tool } from '../render/engine';
 import {
-  IconCompass, IconFitHeight, IconGear, IconGlobe, IconLabel,
-  IconLetterbox, IconMusic, IconMusicOff, IconPlace, IconRocket,
+  IconCompass, IconFitHeight, IconGear, IconGlobe, IconInspect, IconLabel,
+  IconLetterbox, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconRocket,
 } from './icons';
 
 interface Props {
@@ -13,6 +13,8 @@ interface Props {
   setTool: (t: Tool) => void;
   /** Editing tools only appear when zoomed in close to rocky terrain. */
   canEdit: boolean;
+  /** The inspector works on any rocky body in orbit, at any zoom. */
+  canInspect: boolean;
   /** e.g. "42%" (0% whole planet .. 100% single-hex scale). */
   zoomLabel: string;
   viewLetterbox: () => void;
@@ -25,6 +27,7 @@ interface Props {
   volume: number;
   setVolume: (v: number) => void;
   openManager: () => void;
+  openMap: () => void;
   openSettings: () => void;
 }
 
@@ -41,6 +44,9 @@ export function Toolbar(props: Props) {
       <button className="tb-btn tb-world" title="Star systems" onClick={props.openManager}>
         <IconGlobe />
         <span className="tb-world-name">{props.title}</span>
+      </button>
+      <button className="tb-btn" title="System map" onClick={props.openMap}>
+        <IconOrbits />
       </button>
 
       {orbit && (
@@ -64,19 +70,29 @@ export function Toolbar(props: Props) {
         </>
       )}
 
-      {orbit && props.canEdit && (
+      {orbit && (props.canEdit || props.canInspect) && (
         <>
           <div className="tb-sep" />
-          {EDIT_TOOLS.map((t) => (
+          {props.canInspect && (
             <button
-              key={t.id}
-              className={`tb-btn ${props.tool === t.id ? 'active' : ''}`}
-              title={t.title}
-              onClick={() => props.setTool(props.tool === t.id ? 'pan' : t.id)}
+              className={`tb-btn ${props.tool === 'inspect' ? 'active' : ''}`}
+              title="Inspect — tap a hex to read its composition"
+              onClick={() => props.setTool(props.tool === 'inspect' ? 'pan' : 'inspect')}
             >
-              <t.icon />
+              <IconInspect />
             </button>
-          ))}
+          )}
+          {props.canEdit &&
+            EDIT_TOOLS.map((t) => (
+              <button
+                key={t.id}
+                className={`tb-btn ${props.tool === t.id ? 'active' : ''}`}
+                title={t.title}
+                onClick={() => props.setTool(props.tool === t.id ? 'pan' : t.id)}
+              >
+                <t.icon />
+              </button>
+            ))}
         </>
       )}
 

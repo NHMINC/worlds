@@ -449,8 +449,8 @@ export function getGrid(frequency: number): GeoGrid {
   return g;
 }
 
-/** Toy-world grid frequency at 100% size (10·32² + 2 = 10,242 columns). */
-export const MAX_FINE_F = 32;
+/** Toy-world grid frequency at 100% size (10·96² + 2 = 92,162 columns). */
+export const MAX_FINE_F = 96;
 
 /**
  * Grid frequency for a world-size percentage. Cell count scales with F², so
@@ -459,7 +459,7 @@ export const MAX_FINE_F = 32;
  */
 export function frequencyForSize(sizePct?: number): number {
   const pct = Math.min(100, Math.max(10, sizePct ?? 100));
-  return Math.max(12, Math.round(MAX_FINE_F * Math.sqrt(pct / 100)));
+  return Math.max(24, Math.round(MAX_FINE_F * Math.sqrt(pct / 100)));
 }
 
 /** Cells in a Goldberg grid of frequency f. */

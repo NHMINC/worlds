@@ -1,18 +1,34 @@
 import * as THREE from 'three';
 import { frequencyForSize, getGrid, type GeoGrid } from '../world/geodesic';
-import { createToyGenerator, MAX_LEVEL, snowLineFor, waterLevelFor } from '../world/toygen';
-import { SPACE_COLOR } from '../world/toyPalette';
+import {
+  createToyGenerator, insolationAt, localTemp01, MAX_LEVEL, snowLineFor, waterLevelFor,
+} from '../world/toygen';
+import { paletteFor, SPACE_COLOR } from '../world/toyPalette';
+import { UNIVERSE, airExtinction, hazeSpec, rayleighTint } from '../world/physics';
 import { TerraceJob, makeTerrainMaterial, makeWaterMaterial } from './terraceMesh';
+import { makeAtmoRimMaterial, makeHazeMaterial } from './atmosphere';
 import { makeGasGiant } from './gasGiant';
 import type { BodySpec, SystemSpec } from '../world/systemgen';
-import { homeBodyId } from '../world/systemgen';
+import { effectivePhysics, homeBodyId, lockedToStar } from '../world/systemgen';
+import type { BodyPhysics } from '../world/physics';
 import type { BiomeId, SavedCamera } from '../world/types';
 
-export type Tool = 'pan' | 'label' | 'object';
-export type RigMode = 'orbit' | 'flight';
+// The engine is instantiated once and held in a React ref, so a hot update
+// of this module would leave the app running the OLD engine class while the
+// UI around it updates — silently stale behavior. Decline HMR: any change
+// here forces a full page reload in dev.
+if (import.meta.hot) import.meta.hot.decline();
 
-/** Rough physical fiction: one GL unit ≈ 8 km (a size-100 world radius). */
-export const KM_PER_UNIT = 8;
+export type Tool = 'pan' | 'label' | 'object' | 'inspect';
+export type RigMode = 'orbit' | 'flight';
+/** How the orbit rig rides: a station sweeps an inertial great circle while
+ * the world turns beneath it (the ISS way); geostationary hangs over one
+ * spot, pinned to the spinning frame. */
+export type OrbitStyle = 'station' | 'geo';
+
+/** Rough physical fiction: ~300 m hexes at F=96 give a size-100 world a
+ * ~24 km radius over R_HOME GL units — one GL unit ≈ 5.3 km. */
+export const KM_PER_UNIT = 5.3;
 
 export interface FlightHud {
   /** Nearest body (or the tapped target when one is set). */
@@ -79,21 +95,34 @@ const TAP_SLOP_PX = 7;
  */
 const TERRACE_ROUNDING = 0.3;
 
+/**
+ * Display scale for interplanetary space. The PHYSICS keeps its compact
+ * orbital distances (every law — disk chemistry, temperature, tidal locking
+ * — reads the true a), but the RENDER world spreads 10x wider: worlds
+ * become destinations rather than neighbors, and at most one is ever inside
+ * LOD range at a time. Moons stay in their parent's local (unscaled) frame.
+ */
+const SPACE_SCALE = 10;
+
 /** LOD ranges (world units to the body's surface) and budgets. */
-const TIER1_DIST = 45;
-const TIER2_DIST = 7;
+const TIER1_DIST = 180;
+const TIER2_DIST = 28;
 const MAX_TIER2 = 2;
 const MAX_TIER1 = 5;
 const BUILD_BUDGET_MS = 6;
+/** Render-lattice frequency cap for the close-up tier. */
+const TIER2_MAX_F = 224;
 
 /** Flight tuning. */
-const CAPTURE_DIST = 8; // dSurf within which orbit capture is offered
+const CAPTURE_DIST = 32; // dSurf within which orbit capture is offered
 const FLIGHT_STEER = 0.0032; // rad per pixel
 const BLEND_SEC = 1.3;
+/** One full revolution of the station-style orbit ride. */
+const STATION_PERIOD_SEC = 150;
 
 /** Starfield radius; camera far plane must exceed it. */
-const STARS_R = 340;
-const CAM_FAR = 700;
+const STARS_R = 7000;
+const CAM_FAR = 14000;
 
 function smoothstep01(t: number): number {
   const x = Math.min(1, Math.max(0, t));
@@ -124,46 +153,6 @@ function makeGlowTexture(): THREE.Texture {
   return new THREE.CanvasTexture(c);
 }
 
-const ATMO_VERT = /* glsl */ `
-varying vec3 vNormal;
-varying vec3 vPos;
-void main() {
-  vNormal = normalize(position);
-  vPos = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-
-const ATMO_FRAG = /* glsl */ `
-precision highp float;
-uniform vec3 uCamPos;   // body-local
-uniform vec3 uLightDir; // body-local
-varying vec3 vNormal;
-varying vec3 vPos;
-void main() {
-  vec3 view = normalize(uCamPos - vPos);
-  float rim = 1.0 - abs(dot(vNormal, view));
-  float a = pow(smoothstep(0.42, 1.0, rim), 2.2);
-  float sun = 0.18 + 0.82 * smoothstep(-0.35, 0.55, dot(vNormal, uLightDir));
-  gl_FragColor = vec4(vec3(0.56, 0.76, 0.94) * a * sun, a * sun);
-}
-`;
-
-function makeAtmoMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    vertexShader: ATMO_VERT,
-    fragmentShader: ATMO_FRAG,
-    uniforms: {
-      uCamPos: { value: new THREE.Vector3(0, 0, 3) },
-      uLightDir: { value: new THREE.Vector3(1, 0, 0) },
-    },
-    side: THREE.BackSide,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-}
-
 interface PointerInfo {
   x: number;
   y: number;
@@ -175,8 +164,9 @@ interface PointerInfo {
 interface TierAssets {
   root: THREE.Group;
   terrainMat: THREE.ShaderMaterial;
-  waterMat: THREE.ShaderMaterial;
+  waterMat?: THREE.ShaderMaterial;
   atmoMat?: THREE.ShaderMaterial;
+  hazeMat?: THREE.ShaderMaterial;
   geometry: THREE.BufferGeometry;
 }
 
@@ -189,10 +179,20 @@ interface BuildTask {
 /** Runtime state per body: spec + scene nodes + lazily built LOD tiers. */
 interface BodyRT {
   spec: BodySpec;
+  /** EFFECTIVE physics: the generated model, re-derived through the same
+   * pipeline whenever the player's climate dial moves (see
+   * systemgen.effectivePhysics). Everything downstream reads this, never
+   * spec.physics directly. */
+  phys: BodyPhysics;
   group: THREE.Group;
   tier0: THREE.Object3D;
   gasMat: THREE.ShaderMaterial | null;
   orbitLine: THREE.Object3D | null;
+  /** Orbit-plane basis (world frame): pos = orbX·x' + orbY·y'. */
+  orbX: THREE.Vector3;
+  orbY: THREE.Vector3;
+  /** Axial tilt (identity for locked bodies; moons inherit the parent's). */
+  tiltQ: THREE.Quaternion;
   /** Rocky-world data (lazy): grid, merged levels, dials. */
   grid: GeoGrid | null;
   levels: Uint8Array | null;
@@ -202,7 +202,7 @@ interface BodyRT {
   peakH: number;
   tier1: TierAssets | null;
   tier2: TierAssets | null;
-  /** World pose this frame. */
+  /** World pose this frame (spinQ is the FULL pose: tilt ∘ spin). */
   pos: THREE.Vector3;
   spinQ: THREE.Quaternion;
   lastNear: number;
@@ -237,9 +237,12 @@ export class Engine {
   private zoomAnchor: { sx: number; sy: number; dir: THREE.Vector3 } | null = null;
   private angVel = new THREE.Vector3();
   private northAnim: { from: THREE.Quaternion; to: THREE.Quaternion; t: number } | null = null;
+  private orbitStyle: OrbitStyle = 'station';
+  /** Last frame's body pose, for the station rig's spin counter-rotation. */
+  private prevSpinQ = new THREE.Quaternion();
 
   // ---- flight rig (world space) ----
-  private fPos = new THREE.Vector3(0, 0, 30);
+  private fPos = new THREE.Vector3(0, 0, 60);
   private fQuat = new THREE.Quaternion();
   private throttle = 0;
   private speed = 0;
@@ -260,6 +263,7 @@ export class Engine {
   private disposed = false;
 
   private raycaster = new THREE.Raycaster();
+  private tagV = new THREE.Vector3();
   private tmpV = new THREE.Vector3();
   private tmpV2 = new THREE.Vector3();
   private tmpV3 = new THREE.Vector3();
@@ -383,17 +387,52 @@ export class Engine {
       group.add(tier0);
       this.systemRoot.add(group);
 
-      let orbitLine: THREE.Object3D | null = null;
+      // Orbit-plane basis and axial tilt. Planets: Keplerian elements
+      // (node, inclination, periapsis). Moons: circular in the parent's
+      // equatorial plane, so they borrow the parent's tilt.
+      const orbX = new THREE.Vector3(1, 0, 0);
+      const orbY = new THREE.Vector3(0, 1, 0);
+      let tiltQ = new THREE.Quaternion();
+      if (b.parent) {
+        const parentRT = this.bodies.get(b.parent);
+        if (parentRT) {
+          tiltQ = parentRT.tiltQ.clone();
+          orbX.applyQuaternion(tiltQ);
+          orbY.applyQuaternion(tiltQ);
+        }
+      } else {
+        const m = new THREE.Matrix4()
+          .makeRotationZ(b.node)
+          .multiply(new THREE.Matrix4().makeRotationX(b.inc))
+          .multiply(new THREE.Matrix4().makeRotationZ(b.peri));
+        orbX.applyMatrix4(m);
+        orbY.applyMatrix4(m);
+        if (b.obliquity > 0) {
+          tiltQ.setFromAxisAngle(
+            new THREE.Vector3(Math.cos(b.axialAz), Math.sin(b.axialAz), 0),
+            b.obliquity,
+          );
+        }
+      }
+
+      // Orbit line: the true (tilted, eccentric) ellipse, sampled by
+      // eccentric anomaly so the curve is dense where the body moves fast.
+      // Planet orbits live in the 10x display space; moon orbits are local.
       const segs = 128;
       const pts = new Float32Array(segs * 3);
+      const dispR = b.parent ? b.orbitRadius : b.orbitRadius * SPACE_SCALE;
+      const semiMinor = dispR * Math.sqrt(1 - b.ecc * b.ecc);
       for (let i = 0; i < segs; i++) {
-        const a = (i / segs) * 2 * Math.PI;
-        pts[i * 3] = Math.cos(a) * b.orbitRadius;
-        pts[i * 3 + 1] = Math.sin(a) * b.orbitRadius;
+        const E = (i / segs) * 2 * Math.PI;
+        const xo = dispR * (Math.cos(E) - b.ecc);
+        const yo = semiMinor * Math.sin(E);
+        pts[i * 3] = orbX.x * xo + orbY.x * yo;
+        pts[i * 3 + 1] = orbX.y * xo + orbY.y * yo;
+        pts[i * 3 + 2] = orbX.z * xo + orbY.z * yo;
       }
       const lineGeo = new THREE.BufferGeometry();
       lineGeo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
-      orbitLine = new THREE.LineLoop(
+      const orbitLine = new THREE.LineLoop(
         lineGeo,
         new THREE.LineBasicMaterial({
           color: 0x8fa8cc,
@@ -406,14 +445,18 @@ export class Engine {
 
       this.bodies.set(b.id, {
         spec: b,
+        phys: effectivePhysics(spec, b, this.overrides.get(b.id)?.temp),
         group,
         tier0,
         gasMat,
         orbitLine,
+        orbX,
+        orbY,
+        tiltQ,
         grid: null,
         levels: null,
-        waterLevel: 12.4,
-        snowLine: 24,
+        waterLevel: 13.4,
+        snowLine: 25,
         step: 0.012,
         peakH: 0.2,
         tier1: null,
@@ -436,15 +479,19 @@ export class Engine {
     } else if (cam?.mode === 'orbit' && this.bodies.has(cam.bodyId)) {
       this.mode = 'orbit';
       this.orbitBodyId = cam.bodyId;
+      this.orbitStyle = cam.style ?? 'station';
       this.orient.fromArray(cam.q).normalize();
       this.prepareBodyData(this.bodies.get(cam.bodyId)!);
       this.h = this.hTarget = this.clampH(cam.d - 1);
+      this.prevSpinQ.copy(this.bodies.get(cam.bodyId)!.spinQ);
     } else {
       this.mode = 'orbit';
       this.orbitBodyId = homeBodyId(spec);
+      this.orbitStyle = 'station';
       this.orient.copy(this.defaultOrient());
       this.prepareBodyData(this.bodies.get(this.orbitBodyId)!);
       this.h = this.hTarget = this.hPlanet();
+      this.prevSpinQ.copy(this.bodies.get(this.orbitBodyId)!.spinQ);
     }
     this.angVel.set(0, 0, 0);
     this.zoomAnchor = null;
@@ -459,11 +506,57 @@ export class Engine {
     const rt = this.bodies.get(bodyId);
     if (!rt || rt.spec.kind !== 'rocky') return;
     const { temp, sea } = this.effective(bodyId);
-    // Temperature only moves the snow line — a uniform, not geometry.
-    if (!terrainChanged && rt.levels && waterLevelFor(sea) === rt.waterLevel) {
-      rt.snowLine = snowLineFor(temp, rt.waterLevel);
+    // The climate dial re-runs the physics pipeline: hydrosphere phase,
+    // snow cycle, life and palette are re-derived, never just repainted.
+    rt.phys = effectivePhysics(this.system!, rt.spec, o.temp);
+    const phys = rt.phys;
+    // Water sphere presence can lawfully flip (a thin-air iceball warmed
+    // past its window sublimates its sheet away): that needs a rebuild.
+    const built = rt.tier1 ?? rt.tier2;
+    const wantWater = phys.hydrosphere.state !== 'none' || o.seaLevel !== undefined;
+    const waterPresenceOk = !built || (built.waterMat !== undefined) === wantWater;
+    // Temperature only moves the local temperature field and its derived
+    // chemistry — uniforms, not geometry (snow line, sea ice, palette and
+    // water tint all follow in the shaders).
+    if (!terrainChanged && rt.levels && waterLevelFor(sea) === rt.waterLevel && waterPresenceOk) {
+      rt.snowLine = snowLineFor(temp + this.snowShift(rt), rt.waterLevel, phys.snow);
+      const gradient = paletteFor(phys);
+      const h = phys.hydrosphere;
+      // The climate dial moves TsurfK and pressure, so the aerial
+      // perspective re-derives with the rest of the chemistry.
+      const ext = airExtinction(phys);
+      const airColor = ext ? hazeSpec(phys)?.color ?? ext.tint : null;
       for (const assets of [rt.tier1, rt.tier2]) {
-        if (assets) assets.terrainMat.uniforms.uSnowLine.value = rt.snowLine;
+        if (!assets) continue;
+        const tu = assets.terrainMat.uniforms;
+        tu.uTempBase.value = temp;
+        tu.uSnowTempBase.value = temp + this.snowShift(rt);
+        tu.uSnowAmount.value = phys.snow;
+        tu.uSurfStrength.value = wantWater && h.state !== 'ice' ? h.foam : 0;
+        tu.uAirSigma.value = ext?.sigma ?? 0;
+        tu.uAirH.value = ext?.scaleH ?? 0.05;
+        if (airColor) (tu.uAirColor.value as THREE.Vector3).set(...airColor);
+        const tex = tu.uGrad.value as THREE.DataTexture;
+        const data = tex.image.data as Uint8Array;
+        gradient.forEach((c, i) => {
+          data[i * 4] = Math.round(c[0] * 255);
+          data[i * 4 + 1] = Math.round(c[1] * 255);
+          data[i * 4 + 2] = Math.round(c[2] * 255);
+        });
+        tex.needsUpdate = true;
+        if (assets.waterMat) {
+          const wu = assets.waterMat.uniforms;
+          wu.uTempBase.value = temp + this.snowShift(rt);
+          wu.uClarity.value = h.clarity;
+          (wu.uSurf.value as THREE.Vector3).set(...h.surf);
+          (wu.uDeep.value as THREE.Vector3).set(...h.deep);
+          (wu.uIceColor.value as THREE.Vector3).set(...h.ice);
+          wu.uIceFloor.value =
+            h.state === 'ice' && phys.atmosphere.pressure < UNIVERSE.LIQUID_MIN_P ? 1 : 0;
+          wu.uAirSigma.value = ext?.sigma ?? 0;
+          wu.uAirH.value = ext?.scaleH ?? 0.05;
+          if (airColor) (wu.uAirColor.value as THREE.Vector3).set(...airColor);
+        }
       }
       return;
     }
@@ -502,6 +595,17 @@ export class Engine {
     };
   }
 
+  /**
+   * Offset between the snow dial (measured from the working volatile's
+   * freeze point, see physics.snowTemp01) and the display dial. Zero for
+   * water worlds; on methane worlds it re-centers the snow law so frost
+   * caps peaks instead of blanketing everything "cold".
+   */
+  private snowShift(rt: BodyRT): number {
+    const phys = rt.phys;
+    return phys ? phys.snowTemp01 - phys.temp01 : 0;
+  }
+
   /** Build the merged (generated + overridden) level field and dials. */
   private prepareBodyData(rt: BodyRT): void {
     if (rt.spec.kind !== 'rocky' || rt.levels) return;
@@ -525,7 +629,7 @@ export class Engine {
     rt.levels = levels;
     const { temp, sea } = this.effective(rt.spec.id);
     rt.waterLevel = waterLevelFor(sea);
-    rt.snowLine = snowLineFor(temp, rt.waterLevel);
+    rt.snowLine = snowLineFor(temp + this.snowShift(rt), rt.waterLevel, rt.phys?.snow ?? 1);
     rt.step = stepFor(rt.grid);
     rt.peakH = (MAX_LEVEL - rt.waterLevel) * rt.step;
   }
@@ -541,7 +645,7 @@ export class Engine {
     }
     this.prepareBodyData(rt);
     const f = frequencyForSize(rt.spec.size);
-    const renderGrid = tier === 2 ? getGrid(Math.min(128, f * 4)) : getGrid(f);
+    const renderGrid = tier === 2 ? getGrid(Math.min(TIER2_MAX_F, f * 4)) : getGrid(f);
     const job = new TerraceJob(rt.grid!, renderGrid, rt.levels!, {
       waterLevel: rt.waterLevel,
       step: rt.step,
@@ -568,33 +672,106 @@ export class Engine {
   /** Wire a finished terrace geometry into the body's group as a LOD tier. */
   private attachTier(rt: BodyRT, tier: 1 | 2, geometry: THREE.BufferGeometry): void {
     const root = new THREE.Group();
-    const terrainMat = makeTerrainMaterial();
-    terrainMat.uniforms.uSnowLine.value = rt.snowLine;
+    const phys = rt.phys;
+    const locked = lockedToStar(rt.spec);
+    const tempSpan = locked ? UNIVERSE.TEMP_SPAN_LOCKED : UNIVERSE.TEMP_SPAN_SPIN;
+    const { temp } = this.effective(rt.spec.id);
+
+    // Bone-dry worlds render no fill: nothing condensed into their basins.
+    // The player can still flood one by raising the sea dial (terraforming
+    // trumps the default state).
+    const seaOverridden = this.overrides.get(rt.spec.id)?.seaLevel !== undefined;
+    const hydroState = phys?.hydrosphere.state ?? 'liquid';
+    const showWater = hydroState !== 'none' || seaOverridden;
+
+    // Aerial perspective from the physics: sigma/scale-height from
+    // pressure, gravity and chemistry; the fade color matches the haze
+    // deck when one exists so sky and fog agree.
+    const ext = phys ? airExtinction(phys) : null;
+    const air = ext
+      ? { sigma: ext.sigma, scaleH: ext.scaleH, color: (phys && hazeSpec(phys)?.color) ?? ext.tint }
+      : undefined;
+
+    const terrainMat = makeTerrainMaterial({
+      gradient: paletteFor(phys),
+      tempBase: temp,
+      tempSpan,
+      lockedToStar: locked,
+      surfStrength: showWater && hydroState !== 'ice' ? phys?.hydrosphere.foam ?? 1 : 0,
+      snowAmount: phys?.snow ?? 1,
+      snowTempBase: temp + this.snowShift(rt),
+      air,
+    });
     terrainMat.uniforms.uWaterLevel.value = rt.waterLevel;
     terrainMat.uniforms.uWarpFreq.value = 2.2 / rt.grid!.cellSpacing();
     const terrain = new THREE.Mesh(geometry, terrainMat);
     terrain.renderOrder = 0;
     root.add(terrain);
 
-    const waterMat = makeWaterMaterial();
-    waterMat.uniforms.uWaveFreq.value = 9 / rt.grid!.cellSpacing();
-    const water = new THREE.Mesh(
-      new THREE.SphereGeometry(1, tier === 2 ? 96 : 48, tier === 2 ? 64 : 32),
-      waterMat,
-    );
-    water.renderOrder = 5;
-    root.add(water);
+    let waterMat: THREE.ShaderMaterial | undefined;
+    if (showWater) {
+      waterMat = makeWaterMaterial({
+        surf: phys?.hydrosphere.surf,
+        deep: phys?.hydrosphere.deep,
+        clarity: phys?.hydrosphere.clarity,
+        tempBase: temp + this.snowShift(rt),
+        tempSpan,
+        lockedToStar: locked,
+        iceColor: phys?.hydrosphere.ice,
+        // No pressure means no melt anywhere: airless sheets sublimate,
+        // they never pool (the triple-point rule).
+        neverMelts:
+          phys !== undefined &&
+          phys.hydrosphere.state === 'ice' &&
+          phys.atmosphere.pressure < UNIVERSE.LIQUID_MIN_P,
+        air,
+      });
+      waterMat.uniforms.uWaveFreq.value = 9 / rt.grid!.cellSpacing();
+      // Freeboard: floating sheets ride about half a terrain step above the
+      // liquid line, so the shelf edge reads as a raised shore.
+      waterMat.uniforms.uFreeboard.value = rt.step * 0.55;
+      const water = new THREE.Mesh(
+        new THREE.SphereGeometry(1, tier === 2 ? 96 : 48, tier === 2 ? 64 : 32),
+        waterMat,
+      );
+      water.renderOrder = 5;
+      root.add(water);
+    }
 
+    // Shells must clear the tallest possible column, whatever the sea level.
+    const peakR = 1 + rt.peakH;
+
+    // Thick atmospheres wear a gas shroud that hides the surface from
+    // space (it thins only when the camera pushes down close).
+    let hazeMat: THREE.ShaderMaterial | undefined;
+    const haze = phys ? hazeSpec(phys) : null;
+    const hazeR = Math.max(1.14, peakR + 0.05);
+    if (haze) {
+      hazeMat = makeHazeMaterial(haze.color, haze.opacity);
+      const deck = new THREE.Mesh(new THREE.SphereGeometry(hazeR, 64, 40), hazeMat);
+      deck.renderOrder = 8;
+      root.add(deck);
+    }
+
+    // Rayleigh rim glow, tinted and scaled by the actual atmosphere. It
+    // anchors to whatever the eye reads as the limb — the shroud top when
+    // one exists, the surface otherwise — and decays outward, so the world
+    // has exactly one progressive horizon.
     let atmoMat: THREE.ShaderMaterial | undefined;
-    if (tier === 2) {
-      atmoMat = makeAtmoMaterial();
-      const atmo = new THREE.Mesh(new THREE.SphereGeometry(1.26, 64, 40), atmoMat);
+    const pressure = phys?.atmosphere.pressure ?? 1;
+    if (tier === 2 && pressure > 0.02) {
+      // The eye's limb: the shroud top when one exists, otherwise halfway
+      // up the terrain silhouette (the skyline is ragged, not a sphere).
+      const inner = haze ? hazeR : 1 + rt.peakH * 0.5;
+      const shellR = Math.max(inner + 0.24, peakR + 0.12);
+      atmoMat = makeAtmoRimMaterial(rayleighTint(phys.atmosphere), pressure, inner, shellR);
+      const atmo = new THREE.Mesh(new THREE.SphereGeometry(shellR, 64, 40), atmoMat);
       atmo.renderOrder = 10;
       root.add(atmo);
     }
 
     rt.group.add(root);
-    const assets: TierAssets = { root, terrainMat, waterMat, atmoMat, geometry };
+    const assets: TierAssets = { root, terrainMat, waterMat, atmoMat, hazeMat, geometry };
     if (tier === 2) {
       this.dropTier(rt, 2);
       rt.tier2 = assets;
@@ -611,8 +788,9 @@ export class Engine {
     rt.group.remove(assets.root);
     assets.geometry.dispose();
     assets.terrainMat.dispose();
-    assets.waterMat.dispose();
+    assets.waterMat?.dispose();
     assets.atmoMat?.dispose();
+    assets.hazeMat?.dispose();
     for (const child of assets.root.children) {
       if (child instanceof THREE.Mesh && child.geometry !== assets.geometry) child.geometry.dispose();
     }
@@ -685,25 +863,69 @@ export class Engine {
 
   // ---------------------------------------------------------------- orbital mechanics
 
-  /** Position and spin every body for system time t (seconds). */
+  /**
+   * Position and spin every body for system time t (seconds): a pure
+   * function of (spec, t) — Kepler's equation for the eccentric, inclined
+   * planet orbits (3 Newton steps converge for our mild e), circular
+   * parent-equatorial paths for moons, axial tilt folded into the pose.
+   */
   private updateBodyPoses(t: number): void {
     if (!this.system) return;
     for (const rt of this.bodies.values()) {
       const b = rt.spec;
-      const oa = b.orbitPhase + (2 * Math.PI * t) / b.orbitPeriod;
-      const ox = Math.cos(oa) * b.orbitRadius;
-      const oy = Math.sin(oa) * b.orbitRadius;
+      let xo: number;
+      let yo: number;
+      if (b.ecc > 0) {
+        const M = b.orbitPhase + (2 * Math.PI * t) / b.orbitPeriod;
+        let E = M + b.ecc * Math.sin(M);
+        for (let i = 0; i < 3; i++) {
+          E -= (E - b.ecc * Math.sin(E) - M) / (1 - b.ecc * Math.cos(E));
+        }
+        xo = b.orbitRadius * (Math.cos(E) - b.ecc);
+        yo = b.orbitRadius * Math.sqrt(1 - b.ecc * b.ecc) * Math.sin(E);
+      } else {
+        const oa = b.orbitPhase + (2 * Math.PI * t) / b.orbitPeriod;
+        xo = Math.cos(oa) * b.orbitRadius;
+        yo = Math.sin(oa) * b.orbitRadius;
+      }
+
       if (b.parent) {
         const parent = this.bodies.get(b.parent)!;
-        rt.pos.set(parent.pos.x + ox, parent.pos.y + oy, parent.pos.z);
+        rt.pos.set(
+          parent.pos.x + rt.orbX.x * xo + rt.orbY.x * yo,
+          parent.pos.y + rt.orbX.y * xo + rt.orbY.y * yo,
+          parent.pos.z + rt.orbX.z * xo + rt.orbY.z * yo,
+        );
         rt.orbitLine?.position.copy(parent.pos);
       } else {
-        rt.pos.set(ox, oy, 0);
+        // Planets render in the 10x display space (the physics kept the
+        // compact a; see SPACE_SCALE).
+        rt.pos.set(
+          (rt.orbX.x * xo + rt.orbY.x * yo) * SPACE_SCALE,
+          (rt.orbX.y * xo + rt.orbY.y * yo) * SPACE_SCALE,
+          (rt.orbX.z * xo + rt.orbY.z * yo) * SPACE_SCALE,
+        );
       }
-      // Tidally locked bodies keep one face toward the parent; free bodies
-      // spin on their own clock.
-      const spin = b.tidallyLocked ? oa + Math.PI : (2 * Math.PI * t) / b.spinPeriod;
+
+      // Locked bodies keep one face toward the parent: local +X (the
+      // substellar/subparent point every temperature law anchors to) is
+      // aimed from the ACTUAL world direction to the parent. The in-plane
+      // anomaly alone is not enough — the orbit basis carries the node and
+      // periapsis angles, and using posAngle raw pointed eyeball worlds at
+      // a random azimuth (ice eye on the dayside). Free bodies spin on
+      // their own clock around their tilted axis.
+      let spin: number;
+      if (b.tidallyLocked) {
+        const parent = b.parent ? this.bodies.get(b.parent)! : null;
+        if (parent) this.tmpV2.copy(parent.pos).sub(rt.pos);
+        else this.tmpV2.copy(rt.pos).negate(); // the sun sits at the origin
+        this.tmpV2.applyQuaternion(this.tmpQ.copy(rt.tiltQ).conjugate());
+        spin = Math.atan2(this.tmpV2.y, this.tmpV2.x);
+      } else {
+        spin = (2 * Math.PI * t) / b.spinPeriod;
+      }
       rt.spinQ.setFromAxisAngle(this.tmpV.set(0, 0, 1), spin);
+      rt.spinQ.premultiply(rt.tiltQ);
       rt.group.position.copy(rt.pos);
       rt.group.quaternion.copy(rt.spinQ);
     }
@@ -747,6 +969,24 @@ export class Engine {
 
   private clampH(h: number): number {
     return Math.min(this.hMax(), Math.max(this.hMin(), h));
+  }
+
+  /**
+   * Station-orbit altitude: halfway between a just-outside-the-air skim
+   * (peaks, haze deck, ~2.5 scale heights, ISS-ratio floor) and the
+   * planet-framing hang. Close enough that the world still fills most of
+   * the view and streams beneath you; far enough that you are not scraping
+   * the atmosphere. Geo still hangs wherever you arrived.
+   */
+  private hStation(rt: BodyRT): number {
+    const phys = rt.phys;
+    const ext = phys ? airExtinction(phys) : null;
+    const haze = phys ? hazeSpec(phys) : null;
+    // Mirror of attachTier's deck radius (Math.max(1.14, peakR + 0.05)).
+    const hazeTop = haze ? Math.max(1.14, 1 + rt.peakH + 0.05) - 1 + 0.04 : 0;
+    const airTop = ext ? 2.5 * ext.scaleH : 0;
+    const skim = Math.max(0.063, rt.peakH + 0.04, hazeTop, airTop);
+    return this.clampH((skim + this.hPlanet()) * 0.5);
   }
 
   /** Body-local units (surface arc) per screen pixel at the sub-camera point. */
@@ -795,22 +1035,61 @@ export class Engine {
 
   // ---------------------------------------------------------------- terrain queries
 
-  private biomeOfLevel(rt: BodyRT, level: number): BiomeId {
+  /** Local temperature dial at a body-frame direction (the insolation law). */
+  private localTemp(rt: BodyRT, x: number, y: number, z: number): number {
+    const locked = lockedToStar(rt.spec);
+    const span = locked ? UNIVERSE.TEMP_SPAN_LOCKED : UNIVERSE.TEMP_SPAN_SPIN;
+    const { temp } = this.effective(rt.spec.id);
+    return localTemp01(temp, span, insolationAt(x, y, z, locked));
+  }
+
+  private biomeOfLevel(rt: BodyRT, level: number, snowLine: number): BiomeId {
     const w = rt.waterLevel;
-    if (level >= rt.snowLine) return 'snow';
+    if (level >= snowLine) return 'snow';
     if (level < w - 6) return 'deep';
     if (level < w - 2) return 'ocean';
     if (level < w) return 'shallow';
     if (level < w + 1.6) return 'beach';
-    if (level < 19) return 'grassland';
-    if (level < 23) return 'forest';
+    if (level < 20) return 'grassland';
+    if (level < 24) return 'forest';
     return 'mountain';
   }
 
   biomeAt(bodyId: string, cell: number): BiomeId {
     const rt = this.bodies.get(bodyId);
-    if (!rt || !rt.levels) return 'grassland';
-    return this.biomeOfLevel(rt, rt.levels[cell]);
+    if (!rt || !rt.levels || !rt.grid) return 'grassland';
+    const t = this.localTemp(
+      rt,
+      rt.grid.centers[cell * 3],
+      rt.grid.centers[cell * 3 + 1],
+      rt.grid.centers[cell * 3 + 2],
+    );
+    return this.biomeOfLevel(
+      rt,
+      rt.levels[cell],
+      snowLineFor(t + this.snowShift(rt), rt.waterLevel, rt.phys?.snow ?? 1),
+    );
+  }
+
+  /**
+   * Inspector readout for a cell: its level, unit direction (for the
+   * geology field) and local climate. Null until the body's data is built.
+   */
+  cellInfo(
+    bodyId: string,
+    cell: number,
+  ): { level: number; dir: [number, number, number]; localTemp01: number } | null {
+    const rt = this.bodies.get(bodyId);
+    if (!rt?.grid || !rt.levels || cell < 0 || cell >= rt.levels.length) return null;
+    const x = rt.grid.centers[cell * 3];
+    const y = rt.grid.centers[cell * 3 + 1];
+    const z = rt.grid.centers[cell * 3 + 2];
+    return { level: rt.levels[cell], dir: [x, y, z], localTemp01: this.localTemp(rt, x, y, z) };
+  }
+
+  /** Water level (float level units) for a body, for elevation readouts. */
+  waterLevelOf(bodyId: string): number {
+    return this.bodies.get(bodyId)?.waterLevel ?? 13.4;
   }
 
   /** Body roster for UI (names, kinds); source of truth is the spec. */
@@ -845,10 +1124,15 @@ export class Engine {
       const py = c.y * Math.cos(r) + sr * (u.y * Math.cos(phi) + v.y * Math.sin(phi));
       const pz = c.z * Math.cos(r) + sr * (u.z * Math.cos(phi) + v.z * Math.sin(phi));
       const level = rt.levels[rt.grid.nearestCell(px, py, pz)];
-      if (level >= rt.snowLine) groups.cold++;
+      const snow = snowLineFor(
+        this.localTemp(rt, px, py, pz) + this.snowShift(rt),
+        rt.waterLevel,
+        rt.phys?.snow ?? 1,
+      );
+      if (level >= snow) groups.cold++;
       else if (level < rt.waterLevel) groups.water++;
       else if (level < rt.waterLevel + 1.6) groups.dry++;
-      else if (level >= 23) groups.rock++;
+      else if (level >= 24) groups.rock++;
       else groups.green++;
     }
     let best: Mood['group'] = 'green';
@@ -911,7 +1195,7 @@ export class Engine {
    * Capture into orbit around a body (nearest in range when unspecified):
    * the flight pose blends into a live orbit pose over ~a second.
    */
-  enterOrbit(bodyId?: string): void {
+  enterOrbit(bodyId?: string, style: OrbitStyle = 'station'): void {
     if (this.mode !== 'flight' || this.blend) return;
     let rt = bodyId ? this.bodies.get(bodyId) : null;
     if (!rt) {
@@ -921,6 +1205,8 @@ export class Engine {
       if (dSurf > Math.max(CAPTURE_DIST, rt.spec.radius * 4)) return;
     }
     this.orbitBodyId = rt.spec.id;
+    this.orbitStyle = style;
+    this.prevSpinQ.copy(rt.spinQ);
     this.prepareBodyData(rt);
 
     // Orbit pose from the arrival direction, in the body's spinning frame.
@@ -933,7 +1219,11 @@ export class Engine {
     up.normalize();
     const x = new THREE.Vector3().crossVectors(up, dirLocal);
     this.orient.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, up, dirLocal));
-    this.h = this.hTarget = this.clampH(d - 1);
+    // Geo hangs where you arrived; a station capture eases to the
+    // mid-altitude ride (halfway between the air-top skim and the
+    // planet-framing hang).
+    this.h = this.clampH(d - 1);
+    this.hTarget = style === 'station' ? this.hStation(rt) : this.h;
 
     this.blend = {
       t: 0,
@@ -1088,6 +1378,57 @@ export class Engine {
     return best;
   }
 
+  /**
+   * Project a body's center to screen space for the world tags overlay.
+   * Worlds outside the view (or behind the camera) clamp to the screen edge
+   * like waypoint markers, so every world is always one tap away; only the
+   * world currently being orbited hides its tag. dSurf lets the overlay
+   * show tags only for far-away worlds.
+   */
+  projectBody(bodyId: string): (ProjectedPoint & { dSurf: number }) | null {
+    const rt = this.bodies.get(bodyId);
+    if (!rt) return null;
+    const vc = this.tagV.copy(rt.pos).applyMatrix4(this.camera.matrixWorldInverse);
+    // Behind the camera or outside the frame: no tag (the system map covers
+    // off-screen worlds).
+    if (vc.z > -0.01) return null;
+    const p = this.tagV.copy(rt.pos).project(this.camera);
+    const nx = p.x;
+    const ny = p.y;
+    if (Math.abs(nx) > 0.96 || Math.abs(ny) > 0.94) return null;
+    const own = this.mode === 'orbit' && bodyId === this.orbitBodyId;
+    return {
+      x: (nx * 0.5 + 0.5) * this.width,
+      y: (-ny * 0.5 + 0.5) * this.height,
+      visible: !own,
+      alpha: 1,
+      dSurf: this.camera.position.distanceTo(rt.pos) - rt.spec.radius,
+    };
+  }
+
+  /**
+   * Live map angle for the system map: the body's position angle in the
+   * ecliptic plane, around its parent (the sun for planets).
+   */
+  bodyMapAngle(bodyId: string): number {
+    const rt = this.bodies.get(bodyId);
+    if (!rt) return 0;
+    const parent = rt.spec.parent ? this.bodies.get(rt.spec.parent) : null;
+    const px = parent?.pos.x ?? 0;
+    const py = parent?.pos.y ?? 0;
+    return Math.atan2(rt.pos.y - py, rt.pos.x - px);
+  }
+
+  /** Tap-to-travel: from anywhere, jump the ship to a body and capture. */
+  travelTo(bodyId: string): void {
+    if (this.blend) return;
+    if (this.mode === 'orbit') {
+      if (bodyId === this.orbitBodyId) return;
+      this.depart();
+    }
+    this.enterOrbit(bodyId);
+  }
+
   /** Project a data cell of a body to screen space for the labels overlay. */
   projectCell(bodyId: string, cell: number): ProjectedPoint {
     const rt = this.bodies.get(bodyId);
@@ -1233,7 +1574,10 @@ export class Engine {
       return;
     }
 
-    if (this.mode === 'orbit' && (this.tool === 'label' || this.tool === 'object')) {
+    if (
+      this.mode === 'orbit' &&
+      (this.tool === 'label' || this.tool === 'object' || this.tool === 'inspect')
+    ) {
       const cell = this.pickCell(info.x, info.y);
       if (cell >= 0) this.callbacks.onTap(this.tool, this.orbitBodyId, cell);
       this.angVel.set(0, 0, 0);
@@ -1290,6 +1634,28 @@ export class Engine {
     }
 
     if (this.mode === 'orbit' && this.currentBody()) {
+      // Station orbit: ride an inertial great circle, ISS style. First
+      // counter-rotate the body's spin delta out of the rig (the rig lives
+      // in the spinning frame), so the terrain streams beneath; then
+      // advance the ride. Paused while the player is touching the world —
+      // a grabbed globe holds still — and while a blend or swing runs.
+      const rtCur = this.currentBody()!;
+      if (
+        this.orbitStyle === 'station' &&
+        !this.blend &&
+        !this.northAnim &&
+        this.pointers.size === 0
+      ) {
+        this.tmpQ.copy(rtCur.spinQ).invert().multiply(this.prevSpinQ);
+        this.orient.premultiply(this.tmpQ).normalize();
+        this.tmpQ.setFromAxisAngle(
+          this.tmpV.set(-1, 0, 0),
+          (2 * Math.PI * dt) / STATION_PERIOD_SEC,
+        );
+        this.orient.multiply(this.tmpQ).normalize();
+      }
+      this.prevSpinQ.copy(rtCur.spinQ);
+
       // Smooth zoom toward target, keeping the anchor point under the cursor.
       if (Math.abs(this.h - this.hTarget) > this.hTarget * 0.0005) {
         const k = 1 - Math.exp(-dt * 10);
@@ -1333,8 +1699,8 @@ export class Engine {
 
       // Distance-scaled cruise: fast across the void, gentle near ground.
       const near = this.nearestBody();
-      const dSurf = near ? Math.max(0.05, this.fPos.distanceTo(near.pos) - near.spec.radius) : 20;
-      const vMax = Math.min(55, Math.max(0.35, 0.45 + 0.85 * dSurf));
+      const dSurf = near ? Math.max(0.05, this.fPos.distanceTo(near.pos) - near.spec.radius) : 40;
+      const vMax = Math.min(1100, Math.max(0.35, 0.45 + 0.85 * dSurf));
       const targetSpeed = this.throttle * vMax;
       this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-dt * 4));
       if (Math.abs(this.speed) > 1e-4) {
@@ -1366,6 +1732,7 @@ export class Engine {
               bodyId: this.orbitBodyId,
               q: this.orient.toArray() as [number, number, number, number],
               d: 1 + this.h,
+              style: this.orbitStyle,
             }
           : {
               mode: 'flight',
@@ -1399,18 +1766,27 @@ export class Engine {
       for (const assets of [rt.tier1, rt.tier2]) {
         if (!assets) continue;
         (assets.terrainMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
-        (assets.waterMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
-        assets.terrainMat.uniforms.uTime.value = shaderT;
-        assets.waterMat.uniforms.uTime.value = shaderT;
+        // Terrain time drives only the shoreline surf; it and the sea share
+        // one halved clock so waves and wash stay in step.
+        assets.terrainMat.uniforms.uTime.value = shaderT * 0.5;
         const camL = this.tmpV2
           .copy(this.camera.position)
           .sub(rt.pos)
           .applyQuaternion(qInv)
           .divideScalar(rt.spec.radius);
-        (assets.waterMat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);
+        (assets.terrainMat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);
+        if (assets.waterMat) {
+          (assets.waterMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
+          assets.waterMat.uniforms.uTime.value = shaderT * 0.5;
+          (assets.waterMat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);
+        }
         if (assets.atmoMat) {
           (assets.atmoMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
           (assets.atmoMat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);
+        }
+        if (assets.hazeMat) {
+          (assets.hazeMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
+          (assets.hazeMat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);
         }
       }
     }

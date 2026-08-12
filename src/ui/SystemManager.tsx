@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from 'react';
-import { generateSystem, type BodySpec } from '../world/systemgen';
+import { Fragment, useMemo, useRef, useState } from 'react';
+import { classify, generateSystem, lockedToStar, type BodySpec } from '../world/systemgen';
+import { describeBody } from '../world/physics';
 import { randomSeedString } from '../world/rng';
 import type { SystemMeta } from '../world/types';
 
@@ -19,18 +20,17 @@ interface Props {
   onClose: () => void;
 }
 
+/** The emergent classification, straight from the physics. */
 function kindLabel(b: BodySpec): string {
-  if (b.kind === 'gas') return b.gas?.ring ? 'gas giant · ringed' : 'gas giant';
-  const t = b.temp ?? 0.5;
-  const sea = b.seaLevel ?? 0.5;
-  if (t > 0.85) return 'scorched rock';
-  if (t < 0.2) return 'ice world';
-  if (sea < 0.25) return 'dry world';
-  return 'water world';
+  const label = classify(b.physics, lockedToStar(b));
+  if (b.kind === 'gas' && b.gas?.ring) return `${label} · ringed`;
+  return label;
 }
 
 export function SystemManager(props: Props) {
-  const [name, setName] = useState('New System');
+  // The system is named after its star unless the player types their own
+  // name (an empty custom name falls back to the star again).
+  const [customName, setCustomName] = useState('');
   const [seed, setSeed] = useState(randomSeedString);
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -39,6 +39,7 @@ export function SystemManager(props: Props) {
   const preview = useMemo(() => generateSystem(seed.trim() || 'seed'), [seed]);
   const planets = preview.bodies.filter((b) => !b.parent);
   const moonCount = preview.bodies.length - planets.length;
+  const name = customName.trim() || preview.star.name;
 
   return (
     <div className="modal-backdrop" onClick={props.onClose}>
@@ -74,7 +75,11 @@ export function SystemManager(props: Props) {
         <div className="form-grid">
           <label>
             Name
-            <input value={name} onChange={(e) => setName(e.target.value)} />
+            <input
+              value={customName}
+              placeholder={preview.star.name}
+              onChange={(e) => setCustomName(e.target.value)}
+            />
           </label>
           <label>
             Seed
@@ -94,14 +99,23 @@ export function SystemManager(props: Props) {
           {planets.map((p) => {
             const moons = preview.bodies.filter((m) => m.parent === p.id);
             return (
-              <li key={p.id}>
-                <span className="roster-name">{p.name}</span>
-                <span className="roster-kind">
-                  {kindLabel(p)}
-                  {p.tidallyLocked ? ' · locked' : ''}
-                  {moons.length > 0 ? ` · ${moons.length} moon${moons.length > 1 ? 's' : ''}` : ''}
-                </span>
-              </li>
+              <Fragment key={p.id}>
+                <li>
+                  <span className="roster-name">{p.name}</span>
+                  <span className="roster-kind">
+                    {kindLabel(p)}
+                    {p.tidallyLocked ? ' · locked' : ''}
+                  </span>
+                  <span className="roster-phys">{describeBody(p.physics)}</span>
+                </li>
+                {moons.map((m) => (
+                  <li key={m.id} className="roster-moon">
+                    <span className="roster-name">{m.name}</span>
+                    <span className="roster-kind">{kindLabel(m)}</span>
+                    <span className="roster-phys">{describeBody(m.physics)}</span>
+                  </li>
+                ))}
+              </Fragment>
             );
           })}
         </ul>
@@ -109,7 +123,7 @@ export function SystemManager(props: Props) {
         <div className="modal-actions">
           <button
             className="btn primary"
-            onClick={() => props.onCreate({ name: name.trim() || 'New System', seed: seed.trim() || 'seed' })}
+            onClick={() => props.onCreate({ name, seed: seed.trim() || 'seed' })}
           >
             Create system
           </button>
