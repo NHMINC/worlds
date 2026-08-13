@@ -214,12 +214,13 @@ export const UNIVERSE = {
    * wind + tide) sits at WIND — a wide glitter path. ANISO is across-path
    * / along-path: required slope grows slower in the sun–camera plane, so
    * Earth-from-orbit sunglint is a streak, not a disc. Physical, not a
-   * paint; GLINT_GAIN is the toy sun-vs-sea punch (SUN_LUM is ~2, not 10^5).
+   * paint. GLINT_GAIN scales the NDF so the specular core is sun-white;
+   * the path's falloff is the NDF itself (do not lift the tails).
    */
-  WAVE_SLOPE_CALM: 0.012,
-  WAVE_SLOPE_WIND: 0.18,
-  WAVE_SLOPE_ANISO: 0.4,
-  GLINT_GAIN: 1.8,
+  WAVE_SLOPE_CALM: 0.003,
+  WAVE_SLOPE_WIND: 0.034,
+  WAVE_SLOPE_ANISO: 0.22,
+  GLINT_GAIN: 3.2,
 
   /** The universe's gearbox: wall seconds → system seconds. Everything
    * celestial (orbits, spin, days, seasons) turns this much slower than

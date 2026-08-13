@@ -999,21 +999,29 @@ void main() {
   float wind = clamp(uWaveEnergy, 0.0, 1.0);
   float sigAlong = mix(${UNIVERSE.WAVE_SLOPE_CALM}, ${UNIVERSE.WAVE_SLOPE_WIND}, wind);
   float sigAcross = sigAlong * ${UNIVERSE.WAVE_SLOPE_ANISO};
-  vec3 sunTan = uLightDir - n0 * dot(uLightDir, n0);
-  float st2 = dot(sunTan, sunTan);
-  vec3 T = st2 > 1e-8 ? sunTan * inversesqrt(st2) : t1;
+  // Principal plane in the tangent: projections of sun and view. Required
+  // slope grows slower along that azimuth, so the glint is a streak.
+  vec3 tL = uLightDir - n0 * dot(uLightDir, n0);
+  vec3 tV = view - n0 * dot(view, n0);
+  vec3 alongDir = tL + tV;
+  float ad2 = dot(alongDir, alongDir);
+  vec3 T = ad2 > 1e-8 ? alongDir * inversesqrt(ad2) : t1;
   vec3 B = cross(n0, T);
   float hn = max(dot(hN, n0), 1e-4);
   float tanA = dot(hN, T) / hn;
   float tanB = dot(hN, B) / hn;
   float expo = (tanA * tanA) / max(sigAlong, 1e-5)
              + (tanB * tanB) / max(sigAcross, 1e-5);
-  float shape = exp(-expo) * step(0.0, dot(hN, n0));
-  // Toy sun-vs-sea punch: SUN_LUM is ~2, not 10^5, so GLINT_GAIN is what
-  // saturates the core to sun-white. 1-exp keeps the tails a gold smear.
-  float glintAmt = (1.0 - exp(-shape * ${UNIVERSE.GLINT_GAIN} * uSunLum))
+  // A little of the ripple field so the path isn't a painted ellipse;
+  // keep the floor high or the glitter vanishes into noise from orbit.
+  float spark = mix(ripF, rip, att);
+  float shape = exp(-expo) * mix(0.85, 1.25, spark) * step(0.0, dot(hN, n0));
+  // Peak is the sun: mix toward sun-white so the core reads as a reflection
+  // (adding onto already-bright cel water just made lighter cyan). GLINT_GAIN
+  // saturates the inner path; the NDF still sets the falloff.
+  float glintAmt = clamp(shape * ${UNIVERSE.GLINT_GAIN}, 0.0, 1.0)
                  * dayW * (1.0 - ice);
-  vec3 glintC = vec3(1.0, 0.96, 0.86) * glintAmt;
+  vec3 glintC = vec3(1.0, 0.94, 0.78);
 
   // Fresnel reflection: at grazing incidence the sea is a MIRROR (Schlick
   // reflectance walks toward 1). The reflected ray first asks the
@@ -1136,10 +1144,12 @@ void main() {
     c += tl / (1.0 + dot(tl, vec3(0.333)));
     c += torchGlow(uCamPos, vPos);
   }
-  // Sunglint after the air: extinction only — in-scatter would dye the
-  // sun the sky's colour. Raise alpha so orbit translucency cannot punch
-  // space through the path.
-  c += glintC * exp(-tau);
+  // Sunglint after the air, same order as foam: mix toward the sun's
+  // colour, not toward an extincted copy. From orbit the in-scattered sea
+  // is already bright; multiplying the sun by exp(-tau) made the "glint"
+  // darker than the ocean (a muddy haze). Ice has no liquid facets.
+  c = mix(c, glintC, glintAmt);
+  c = mix(c, vec3(1.0, 0.98, 0.92), glintAmt * glintAmt);
   alpha = mix(alpha, 1.0, glintAmt);
   // Foam is always white; day/night is brightness only. After the air, or
   // the sky paints the surf blue.

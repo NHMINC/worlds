@@ -271,9 +271,11 @@ The sea is a **surface**, not a window onto the framebuffer.
 - **Sunglint** is Cox–Munk facet slope on the liquid (`waveSlope`,
   `UNIVERSE.WAVE_SLOPE_*`), not a painted disc. Calm / airless seas are a
   tight mirror; wind (sea-state energy) opens a glitter path elongated in
-  the sun–camera plane. Apply after the air integral with extinction only
-  — in-scatter must not dye the sun. Ice has no liquid facets. From orbit,
-  glitter raises alpha so translucency cannot punch space through the path.
+  the sun–camera plane. Apply after the air integral, mixing toward the
+  sun’s colour (same order as foam) — in-scatter must not dye the sun, and
+  extinction must not make the glint darker than the in-scattered sea. Ice
+  has no liquid facets. From orbit, glitter raises alpha so translucency
+  cannot punch space through the path.
 - Keep a little of the water’s own colour at the limb so aerial
   perspective does not dissolve the sea into the sky.
 - **Surf** (breaking crests, wet line, swash) must remain visible. Foam
