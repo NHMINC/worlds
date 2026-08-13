@@ -17,10 +17,10 @@ import {
  */
 
 const LAYER = {
-  pad: 0.34,
-  arp: 0.4,
-  bass: 0.62,
-  sub: 0.7,
+  pad: 0.36,
+  arp: 0.32,
+  bass: 0.58,
+  sub: 0.78,
   kick: 0.92,
   hatClosed: 0.38,
   hatOpen: 0.42,
@@ -101,15 +101,17 @@ export class AmbientMusic {
 
     this.filter = new Tone.Filter({ type: 'lowpass', frequency: 900, Q: 0.95, rolloff: -24 });
     const chorus = new Tone.Chorus({ frequency: 0.28, delayTime: 5, depth: 0.5, wet: 0.4 }).start();
-    const padHp = new Tone.Filter({ type: 'highpass', frequency: 110, Q: 0.4 });
+    const padHp = new Tone.Filter({ type: 'highpass', frequency: 72, Q: 0.35 });
     this.padGain.connect(padHp);
     padHp.connect(chorus);
     chorus.connect(this.filter);
     this.filter.connect(this.master);
     this.filter.connect(verbSend);
 
-    const delay = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.26, wet: 0.2 });
-    this.arpGain.connect(delay);
+    const delay = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.26, wet: 0.18 });
+    const arpLp = new Tone.Filter({ type: 'lowpass', frequency: 780, Q: 0.45 });
+    this.arpGain.connect(arpLp);
+    arpLp.connect(delay);
     delay.connect(this.master);
     delay.connect(verbSend);
 
@@ -140,10 +142,10 @@ export class AmbientMusic {
 
     this.sub = new Tone.MonoSynth({
       oscillator: { type: 'sine' },
-      envelope: { attack: 0.006, decay: 0.2, sustain: 0.18, release: 0.08 },
-      filter: { type: 'lowpass', frequency: 140, Q: 0.4, rolloff: -12 },
+      envelope: { attack: 0.012, decay: 0.28, sustain: 0.42, release: 0.18 },
+      filter: { type: 'lowpass', frequency: 108, Q: 0.35, rolloff: -12 },
     });
-    this.sub.volume.value = -4;
+    this.sub.volume.value = -3;
     this.sub.connect(this.bassGain);
 
     this.bass = new Tone.MonoSynth({
@@ -195,7 +197,7 @@ export class AmbientMusic {
         this.latchedGroup = mood.group;
         this.score = composeSection(this.seed, section, mood, this.dna);
       }
-      this.followClimate(mood);
+      this.followClimate(mood, bar % 16);
     }
 
     const score = this.score;
@@ -203,18 +205,20 @@ export class AmbientMusic {
       this.sixteenth++;
       return;
     }
-    const barScore = score.bars[bar % 16];
-    const arr = arrangementFor(mood, this.dna, section);
+    const barIn = bar % 16;
+    const barScore = score.bars[barIn];
+    const arr = arrangementFor(mood, this.dna, section, barIn);
 
     if (beat === 0) this.holdPad(barScore.pad, arr, time);
 
-    this.firePitched(this.bass, barScore.bass, beat, time, LAYER.bass * arr.bass, 0.12);
-    this.firePitched(this.sub, barScore.bass, beat, time, LAYER.sub * arr.bass, 0.12);
-    this.firePitched(this.arp, barScore.arp, beat, time, LAYER.arp * arr.arp, 0.14);
+    this.firePitched(this.bass, barScore.bass, beat, time, LAYER.bass * arr.bass, 0.14);
+    this.firePitched(this.sub, barScore.sub, beat, time, LAYER.sub * arr.bass, 0.1);
+    this.firePitched(this.arp, barScore.arp, beat, time, LAYER.arp * arr.arp, 0.12);
 
-    if (arr.kick > 0.15) {
+    if (arr.kick >= 0.2) {
       for (const k of barScore.kicks) {
         if (k.at !== beat) continue;
+        if (arr.kick < 0.55 && k.at !== 0) continue;
         this.kit?.hitKick(time, k.vel * LAYER.kick * arr.kick);
         if (this.padGain) duck(this.padGain, time, 0.62, 0.28);
         if (this.bassGain) duck(this.bassGain, time, 0.86, 0.12);
@@ -249,15 +253,18 @@ export class AmbientMusic {
     this.sixteenth++;
   }
 
-  private followClimate(mood: Mood): void {
+  private followClimate(mood: Mood, barIn: number): void {
     const bpm = this.score?.bpm ?? 124;
     if (Math.abs(bpm - this.lastBpm) > 0.2) {
       Tone.getTransport().bpm.rampTo(bpm, 2.4);
       this.lastBpm = bpm;
     }
-    const open = this.score?.filter ?? 0.4;
-    const hz = 380 + open * 3200 + mood.density * 180;
-    this.filter?.frequency.rampTo(hz, 6);
+    const section = this.latchedSection;
+    const open = section >= 0
+      ? arrangementFor(mood, this.dna, section, barIn).filter
+      : this.score?.filter ?? 0.4;
+    const hz = 100 + open * 2300 + mood.density * 80;
+    this.filter?.frequency.rampTo(hz, 2.4);
   }
 
   private holdPad(notes: number[], arr: Arrangement, time: number): void {
