@@ -145,7 +145,34 @@ export const UNIVERSE = {
    * how fast an Earthlike column swallows the light crossing it.
    */
   AIR_H: 0.05,
-  AIR_SIGMA: 0.9,
+  // Sized so an Earthlike column reaches grazing optical depth ~2 at the
+  // horizon — the regime where red starts outliving blue (sunsets), while
+  // the vertical column stays clear enough to see space at night.
+  AIR_SIGMA: 2.2,
+
+  /**
+   * Display luminance of unscattered sunlight relative to a unit diffuse
+   * surface. The sun is far brighter than anything it lights; this one
+   * number is what makes in-scattered air READ as a bright sky against
+   * terrain, from orbit or from the ground. Universe-level, never per-world.
+   */
+  SUN_LUM: 2,
+
+  /**
+   * H/R of home-world air: the barometric scale height kT/(mg) of N2/O2
+   * at 288 K under 1 g (8.4 km) over the real planet radius (6371 km).
+   * Physical anchor for the sunbeam slant law — every world rescales it
+   * by its own T, molecular weight, gravity and radius.
+   */
+  AIR_HR_HOME: 8.4 / 6371,
+
+  /**
+   * Starlight-and-airglow floor (display radiance, cool blue): air that
+   * sunlight cannot reach still scatters SOMETHING — the same fiction that
+   * moonlights the night ground. Without it, grazing night paths extinguish
+   * the world into a void and horizons read as black bands.
+   */
+  NIGHT_AIR: [0.075, 0.1, 0.16] as [number, number, number],
 
   /**
    * Precipitation cycle: snow is fallen weather, not paint. It needs a
@@ -172,6 +199,21 @@ export const UNIVERSE = {
    * planets (the Mars lesson: small worlds cool off and fall quiet).
    */
   OUTGAS_R: [0.42, 0.7] as const,
+
+  /** Moon tide → sea-state gain: scales Σ ρ·(R/a)³ onto the 0..1 dial. */
+  TIDE_K: 1200,
+
+  /** The waves' volume knob: one gain over every sea's foam and ripple
+   * amplitude, from baby laps in ponds to ocean surf. Cosmetic constant of
+   * this universe — energy stays physical, presentation scales. */
+  WAVE_GAIN: 1.35,
+
+  /** The universe's gearbox: wall seconds → system seconds. Everything
+   * celestial (orbits, spin, days, seasons) turns this much slower than
+   * the wall clock, so a dawn is something you can watch. Applied where
+   * wall time becomes system time; wave/foam animation keeps its own
+   * cosmetic clock. */
+  TIME_SCALE: 1 / 3,
 };
 
 // ------------------------------------------------------------------ types
@@ -859,6 +901,40 @@ export function rayleighTint(atmo: AtmosphereSpec): RGB {
   return [out[0] / sum, out[1] / sum, out[2] / sum];
 }
 
+/** hsl → rgb in [0,1]. */
+function hsl(h: number, s: number, l: number): RGB {
+  const f = (n: number) => {
+    const k = (n + h * 12) % 12;
+    const a = s * Math.min(l, 1 - l);
+    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+  };
+  return [f(0), f(8), f(4)];
+}
+
+/**
+ * Disk color of a gas giant from its mix and irradiation — one number,
+ * no weather. NH3 condensates read warm tan (Jupiter/Saturn), CH4
+ * absorbs red so the ball goes cool blue (Uranus/Neptune), mixed traces
+ * mute toward grey, and a migrated hot giant darkens as the condensates
+ * boil off. Bands, storms and differential rotation are a later weather
+ * law; until then the giant is a smooth chemistry-tinted atmosphere.
+ */
+export function gasColor(p: BodyPhysics): RGB {
+  const ch4 = p.atmosphere.mix.CH4 ?? 0;
+  const nh3 = p.atmosphere.mix.NH3 ?? 0;
+  const total = ch4 + nh3;
+  const t = total > 1e-5 ? ch4 / total : 0;
+  const blend = t * t * (3 - 2 * t);
+  let hue = total > 1e-5 ? (0.09 - 0.51 * blend + 1) % 1 : 0.15;
+  const midMute = 1 - 0.62 * (4 * blend * (1 - blend));
+  let sat = (0.26 + 0.3 * clamp01(total / 0.02)) * midMute;
+  const hot = clamp01((p.TeqK - 320) / 420);
+  hue = (hue - 0.47 * hot + 1) % 1;
+  sat = sat * (1 - 0.3 * hot) + 0.1 * hot;
+  const light = 0.66 * (1 - 0.42 * hot);
+  return hsl(hue, sat, light);
+}
+
 /**
  * The gas shroud of a rocky world: color from chemistry, opacity from
  * optical depth — column density times photochemical smog (CH4/NH3 build
@@ -896,10 +972,26 @@ export function hazeSpec(p: BodyPhysics): { color: RGB; opacity: number } | null
  * hothouse is a wall, an airless rock shows razor-sharp forever. Returns
  * null when the air is too thin to matter. sigma is per planet radius of
  * path at the surface; scaleH is in planet radii.
+ *
+ * curve is the Chapman curvature parameter 2H/R of the REAL planet, from
+ * the barometric law H = kT/(mg) over the true radius. It sets how long a
+ * horizon sunbeam's air column is (~1/sqrt(curve) vertical columns), i.e.
+ * how hard sunsets redden: cold, heavy, high-gravity air hugs its world
+ * and burns deep red; hot light low-g air is puffy and barely tints. The
+ * drawn shell (scaleH) stays display-stretched so the glow reads at toy
+ * scale, but the sunlight filter uses the physics.
  */
-export function airExtinction(
-  p: BodyPhysics,
-): { sigma: number; scaleH: number; tint: RGB } | null {
+export function airExtinction(p: BodyPhysics): {
+  sigma: number;
+  scaleH: number;
+  curve: number;
+  tint: RGB;
+  weights: RGB;
+  albedo: RGB;
+  /** Aerosol deck: vertical optical column and its Mie-flat weights. */
+  aeroTau: number;
+  aeroW: RGB;
+} | null {
   if (p.kind !== 'rocky') return null;
   const P = p.atmosphere.pressure;
   if (P < 0.01) return null;
@@ -912,13 +1004,99 @@ export function airExtinction(
   mu = fsum > 0 ? mu / fsum : 29;
   const grav = Math.max(0.05, p.gravity);
   const scaleH = (UNIVERSE.AIR_H * (p.TsurfK / 288) * (29 / mu)) / grav;
+  // True slenderness H/R = kT/(mgR): Earth air anchors the constant at
+  // 8.4 km / 6371 km, and the same barometric ratios that stretch scaleH
+  // rescale it per world. The 2/pi makes the grazing limit the exact
+  // Chapman function, Ch(0) = sqrt(pi*R/2H) — a horizon sunbeam on the
+  // home world crosses ~35 vertical columns. Nothing here is a dial.
+  const hTrue =
+    (UNIVERSE.AIR_HR_HOME * (p.TsurfK / 288) * (29 / mu)) / grav / Math.max(0.2, p.radiusRel);
+  const curve = Math.min(1, Math.max(3e-5, (2 * hTrue) / Math.PI));
   const organics = (p.atmosphere.mix.CH4 ?? 0) + (p.atmosphere.mix.NH3 ?? 0);
-  const sigma = UNIVERSE.AIR_SIGMA * (P / grav) * (1 + 5 * organics);
-  if (sigma < 0.05) return null;
+  // GAS: Rayleigh scattering off the molecules themselves, exponential
+  // with altitude.
+  const sigma = UNIVERSE.AIR_SIGMA * (P / grav);
+  // AEROSOLS: condensate clouds and photochemical smog — sulfuric decks
+  // over hot CO2, tholin haze in organic air. This optical depth used to
+  // be painted on as an opaque "haze deck" mesh with its own shading; now
+  // it feeds the scattering integral, so cloud opacity, the limb, the sky
+  // and the ground gloom are one law. Crucially the aerosols are NOT
+  // well-mixed with the gas: condensates condense at their condensation
+  // altitude, so the deck rides a Gaussian shell aloft (see scattering.ts)
+  // and the air beneath it is clear — Venus is soup at 55 km and a hazy
+  // desert at the floor. Same pressure/organics threshold as ever (Earth
+  // earns none), and hazeSpec's opacity is exactly 1 - exp(-aeroTau): the
+  // roster descriptor and the renderer agree.
+  const aeroTau = Math.max(0, (P / UNIVERSE.HAZE_P) * (1 + 5 * organics) - 0.45) * 1.6;
+  if (sigma + aeroTau / (3 * scaleH) < 0.05) return null;
   // Same hot-bleach law as the haze deck, so sky and fade agree.
   const hot = clamp01((p.TsurfK - 380) / 250);
   const tint = mixRGB(rayleighTint(p.atmosphere), [0.93, 0.88, 0.72], hot);
-  return { sigma, scaleH, tint };
+  // Per-wavelength scattering weights (mean 1). Gas: the tint is what the
+  // gas scatters, contrast-stretched toward the Rayleigh 1/λ⁴ ratio the
+  // display tints compress (exponent 2.5 lands N2/O2 air near the real
+  // ~5:1 blue:red). Aerosol droplets are Mie scatterers — wavelength-flat
+  // — so the deck keeps the chemistry color at full pallor: smog whitens
+  // a sky clean gas would blue, and mutes sunsets toward Titan grey.
+  const wr = Math.pow(Math.max(0.02, tint[0]), 2.5);
+  const wg = Math.pow(Math.max(0.02, tint[1]), 2.5);
+  const wb = Math.pow(Math.max(0.02, tint[2]), 2.5);
+  const wm = (wr + wg + wb) / 3;
+  const weights: RGB = [wr / wm, wg / wm, wb / wm];
+  const am = Math.max(0.02, (tint[0] + tint[1] + tint[2]) / 3);
+  const aeroW: RGB = [tint[0] / am, tint[1] / am, tint[2] / am];
+  // Single-scattering albedo: the fraction of light that survives one
+  // bounce, per channel. Clean N2/O2 air only scatters (albedo 1), but the
+  // same chemistry that drives the hot-bleach law breeds blue-eating
+  // absorbers — sulfur photochemistry over hot CO2 decks, tholin smog in
+  // organic hazes. Per bounce the loss is tiny; the diffusion walk through
+  // a thick column multiplies it into Venus amber and Titan orange.
+  const soot = clamp01(0.6 * hot + 3 * organics);
+  const albedo: RGB = [1 - 0.008 * soot, 1 - 0.03 * soot, 1 - 0.08 * soot];
+  return { sigma, scaleH, curve, tint, weights, albedo, aeroTau, aeroW };
+}
+
+// ------------------------------------------------------------------ sea state
+
+export interface SeaState {
+  /** 0..1 swell energy: wind (pressure proxy) plus oscillating tide. */
+  energy: number;
+  /** Wave-clock rate, ~sqrt(g): low-g moons swell slow, heavy worlds chop. */
+  tempo: number;
+  /** 0..1 moon-tide strength (drives the waterline breathing). */
+  tide: number;
+}
+
+/**
+ * Oscillating tidal forcing on a body from its moons: Σ ρ·(R/a)³, scaled
+ * onto a 0..1 dial. Only a body that SPINS relative to the perturber feels
+ * a moving tide — a tidally locked body carries a static bulge, which
+ * raises no waves. The caller passes only the moons that apply.
+ */
+export function tidalForcing(
+  moons: Array<{ densityRel: number; radiusGL: number; orbitGL: number }>,
+): number {
+  let f = 0;
+  for (const m of moons) {
+    const r = m.radiusGL / Math.max(1e-3, m.orbitGL);
+    f += m.densityRel * r * r * r;
+  }
+  return clamp01(f * UNIVERSE.TIDE_K);
+}
+
+/**
+ * What stirs a sea, until weather is a real law: wind needs an atmosphere
+ * (pressure is the proxy — airless worlds keep MIRROR-still seas), moons
+ * add tidal slosh, and gravity sets the tempo of every wave. Weather will
+ * later multiply and direct the same energy number.
+ */
+export function seaState(p: BodyPhysics, tide = 0): SeaState {
+  const wind = clamp01((p.atmosphere.pressure - 0.02) / 0.4);
+  return {
+    energy: clamp01(0.9 * wind + 0.45 * tide),
+    tempo: Math.sqrt(Math.min(3, Math.max(0.05, p.gravity))),
+    tide,
+  };
 }
 
 // ------------------------------------------------------------------ classification

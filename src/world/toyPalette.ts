@@ -77,11 +77,23 @@ function crustTint(p: BodyPhysics): RGB {
   return c;
 }
 
+/** The home ramp's own shoreline: waterLevelFor(0.5), where the wet-sand
+ * anchor sits. paletteFor re-anchors every ramp on its body's true shore. */
+const HOME_WATERLINE = 13.4;
+
 /**
  * The 31-stop strata ramp for a body, derived continuously from its physics.
  * Undefined physics (or the perfect paradise) returns the home ramp.
+ *
+ * The strata are a story about the SEA — sediment gathers at the shoreline,
+ * wet rock lies below it, vegetation climbs above — so the ramp anchors on
+ * the body's EFFECTIVE waterline (physics plus terraforming dials), not on
+ * absolute level numbers: rows below the shore stretch over the seabed hues,
+ * rows above over sand, green and peak. Without this, a raised sea drowns
+ * its beaches and the flooded green strata sit at the new shoreline wearing
+ * sea tones — whole islands read as humps of water.
  */
-export function paletteFor(p?: BodyPhysics): RGB[] {
+export function paletteFor(p?: BodyPhysics, waterLevel = HOME_WATERLINE): RGB[] {
   if (!p || p.kind !== 'rocky') return LEVEL_GRADIENT;
 
   // Vegetation exists only where life does, and fades with climate stress.
@@ -90,8 +102,24 @@ export function paletteFor(p?: BodyPhysics): RGB[] {
   const chill = clamp01((0.28 - p.temp01) / 0.28);
   const crust = crustTint(p);
 
-  return LEVEL_GRADIENT.map((base, l) => {
-    const h = l / MAX_LEVEL;
+  // Piecewise-linear remap of this body's levels onto the home ramp's
+  // coordinate, pinning shore to shore (and bedrock to bedrock).
+  const shoreOf = (l: number) =>
+    l <= waterLevel
+      ? (l / Math.max(waterLevel, 1e-6)) * HOME_WATERLINE
+      : HOME_WATERLINE +
+        ((l - waterLevel) / Math.max(MAX_LEVEL - waterLevel, 1e-6)) *
+          (MAX_LEVEL - HOME_WATERLINE);
+
+  return LEVEL_GRADIENT.map((_, l) => {
+    const a = l === 0 ? 0 : Math.min(Math.max(shoreOf(l), 0), MAX_LEVEL);
+    const i0 = Math.min(Math.floor(a), MAX_LEVEL);
+    const base = mix(
+      LEVEL_GRADIENT[i0],
+      LEVEL_GRADIENT[Math.min(i0 + 1, MAX_LEVEL)],
+      a - i0,
+    );
+    const h = a / MAX_LEVEL;
     // The barren version of this level: a luminance ramp wearing the crust's
     // own tint (dark depths to pale heights), bedrock kept dark and violet.
     const lum = 0.2 + 0.85 * Math.pow(h, 0.9);

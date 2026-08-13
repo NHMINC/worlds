@@ -95,6 +95,14 @@ export const IconRocket = (p: IconProps) => (
   </svg>
 );
 
+export const IconLand = (p: IconProps) => (
+  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3v10" />
+    <path d="m8 9.5 4 4 4-4" />
+    <path d="M4 19.5c2.6-2.2 5.4-2.2 8 0s5.4 2.2 8 0" />
+  </svg>
+);
+
 export const IconInspect = (p: IconProps) => (
   <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="10.5" cy="10.5" r="6.5" />

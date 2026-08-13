@@ -472,10 +472,13 @@ export default function App() {
           subscribe={subscribeFrames}
           onEnterOrbit={(style) => engineRef.current?.enterOrbit(undefined, style)}
         />
+        {mode === 'surface' && (
+          <div className="surface-hint">drag to look · WASD to glide · scroll for height</div>
+        )}
       </div>
 
       <Toolbar
-        title={mode === 'orbit' ? bodyDisplayName(currentBodyId) : system?.name ?? '…'}
+        title={mode === 'flight' ? system?.name ?? '…' : bodyDisplayName(currentBodyId)}
         mode={mode}
         tool={tool}
         setTool={setTool}
@@ -486,6 +489,9 @@ export default function App() {
         viewFit={() => engineRef.current?.viewFitHeight()}
         resetNorth={() => engineRef.current?.resetNorth()}
         depart={() => engineRef.current?.depart()}
+        canLand={mode === 'orbit' && currentBody?.kind === 'rocky'}
+        land={() => engineRef.current?.land()}
+        takeOff={() => engineRef.current?.takeOff()}
         musicOn={musicOn}
         toggleMusic={() => void toggleMusic()}
         volume={volume}

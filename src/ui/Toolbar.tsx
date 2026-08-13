@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import type { RigMode, Tool } from '../render/engine';
 import {
   IconCompass, IconFitHeight, IconGear, IconGlobe, IconInspect, IconLabel,
-  IconLetterbox, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconRocket,
+  IconLand, IconLetterbox, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconRocket,
 } from './icons';
 
 interface Props {
@@ -22,6 +22,12 @@ interface Props {
   resetNorth: () => void;
   /** Leave orbit and become a ship. */
   depart: () => void;
+  /** Rocky body in orbit: landing is available. */
+  canLand: boolean;
+  /** Set down at the point under the screen center. */
+  land: () => void;
+  /** Surface mode: rise back into orbit. */
+  takeOff: () => void;
   musicOn: boolean;
   toggleMusic: () => void;
   volume: number;
@@ -61,12 +67,26 @@ export function Toolbar(props: Props) {
           <button className="tb-btn" title="North up" onClick={props.resetNorth}>
             <IconCompass />
           </button>
+          {props.canLand && (
+            <button className="tb-btn" title="Land — set down and glide over the terrain" onClick={props.land}>
+              <IconLand />
+            </button>
+          )}
           <button className="tb-btn" title="Depart — leave orbit and fly" onClick={props.depart}>
             <IconRocket />
           </button>
           <div className="tb-level" title="Zoom (0% whole planet, 100% single hex)">
             <span className="tb-level-name">{props.zoomLabel}</span>
           </div>
+        </>
+      )}
+
+      {props.mode === 'surface' && (
+        <>
+          <div className="tb-sep" />
+          <button className="tb-btn" title="Take off — rise back into orbit" onClick={props.takeOff}>
+            <IconRocket />
+          </button>
         </>
       )}
 

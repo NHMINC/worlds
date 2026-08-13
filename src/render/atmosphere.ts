@@ -1,15 +1,17 @@
 import * as THREE from 'three';
-import type { RGB } from '../world/physics';
+import { UNIVERSE, type RGB } from '../world/physics';
+import { AIR_SCATTER_GLSL, AIR_UNIFORMS_GLSL } from './scattering';
 
 /**
  * Atmosphere rendering, driven entirely by the physics model:
  *
- *  - the RIM is Rayleigh-ish limb glow tinted by what the actual gas mix
- *    scatters (N2/O2 skies glow blue, CO2 pale, CH4 a burnt orange), with
- *    its reach and brightness scaled by surface pressure;
- *  - the HAZE DECK is an opaque cloud shell that thick atmospheres wear
- *    (hothouse CO2, organic CH4 smog): from space it hides the surface
- *    completely, and it only thins once the camera pushes down close.
+ * The SKY SHELL owns every view ray that crosses the air without striking
+ * the globe (rays that hit terrain or sea integrate the same scattering
+ * law in their own shaders). One integral, any viewpoint: from orbit it is
+ * the blue limb, from the ground it is the sky. Cloud aerosols are part of
+ * the same integral (physics.airExtinction folds them into sigma), so a
+ * hothouse hides its surface because tau says so, not because a deck is
+ * painted over it.
  */
 
 const ATMO_VERT = /* glsl */ `
@@ -22,109 +24,146 @@ void main() {
 }
 `;
 
-const RIM_FRAG = /* glsl */ `
+// Shared ray setup + scattering march for both shell passes.
+const SKY_COMMON = /* glsl */ `
 precision highp float;
-uniform vec3 uCamPos;   // body-local
+uniform vec3 uCamPos;   // body-local, unit planet radius
 uniform vec3 uLightDir; // body-local
-uniform vec3 uTint;     // Rayleigh tint of the gas mix
-uniform float uStrength; // pressure-scaled
-uniform float uInner;   // radius of the visible limb (surface or cloud top)
-uniform float uScaleH;  // exponential scale height of the glow
-varying vec3 vNormal;
+uniform float uTopR;    // shell top radius
+uniform float uFloorR;  // bedrock floor: the lowest surface the mesh is guaranteed to draw
+${AIR_UNIFORMS_GLSL}
 varying vec3 vPos;
-void main() {
-  // ONE progressive horizon: air density decays exponentially with
-  // altitude, so the glow is brightest hugging the limb and fades to
-  // nothing well before the shell geometry ends — no detached halo ring.
-  // Altitude of this view ray = its closest approach to the body center.
-  // The band decays on both sides of the limb: outward with the gas scale
-  // height, inward a little slower (thin-air tinge over the disk edge).
-  vec3 d = normalize(vPos - uCamPos);
-  float b = length(cross(uCamPos, d));
-  float x = b - uInner;
-  float a = uStrength * exp(-max(x, 0.0) / uScaleH) * exp(-max(-x, 0.0) / (uScaleH * 1.8));
-  float sun = 0.18 + 0.82 * smoothstep(-0.35, 0.55, dot(vNormal, uLightDir));
-  gl_FragColor = vec4(uTint * a * sun, a * sun);
+${AIR_SCATTER_GLSL}
+// Marches the shell segment of this pixel's ray. Returns in-scattered
+// light; tau is the per-channel optical depth; discards rays the shell
+// does not own (missed the air, or struck ground that fogs itself).
+// The hand-off test uses the BEDROCK sphere, not the nominal radius 1:
+// valley floors and dry basins sit well below 1, so a ray can dip under
+// the unit sphere yet strike no drawn surface at all — discarding those
+// used to punch a black landform-shaped void between ground and sky.
+// The sea writes depth (terraceMesh water) so ocean pixels still occlude
+// this shell; a sea-sphere test here would open a black gap wherever the
+// tessellated water mesh sags inside the mathematical sphere.
+vec3 skyRay(out vec3 tau) {
+  vec3 rd = normalize(vPos - uCamPos);
+  float b = dot(uCamPos, rd);
+  float cc = dot(uCamPos, uCamPos);
+  float disc = b * b - (cc - uTopR * uTopR);
+  if (disc <= 0.0) discard;
+  float s = sqrt(disc);
+  float t0 = max(-b - s, 0.0);
+  float t1 = -b + s;
+  float discP = b * b - (cc - uFloorR * uFloorR);
+  if (discP > 0.0 && -b - sqrt(discP) > 0.0) discard;
+  return airScatter(uCamPos + rd * t0, uCamPos + rd * t1, uLightDir, tau);
 }
 `;
 
-export function makeAtmoRimMaterial(
-  tint: RGB,
-  pressure: number,
-  inner: number,
-  shellR: number,
-): THREE.ShaderMaterial {
-  // Pressure sets the glow's presence: Mars-thin is a whisper, Earth a
-  // clean band, super-pressures saturate. (The peak now sits right at the
-  // limb, so it caps lower than the old edge-peaked profile did.)
-  const strength = Math.min(1.0, Math.pow(Math.max(0, pressure), 0.35) * 0.6);
-  // Scale height sized so the glow reaches ~1% at the shell edge: the
-  // geometry never shows its own silhouette.
-  const scaleH = (shellR - inner) / 4.5;
-  return new THREE.ShaderMaterial({
+// PASS 1 — extinction: multiplies whatever lies beyond (stars, the sun,
+// other worlds) by the path's PER-CHANNEL transmittance. This is where a
+// setting sun bleeds red: blue optical depth kills its blue long before
+// its red — a scalar alpha could never do that. The exp veil is contrast
+// masking: an LDR display cannot span the true ratio between scattered
+// sunlight and starlight, so bright air additionally hides what is behind
+// it — stars vanish into the noon blue and return through night air.
+const SKY_EXT_FRAG = /* glsl */ `
+${SKY_COMMON}
+void main() {
+  vec3 tau;
+  vec3 sky = skyRay(tau);
+  float veil = exp(-4.0 * dot(sky, vec3(1.0 / 3.0)));
+  gl_FragColor = vec4(exp(-tau) * veil, 1.0);
+}
+`;
+
+// PASS 2 — in-scatter: adds what the air itself sends toward the camera.
+// Together the passes are the volume rendering equation, split across two
+// blends because hardware carries only one alpha channel. The headlamp's
+// beam belongs here too: sky rays inside the cone pick up the lamp light
+// the air scatters back, so a beam raised toward a foggy night sky glows —
+// and a clear one stays invisible.
+const SKY_GLOW_FRAG = /* glsl */ `
+${SKY_COMMON}
+void main() {
+  vec3 tau;
+  vec3 sky = skyRay(tau);
+  sky += torchGlow(uCamPos, vPos);
+  gl_FragColor = vec4(sky, 1.0);
+}
+`;
+
+export interface AirSpec {
+  sigma: number;
+  scaleH: number;
+  /** Chapman curvature 2H/(pi*R) of the real planet (physics.airExtinction). */
+  curve: number;
+  /** Per-wavelength scattering weights, mean 1 (physics.airExtinction). */
+  weights: RGB;
+  /** Single-scattering albedo per channel (physics.airExtinction). */
+  albedo: RGB;
+  /** Aerosol cloud deck: vertical optical column and Mie-flat weights. */
+  aeroTau: number;
+  aeroW: RGB;
+}
+
+export interface SkyShellMaterials {
+  /** Multiply pass (render first): background x per-channel transmittance. */
+  ext: THREE.ShaderMaterial;
+  /** Additive pass: the air's own in-scattered light. Shares uniforms with ext. */
+  glow: THREE.ShaderMaterial;
+}
+
+export function makeSkyShellMaterials(
+  air: AirSpec,
+  topR: number,
+  floorR: number,
+): SkyShellMaterials {
+  // ONE uniforms object drives both passes: every engine update (camera,
+  // light, terraforming dials) lands in the pair at once.
+  const uniforms = {
+    uCamPos: { value: new THREE.Vector3(0, 0, 3) },
+    uLightDir: { value: new THREE.Vector3(1, 0, 0) },
+    uTopR: { value: topR },
+    uFloorR: { value: floorR },
+    uAirW: { value: new THREE.Vector3(...air.weights) },
+    uAirSigma: { value: air.sigma },
+    uAirH: { value: air.scaleH },
+    uSunLum: { value: UNIVERSE.SUN_LUM },
+    uAirNight: { value: new THREE.Vector3(...UNIVERSE.NIGHT_AIR) },
+    uAirCurv: { value: air.curve },
+    uAirAlb: { value: new THREE.Vector3(...air.albedo) },
+    uAeroTau: { value: air.aeroTau },
+    uAeroW: { value: new THREE.Vector3(...air.aeroW) },
+    uTorch: { value: 0 },
+    uTorchDir: { value: new THREE.Vector3(0, 0, -1) },
+  };
+  const ext = new THREE.ShaderMaterial({
     vertexShader: ATMO_VERT,
-    fragmentShader: RIM_FRAG,
-    uniforms: {
-      uCamPos: { value: new THREE.Vector3(0, 0, 3) },
-      uLightDir: { value: new THREE.Vector3(1, 0, 0) },
-      uTint: { value: new THREE.Vector3(...tint) },
-      uStrength: { value: strength },
-      uInner: { value: inner },
-      uScaleH: { value: scaleH },
-    },
+    fragmentShader: SKY_EXT_FRAG,
+    uniforms,
     side: THREE.BackSide,
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.ZeroFactor,
+    blendDst: THREE.SrcColorFactor,
   });
-}
-
-const HAZE_FRAG = /* glsl */ `
-precision highp float;
-uniform vec3 uCamPos;   // body-local, unit-radius frame
-uniform vec3 uLightDir;
-uniform vec3 uColor;
-uniform float uOpacity; // vertical optical opacity, from density + chemistry
-varying vec3 vNormal;
-varying vec3 vPos;
-
-void main() {
-  vec3 n = normalize(vNormal);
-  vec3 view = normalize(uCamPos - vPos);
-
-  // NO patterns: clouds and weather are a later law. The shroud is one
-  // chemistry-tinted gas, and all structure is physics — slant optical
-  // depth (Beer-Lambert along the view path) thickens toward the limb,
-  // and the cel day/night light shades it like every other body.
-  float dl = dot(n, uLightDir);
-  float ql = 0.72 + 0.13 * smoothstep(0.0, 0.15, dl) + 0.15 * smoothstep(0.4, 0.55, dl);
-  float day = smoothstep(-0.16, 0.12, dl);
-  vec3 c = mix(uColor * vec3(0.22, 0.27, 0.42), uColor * ql, day);
-
-  // Slant path: looking through the shell at grazing angles crosses far
-  // more gas than looking straight down.
-  float mu = clamp(dot(n, view), 0.12, 1.0);
-  float alpha = 1.0 - pow(1.0 - uOpacity, 1.0 / mu);
-
-  // The shroud reads from space and thins only when the camera is nearly
-  // down inside it.
-  float camAlt = length(uCamPos) - 1.0;
-  float fade = smoothstep(0.05, 0.4, camAlt);
-  gl_FragColor = vec4(c, alpha * fade);
-}
-`;
-
-export function makeHazeMaterial(color: RGB, opacity: number): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
+  const glow = new THREE.ShaderMaterial({
     vertexShader: ATMO_VERT,
-    fragmentShader: HAZE_FRAG,
-    uniforms: {
-      uCamPos: { value: new THREE.Vector3(0, 0, 3) },
-      uLightDir: { value: new THREE.Vector3(1, 0, 0) },
-      uColor: { value: new THREE.Vector3(...color) },
-      uOpacity: { value: opacity },
-    },
+    fragmentShader: SKY_GLOW_FRAG,
+    uniforms,
+    side: THREE.BackSide,
     transparent: true,
     depthWrite: false,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor,
   });
+  return { ext, glow };
 }
+
+// (The old painted HAZE DECK mesh is gone: aerosol optical depth now feeds
+// physics.airExtinction's sigma, so cloud opacity emerges from the same
+// scattering integral as the sky, the limb and the ground gloom.)

@@ -1,6 +1,6 @@
 import { mulberry32, xmur3 } from './rng';
 import {
-  UNIVERSE, classify, gasPhysics, hazeSpec, rockyPhysics, type BodyPhysics,
+  UNIVERSE, classify, gasColor, gasPhysics, hazeSpec, rockyPhysics, type BodyPhysics,
 } from './physics';
 
 /**
@@ -21,20 +21,15 @@ import {
  * keeping the old behavior available for systems pinned to it.
  */
 
-export const CURRENT_GEN_VERSION = 12;
+export const CURRENT_GEN_VERSION = 13;
 
 export type RGB = [number, number, number];
 
 export type BodyKind = 'rocky' | 'gas';
 
 export interface GasSpec {
-  /** Band color stops, pole to pole-ish, tinted by trace chemistry. */
-  colors: RGB[];
-  /** Latitude frequency of the bands. */
-  bandFreq: number;
-  /** Storm oval: latitude (radians from equator) and seeded phase. */
-  stormLat: number;
-  stormPhase: number;
+  /** Disk color from chemistry (physics.gasColor). No weather yet. */
+  color: RGB;
   ring: boolean;
   ringTilt: number;
   ringColor: RGB;
@@ -109,16 +104,6 @@ function clamp01(x: number): number {
 
 function mix(a: RGB, b: RGB, t: number): RGB {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-}
-
-/** hsl → rgb, all in [0,1]; for seeded pastel palettes. */
-function hsl(h: number, s: number, l: number): RGB {
-  const f = (n: number) => {
-    const k = (n + h * 12) % 12;
-    const a = s * Math.min(l, 1 - l);
-    return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
-  };
-  return [f(0), f(8), f(4)];
 }
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV'];
@@ -316,7 +301,7 @@ export function generateSystem(seed: string): SystemSpec {
         ecc, inc, node, peri,
         obliquity, axialAz,
         spinPeriod: 40 + rng() * 50, tidallyLocked: false, parent: null,
-        physics, gas, meanColor: gas.colors[0],
+        physics, gas, meanColor: gas.color,
       });
     } else {
       const size = 25 + Math.round(rng() * 75);
@@ -405,43 +390,27 @@ export function generateSystem(seed: string): SystemSpec {
  * inventory the physics derived, read as color.
  */
 function gasBands(rng: () => number, physics: BodyPhysics): GasSpec {
+  const color = gasColor(physics);
+  // Historical weather-shader entropy: bands, storms and hue jitter used
+  // to draw from this stream. Keep the draws so moon counts and moon
+  // seeds downstream stay put until weather is a real law.
   const ch4 = physics.atmosphere.mix.CH4 ?? 0;
   const nh3 = physics.atmosphere.mix.NH3 ?? 0;
-  const total = ch4 + nh3;
-  // Hue from the dominant trace: NH3 → warm tan (0.09), CH4 → cool blue
-  // (0.58); a trace-free giant sits dusty-neutral. Mixed giants travel the
-  // warm side of the hue wheel (tan → salmon → violet → blue, like Jupiter
-  // through Neptune) instead of averaging through an unphysical green.
-  const t = total > 1e-5 ? ch4 / total : 0;
-  const blend = t * t * (3 - 2 * t); // smoothstep keeps borderline mixes tan-ish or blue-ish
-  let hue = total > 1e-5 ? (0.09 - 0.51 * blend + 1) % 1 : 0.12 + rng() * 0.06;
-  // Mixed-trace giants mute toward grey (competing absorbers wash each other
-  // out); only clearly NH3- or CH4-dominated giants wear vivid bands.
-  const midMute = 1 - 0.62 * (4 * blend * (1 - blend));
-  let sat = (0.22 + 0.3 * clamp01(total / 0.02) + rng() * 0.08) * midMute;
-  // Irradiated giants (migration delivers them): the cold condensates are
-  // boiled away and alkali metals absorb across the visible — the deck
-  // darkens through wine-dark magenta to slate navy, rotating the warm way
-  // round the hue wheel (never through green).
-  const hot = clamp01((physics.TeqK - 320) / 420);
-  hue = (hue - 0.47 * hot + 1) % 1;
-  sat = sat * (1 - 0.3 * hot) + 0.1 * hot;
+  if (ch4 + nh3 <= 1e-5) rng();
+  rng();
   const bandCount = 5 + Math.floor(rng() * 4);
-  const colors: RGB[] = [];
   for (let b = 0; b < bandCount; b++) {
-    const drift = (rng() - 0.5) * 0.07;
-    let light = b % 2 === 0 ? 0.74 + rng() * 0.08 : 0.58 + rng() * 0.08;
-    light *= 1 - 0.42 * hot;
-    colors.push(hsl((hue + drift + 1) % 1, sat, light));
+    rng();
+    rng();
   }
+  rng();
+  rng();
+  rng();
   return {
-    colors,
-    bandFreq: 2.2 + rng() * 1.6,
-    stormLat: (rng() - 0.5) * 1.0,
-    stormPhase: rng() * 2 * Math.PI,
+    color,
     ring: rng() < 0.45,
     ringTilt: 0.9 + rng() * 0.5,
-    ringColor: hsl((hue + 0.08) % 1, 0.3, 0.78),
+    ringColor: mix(color, [1, 1, 1], 0.45),
   };
 }
 

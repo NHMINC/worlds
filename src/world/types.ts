@@ -37,7 +37,18 @@ export type SavedCamera =
        * 'geo' hangs over one spot. Older saves default to station. */
       style?: 'station' | 'geo';
     }
-  | { mode: 'flight'; pos: [number, number, number]; q: [number, number, number, number] };
+  | { mode: 'flight'; pos: [number, number, number]; q: [number, number, number, number] }
+  | {
+      mode: 'surface';
+      bodyId: string;
+      /** Landing spot: unit direction in the body's local frame. */
+      dir: [number, number, number];
+      /** Heading around the local up (0 = toward the north pole). */
+      yaw: number;
+      pitch: number;
+      /** Hover altitude above the terrain skin, body-local units. */
+      eyeH: number;
+    };
 
 /**
  * The saved document: a star system. Everything else regenerates from the
