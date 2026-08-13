@@ -79,6 +79,7 @@ export interface Arrangement {
   kick: number;
   hatClosed: number;
   hatOpen: number;
+  hatTick: number;
   clap: number;
   bass: number;
   pad: number;
@@ -96,6 +97,7 @@ export interface BarScore {
   kicks: PulseHit[];
   hatsClosed: PulseHit[];
   hatsOpen: PulseHit[];
+  hatsTick: PulseHit[];
   claps: PulseHit[];
 }
 
@@ -144,14 +146,14 @@ const MAJOR_LOOPS: ReadonlyArray<readonly number[]> = [
 ];
 
 const PHASE_MIX: Record<Phase, Arrangement> = {
-  intro: { kick: 0.4, hatClosed: 0, hatOpen: 0, clap: 0, bass: 0, pad: 0.72, arp: 0.12, filter: 0.22 },
-  groove: { kick: 0.82, hatClosed: 0.38, hatOpen: 0, clap: 0.32, bass: 0.72, pad: 0.62, arp: 0.22, filter: 0.36 },
-  lift: { kick: 0.9, hatClosed: 0.52, hatOpen: 0.48, clap: 0.55, bass: 0.82, pad: 0.68, arp: 0.42, filter: 0.52 },
-  peak: { kick: 1, hatClosed: 0.62, hatOpen: 0.72, clap: 0.7, bass: 0.92, pad: 0.72, arp: 0.5, filter: 0.7 },
-  break: { kick: 0, hatClosed: 0, hatOpen: 0, clap: 0, bass: 0, pad: 0.88, arp: 0.48, filter: 0.42 },
-  build: { kick: 0.68, hatClosed: 0.48, hatOpen: 0.32, clap: 0.4, bass: 0.38, pad: 0.8, arp: 0.58, filter: 0.86 },
-  drop: { kick: 1, hatClosed: 0.7, hatOpen: 0.88, clap: 0.82, bass: 1, pad: 0.7, arp: 0.48, filter: 0.92 },
-  ride: { kick: 0.94, hatClosed: 0.58, hatOpen: 0.7, clap: 0.64, bass: 0.86, pad: 0.64, arp: 0.36, filter: 0.76 },
+  intro: { kick: 0.4, hatClosed: 0, hatOpen: 0, hatTick: 0, clap: 0, bass: 0, pad: 0.72, arp: 0.12, filter: 0.22 },
+  groove: { kick: 0.82, hatClosed: 0.38, hatOpen: 0, hatTick: 0, clap: 0.32, bass: 0.72, pad: 0.62, arp: 0.22, filter: 0.36 },
+  lift: { kick: 0.9, hatClosed: 0.52, hatOpen: 0.48, hatTick: 0.18, clap: 0.55, bass: 0.82, pad: 0.68, arp: 0.42, filter: 0.52 },
+  peak: { kick: 1, hatClosed: 0.62, hatOpen: 0.72, hatTick: 0.48, clap: 0.7, bass: 0.92, pad: 0.72, arp: 0.5, filter: 0.7 },
+  break: { kick: 0, hatClosed: 0, hatOpen: 0, hatTick: 0, clap: 0, bass: 0, pad: 0.88, arp: 0.48, filter: 0.42 },
+  build: { kick: 0.68, hatClosed: 0.48, hatOpen: 0.32, hatTick: 0.22, clap: 0.4, bass: 0.38, pad: 0.8, arp: 0.58, filter: 0.86 },
+  drop: { kick: 1, hatClosed: 0.7, hatOpen: 0.88, hatTick: 0.72, clap: 0.82, bass: 1, pad: 0.7, arp: 0.48, filter: 0.92 },
+  ride: { kick: 0.94, hatClosed: 0.58, hatOpen: 0.7, hatTick: 0.42, clap: 0.64, bass: 0.86, pad: 0.64, arp: 0.36, filter: 0.76 },
 };
 
 export function rngFor(seed: string, ...parts: Array<string | number>): () => number {
@@ -278,6 +280,7 @@ export function arrangementFor(mood: MoodLike, _dna: Dna, section: number): Arra
     kick: base.kick * space,
     hatClosed: base.hatClosed * (0.75 + d * 0.35) * cold,
     hatOpen: base.hatOpen * (0.7 + d * 0.4),
+    hatTick: base.hatTick * (0.7 + d * 0.4) * cold,
     clap: base.clap * space,
     bass: base.bass * space,
     pad: base.pad,
@@ -322,6 +325,7 @@ export function composeSection(seed: string, section: number, mood: MoodLike, dn
       kicks: fourOnFloor(),
       hatsClosed: closedHats(),
       hatsOpen: openHats(),
+      hatsTick: tickHats(),
       claps: claps(),
     });
   }
@@ -389,10 +393,10 @@ function arpHits(pattern: number[], tonicMidi: number, scale: readonly number[],
 function bassHits(root: number, fifth: number, bounce: number): PitchHit[] {
   const alt = bounce > 0.62 ? fifth : root;
   return [
-    { at: 2, notes: [root], vel: 0.78, dur: 2 },
-    { at: 6, notes: [root], vel: 0.7, dur: 2 },
-    { at: 10, notes: [root], vel: 0.74, dur: 2 },
-    { at: 14, notes: [alt], vel: 0.66, dur: 2 },
+    { at: 2, notes: [root], vel: 0.78, dur: 3 },
+    { at: 6, notes: [root], vel: 0.7, dur: 3 },
+    { at: 10, notes: [root], vel: 0.74, dur: 3 },
+    { at: 14, notes: [alt], vel: 0.66, dur: 3 },
   ];
 }
 
@@ -402,6 +406,11 @@ function fourOnFloor(): PulseHit[] {
 
 function closedHats(): PulseHit[] {
   return [0, 2, 4, 6, 8, 10, 12, 14].map((at) => ({ at, vel: at % 4 === 0 ? 0.22 : 0.4 }));
+}
+
+/** Off-grid 16ths. The mix law (hatTick) decides whether they speak. */
+function tickHats(): PulseHit[] {
+  return [1, 3, 5, 7, 9, 11, 13, 15].map((at) => ({ at, vel: 0.26 }));
 }
 
 function openHats(): PulseHit[] {

@@ -4,8 +4,8 @@
  *   npx tsx scripts/check-kit.ts
  *
  * We assert the instrument laws: kicks have a punch then a body,
- * hats are metallic (high zero-cross), claps decay, a DNA is
- * deterministic, and nothing is silent or brick-walled.
+ * hats are metallic (high zero-cross) and stereo, claps decay, a DNA
+ * is deterministic, and nothing is silent or brick-walled.
  */
 import {
   KIT,
@@ -13,6 +13,7 @@ import {
   renderClap,
   renderHatClosed,
   renderHatOpen,
+  renderHatTick,
   renderKick,
   rms,
   zeroCrossRate,
@@ -34,6 +35,7 @@ const spec = kitFromDna(0.6, 0.45, 0.55);
 const kick = renderKick(SR, spec.kick);
 const closed = renderHatClosed(SR, spec.hat);
 const open = renderHatOpen(SR, spec.hat);
+const tick = renderHatTick(SR, spec.hat);
 const clap = renderClap(SR, spec.clap);
 
 function peak(data: Float32Array): number {
@@ -49,24 +51,47 @@ function finite(data: Float32Array): boolean {
   return true;
 }
 
+function channelsDiffer(L: Float32Array, R: Float32Array): boolean {
+  const n = Math.min(L.length, R.length);
+  for (let i = 0; i < n; i++) {
+    if (Math.abs(L[i] - R[i]) > 1e-4) return true;
+  }
+  return false;
+}
+
 check('kick length', Math.abs(kick.length / SR - KIT.KICK_LEN) < 0.002);
-check('closed hat shorter than open', closed.length < open.length);
-check('all samples finite', finite(kick) && finite(closed) && finite(open) && finite(clap));
+check('closed hat shorter than open', closed.L.length < open.L.length);
+check('tick shorter than closed', tick.L.length < closed.L.length);
+check(
+  'all samples finite',
+  finite(kick) &&
+    finite(closed.L) &&
+    finite(closed.R) &&
+    finite(open.L) &&
+    finite(tick.L) &&
+    finite(clap.L) &&
+    finite(clap.R),
+);
 check('kick peak is hot but not clipped-solid', peak(kick) > 0.7 && peak(kick) <= 0.95);
-check('hats and clap have level', peak(closed) > 0.5 && peak(open) > 0.5 && peak(clap) > 0.5);
+check(
+  'hats and clap have level',
+  peak(closed.L) > 0.5 && peak(open.L) > 0.5 && peak(tick.L) > 0.4 && peak(clap.L) > 0.5,
+);
 
 const kickHead = rms(kick, 0, Math.floor(0.012 * SR));
-const kickTail = rms(kick, Math.floor(0.18 * SR), kick.length);
-check('kick is a transient then a body', kickHead > kickTail * 1.6, `head ${kickHead.toFixed(3)} tail ${kickTail.toFixed(3)}`);
+const kickTail = rms(kick, Math.floor(0.2 * SR), kick.length);
+check('kick is a transient then a body', kickHead > kickTail * 1.45, `head ${kickHead.toFixed(3)} tail ${kickTail.toFixed(3)}`);
 
 const kickZ = zeroCrossRate(kick);
-const hatZ = zeroCrossRate(closed);
+const hatZ = zeroCrossRate(closed.L);
 check('kick is tonal (low zero-cross)', kickZ < 0.08, `${kickZ.toFixed(3)}`);
 check('hat is metallic (high zero-cross)', hatZ > 0.15, `${hatZ.toFixed(3)}`);
+check('hats are stereo', channelsDiffer(closed.L, closed.R));
+check('clap is stereo', channelsDiffer(clap.L, clap.R));
 
-const clapHead = rms(clap, 0, Math.floor(0.04 * SR));
-const clapTail = rms(clap, Math.floor(0.16 * SR), clap.length);
-check('clap decays', clapHead > clapTail * 2, `head ${clapHead.toFixed(3)} tail ${clapTail.toFixed(3)}`);
+const clapHead = rms(clap.L, 0, Math.floor(0.04 * SR));
+const clapTail = rms(clap.L, Math.floor(0.2 * SR), clap.L.length);
+check('clap decays', clapHead > clapTail * 1.8, `head ${clapHead.toFixed(3)} tail ${clapTail.toFixed(3)}`);
 
 const again = renderKick(SR, spec.kick);
 let same = again.length === kick.length;

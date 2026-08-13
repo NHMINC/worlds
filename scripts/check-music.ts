@@ -130,6 +130,7 @@ for (const seed of seeds) {
   const drop = arrangementFor(mood, dna, 6);
   const brk = arrangementFor(mood, dna, 4);
   check('drop is louder than intro', drop.kick > intro.kick && drop.bass > intro.bass);
+  check('drop brings 16th ticks, intro does not', drop.hatTick > 0.4 && intro.hatTick < 0.05);
   check('breakdown pulls the kick', brk.kick < 0.1);
   check('build opens the filter', arrangementFor(mood, dna, 5).filter > intro.filter);
 }

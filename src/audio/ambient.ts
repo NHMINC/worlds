@@ -24,6 +24,7 @@ const LAYER = {
   kick: 0.92,
   hatClosed: 0.38,
   hatOpen: 0.42,
+  hatTick: 0.22,
   clap: 0.48,
 };
 
@@ -37,6 +38,7 @@ export class AmbientMusic {
 
   private master?: Tone.Volume;
   private pad?: Tone.PolySynth;
+  private padBody?: Tone.PolySynth;
   private arp?: Tone.Synth;
   private bass?: Tone.MonoSynth;
   private sub?: Tone.MonoSynth;
@@ -97,9 +99,9 @@ export class AmbientMusic {
     this.bassGain = new Tone.Gain(1);
     this.arpGain = new Tone.Gain(1);
 
-    this.filter = new Tone.Filter({ type: 'lowpass', frequency: 900, Q: 0.75, rolloff: -24 });
+    this.filter = new Tone.Filter({ type: 'lowpass', frequency: 900, Q: 0.95, rolloff: -24 });
     const chorus = new Tone.Chorus({ frequency: 0.28, delayTime: 5, depth: 0.5, wet: 0.4 }).start();
-    const padHp = new Tone.Filter({ type: 'highpass', frequency: 160, Q: 0.4 });
+    const padHp = new Tone.Filter({ type: 'highpass', frequency: 110, Q: 0.4 });
     this.padGain.connect(padHp);
     padHp.connect(chorus);
     chorus.connect(this.filter);
@@ -115,11 +117,19 @@ export class AmbientMusic {
 
     this.pad = new Tone.PolySynth(Tone.Synth, {
       oscillator: { type: 'fatsawtooth', spread: 32, count: 3 },
-      envelope: { attack: 0.45, decay: 0.4, sustain: 0.7, release: 1.4 },
+      envelope: { attack: 0.45, decay: 0.4, sustain: 0.7, release: 1.8 },
     });
     this.pad.maxPolyphony = 6;
     this.pad.volume.value = -7;
     this.pad.connect(this.padGain);
+
+    this.padBody = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.52, decay: 0.5, sustain: 0.82, release: 2.1 },
+    });
+    this.padBody.maxPolyphony = 4;
+    this.padBody.volume.value = -16;
+    this.padBody.connect(this.padGain);
 
     this.arp = new Tone.Synth({
       oscillator: { type: 'triangle' },
@@ -146,14 +156,19 @@ export class AmbientMusic {
         sustain: 0.06,
         release: 0.07,
         baseFrequency: 64,
-        octaves: 2.6,
+        octaves: 2.8,
       },
     });
     this.bass.volume.value = -7;
-    this.bass.connect(this.bassGain);
+    const growl = new Tone.WaveShaper((x) => Math.tanh(x * 1.65), 2048);
+    this.bass.connect(growl);
+    growl.connect(this.bassGain);
 
     const kickDest = this.master;
-    const hatDest = this.master;
+    const hatDest = new Tone.Gain(1);
+    hatDest.connect(this.master);
+    const hatVerb = new Tone.Gain(0.07).connect(reverb);
+    hatDest.connect(hatVerb);
     const clapDest = new Tone.Gain(1);
     clapDest.connect(this.master);
     clapDest.connect(verbSend);
@@ -201,9 +216,9 @@ export class AmbientMusic {
       for (const k of barScore.kicks) {
         if (k.at !== beat) continue;
         this.kit?.hitKick(time, k.vel * LAYER.kick * arr.kick);
-        if (this.padGain) duck(this.padGain, time, 0.7, 0.2);
-        if (this.bassGain) duck(this.bassGain, time, 0.86, 0.15);
-        if (this.arpGain) duck(this.arpGain, time, 0.32, 0.1);
+        if (this.padGain) duck(this.padGain, time, 0.62, 0.28);
+        if (this.bassGain) duck(this.bassGain, time, 0.86, 0.12);
+        if (this.arpGain) duck(this.arpGain, time, 0.28, 0.1);
       }
     }
     if (arr.hatClosed > 0.1) {
@@ -216,6 +231,12 @@ export class AmbientMusic {
       for (const h of barScore.hatsOpen) {
         if (h.at !== beat) continue;
         this.kit?.hitHatOpen(time, h.vel * LAYER.hatOpen * arr.hatOpen);
+      }
+    }
+    if (arr.hatTick > 0.1) {
+      for (const h of barScore.hatsTick) {
+        if (h.at !== beat) continue;
+        this.kit?.hitHatTick(time, h.vel * LAYER.hatTick * arr.hatTick);
       }
     }
     if (arr.clap > 0.1) {
@@ -244,7 +265,11 @@ export class AmbientMusic {
     const same = notes.length === this.lastPad.length && notes.every((n, i) => n === this.lastPad[i]);
     if (same) return;
     this.pad.releaseAll(time);
-    this.pad.triggerAttack(notes.map((n) => this.hz(n)), time, LAYER.pad * arr.pad);
+    this.padBody?.releaseAll(time);
+    const hz = notes.map((n) => this.hz(n));
+    this.pad.triggerAttack(hz, time, LAYER.pad * arr.pad);
+    const body = [...notes].sort((a, b) => a - b).slice(0, 2).map((n) => this.hz(n));
+    this.padBody?.triggerAttack(body, time, LAYER.pad * arr.pad * 0.7);
     this.lastPad = notes;
   }
 
@@ -292,6 +317,7 @@ export class AmbientMusic {
     this.muted = m;
     if (m) {
       this.pad?.releaseAll();
+      this.padBody?.releaseAll();
       this.arp?.triggerRelease();
       this.bass?.triggerRelease();
       this.sub?.triggerRelease();
