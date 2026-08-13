@@ -7,8 +7,9 @@ import { mulberry32, xmur3 } from '../world/rng';
  * would walk: settle, strip, hang in the breakdown, hold the room
  * ready, then release. We never write a new tune every bar. Same
  * charter as the physics: constants and a grammar; a piece emerges.
- * A system seed is the DNA. Mood is climate (mode, density), not a
- * track picker.
+ * A listen seed is the DNA of a piece — minted fresh when music
+ * starts, never the system seed. Restarting the app starts a new
+ * piece. Mood is climate (mode, density), not a track picker.
  *
  * Form, in 16-bar sections that cycle every eight:
  *   intro → groove → lift → peak → break → build → drop → ride
@@ -215,6 +216,34 @@ export function rngFor(seed: string, ...parts: Array<string | number>): () => nu
   return mulberry32(h());
 }
 
+/**
+ * Entropy for one listen. Time + crypto, plus a monotonic counter so
+ * two launches on the same device cannot collide. Not the system seed:
+ * a planet is forever; a set is once.
+ */
+export function freshListenSeed(): string {
+  const n = nextListenOrdinal();
+  const t = Date.now().toString(36);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const b = new Uint32Array(3);
+    crypto.getRandomValues(b);
+    return `listen-${n}-${t}-${b[0].toString(36)}-${b[1].toString(36)}-${b[2].toString(36)}`;
+  }
+  return `listen-${n}-${t}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+}
+
+function nextListenOrdinal(): number {
+  try {
+    if (typeof localStorage === 'undefined') return Date.now();
+    const key = 'tinysystem.musicListen';
+    const n = (Number(localStorage.getItem(key)) || 0) + 1;
+    localStorage.setItem(key, String(n));
+    return n;
+  } catch {
+    return Date.now();
+  }
+}
+
 export function dnaFromSeed(seed: string): Dna {
   const rng = rngFor(seed, 'dna');
   return {
@@ -360,7 +389,7 @@ export function composeSection(seed: string, section: number, mood: MoodLike, dn
   const qualities = loop.map((deg) => qualityFor(deg, dna.warmth, qRng));
 
   let voices = placeVoicing(chordTones(tonicMidi, scale, degrees[0], qualities[0]));
-  const arpPattern = arpDegrees(rngFor(seed, 'arp', Math.floor(section / 2)));
+  const arpPattern = arpDegrees(rngFor(seed, 'arp', section));
   const bars: BarScore[] = [];
 
   for (let i = 0; i < MUSIC.BARS_PER_SECTION; i++) {
@@ -415,16 +444,28 @@ function evolvingLoop(seed: string, section: number, mode: ModeId): number[] {
   const bank = minor ? MINOR_LOOPS : MAJOR_LOOPS;
   const allowBvii = minor || mode === 'mixolydian';
   const head = rngFor(seed, 'loop0', mode);
-  let loop = [...bank[Math.floor(head() * bank.length)]];
+  let loop = head() < 0.45
+    ? walkLoop(rngFor(seed, 'loopwalk', mode), allowBvii)
+    : [...bank[Math.floor(head() * bank.length)]];
   for (let s = 0; s < section; s++) {
     const r = rngFor(seed, 'loopmut', s)();
     if (r < 0.22) {
       const i = 1 + Math.floor(rngFor(seed, 'loopi', s)() * 3);
       loop[i] = pickNext(loop[i - 1] ?? 0, rngFor(seed, 'loopn', s), allowBvii);
     } else if (r < 0.28) {
-      loop = [...bank[Math.floor(rngFor(seed, 'loopnew', s)() * bank.length)]];
+      const pick = rngFor(seed, 'loopnew', s);
+      loop = pick() < 0.5
+        ? walkLoop(rngFor(seed, 'loopnewwalk', s), allowBvii)
+        : [...bank[Math.floor(pick() * bank.length)]];
     }
   }
+  return loop;
+}
+
+/** Four chords from the grammar, starting on I — cousins of the attractors. */
+function walkLoop(rng: () => number, allowBvii: boolean): number[] {
+  const loop = [0];
+  for (let i = 1; i < 4; i++) loop.push(pickNext(loop[i - 1] ?? 0, rng, allowBvii));
   return loop;
 }
 
@@ -434,6 +475,9 @@ function arpDegrees(rng: () => number): number[] {
     [0, 2, 4, 7],
     [0, 4, 2, 4],
     [2, 0, 4, 2],
+    [0, 2, 7, 4],
+    [4, 2, 0, 2],
+    [0, 4, 7, 4],
   ];
   return [...patterns[Math.floor(rng() * patterns.length)]];
 }

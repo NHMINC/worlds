@@ -27,7 +27,8 @@ covers ten cases over ten patches that cover one case each.
 Stack: Vite + React + TypeScript + Three.js. Persistence is IndexedDB
 (Dexie) with a single portable JSON export. Mobile is web-first
 (Capacitor). Music is generative progressive house (Tone.js): a short
-loop that evolves, mood-reactive.
+loop that evolves, mood-reactive. Each listen mints a fresh seed —
+never the system seed — so a restart is a new piece, not a replay.
 
 ---
 

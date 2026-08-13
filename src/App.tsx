@@ -241,7 +241,6 @@ export default function App() {
     setLabels(lbs);
     setObjects(objs);
     localStorage.setItem(LAST_SYSTEM_KEY, id);
-    musicRef.current?.setSeed(s.seed);
     setManagerOpen(false);
   }
 
@@ -378,7 +377,7 @@ export default function App() {
           () => engineRef.current?.getMood() ?? { group: 'green', density: 0 },
         );
       }
-      if (system) musicRef.current.setSeed(system.seed);
+      musicRef.current.beginListen();
       musicRef.current.setVolume(volume);
       musicRef.current.setMuted(false);
       await musicRef.current.start();

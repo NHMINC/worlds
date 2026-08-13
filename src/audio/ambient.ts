@@ -6,6 +6,7 @@ import {
   arrangementFor,
   composeSection,
   dnaFromSeed,
+  freshListenSeed,
   type Arrangement,
   type Dna,
   type PitchHit,
@@ -59,11 +60,13 @@ export class AmbientMusic {
 
   constructor(getMood: () => Mood) {
     this.getMood = getMood;
+    this.beginListen();
   }
 
-  setSeed(seed: string): void {
-    this.seed = seed;
-    this.dna = dnaFromSeed(seed);
+  /** Mint a new piece. A listen is once; the system seed is not the score. */
+  beginListen(): void {
+    this.seed = freshListenSeed();
+    this.dna = dnaFromSeed(this.seed);
     this.sixteenth = 0;
     this.score = null;
     this.latchedGroup = null;
