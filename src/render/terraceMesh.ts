@@ -559,15 +559,11 @@ void main() {
   float seaFoam = wetSide * att * min(A, 1.0)
                 * (crest * (0.18 + 0.82 * brk) + crestO * mix(0.05, 0.4, cliff) * brk);
 
-  // Swash: at depth 0 the phase is pure omega·t, so the runup pulse fires
-  // exactly when a crest lands — timing is continuous with the sea for
-  // free. The phase lags with height so the tongue visibly RUNS up the
-  // beach; fast rush, slow drain, fizzing (churn grain) as it goes. The
-  // runup is measured in LEVELS, never screen space (a screen-sized runup
-  // washes whole plains at far zoom), and is cut hard barely one level
-  // above the waterline: the swash zone is the FIRST beach terrace, and
-  // the sea does not climb hills. Weak gravity stretches the reach a
-  // little — the same swell stands taller on a light moon.
+  // Swash on a beach: the wet sheet is a scalar field — along-shore lobes
+  // × shore-normal decay × the rush clock. Its level-sets are the rounded
+  // tongues you see from above (partial ellipses). Foam lives on the RIM
+  // (the front and sides of each tongue) and as a lacy WEB inside; a
+  // uniform band parallel to the waterline is the thing that looked wrong.
   float runup = (0.15 + 0.65 * beach) * (0.3 + 0.7 * energy)
               * mix(1.5, 0.85, smoothstep(0.4, 1.1, uWaveTempo));
   float phS = fract(off + slant + drift + uTime * omega - 0.88 - 0.4 * ashore / max(runup, 0.05));
@@ -575,9 +571,16 @@ void main() {
   float churn = vnoise(vPos * uWarpFreq * 5.2 + vec3(uTime * 0.65, -uTime * 0.5, 4.4))
               * vnoise(vPos * uWarpFreq * 8.1 + vec3(-uTime * 0.45, uTime * 0.6, 9.3));
   float grain = smoothstep(0.24, 0.48, churn);
-  float wash = beach * rush * exp(-ashore / max(runup, 0.05))
-             * (1.0 - smoothstep(0.5, 1.1, ashore)) * reachGate
-             * (0.5 + 0.5 * grain);
+  float lobe = 0.28 + 0.72 * smoothstep(0.30, 0.70,
+      vnoise(vPos * uWarpFreq * 0.42 + vec3(4.1, 9.7, 2.3)));
+  float sheet = beach * rush * lobe * exp(-ashore / max(runup, 0.05))
+              * (1.0 - smoothstep(0.5, 1.1, ashore)) * reachGate;
+  float rim = smoothstep(0.05, 0.20, sheet) * (1.0 - smoothstep(0.36, 0.66, sheet));
+  float laceA = vnoise(vPos * uWarpFreq * 6.4 + vec3(uTime * 0.40, 2.2, 8.1));
+  float laceB = vnoise(vPos * uWarpFreq * 11.0 + vec3(-uTime * 0.35, 7.4, 1.6));
+  float web = smoothstep(0.10, 0.28, sheet) * (1.0 - rim)
+            * mix(0.10, 0.88, smoothstep(0.30, 0.58, laceA) * smoothstep(0.26, 0.52, laceB));
+  float wash = rim * 1.08 + web * 0.72;
 
   // Splash: what a wall gets instead of a wash. A short, bright, grainy
   // burst pinned to the waterline, fired as each crest strikes — sharp
@@ -591,9 +594,10 @@ void main() {
 
   // Compose: the wet line itself (even a near-still sea darkens its edge),
   // the shoaling/breaking trains, and the land foam — all through the
-  // cosmic volume knob.
+  // cosmic volume knob. Beaches drop the solid waterline stripe so the
+  // tongues can read; cliffs keep a thin wet mark.
   float landFoam = (1.0 - wetSide) * (wash + splash) * att * energy;
-  float foam = line * (0.16 + 0.14 * lap) * (0.2 + 0.8 * energy);
+  float foam = line * (0.16 + 0.14 * lap) * (0.2 + 0.8 * energy) * mix(1.0, 0.18, beach);
   foam += 0.9 * seaFoam;
   foam += 0.7 * landFoam;
   foam = clamp(foam * surfGate * uWaveGain, 0.0, 0.92);
