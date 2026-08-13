@@ -273,7 +273,11 @@ The sea is a **surface**, not a window onto the framebuffer.
   painted only on terrain will be buried by an opaque sea. Shoreline
   effects belong on the water in the shallows **and** on the first beach
   terrace. Do not raise the water sphere over the swash zone to hide
-  poke-through.
+  poke-through. Foam is **always white**; night and shadow change its
+  brightness, never its tint. Apply it after the air integral or the
+  sky dyes the surf blue. On a low beach the wash is **tongues** (along-
+  shore lobes of a wet sheet): foam on the rim, a lacy web inside — not
+  a stripe parallel to the waterline. Cliffs still splash.
 - Ice is a raised sheet (freeboard), static (no wave shimmer), with its
   own shoreline. Wave / surf animation is for **liquid**. Chemistry
   (`clarity`, `foam`, freeze point) drives how milky or glassy, and
