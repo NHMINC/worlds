@@ -36,8 +36,9 @@ generative ambient soundtrack that reacts to what's on screen.
 - **Portable saves.** Everything lives in IndexedDB and exports as a single
   self-contained JSON file. Each world records the generator version it was
   created with, so future algorithm changes never reshape old worlds.
-- **Generative music.** Tone.js synthesizes an endless seeded soundscape; the
-  biome mix in the viewport picks the scale flavor, zoom depth sets density.
+- **Generative music.** A seeded grammar writes an endless piece (harmony,
+  motif, groove) and Tone.js performs it. The viewport mood tilts mode and
+  density; the music keeps evolving and does not loop.
 
 ## Develop
 
