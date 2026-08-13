@@ -1,9 +1,10 @@
 import { Capacitor } from '@capacitor/core';
 import { db } from './db';
+import { parseSystemExport, MAX_IMPORT_BYTES } from './parseExport';
 import { uuid } from '../world/rng';
-import type { SystemExport, SystemMeta } from '../world/types';
+import type { SystemMeta } from '../world/types';
 
-export async function buildSystemExport(systemId: string): Promise<SystemExport> {
+export async function buildSystemExport(systemId: string) {
   const system = await db.systems.get(systemId);
   if (!system) throw new Error('System not found');
   const bodyState = await db.bodyState.where('systemId').equals(systemId).toArray();
@@ -12,9 +13,9 @@ export async function buildSystemExport(systemId: string): Promise<SystemExport>
   const objects = await db.objects.where('systemId').equals(systemId).toArray();
   const { id: _id, ...systemRest } = system;
   return {
-    formatVersion: 4,
-    app: 'hex-world-builder',
-    kind: 'system',
+    formatVersion: 4 as const,
+    app: 'hex-world-builder' as const,
+    kind: 'system' as const,
     system: systemRest,
     bodyState: bodyState.map(({ systemId: _s, ...rest }) => rest),
     terrain: terrain.map(({ systemId: _s, ...rest }) => rest),
@@ -53,19 +54,17 @@ export async function exportSystem(systemId: string): Promise<void> {
 
 /** Import a system JSON file as a new system; returns the new system id. */
 export async function importSystem(file: File): Promise<string> {
+  if (file.size > MAX_IMPORT_BYTES) throw new Error('File is too large to import.');
   const text = await file.text();
-  const data = JSON.parse(text) as SystemExport;
-  if (data.app !== 'hex-world-builder' || data.kind !== 'system' || data.formatVersion !== 4) {
-    throw new Error('Not a recognizable star-system file (single-world files from older versions cannot be imported).');
-  }
+  const data = parseSystemExport(text);
   const id = uuid();
   const system: SystemMeta = { ...data.system, id, updatedAt: Date.now() };
   await db.transaction('rw', [db.systems, db.bodyState, db.terrain, db.labels, db.objects], async () => {
     await db.systems.add(system);
-    await db.bodyState.bulkAdd((data.bodyState ?? []).map((b) => ({ ...b, systemId: id })));
-    await db.terrain.bulkAdd((data.terrain ?? []).map((t) => ({ ...t, systemId: id })));
-    await db.labels.bulkAdd((data.labels ?? []).map((l) => ({ ...l, id: uuid(), systemId: id })));
-    await db.objects.bulkAdd((data.objects ?? []).map((o) => ({ ...o, id: uuid(), systemId: id })));
+    await db.bodyState.bulkAdd(data.bodyState.map((b) => ({ ...b, systemId: id })));
+    await db.terrain.bulkAdd(data.terrain.map((t) => ({ ...t, systemId: id })));
+    await db.labels.bulkAdd(data.labels.map((l) => ({ ...l, id: uuid(), systemId: id })));
+    await db.objects.bulkAdd(data.objects.map((o) => ({ ...o, id: uuid(), systemId: id })));
   });
   return id;
 }

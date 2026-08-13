@@ -17,13 +17,21 @@ export interface AIProvider {
 const KEY_STORAGE = 'wb_xai_key';
 const MODEL_STORAGE = 'wb_xai_model';
 const DEFAULT_MODEL = 'grok-3-mini';
+const MAX_KEY = 256;
+const MAX_MODEL = 80;
+const MAX_NAME = 80;
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
 
 export function getAIKey(): string {
   return localStorage.getItem(KEY_STORAGE) ?? '';
 }
 
 export function setAIKey(key: string): void {
-  if (key) localStorage.setItem(KEY_STORAGE, key);
+  const trimmed = key.trim().slice(0, MAX_KEY);
+  if (trimmed) localStorage.setItem(KEY_STORAGE, trimmed);
   else localStorage.removeItem(KEY_STORAGE);
 }
 
@@ -32,7 +40,8 @@ export function getAIModel(): string {
 }
 
 export function setAIModel(model: string): void {
-  if (model) localStorage.setItem(MODEL_STORAGE, model);
+  const trimmed = model.trim().slice(0, MAX_MODEL);
+  if (trimmed) localStorage.setItem(MODEL_STORAGE, trimmed);
   else localStorage.removeItem(MODEL_STORAGE);
 }
 
@@ -47,9 +56,11 @@ class XAIProvider implements AIProvider {
 
   async suggestNames(ctx: NameContext): Promise<string[]> {
     const prompt =
-      `Suggest 6 evocative, calm fantasy names for a ${ctx.kind} located in a "${ctx.biome}" ` +
-      `biome, in an earthlike world called "${ctx.worldName}". ` +
-      (ctx.existing.length ? `Existing names nearby: ${ctx.existing.join(', ')}. Match their tone. ` : '') +
+      `Suggest 6 evocative, calm fantasy names for a ${ctx.kind} located in a "${ctx.biome.slice(0, MAX_NAME)}" ` +
+      `biome, in an earthlike world called "${ctx.worldName.slice(0, MAX_NAME)}". ` +
+      (ctx.existing.length
+        ? `Existing names nearby: ${ctx.existing.slice(0, 12).map((n) => n.slice(0, MAX_NAME)).join(', ')}. Match their tone. `
+        : '') +
       `Reply with ONLY a JSON array of 6 strings, no other text.`;
 
     const res = await fetch('https://api.x.ai/v1/chat/completions', {
@@ -63,15 +74,28 @@ class XAIProvider implements AIProvider {
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.9,
       }),
+      signal: AbortSignal.timeout(20_000),
     });
     if (!res.ok) throw new Error(`xAI request failed (${res.status})`);
-    const data = await res.json();
-    const text: string = data.choices?.[0]?.message?.content ?? '[]';
-    const match = text.match(/\[[\s\S]*\]/);
+    const data: unknown = await res.json();
+    const text =
+      isRecord(data) && Array.isArray(data.choices) && isRecord(data.choices[0]) && isRecord(data.choices[0].message)
+        ? data.choices[0].message.content
+        : '[]';
+    const match = typeof text === 'string' ? text.match(/\[[\s\S]*\]/) : null;
     if (!match) throw new Error('Unexpected AI response');
-    const names = JSON.parse(match[0]);
+    let names: unknown;
+    try {
+      names = JSON.parse(match[0]);
+    } catch {
+      throw new Error('Unexpected AI response');
+    }
     if (!Array.isArray(names)) throw new Error('Unexpected AI response');
-    return names.map(String).slice(0, 6);
+    return names
+      .filter((n): n is string => typeof n === 'string')
+      .map((n) => n.trim().slice(0, MAX_NAME))
+      .filter(Boolean)
+      .slice(0, 6);
   }
 }
 
