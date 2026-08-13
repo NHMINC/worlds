@@ -10,6 +10,7 @@ import type {
   BodyStateRecord, LabelRecord, ObjectKind, ObjectRecord, SystemMeta,
 } from './world/types';
 import { Toolbar } from './ui/Toolbar';
+import { isFullscreen, toggleFullscreen } from './ui/fullscreen';
 import { SystemManager, type NewSystemForm } from './ui/SystemManager';
 import { SettingsModal } from './ui/SettingsModal';
 import { PlaceDialog } from './ui/PlaceDialog';
@@ -88,6 +89,8 @@ export default function App() {
   const [inspected, setInspected] = useState<InspectedCell | null>(null);
   const [musicOn, setMusicOn] = useState(false);
   const [volume, setVolume] = useState(0.7);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [fsHint, setFsHint] = useState<string | null>(null);
 
   systemRef.current = system;
   specRef.current = spec;
@@ -369,7 +372,28 @@ export default function App() {
     setPlaceDialog(null);
   }
 
-  // ------------------------------------------------------------ music
+  // ------------------------------------------------------------ fullscreen
+
+  useEffect(() => {
+    const sync = () => setFullscreen(isFullscreen());
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      document.removeEventListener('webkitfullscreenchange', sync);
+    };
+  }, []);
+
+  async function handleFullscreen(): Promise<void> {
+    const result = await toggleFullscreen();
+    setFullscreen(isFullscreen());
+    if (result === 'unavailable') {
+      setFsHint('Open this page in Safari or Chrome, then tap fullscreen again');
+      window.setTimeout(() => setFsHint(null), 5200);
+    } else {
+      setFsHint(null);
+    }
+  }
 
   async function toggleMusic(): Promise<void> {
     if (!musicOn) {
@@ -475,6 +499,7 @@ export default function App() {
         {mode === 'surface' && (
           <div className="surface-hint">drag to look · WASD to glide · scroll for height</div>
         )}
+        {fsHint && <div className="surface-hint fs-hint">{fsHint}</div>}
       </div>
 
       <Toolbar
@@ -499,6 +524,8 @@ export default function App() {
         openManager={() => setManagerOpen(true)}
         openMap={() => setMapOpen(true)}
         openSettings={() => setSettingsOpen(true)}
+        fullscreen={fullscreen}
+        toggleFullscreen={() => void handleFullscreen()}
       />
 
       {tool === 'inspect' && mode === 'orbit' && currentBody && (
