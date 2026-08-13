@@ -650,11 +650,10 @@ void main() {
     col += torchGlow(uCamPos, vPos);
   }
 
-  // Foam sits on top of the air (haze must not crush the shoreline by day)
-  // but is LIT like everything else: white chalk under the sun, falling to
-  // the same moonlit blue as the land at night — foam reflects, it does not
-  // glow (no bioluminescence assumed).
-  vec3 foamC = vec3(0.97, 1.0, 1.0) * mix(vec3(0.24, 0.30, 0.46), vec3(q), day);
+  // Foam sits on top of the air. It is always white (Mie scatter); day and
+  // night only change how bright it is — never its tint. Mixing a moonlit
+  // blue into the foam, or running it through the air integral, dyes surf.
+  vec3 foamC = vec3(0.97, 1.0, 1.0) * mix(0.30, q, day);
   col = mix(col, foamC, foam);
   // Column capture: the water shader refracts THIS color through the sea
   // (Beer–Lambert on the packed distance), so shallows show the bottom
@@ -1048,6 +1047,9 @@ void main() {
   // terrace). Same WKB law as the ground shader — crests bunch as depth
   // shrinks, break, and a wet line hugs the coast — gated to real shallows
   // (a seabed on this ray, a short column, not the grazing horizon chord).
+  // Foam amount is computed here; the white mix happens AFTER the air, or
+  // in-scatter dyes the surf teal.
+  float foam = 0.0;
   if (uColOn > 0.5 && ice < 0.5) {
     float shallow = botHit * (1.0 - smoothstep(0.4, 2.4, colW))
                   * smoothstep(0.10, 0.32, facing);
@@ -1061,10 +1063,8 @@ void main() {
       float ph = fract(2.2 * sqrt(dPos) + off + uTime * omega);
       float crest = smoothstep(0.62, 0.82, ph) * (1.0 - smoothstep(0.90, 1.0, ph));
       float line = 1.0 - smoothstep(0.0, 0.85, dPos);
-      float foam = shallow * energy
-                 * (line * 0.22 + crest * (0.20 + 0.75 * brk) * min(A, 1.0));
-      vec3 foamC = vec3(0.97, 1.0, 1.0) * mix(vec3(0.24, 0.30, 0.46), vec3(1.0), dayW);
-      c = mix(c, foamC, clamp(foam, 0.0, 0.85));
+      foam = clamp(shallow * energy
+                 * (line * 0.22 + crest * (0.20 + 0.75 * brk) * min(A, 1.0)), 0.0, 0.85);
     }
   }
 
@@ -1111,6 +1111,9 @@ void main() {
     c += tl / (1.0 + dot(tl, vec3(0.333)));
     c += torchGlow(uCamPos, vPos);
   }
+  // Foam is always white; day/night is brightness only. After the air, or
+  // the sky paints the surf blue.
+  c = mix(c, vec3(0.97, 1.0, 1.0) * mix(0.30, 1.0, dayW), foam);
   gl_FragColor = vec4(c, alpha);
 }
 `;
