@@ -9,19 +9,24 @@ win** — the README still describes an earlier realistic-globe era.
 
 ## What this is
 
-A **calm, local-first toy universe in a bottle**: a procedural star system
-you can fly through, orbit, and land on. Worlds are small Goldberg-hex
-globes with layered strata (Godus-like onion rings, a blending skin over
-discrete columns) in Caribbean / cel-shaded tones — not a NASA Blue Marble
-simulator and not Minecraft voxels.
+A **procedural mini-universe in a bottle**. One seed unfolds into a star,
+planets, and moons that exist and run because of mathematics and physics —
+not because we catalogued planet types and painted skins.
 
-The feeling we want: a perfect little world model you could hold. Tropical
-shores to snow-capped peaks, water that looks watery, skies that belong to
-the same physics as the view from space. Chill, bright, readable.
+You can fly the system, orbit a world, and land on it. Worlds are small
+Goldberg-hex globes with layered strata (Godus-like onion rings, a blending
+skin over discrete columns) in Caribbean / cel-shaded tones. The feeling:
+a perfect little world model you could hold. Chill, bright, readable.
+
+We are **cosmic engineers**. We set base rules (constants, conservation,
+causal order). The world is supposed to *emerge*. Prefer one law that
+covers ten cases over ten patches that cover one case each.
+
+**Less code. Less special cases. More maths and physics.**
 
 Stack: Vite + React + TypeScript + Three.js. Persistence is IndexedDB
-(Dexie) with JSON export/import. Mobile is web-first (Capacitor). Music is
-generative (Tone.js), mood-reactive.
+(Dexie) with a single portable JSON export. Mobile is web-first
+(Capacitor). Music is generative (Tone.js), mood-reactive.
 
 ---
 
@@ -29,9 +34,9 @@ generative (Tone.js), mood-reactive.
 
 > **We set parameters and laws; we never hand-roll outcomes.**
 > **When a world looks wrong, fix the law, not the world.**
+> **If the cosmic engineer set only constants and laws, would this still happen?**
 
-This is a physics engine with toy scaling, not a catalogue of planet types
-with painted skins.
+This is a physics engine with toy scaling, not a catalogue of planet types.
 
 - **Archetypes are outputs, never inputs.** There is no `if (iceball)` /
   `if (hothouse)` generator switch. Iceballs, methane seas, eyeball worlds,
@@ -57,7 +62,9 @@ with painted skins.
   opacity lives inside `airExtinction` / the scattering integral.
 
 If you are about to special-case a seed, a body id, or a named planet
-type: stop. Change the law.
+type: stop. Change the law. A new `if` that papers over one ugly world is
+a patch. A better equation that makes that world *and* its cousins right
+is the job.
 
 ---
 
@@ -94,7 +101,7 @@ Related laws that must stay physics, not flags:
 Terraforming sliders (temp, sea level) are **dev tools** that re-run the
 physics pipeline (`effectivePhysics`, hydrosphere, palette). They are not
 a second visual path. Extremes should be reachable so we can inspect the
-laws.
+laws. Production will drop the sliders; the pipeline stays.
 
 ---
 
@@ -118,7 +125,7 @@ Camera rigs (`src/render/engine.ts`):
 |------|---------|
 | `orbit` | Around a body. **Station** = ISS-like inertial sweep; **geo** = hung over one spot. |
 | `flight` | Free ship in the system. Distant bodies are simple spheres until close. |
-| `surface` | Landed: look (drag), glide (WASD), height (scroll). Same physics. |
+| `surface` | Landed on a rocky body. Same globe. Drag looks. **Zoom in** (pinch out / wheel in) walks forward at a latched variable speed; **zoom out** stops that walk, then settles toward the ground. Zoom does not take off — the rocket does. WASD still glides on a keyboard. |
 
 `engine.ts` **declines HMR**. After changing it, **full page reload** or
 you will debug a stale engine class. The app lives at
@@ -130,23 +137,87 @@ you will debug a stale engine class. The app lives at
 
 - **Goldberg hex grid** (`geodesic.ts`). Size is a frequency; `MAX_FINE_F`
   caps how big a world can be. Terrain is **31 states**: level **0 =
-  unalterable bedrock**, levels **1–30 = alterable layers**.
+  unalterable bedrock**, levels **1–30 = alterable / minable layers**.
 - The mesh is a **terrace skin** over those columns (`terraceMesh.ts`):
   discrete layers with a blending skin so coasts and contours meander.
   Colour is the physics-derived onion ramp (`toyPalette.paletteFor`),
   **re-anchored on the body’s actual waterline** so a raised sea does not
   leave drowned peaks wearing seabed colours.
 - **Addressable universe:** `(systemSeed, bodyId, cell)` names a piece of
-  ground forever. Player edits are **absolute level overlays**, never
-  deltas, stored sparsely. Bump `CURRENT_GEN_VERSION` in `systemgen.ts`
-  when generator output for a seed would change, and keep old behaviour
-  for systems pinned to a previous version.
+  ground forever. That address is the contract for inspection, mining,
+  bases, labels, and every other player mark. Player terrain edits are
+  **absolute level overlays**, never deltas, stored sparsely.
+  `effectiveLevel(cell) = override ?? generated(cell)`.
 - Per-(cell, layer) **geology** (`geology.ts`) is a pure function of seed
-  + crust inventory. Inspection now; mining later. Do not bake a second
-  composition table.
+  + crust inventory. Nothing is stored until somebody digs. Inspection
+  now; mining later. Do not bake a second composition table.
+- Bump `CURRENT_GEN_VERSION` in `systemgen.ts` when generator output for a
+  seed would change, and keep old behaviour for systems pinned to a
+  previous version.
 
 Time: orbits and spins are pure functions of spec and wall-clock Unix
-time. No hidden simulation step that diverges from that.
+time (geared by `UNIVERSE.TIME_SCALE`). No hidden simulation step that
+diverges from that.
+
+---
+
+## Persistence: the universe must travel
+
+The generated universe is cheap: a seed plus a gen version. The *player’s*
+universe is the seed plus a sparse overlay. Saves stay tiny because we
+never store generated terrain, chemistry, or meshes.
+
+| Stored | Regenerated |
+|--------|-------------|
+| `SystemMeta` (seed, genVersion, camera) | Star, orbits, inventories, atmospheres |
+| Sparse terrain overrides `[cell, level, …]` | Hex columns, hydrology, snow line |
+| Labels, objects (city / town / landmark, later bases) | Palettes, geology, sea state |
+| Optional per-body dials (dev terraforming) | Geology at `(dir, layer)` |
+
+**Export is first-class.** One self-contained `.tinysystem.json`
+(`formatVersion: 4`, `src/store/exportImport.ts`). Import creates a new
+system id and copies the overlay. A friend can load your file and stand
+on the same hex of the same world. Native iOS uses the share sheet.
+
+When you add player state (mined voids, placed bases, cargo, claims):
+
+- It must round-trip through that JSON. If it is not in the export, it
+  does not exist.
+- Prefer another sparse table keyed by `(systemId, bodyId, cell)` (and
+  layer, if mining a column segment). Do not dump generated geology into
+  the save.
+- Bump `formatVersion` and keep importers for older files.
+
+Do not put secrets, API keys, or machine-local paths in a save.
+
+---
+
+## Player layer: mine, place, inhabit
+
+The physics universe does not know about the player. Mining and building
+are **overlays on the addressable grid**, not new planet types.
+
+**Now**
+
+- Inspect a hex: composition of that column’s surface layer, from geology.
+- Place labels and objects (`city` / `town` / `landmark`) on a cell.
+- Sculpt by writing absolute levels (the same overlay mining will use).
+
+**Direction (do not invent a parallel world to get here)**
+
+- **Mine:** remove or replace a layer in a column. The hole is an overlay;
+  the contents come from `geology.at(x,y,z,layer)` at dig time. Bedrock
+  (level 0) cannot be dug. Yield is chemistry, not a loot table.
+- **Place bases (and later factories, pads, claims):** records on a cell,
+  like today’s objects, with enough fields to export. They sit on the
+  terrain skin; they do not get a second renderer that ignores lighting
+  and air.
+- **Carry / stockpile:** player inventory derived from what was actually
+  dug. If the crust has no Fe, there is no iron.
+
+When those features land, they still obey the charter: no ore that
+chemistry cannot explain, no building that cannot be named by
+`(systemSeed, bodyId, cell)`, no save that cannot leave the device.
 
 ---
 
@@ -226,14 +297,18 @@ Volumetric scatter of the beam is the same integral.
 
 ---
 
-## Out of scope (until we take them as laws)
+## Not yet laws (until we take them on)
+
+These are allowed as *future physics*, not as painted features:
 
 - Weather systems, storms, painted cloud layers, oriented land textures.
 - Full vegetation ecology (habitability and an O₂/organic signature can
   exist; lush biomes as a sim is later).
-- Mining / building factories (per-hex elements are inspectable now).
-- Production: remove terraforming sliders when we ship; keep them for
-  exploring extremes in development.
+- Interiors and plate tectonics (columns plus hydrology/coastal-plain
+  process passes stand in for now).
+
+Player features (mining, bases, cargo) are **not** in this bucket — they
+are overlays. See **Player layer**.
 
 ---
 
@@ -247,13 +322,14 @@ Volumetric scatter of the beam is the same integral.
 2. **Fix the law** in `physics.ts` / `scattering.ts` / the relevant
    shader’s shared chunk. If you must add an approximation (Chapman slant,
    Eddington diffusion, Schlick), comment *why* it is the law, not a
-   bandage.
+   bandage. Delete patches when the law makes them redundant.
 3. **Bump `CURRENT_GEN_VERSION`** if a given seed’s generated terrain or
    system layout would change. Player overlays stay valid because they are
    absolute cell levels.
-4. **Do not commit secrets.** Do not drive-by refactors or unsolicited
-   markdown. This file is the exception when the user asks to capture
-   the contract.
+4. **Bump export `formatVersion`** if the JSON shape changes; keep reading
+   older files.
+5. **Do not commit secrets.** Do not drive-by refactors. Update this file
+   when the contract changes.
 
 Code map (start here):
 
@@ -263,14 +339,14 @@ Code map (start here):
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |
-| Per-cell geology | `src/world/geology.ts` |
+| Per-cell geology (mining truth) | `src/world/geology.ts` |
 | Grid | `src/world/geodesic.ts` |
 | Scene, camera, reflections, capture | `src/render/engine.ts` |
 | Terrain + water shaders, surf, foam | `src/render/terraceMesh.ts` |
 | Sky shell | `src/render/atmosphere.ts` |
 | Shared air integral | `src/render/scattering.ts` |
 | Gas giants | `src/render/gasGiant.ts` |
-| Persistence | `src/store/` |
+| Persistence, export/import | `src/store/` |
 
 ---
 
@@ -278,7 +354,13 @@ Code map (start here):
 
 Ask: *If the cosmic engineer set only constants and laws, would this still
 happen?* If the answer is “only because we special-cased it,” it does not
-belong. If a picture looks wrong, write down which law failed (opacity vs
+belong.
+
+Ask: *Can this leave the device in the JSON export, and can another player
+stand on the same hex?* If not, the addressable-universe contract is
+broken.
+
+If a picture looks wrong, write down which law failed (opacity vs
 backdrop, handoff radius vs tessellation, insolation frame, missing
 precip, etc.) and fix that — then walk a high-sea world, a hothouse, a
 night side, and an airless rock before calling it done.
