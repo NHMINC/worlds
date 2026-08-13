@@ -2,6 +2,7 @@ import * as Tone from 'tone';
 import type { Mood } from '../render/engine';
 import { HouseKit, duck } from './kit';
 import {
+  MUSIC,
   arrangementFor,
   composeSection,
   dnaFromSeed,
@@ -177,7 +178,7 @@ export class AmbientMusic {
     this.kit = new HouseKit(this.dna, kickDest, hatDest, clapDest);
 
     const transport = Tone.getTransport();
-    transport.bpm.value = 124;
+    transport.bpm.value = MUSIC.BPM_BASE;
     transport.swing = 0;
     transport.scheduleRepeat((time) => this.on16th(time), '16n');
     transport.start();
@@ -254,7 +255,7 @@ export class AmbientMusic {
   }
 
   private followClimate(mood: Mood, barIn: number): void {
-    const bpm = this.score?.bpm ?? 124;
+    const bpm = this.score?.bpm ?? MUSIC.BPM_BASE;
     if (Math.abs(bpm - this.lastBpm) > 0.2) {
       Tone.getTransport().bpm.rampTo(bpm, 2.4);
       this.lastBpm = bpm;

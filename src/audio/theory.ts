@@ -45,13 +45,14 @@ const PHASES: readonly Phase[] = ['intro', 'groove', 'lift', 'peak', 'break', 'b
 
 /** Visible knobs. Tune these; do not special-case a seed. */
 export const MUSIC = {
-  BPM_BASE: 124,
+  /** Modern Ibiza club pocket — patient, not peak-time 128. */
+  BPM_BASE: 121,
   BPM_MOOD: {
-    green: 2,
-    water: 1,
+    green: 1,
+    water: 0,
     dry: 0,
     rock: 0,
-    cold: -2,
+    cold: -1,
     space: -2,
   } as Record<MoodGroup, number>,
   BARS_PER_SECTION: 16,

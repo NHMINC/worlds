@@ -97,7 +97,7 @@ for (const seed of seeds) {
       for (let section = 0; section < 8; section++) {
         const score = composeSection(seed, section, m, dna);
         const bpm = tempoFor(m, dna);
-        if (bpm < 120 || bpm > 128) check(`${seed} ${group} tempo in house range`, false, `${bpm}`);
+        if (bpm < 118 || bpm > 123) check(`${seed} ${group} tempo in house range`, false, `${bpm}`);
         loops.add(score.bars.filter((_, i) => i % 4 === 0).map((b) => b.chordDeg).join(','));
         for (let i = 0; i < score.bars.length; i++) {
           const bar = score.bars[i];
@@ -160,7 +160,7 @@ for (const seed of seeds) {
 {
   for (const g of GROUPS) check(`${g} has a mode`, Boolean(modeFor(g, 0.7)));
   check('phases cycle', phaseFor(0) === 'intro' && phaseFor(4) === 'break' && phaseFor(8) === 'intro');
-  check('constants are the knobs', MUSIC.BPM_BASE === 124);
+  check('constants are the knobs', MUSIC.BPM_BASE === 121);
   const dna = dnaFromSeed('brook-tide-1');
   check('loop is four chords', loopChords('brook-tide-1', 0, modeFor('green', dna.brightness)).length === 4);
 }
