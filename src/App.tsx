@@ -473,7 +473,7 @@ export default function App() {
           onEnterOrbit={(style) => engineRef.current?.enterOrbit(undefined, style)}
         />
         {mode === 'surface' && (
-          <div className="surface-hint">drag to look · WASD to glide · scroll for height</div>
+          <div className="surface-hint">drag to look · zoom in to walk · zoom out to stop or settle</div>
         )}
       </div>
 

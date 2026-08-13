@@ -117,6 +117,12 @@ const TIER2_MAX_F = 224;
 const CAPTURE_DIST = 32; // dSurf within which orbit capture is offered
 const FLIGHT_STEER = 0.0032; // rad per pixel
 const BLEND_SEC = 1.3;
+/** Surface zoom → walk: positive log-zoom (pinch out / wheel in) raises a
+ * latched 0..1 forward throttle. Zoom out first dumps that throttle; once
+ * you're stopped, further zoom-out settles hover height. Never takes off. */
+const SURF_WALK_GAIN = 2.6;
+const SURF_STOP_GAIN = 5.0;
+const SURF_HEIGHT_GAIN = 1;
 /** One full revolution of the station-style orbit ride. Geared to the same
  * 3x-slower universe as the celestial clock (UNIVERSE.TIME_SCALE), so a
  * sunrise seen from orbit lasts long enough to be watched. */
@@ -261,6 +267,8 @@ export class Engine {
   /** Hover altitude above the terrain skin (unit-sphere frame). */
   private sEyeH = 0.03;
   private sEyeHTarget = 0.03;
+  /** Latched forward walk from zoom/pinch, 0 idle .. 1 brisk. */
+  private sWalk = 0;
 
   // ---- flight rig (world space) ----
   private fPos = new THREE.Vector3(0, 0, 60);
@@ -1437,9 +1445,31 @@ export class Engine {
     return Math.max(0.004, rt.step * 0.6);
   }
 
-  /** Hover ceiling; wheeling out past it lifts back into orbit. */
+  /** Hover ceiling; the rocket takes you back to orbit, not zoom-out. */
   private sEyeMax(): number {
     return 0.35;
+  }
+
+  /**
+   * Surface zoom mapping. `logZoom` > 0 is zoom-in (pinch out / wheel in):
+   * raise the latched walk throttle. `logZoom` < 0 is zoom-out: dump walk
+   * first, then settle toward the ground. Never departs to orbit.
+   */
+  private applySurfaceZoom(logZoom: number): void {
+    if (logZoom > 0) {
+      this.sWalk = Math.min(1, this.sWalk + logZoom * SURF_WALK_GAIN);
+    } else if (this.sWalk > 0.02) {
+      this.sWalk = Math.max(0, this.sWalk + logZoom * SURF_STOP_GAIN);
+    } else {
+      this.sWalk = 0;
+      const rt = this.currentBody();
+      if (!rt) return;
+      this.sEyeHTarget = Math.min(
+        this.sEyeMax(),
+        Math.max(this.sEyeMin(rt), this.sEyeHTarget * Math.exp(logZoom * SURF_HEIGHT_GAIN)),
+      );
+    }
+    this.cameraDirtySince = performance.now();
   }
 
   /**
@@ -1462,6 +1492,7 @@ export class Engine {
     this.sYaw = Math.atan2(scrUp.dot(east), scrUp.dot(north));
     this.sPitch = -0.15;
     this.sEyeH = this.sEyeHTarget = Math.max(this.sEyeMin(rt), rt.step * 4);
+    this.sWalk = 0;
     this.blend = {
       t: 0,
       fromPos: this.camera.position.clone(),
@@ -1492,6 +1523,7 @@ export class Engine {
     this.orient.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, up, this.sDir));
     this.h = this.clampH(this.groundR(rt, this.sDir) - 1 + this.sEyeH);
     this.hTarget = this.hStation(rt);
+    this.sWalk = 0;
     this.prevSpinQ.copy(rt.spinQ);
     this.blend = { t: 0, fromPos, fromQuat };
     this.mode = 'orbit';
@@ -1764,7 +1796,17 @@ export class Engine {
     this.angVel.set(0, 0, 0);
     this.northAnim = null;
 
-    if (this.mode !== 'orbit' || this.blend) return;
+    if (this.blend) return;
+
+    if (this.mode === 'surface') {
+      if (this.pointers.size === 2) {
+        const [a, b] = [...this.pointers.values()];
+        this.pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), dir: this.sDir.clone() };
+      }
+      return;
+    }
+
+    if (this.mode !== 'orbit') return;
 
     if (this.pointers.size === 2) {
       this.grabDir = null;
@@ -1795,11 +1837,21 @@ export class Engine {
     info.y = sy;
     if (Math.hypot(sx - info.startX, sy - info.startY) > TAP_SLOP_PX) info.moved = true;
 
-    // Surface: dragging looks around (yaw/pitch), same feel as flight steering.
-    if (this.mode === 'surface' && !this.blend && this.pointers.size === 1 && (e.buttons & (1 | 2 | 4)) !== 0) {
-      this.sYaw += dx * FLIGHT_STEER;
-      this.sPitch = Math.min(1.35, Math.max(-1.35, this.sPitch - dy * FLIGHT_STEER));
-      this.cameraDirtySince = performance.now();
+    // Surface: pinch scale walks / stops / settles; one finger looks around.
+    if (this.mode === 'surface' && !this.blend) {
+      if (this.pinch && this.pointers.size >= 2) {
+        const [a, b] = [...this.pointers.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        const factor = dist / Math.max(1, this.pinch.dist);
+        this.applySurfaceZoom(Math.log(Math.max(1e-3, factor)));
+        this.pinch.dist = dist;
+        return;
+      }
+      if (this.pointers.size === 1) {
+        this.sYaw += dx * FLIGHT_STEER;
+        this.sPitch = Math.min(1.35, Math.max(-1.35, this.sPitch - dy * FLIGHT_STEER));
+        this.cameraDirtySince = performance.now();
+      }
       return;
     }
 
@@ -1881,17 +1933,8 @@ export class Engine {
       return;
     }
     if (this.mode === 'surface') {
-      const rt = this.currentBody();
-      if (!rt) return;
-      // Wheeling out past the hover ceiling lifts back into orbit.
-      if (e.deltaY > 0 && this.sEyeHTarget >= this.sEyeMax() * 0.999) {
-        this.takeOff();
-        return;
-      }
-      this.sEyeHTarget = Math.min(
-        this.sEyeMax(),
-        Math.max(this.sEyeMin(rt), this.sEyeHTarget * Math.exp(e.deltaY * 0.0016)),
-      );
+      // Wheel in / trackpad pinch-out walks; wheel out stops, then settles.
+      this.applySurfaceZoom(-e.deltaY * 0.0016);
       return;
     }
     const rect = this.canvas.getBoundingClientRect();
@@ -1996,14 +2039,18 @@ export class Engine {
         this.sEyeH += (this.sEyeHTarget - this.sEyeH) * (1 - Math.exp(-dt * 10));
         this.cameraDirtySince = now;
       }
-      // Glide across the terrain from held keys, relative to the heading.
+      // Glide across the terrain: WASD plus the latched zoom-walk throttle.
       let mF = 0;
       let mR = 0;
       if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) mF += 1;
       if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) mF -= 1;
       if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mR += 1;
       if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mR -= 1;
-      if ((mF !== 0 || mR !== 0) && !this.blend) {
+      const boost = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 3 : 1;
+      mF = mF * boost + this.sWalk;
+      mR *= boost;
+      const mag = Math.hypot(mF, mR);
+      if (mag > 1e-4 && !this.blend) {
         const east = this.tmpV;
         const north = this.tmpV2;
         this.surfBasis(this.sDir, east, north);
@@ -2013,12 +2060,11 @@ export class Engine {
         const fwd = new THREE.Vector3().addScaledVector(north, cy).addScaledVector(east, sy);
         const move = this.tmpV3
           .set(0, 0, 0)
-          .addScaledVector(north, cy * mF - sy * mR)
-          .addScaledVector(east, sy * mF + cy * mR)
-          .normalize();
+          .addScaledVector(north, (cy * mF - sy * mR) / mag)
+          .addScaledVector(east, (sy * mF + cy * mR) / mag);
         // Angular speed grows with hover height: skim low, cruise high.
-        const boost = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 3 : 1;
-        const ang = (0.06 + 2.4 * this.sEyeH) * boost * dt;
+        // Zoom-walk mag is 0..1; WASD+shift can push it to ~3.
+        const ang = (0.06 + 2.4 * this.sEyeH) * Math.min(3, mag) * dt;
         this.sDir
           .multiplyScalar(Math.cos(ang))
           .addScaledVector(move, Math.sin(ang))
