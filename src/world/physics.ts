@@ -207,16 +207,6 @@ export const UNIVERSE = {
    * amplitude, from baby laps in ponds to ocean surf. Cosmetic constant of
    * this universe — energy stays physical, presentation scales. */
   WAVE_GAIN: 1.35,
-  /**
-   * Deep-water wave HEIGHT in terrain levels at energy = 1. Green's law
-   * then grows it as d^-1/4; McCowan breaking (H/d > BREAK_GAMMA) fires
-   * several levels offshore on a windy sea, not on the first terrace.
-   */
-  WAVE_H0: 3.2,
-  /** Depth (levels) where shoaling is referenced — roughly "waves first feel the bottom". */
-  WAVE_D0: 8,
-  /** McCowan: a wave breaks when its height exceeds this fraction of the water depth. */
-  BREAK_GAMMA: 0.78,
 
   /** The universe's gearbox: wall seconds → system seconds. Everything
    * celestial (orbits, spin, days, seasons) turns this much slower than
@@ -1097,9 +1087,8 @@ export function tidalForcing(
 /**
  * What stirs a sea, until weather is a real law: wind needs an atmosphere
  * (pressure is the proxy — airless worlds keep MIRROR-still seas), moons
- * add tidal slosh, and gravity sets the tempo of every wave. The surf
- * shader (Green's law + McCowan) turns this energy into height; weather
- * will later multiply and direct the same number.
+ * add tidal slosh, and gravity sets the tempo of every wave. Weather will
+ * later multiply and direct the same energy number.
  */
 export function seaState(p: BodyPhysics, tide = 0): SeaState {
   const wind = clamp01((p.atmosphere.pressure - 0.02) / 0.4);

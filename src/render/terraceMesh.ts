@@ -4,7 +4,6 @@ import { LEVEL_COUNT } from '../world/toygen';
 import { LEVEL_GRADIENT, SNOW_COLOR, WATER_DEEP, WATER_SURFACE, type RGB } from '../world/toyPalette';
 import { UNIVERSE } from '../world/physics';
 import { AIR_SCATTER_GLSL, AIR_UNIFORMS_GLSL } from './scattering';
-import { SURF_LAW_GLSL } from './surf';
 
 /**
  * The blending skin over the voxel columns (Godus-style):
@@ -421,7 +420,6 @@ float vnoise(vec3 p) {
         mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
     f.z);
 }
-${SURF_LAW_GLSL}
 
 void main() {
   // Mirror pass only (engine reflection camera): a reflection contains
@@ -480,17 +478,125 @@ void main() {
   float canSnow = smoothstep(0.1, 0.2, uSnowAmount);
   c = mix(c, uSnow, smoothstep(-ws, ws, vLevel + 0.35 * wob - snowLv) * canSnow);
 
-  // Surf: one law (surf.ts) for this beach terrace and the sea surface.
+  // Surf: stylized shallow-water (WKB) waves. The swell is a phase field
+  // phi = K·sqrt(depth) + omega·t — shallow-water speed is sqrt(g·d), so
+  // crests march SHOREWARD as t grows and their spacing shrinks like
+  // sqrt(depth): waves feel the bottom, slow, and bunch against the coast.
+  // Green's law grows them as depth shrinks (A ~ d^-1/4) and they break
+  // where A exceeds ~0.6·depth — an emergent breaker line roughly parallel
+  // to the shore, further out the bigger the swell. Inside it: rolling
+  // white water. At the line: swash that rushes up the beach and drains
+  // back slow. Steep coasts reflect a weak outgoing train (a near-standing
+  // shimmer under cliffs); gentle ones absorb it and run up long. All
+  // fwidth calls sit OUTSIDE branches (derivatives in branches are garbage
+  // at the waterline). Frozen shores stay still; windless worlds glass over.
   float depth = uWaterLevel - vLevel;
   float pxl = max(fwidth(depth), 1e-5);
   float frozen = 1.0 - smoothstep(0.245, 0.315, tSnow);
+  float surfGate = uSurfStrength * (1.0 - frozen);
+  float off = vnoise(vPos * uWarpFreq * 0.35 + vec3(1.7, 8.3, 5.9));
   float pxPos = fwidth(vPos.x) + fwidth(vPos.y) + fwidth(vPos.z);
   float att = 1.0 - smoothstep(0.3, 1.2, pxPos * uWarpFreq);
+  float lap = mix(0.5, vnoise(vPos * uWarpFreq * 1.6 + vec3(uTime * 0.25, uTime * -0.18, 3.1)), att);
+  // Swell energy: the body's sea state (wind + tide) scaled by basin
+  // fetch — floored, not zeroed: a pond still laps baby ripples at its
+  // rim, while the ocean shore takes the full sea.
   float energy = uWaveEnergy * mix(0.3, 1.0, vFetch);
+
+  // Terrain slope in levels-per-column: the ratio of derivatives cancels
+  // the screen, so it is a stable terrain property. TRUE beaches (coastal
+  // plains) run well under half a level per column, so the wash gate
+  // starts closing there — by one level per column the shore is a bank,
+  // not a beach, and steeper still is cliff.
   float slopeCell = pxl / max(pxPos, 1e-6) * (2.2 / uWarpFreq);
-  float foam = surfFoam(
-    depth, max(-depth, 0.0), slopeCell,
-    energy, uSurfStrength * (1.0 - frozen), att, uWarpFreq);
+  float cliff = smoothstep(0.4, 1.8, slopeCell);
+  // Two shores, split by that angle: low slopes are BEACHES and take the
+  // wash; steep ones are WALLS and take the splash; the band between just
+  // sees the wash lose its reach.
+  float beach = 1.0 - smoothstep(0.35, 1.1, slopeCell);
+  float wall = smoothstep(1.1, 2.2, slopeCell);
+
+  // Horizontal reach: the wash is DISTANCE-limited, not just height-
+  // limited. height/slope estimates how many columns of ground lie between
+  // here and the waterline, and everything wet on land dies within a
+  // couple of columns — a flat plain where one level spans a kilometer no
+  // longer drowns whole fields. (The slope floor turns this into an extra-
+  // tight height gate on true flats, where local slope says nothing.)
+  float ashore = max(-depth, 0.0);
+  float reachW = mix(0.7, 2.2, beach);
+  float reachGate = 1.0 - smoothstep(0.45 * reachW, reachW, ashore / max(slopeCell, 0.22));
+
+  // The waterline band: never thinner than ~6 px, but CAPPED at two levels
+  // so zooming out cannot smear it across whole shelves — and its LAND side
+  // is squeezed harder still (the sea wets its edge, not the countryside),
+  // hardest of all against cliff faces, which only wear a thin wet stripe.
+  float swashW = min(max(1.2, 6.0 * pxl), 2.0);
+  float landSq = mix(1.8, 4.5, cliff);
+  float line = 1.0 - smoothstep(0.0, swashW, depth < 0.0 ? -landSq * depth : depth);
+  line *= depth < 0.0 ? reachGate : 1.0;
+
+  // No worldwide metronome — but the desync must be BOUNDED. A spatially
+  // varying FREQUENCY multiplied by absolute time is a moiré machine: the
+  // phase gradient between two coasts grows without limit, and after a few
+  // minutes the field wrinkles into dense contour-hugging rings across the
+  // whole ocean (this exact bug shipped twice). So one omega per body;
+  // coasts fall out of lockstep through a static offset field (off, slant)
+  // plus this slowly MORPHING drift — half a cycle at most, forever.
+  float drift = 0.5 * vnoise(vPos * uWarpFreq * 0.18 + vec3(9.1, 4.4, 6.7) + uTime * 0.009);
+  float slant = 0.25 * (vnoise(vPos * uWarpFreq * 0.9 + vec3(2.9, 7.2, 11.4)) - 0.5);
+  float omega = uWaveTempo * 0.055;
+
+  float dPos = max(depth, 0.0);
+  float A = energy * 0.8 / pow(max(dPos, 0.25), 0.25);   // Green's law
+  float brk = smoothstep(0.0, 0.5, A - 0.6 * dPos);      // breaker criterion
+
+  float wetSide = step(0.0, depth);
+  float ph = fract(2.2 * sqrt(dPos) + off + slant + drift + uTime * omega);
+  float crest = smoothstep(0.62, 0.82, ph) * (1.0 - smoothstep(0.90, 1.0, ph));
+  // Reflection: same dispersion, time reversed, weak — strongest off cliffs.
+  float phO = fract(2.2 * sqrt(dPos) + 0.37 + 0.7 * off + drift - uTime * omega);
+  float crestO = smoothstep(0.66, 0.85, phO) * (1.0 - smoothstep(0.93, 1.0, phO));
+  float seaFoam = wetSide * att * min(A, 1.0)
+                * (crest * (0.18 + 0.82 * brk) + crestO * mix(0.05, 0.4, cliff) * brk);
+
+  // Swash: at depth 0 the phase is pure omega·t, so the runup pulse fires
+  // exactly when a crest lands — timing is continuous with the sea for
+  // free. The phase lags with height so the tongue visibly RUNS up the
+  // beach; fast rush, slow drain, fizzing (churn grain) as it goes. The
+  // runup is measured in LEVELS, never screen space (a screen-sized runup
+  // washes whole plains at far zoom), and is cut hard barely one level
+  // above the waterline: the swash zone is the FIRST beach terrace, and
+  // the sea does not climb hills. Weak gravity stretches the reach a
+  // little — the same swell stands taller on a light moon.
+  float runup = (0.15 + 0.65 * beach) * (0.3 + 0.7 * energy)
+              * mix(1.5, 0.85, smoothstep(0.4, 1.1, uWaveTempo));
+  float phS = fract(off + slant + drift + uTime * omega - 0.88 - 0.4 * ashore / max(runup, 0.05));
+  float rush = smoothstep(0.0, 0.16, phS) * (1.0 - smoothstep(0.22, 0.85, phS));
+  float churn = vnoise(vPos * uWarpFreq * 5.2 + vec3(uTime * 0.65, -uTime * 0.5, 4.4))
+              * vnoise(vPos * uWarpFreq * 8.1 + vec3(-uTime * 0.45, uTime * 0.6, 9.3));
+  float grain = smoothstep(0.24, 0.48, churn);
+  float wash = beach * rush * exp(-ashore / max(runup, 0.05))
+             * (1.0 - smoothstep(0.5, 1.1, ashore)) * reachGate
+             * (0.5 + 0.5 * grain);
+
+  // Splash: what a wall gets instead of a wash. A short, bright, grainy
+  // burst pinned to the waterline, fired as each crest strikes — sharp
+  // attack, quick fade, no travel. Ordinary seas fleck; heavy moon-tide
+  // seas (past the 0.9 wind ceiling) throw real spray.
+  float phX = fract(off + slant + drift + uTime * omega - 0.9);
+  float burst = smoothstep(0.0, 0.06, phX) * (1.0 - smoothstep(0.1, 0.4, phX));
+  float splash = wall * burst * (1.0 - smoothstep(0.0, 0.45, ashore))
+               * (0.35 + 0.65 * smoothstep(0.85, 1.0, energy))
+               * (0.4 + 0.6 * grain);
+
+  // Compose: the wet line itself (even a near-still sea darkens its edge),
+  // the shoaling/breaking trains, and the land foam — all through the
+  // cosmic volume knob.
+  float landFoam = (1.0 - wetSide) * (wash + splash) * att * energy;
+  float foam = line * (0.16 + 0.14 * lap) * (0.2 + 0.8 * energy);
+  foam += 0.9 * seaFoam;
+  foam += 0.7 * landFoam;
+  foam = clamp(foam * surfGate * uWaveGain, 0.0, 0.92);
 
   // Terrace risers self-shade slightly so rings read as tiny cliffs.
   vec3 n = normalize(vNormal);
@@ -548,7 +654,8 @@ void main() {
   // but is LIT like everything else: white chalk under the sun, falling to
   // the same moonlit blue as the land at night — foam reflects, it does not
   // glow (no bioluminescence assumed).
-  col = mix(col, surfFoamColor(day), foam);
+  vec3 foamC = vec3(0.97, 1.0, 1.0) * mix(vec3(0.24, 0.30, 0.46), vec3(q), day);
+  col = mix(col, foamC, foam);
   // Column capture: the water shader refracts THIS color through the sea
   // (Beer–Lambert on the packed distance), so shallows show the bottom
   // without the sea becoming a window onto the framebuffer.
@@ -709,8 +816,6 @@ uniform float uClarity;
 uniform float uWaveEnergy;
 uniform float uWaveTempo;
 uniform float uWaveGain;
-uniform float uSurfStrength; // chemistry foam (methane is quiet)
-uniform float uSurfFreq;     // same spatial scale as the terrain warp (crest lock)
 uniform float uTempBase;
 uniform float uTempSpan;
 uniform float uTempMode;
@@ -756,7 +861,6 @@ float vnoise(vec3 p) {
         mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
     f.z);
 }
-${SURF_LAW_GLSL}
 
 void main() {
   vec3 n0 = normalize(vNormal);
@@ -939,17 +1043,30 @@ void main() {
     }
   }
 
-  // Surf on the sea surface (opaque water buried the seabed paint).
-  // Derivatives of colW MUST run for every fragment — a branch here
-  // garbage-collects fwidth at the waterline. The gate is surfGate.
-  float pxPosW = fwidth(vPos.x) + fwidth(vPos.y) + fwidth(vPos.z);
-  float pxlW = max(fwidth(colW), 1e-5);
-  float cellW = 9.0 / max(uWaveFreq, 1e-6);
-  float slopeW = pxlW / max(pxPosW, 1e-6) * cellW;
-  float attW = 1.0 - smoothstep(0.3, 1.2, pxPosW * max(uSurfFreq, 1.0));
-  float seaGate = uSurfStrength * (1.0 - ice) * botHit * step(0.5, uColOn)
-                * smoothstep(0.05, 0.20, facing);
-  float foam = surfFoam(colW, 0.0, slopeW, uWaveEnergy, seaGate, attW, uSurfFreq);
+  // Shoreline surf lives on the SEA now: the opaque water surface hid the
+  // terrain's foam (which was painted on the seabed and the first beach
+  // terrace). Same WKB law as the ground shader — crests bunch as depth
+  // shrinks, break, and a wet line hugs the coast — gated to real shallows
+  // (a seabed on this ray, a short column, not the grazing horizon chord).
+  if (uColOn > 0.5 && ice < 0.5) {
+    float shallow = botHit * (1.0 - smoothstep(0.4, 2.4, colW))
+                  * smoothstep(0.10, 0.32, facing);
+    if (shallow > 0.02) {
+      float energy = mix(0.12, 1.0, uWaveEnergy) * uWaveGain;
+      float dPos = max(colW, 0.0);
+      float A = energy * 0.8 / pow(max(dPos, 0.25), 0.25);
+      float brk = smoothstep(0.0, 0.5, A - 0.6 * dPos);
+      float omega = uWaveTempo * 0.055;
+      float off = vnoise(vPos * uWaveFreq * 0.35 + vec3(1.7, 8.3, 5.9));
+      float ph = fract(2.2 * sqrt(dPos) + off + uTime * omega);
+      float crest = smoothstep(0.62, 0.82, ph) * (1.0 - smoothstep(0.90, 1.0, ph));
+      float line = 1.0 - smoothstep(0.0, 0.85, dPos);
+      float foam = shallow * energy
+                 * (line * 0.22 + crest * (0.20 + 0.75 * brk) * min(A, 1.0));
+      vec3 foamC = vec3(0.97, 1.0, 1.0) * mix(vec3(0.24, 0.30, 0.46), vec3(1.0), dayW);
+      c = mix(c, foamC, clamp(foam, 0.0, 0.85));
+    }
+  }
 
   // On the ground the sea is a SURFACE: alpha is 1, and the bottom is
   // already in the color via refraction. Looking through the framebuffer
@@ -994,9 +1111,6 @@ void main() {
     c += tl / (1.0 + dot(tl, vec3(0.333)));
     c += torchGlow(uCamPos, vPos);
   }
-  // Foam is Mie scatter sitting ON the water: after the air, or the sky
-  // paints the surf blue.
-  c = mix(c, surfFoamColor(dayW), foam);
   gl_FragColor = vec4(c, alpha);
 }
 `;
@@ -1018,8 +1132,6 @@ export interface WaterMaterialOptions {
   waveEnergy?: number;
   /** Wave-clock rate ~ sqrt(g) (physics.seaState). */
   waveTempo?: number;
-  /** Shoreline foam strength from ocean chemistry. */
-  surfStrength?: number;
   /** The air (physics.airExtinction); omit for airless worlds. */
   air?: {
     sigma: number;
@@ -1047,8 +1159,6 @@ export function makeWaterMaterial(opts: WaterMaterialOptions = {}): THREE.Shader
       uWaveEnergy: { value: opts.waveEnergy ?? 0.85 },
       uWaveTempo: { value: opts.waveTempo ?? 1 },
       uWaveGain: { value: UNIVERSE.WAVE_GAIN },
-      uSurfStrength: { value: opts.surfStrength ?? 1 },
-      uSurfFreq: { value: 40 },
       uTempBase: { value: opts.tempBase ?? 0.5 },
       uTempSpan: { value: opts.tempSpan ?? 0.35 },
       uTempMode: { value: opts.lockedToStar ? 1 : 0 },

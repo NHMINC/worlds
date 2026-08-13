@@ -628,7 +628,6 @@ export class Engine {
           wu.uClarity.value = h.clarity;
           wu.uWaveEnergy.value = seaSt.energy;
           wu.uWaveTempo.value = seaSt.tempo;
-          wu.uSurfStrength.value = wantWater && h.state !== 'ice' ? h.foam : 0;
           (wu.uSurf.value as THREE.Vector3).set(...h.surf);
           (wu.uDeep.value as THREE.Vector3).set(...h.deep);
           (wu.uIceColor.value as THREE.Vector3).set(...h.ice);
@@ -866,11 +865,9 @@ export class Engine {
           phys.atmosphere.pressure < UNIVERSE.LIQUID_MIN_P,
         waveEnergy: sea.energy,
         waveTempo: sea.tempo,
-        surfStrength: hydroState !== 'ice' ? phys?.hydrosphere.foam ?? 1 : 0,
         air,
       });
       waterMat.uniforms.uWaveFreq.value = 9 / rt.grid!.cellSpacing();
-      waterMat.uniforms.uSurfFreq.value = 2.2 / rt.grid!.cellSpacing();
       // Freeboard: floating sheets ride about half a terrain step above the
       // liquid line, so the shelf edge reads as a raised shore.
       waterMat.uniforms.uFreeboard.value = rt.step * 0.55;

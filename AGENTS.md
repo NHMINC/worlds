@@ -258,14 +258,11 @@ The sea is a **surface**, not a window onto the framebuffer.
   smear beyond-horizon terrain onto the water (lumpy horizon).
 - Keep a little of the water’s own colour at the limb so aerial
   perspective does not dissolve the sea into the sky.
-- **Surf** is one law (`surf.ts`), compiled into the sea and the first
-  beach terrace. Green's law grows the swell as depth shrinks; McCowan
-  (`H/d > BREAK_GAMMA`) is the breaker line — further out on a bigger
-  sea, not a painted rim. Inside it, a beach gets a white foam *bore*
-  that rides the remaining water to the coast; a cliff reflects and
-  splashes. Foam is Mie-white scatter **on top of the air** (otherwise
-  the sky paints the surf blue). Do not raise the water sphere over the
-  swash zone to hide poke-through.
+- **Surf** (breaking crests, wet line, swash) must remain visible. Foam
+  painted only on terrain will be buried by an opaque sea. Shoreline
+  effects belong on the water in the shallows **and** on the first beach
+  terrace. Do not raise the water sphere over the swash zone to hide
+  poke-through.
 - Ice is a raised sheet (freeboard), static (no wave shimmer), with its
   own shoreline. Wave / surf animation is for **liquid**. Chemistry
   (`clarity`, `foam`, freeze point) drives how milky or glassy, and
@@ -345,8 +342,7 @@ Code map (start here):
 | Per-cell geology (mining truth) | `src/world/geology.ts` |
 | Grid | `src/world/geodesic.ts` |
 | Scene, camera, reflections, capture | `src/render/engine.ts` |
-| Terrain + water shaders | `src/render/terraceMesh.ts` |
-| Surf / foam (one law) | `src/render/surf.ts` |
+| Terrain + water shaders, surf, foam | `src/render/terraceMesh.ts` |
 | Sky shell | `src/render/atmosphere.ts` |
 | Shared air integral | `src/render/scattering.ts` |
 | Gas giants | `src/render/gasGiant.ts` |
