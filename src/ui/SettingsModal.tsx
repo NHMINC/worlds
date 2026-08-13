@@ -16,7 +16,8 @@ export function SettingsModal(props: Props) {
         <h3>AI naming (xAI)</h3>
         <p className="modal-note">
           Add an xAI API key to get name suggestions when labeling places. The key is stored
-          only on this device and requests go directly to xAI.
+          only on this device and requests go directly to xAI — never paste a key on a shared
+          computer.
         </p>
         <div className="form-grid">
           <label>
