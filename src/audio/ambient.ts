@@ -1,5 +1,6 @@
 import * as Tone from 'tone';
 import type { Mood } from '../render/engine';
+import { HouseKit, duck } from './kit';
 import {
   arrangementFor,
   composeSection,
@@ -11,19 +12,19 @@ import {
 } from './theory';
 
 /**
- * The orchestra. theory.ts writes the score; this file only performs it.
- * Progressive house: four-on-the-floor, offbeat hats, rolling bass,
- * a pad that pumps against the kick, a filter that opens with the phase.
+ * The orchestra. theory.ts writes the score. dsp.ts / kit.ts are the
+ * drums. This file is routing, bass, pad, and the kick-triggered duck.
  */
 
 const LAYER = {
-  pad: 0.38,
-  arp: 0.42,
-  bass: 0.72,
-  kick: 0.78,
-  hatClosed: 0.22,
-  hatOpen: 0.28,
-  clap: 0.36,
+  pad: 0.34,
+  arp: 0.4,
+  bass: 0.62,
+  sub: 0.7,
+  kick: 0.92,
+  hatClosed: 0.38,
+  hatOpen: 0.42,
+  clap: 0.48,
 };
 
 export class AmbientMusic {
@@ -38,12 +39,12 @@ export class AmbientMusic {
   private pad?: Tone.PolySynth;
   private arp?: Tone.Synth;
   private bass?: Tone.MonoSynth;
-  private kick?: Tone.MembraneSynth;
-  private hatClosed?: Tone.NoiseSynth;
-  private hatOpen?: Tone.NoiseSynth;
-  private clap?: Tone.NoiseSynth;
+  private sub?: Tone.MonoSynth;
   private filter?: Tone.Filter;
-  private pump?: Tone.LFO;
+  private padGain?: Tone.Gain;
+  private bassGain?: Tone.Gain;
+  private arpGain?: Tone.Gain;
+  private kit?: HouseKit;
 
   private sixteenth = 0;
   private score: SectionScore | null = null;
@@ -66,6 +67,7 @@ export class AmbientMusic {
     this.latchedSection = -1;
     this.lastPad = [];
     this.liveMood = null;
+    if (this.started) this.kit?.retune(this.dna);
   }
 
   async start(): Promise<void> {
@@ -76,94 +78,86 @@ export class AmbientMusic {
     await Tone.start();
     this.started = true;
 
-    const limiter = new Tone.Limiter(-3).toDestination();
-    this.master = new Tone.Volume(this.volumeDb()).connect(limiter);
+    const limiter = new Tone.Limiter(-1.8).toDestination();
+    const glue = new Tone.Compressor({
+      threshold: -18,
+      ratio: 2.4,
+      attack: 0.014,
+      release: 0.14,
+      knee: 8,
+    }).connect(limiter);
+    this.master = new Tone.Volume(this.volumeDb()).connect(glue);
 
-    const reverb = new Tone.Reverb({ decay: 2.8, preDelay: 0.012, wet: 0.22 });
+    const reverb = new Tone.Reverb({ decay: 2.2, preDelay: 0.01, wet: 1 });
     await reverb.ready;
+    const verbSend = new Tone.Gain(0.16).connect(reverb);
     reverb.connect(this.master);
 
-    const padGain = new Tone.Gain(1);
-    const bassGain = new Tone.Gain(1);
-    this.pump = new Tone.LFO({ frequency: '4n', type: 'sine', min: 0.28, max: 1, phase: 270 });
-    this.pump.connect(padGain.gain);
-    this.pump.connect(bassGain.gain);
-    this.pump.start();
+    this.padGain = new Tone.Gain(1);
+    this.bassGain = new Tone.Gain(1);
+    this.arpGain = new Tone.Gain(1);
 
-    this.filter = new Tone.Filter({ type: 'lowpass', frequency: 900, Q: 0.7 });
-    const chorus = new Tone.Chorus({ frequency: 0.35, delayTime: 4.5, depth: 0.45, wet: 0.35 }).start();
-    padGain.connect(chorus);
+    this.filter = new Tone.Filter({ type: 'lowpass', frequency: 900, Q: 0.75, rolloff: -24 });
+    const chorus = new Tone.Chorus({ frequency: 0.28, delayTime: 5, depth: 0.5, wet: 0.4 }).start();
+    const padHp = new Tone.Filter({ type: 'highpass', frequency: 160, Q: 0.4 });
+    this.padGain.connect(padHp);
+    padHp.connect(chorus);
     chorus.connect(this.filter);
-    this.filter.connect(reverb);
+    this.filter.connect(this.master);
+    this.filter.connect(verbSend);
 
-    const delay = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.28, wet: 0.18 });
-    delay.connect(reverb);
+    const delay = new Tone.FeedbackDelay({ delayTime: '8n', feedback: 0.26, wet: 0.2 });
+    this.arpGain.connect(delay);
+    delay.connect(this.master);
+    delay.connect(verbSend);
+
+    this.bassGain.connect(this.master);
 
     this.pad = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: 'fatsawtooth', spread: 28, count: 3 },
-      envelope: { attack: 0.55, decay: 0.35, sustain: 0.72, release: 1.6 },
+      oscillator: { type: 'fatsawtooth', spread: 32, count: 3 },
+      envelope: { attack: 0.45, decay: 0.4, sustain: 0.7, release: 1.4 },
     });
     this.pad.maxPolyphony = 6;
-    this.pad.volume.value = -8;
-    this.pad.connect(padGain);
+    this.pad.volume.value = -7;
+    this.pad.connect(this.padGain);
 
     this.arp = new Tone.Synth({
       oscillator: { type: 'triangle' },
-      envelope: { attack: 0.006, decay: 0.16, sustain: 0.08, release: 0.22 },
+      envelope: { attack: 0.004, decay: 0.14, sustain: 0.06, release: 0.18 },
     });
-    this.arp.volume.value = -10;
-    this.arp.connect(delay);
+    this.arp.volume.value = -9;
+    this.arp.connect(this.arpGain);
+
+    this.sub = new Tone.MonoSynth({
+      oscillator: { type: 'sine' },
+      envelope: { attack: 0.006, decay: 0.2, sustain: 0.18, release: 0.08 },
+      filter: { type: 'lowpass', frequency: 140, Q: 0.4, rolloff: -12 },
+    });
+    this.sub.volume.value = -4;
+    this.sub.connect(this.bassGain);
 
     this.bass = new Tone.MonoSynth({
       oscillator: { type: 'sawtooth' },
-      envelope: { attack: 0.01, decay: 0.18, sustain: 0.15, release: 0.12 },
-      filter: { type: 'lowpass', Q: 1.4, rolloff: -24 },
+      envelope: { attack: 0.008, decay: 0.13, sustain: 0.08, release: 0.07 },
+      filter: { type: 'lowpass', Q: 1.7, rolloff: -24 },
       filterEnvelope: {
-        attack: 0.01,
-        decay: 0.12,
-        sustain: 0.15,
-        release: 0.1,
-        baseFrequency: 80,
-        octaves: 2.4,
+        attack: 0.008,
+        decay: 0.09,
+        sustain: 0.06,
+        release: 0.07,
+        baseFrequency: 64,
+        octaves: 2.6,
       },
     });
-    this.bass.volume.value = -5;
-    this.bass.connect(bassGain);
-    bassGain.connect(this.master);
+    this.bass.volume.value = -7;
+    this.bass.connect(this.bassGain);
 
-    this.kick = new Tone.MembraneSynth({
-      pitchDecay: 0.018,
-      octaves: 5,
-      oscillator: { type: 'sine' },
-      envelope: { attack: 0.001, decay: 0.32, sustain: 0, release: 0.08 },
-    });
-    this.kick.volume.value = -6;
-    this.kick.connect(this.master);
-
-    const hatHp = new Tone.Filter({ type: 'highpass', frequency: 7000, Q: 0.6 });
-    hatHp.connect(this.master);
-    this.hatClosed = new Tone.NoiseSynth({
-      noise: { type: 'white' },
-      envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.02 },
-    });
-    this.hatClosed.volume.value = -16;
-    this.hatClosed.connect(hatHp);
-
-    this.hatOpen = new Tone.NoiseSynth({
-      noise: { type: 'white' },
-      envelope: { attack: 0.001, decay: 0.16, sustain: 0, release: 0.06 },
-    });
-    this.hatOpen.volume.value = -18;
-    this.hatOpen.connect(hatHp);
-
-    const clapBp = new Tone.Filter({ type: 'bandpass', frequency: 1800, Q: 0.9 });
-    clapBp.connect(reverb);
-    this.clap = new Tone.NoiseSynth({
-      noise: { type: 'pink' },
-      envelope: { attack: 0.001, decay: 0.14, sustain: 0, release: 0.05 },
-    });
-    this.clap.volume.value = -12;
-    this.clap.connect(clapBp);
+    const kickDest = this.master;
+    const hatDest = this.master;
+    const clapDest = new Tone.Gain(1);
+    clapDest.connect(this.master);
+    clapDest.connect(verbSend);
+    this.kit = new HouseKit(this.dna, kickDest, hatDest, clapDest);
 
     const transport = Tone.getTransport();
     transport.bpm.value = 124;
@@ -200,30 +194,34 @@ export class AmbientMusic {
     if (beat === 0) this.holdPad(barScore.pad, arr, time);
 
     this.firePitched(this.bass, barScore.bass, beat, time, LAYER.bass * arr.bass, 0.12);
+    this.firePitched(this.sub, barScore.bass, beat, time, LAYER.sub * arr.bass, 0.12);
     this.firePitched(this.arp, barScore.arp, beat, time, LAYER.arp * arr.arp, 0.14);
 
     if (arr.kick > 0.15) {
       for (const k of barScore.kicks) {
         if (k.at !== beat) continue;
-        this.kick?.triggerAttackRelease(this.hz(36), '8n', time, k.vel * LAYER.kick * arr.kick);
+        this.kit?.hitKick(time, k.vel * LAYER.kick * arr.kick);
+        if (this.padGain) duck(this.padGain, time, 0.7, 0.2);
+        if (this.bassGain) duck(this.bassGain, time, 0.86, 0.15);
+        if (this.arpGain) duck(this.arpGain, time, 0.32, 0.1);
       }
     }
-    if (arr.hatClosed > 0.12) {
+    if (arr.hatClosed > 0.1) {
       for (const h of barScore.hatsClosed) {
         if (h.at !== beat) continue;
-        this.hatClosed?.triggerAttackRelease('32n', time, h.vel * LAYER.hatClosed * arr.hatClosed);
+        this.kit?.hitHatClosed(time, h.vel * LAYER.hatClosed * arr.hatClosed);
       }
     }
-    if (arr.hatOpen > 0.12) {
+    if (arr.hatOpen > 0.1) {
       for (const h of barScore.hatsOpen) {
         if (h.at !== beat) continue;
-        this.hatOpen?.triggerAttackRelease('8n', time, h.vel * LAYER.hatOpen * arr.hatOpen);
+        this.kit?.hitHatOpen(time, h.vel * LAYER.hatOpen * arr.hatOpen);
       }
     }
-    if (arr.clap > 0.12) {
+    if (arr.clap > 0.1) {
       for (const c of barScore.claps) {
         if (c.at !== beat) continue;
-        this.clap?.triggerAttackRelease('8n', time, c.vel * LAYER.clap * arr.clap);
+        this.kit?.hitClap(time, c.vel * LAYER.clap * arr.clap);
       }
     }
 
@@ -237,7 +235,7 @@ export class AmbientMusic {
       this.lastBpm = bpm;
     }
     const open = this.score?.filter ?? 0.4;
-    const hz = 420 + open * 2800 + mood.density * 200;
+    const hz = 380 + open * 3200 + mood.density * 180;
     this.filter?.frequency.rampTo(hz, 6);
   }
 
@@ -262,7 +260,7 @@ export class AmbientMusic {
     const step = Tone.Time('16n').toSeconds();
     for (const h of hits) {
       if (h.at !== beat) continue;
-      const dur = Math.max(step * 0.85, h.dur * step);
+      const dur = Math.max(step * 0.8, h.dur * step);
       const vel = h.vel * gain;
       if (inst instanceof Tone.PolySynth) {
         inst.triggerAttackRelease(h.notes.map((n) => this.hz(n)), dur, time, vel);
@@ -278,7 +276,7 @@ export class AmbientMusic {
 
   private volumeDb(): number {
     if (this.muted || this.volume <= 0) return -Infinity;
-    return -18 + this.volume * 14;
+    return -16 + this.volume * 13;
   }
 
   private applyVolume(): void {
@@ -296,6 +294,7 @@ export class AmbientMusic {
       this.pad?.releaseAll();
       this.arp?.triggerRelease();
       this.bass?.triggerRelease();
+      this.sub?.triggerRelease();
       this.lastPad = [];
     }
     this.applyVolume();

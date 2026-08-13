@@ -163,11 +163,12 @@ diverges from that.
 **Music** is progressive house as a law. `src/audio/theory.ts` is the
 score: ~124 BPM, four-on-the-floor, a 4-chord loop held for bars at a
 time, and an 8-phase energy cycle (intro → groove → lift → peak →
-break → build → drop → ride). Layers and the filter move; the notes
-stay. The loop mutates slowly; the key walks a fifth only at cycle
-boundaries. Tone.js only performs it. Viewport mood tilts mode and
-density — it does not pick a track. If it sounds like random tones or
-a new solo every bar, the law is wrong.
+break → build → drop → ride). `src/audio/dsp.ts` bakes the kit
+(analog kick, 808-style metallic hats, burst clap) from those laws;
+Tone.js is only the clock and the mixer. The kick ducks the pad and
+bass with an exponential pump, not an LFO. Viewport mood tilts mode
+and density — it does not pick a track. If the drums sound like
+factory synths, the kit law is wrong.
 
 ---
 
@@ -357,7 +358,7 @@ Code map (start here):
 | Shared air integral | `src/render/scattering.ts` |
 | Gas giants | `src/render/gasGiant.ts` |
 | Persistence, export/import | `src/store/` |
-| Generative progressive house | `src/audio/` |
+| Generative progressive house (score + kit) | `src/audio/` |
 
 ---
 
