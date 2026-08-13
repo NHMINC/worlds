@@ -39,9 +39,15 @@ export default defineConfig(({ command }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      // Register from main.tsx so production CSP can omit 'unsafe-inline'.
+      // Register from main.tsx so production CSP can omit 'unsafe-inline',
+      // and so we can set updateViaCache: 'none' (GitHub Pages caches sw.js).
       injectRegister: false,
       includeAssets: ['icon.svg', 'apple-touch-icon.png'],
+      workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+      },
       manifest: {
         name: 'Hex Worlds',
         short_name: 'Hex Worlds',
