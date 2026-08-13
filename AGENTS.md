@@ -26,7 +26,8 @@ covers ten cases over ten patches that cover one case each.
 
 Stack: Vite + React + TypeScript + Three.js. Persistence is IndexedDB
 (Dexie) with a single portable JSON export. Mobile is web-first
-(Capacitor). Music is generative (Tone.js), mood-reactive.
+(Capacitor). Music is generative (Tone.js): a seeded grammar, not a
+loop, mood-reactive.
 
 ---
 
@@ -158,6 +159,14 @@ you will debug a stale engine class. The app lives at
 Time: orbits and spins are pure functions of spec and wall-clock Unix
 time (geared by `UNIVERSE.TIME_SCALE`). No hidden simulation step that
 diverges from that.
+
+**Music** is the same kind of law. `src/audio/theory.ts` is the score
+(`MUSIC` knobs, a diatonic grammar, voice leading, motif variation, a
+slow walk around the circle of fifths). Tone.js only performs it. A
+system seed is the DNA; bars keep becoming a new piece. Viewport mood
+tilts mode / tempo / density the way temperature tilts a hydrosphere —
+it does not pick a track. If a passage sounds like random tones, the
+grammar is wrong; do not paste a loop.
 
 ---
 
@@ -347,6 +356,7 @@ Code map (start here):
 | Shared air integral | `src/render/scattering.ts` |
 | Gas giants | `src/render/gasGiant.ts` |
 | Persistence, export/import | `src/store/` |
+| Generative music (harmony, motif, groove) | `src/audio/` |
 
 ---
 
