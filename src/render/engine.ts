@@ -17,7 +17,11 @@ import type { BiomeId, SavedCamera } from '../world/types';
 // of this module would leave the app running the OLD engine class while the
 // UI around it updates — silently stale behavior. Decline HMR: any change
 // here forces a full page reload in dev.
-if (import.meta.hot) import.meta.hot.decline();
+if (import.meta.hot) {
+  import.meta.hot.accept(() => {
+    import.meta.hot?.invalidate();
+  });
+}
 
 export type Tool = 'pan' | 'label' | 'object' | 'inspect';
 export type RigMode = 'orbit' | 'flight' | 'surface';

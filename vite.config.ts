@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+  // GitHub Pages project site lives at /worlds/; Capacitor and local stay at /.
+  base: process.env.BASE_PATH || '/',
   plugins: [
     react(),
     VitePWA({
