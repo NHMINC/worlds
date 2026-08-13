@@ -11,6 +11,7 @@ import {
   arrangementFor,
   composeSection,
   dnaFromSeed,
+  freshListenSeed,
   loopChords,
   modeFor,
   phaseFor,
@@ -64,6 +65,8 @@ for (const seed of seeds) {
   check('dna deterministic', JSON.stringify(dna) === JSON.stringify(dnaFromSeed(seeds[0])));
   const other = dnaFromSeed(seeds[1]);
   check('dna differs by seed', dna.tonic !== other.tonic || dna.brightness !== other.brightness);
+  const minted = new Set(Array.from({ length: 40 }, () => freshListenSeed()));
+  check('a listen seed is unique', minted.size === 40, `${minted.size} unique`);
 }
 
 {
