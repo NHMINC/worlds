@@ -3,16 +3,22 @@ import { mulberry32, xmur3 } from '../world/rng';
 /**
  * Progressive-house laws of the bottle universe.
  *
- * The genre is patience. A short loop holds. Energy moves by adding or
- * lifting a layer, or by opening a filter — not by writing a new tune
- * every bar. Same charter as the physics: we set constants and a
- * grammar; a piece emerges. A system seed is the DNA. Mood is climate
- * (mode, density), not a track picker.
+ * The genre is patience. A short loop holds. Energy is a path a DJ
+ * would walk: settle, strip, hang in the breakdown, hold the room
+ * ready, then release. We never write a new tune every bar. Same
+ * charter as the physics: constants and a grammar; a piece emerges.
+ * A system seed is the DNA. Mood is climate (mode, density), not a
+ * track picker.
  *
  * Form, in 16-bar sections that cycle every eight:
  *   intro → groove → lift → peak → break → build → drop → ride
- * Harmony is a 4-chord loop, each chord held four bars. The loop
- * mutates slowly. The key walks a fifth only at cycle boundaries.
+ * Each phase has a start mix and an end mix. The build *holds* in
+ * the breakdown, then climbs; the bass waits for the drop.
+ *
+ * Register: pad and voices sit in the chest. Sub is a long C1-ish
+ * root; mid bass is the offbeat roll an octave above. Harmony is a
+ * 4-chord loop, each chord held four bars. The loop mutates slowly.
+ * The key walks a fifth only at cycle boundaries.
  */
 
 export type MoodGroup = 'water' | 'green' | 'dry' | 'cold' | 'rock' | 'space';
@@ -39,21 +45,22 @@ const PHASES: readonly Phase[] = ['intro', 'groove', 'lift', 'peak', 'break', 'b
 
 /** Visible knobs. Tune these; do not special-case a seed. */
 export const MUSIC = {
-  BPM_BASE: 124,
+  /** Modern Ibiza club pocket — patient, not peak-time 128. */
+  BPM_BASE: 121,
   BPM_MOOD: {
-    green: 2,
-    water: 1,
+    green: 1,
+    water: 0,
     dry: 0,
     rock: 0,
-    cold: -2,
+    cold: -1,
     space: -2,
   } as Record<MoodGroup, number>,
   BARS_PER_SECTION: 16,
   BARS_PER_CHORD: 4,
   PHASES_PER_CYCLE: 8,
-  TONIC_MIDI: 48,
-  VOICE_LO: 52,
-  VOICE_HI: 81,
+  TONIC_MIDI: 45,
+  VOICE_LO: 43,
+  VOICE_HI: 67,
 };
 
 export interface Dna {
@@ -79,6 +86,7 @@ export interface Arrangement {
   kick: number;
   hatClosed: number;
   hatOpen: number;
+  hatTick: number;
   clap: number;
   bass: number;
   pad: number;
@@ -91,11 +99,15 @@ export interface BarScore {
   quality: Quality;
   voices: number[];
   pad: number[];
+  /** Offbeat mid-bass roll (around C2). */
   bass: PitchHit[];
+  /** Long rooted sub (around C1). */
+  sub: PitchHit[];
   arp: PitchHit[];
   kicks: PulseHit[];
   hatsClosed: PulseHit[];
   hatsOpen: PulseHit[];
+  hatsTick: PulseHit[];
   claps: PulseHit[];
 }
 
@@ -143,15 +155,59 @@ const MAJOR_LOOPS: ReadonlyArray<readonly number[]> = [
   [0, 3, 4, 0],
 ];
 
-const PHASE_MIX: Record<Phase, Arrangement> = {
-  intro: { kick: 0.4, hatClosed: 0, hatOpen: 0, clap: 0, bass: 0, pad: 0.72, arp: 0.12, filter: 0.22 },
-  groove: { kick: 0.82, hatClosed: 0.38, hatOpen: 0, clap: 0.32, bass: 0.72, pad: 0.62, arp: 0.22, filter: 0.36 },
-  lift: { kick: 0.9, hatClosed: 0.52, hatOpen: 0.48, clap: 0.55, bass: 0.82, pad: 0.68, arp: 0.42, filter: 0.52 },
-  peak: { kick: 1, hatClosed: 0.62, hatOpen: 0.72, clap: 0.7, bass: 0.92, pad: 0.72, arp: 0.5, filter: 0.7 },
-  break: { kick: 0, hatClosed: 0, hatOpen: 0, clap: 0, bass: 0, pad: 0.88, arp: 0.48, filter: 0.42 },
-  build: { kick: 0.68, hatClosed: 0.48, hatOpen: 0.32, clap: 0.4, bass: 0.38, pad: 0.8, arp: 0.58, filter: 0.86 },
-  drop: { kick: 1, hatClosed: 0.7, hatOpen: 0.88, clap: 0.82, bass: 1, pad: 0.7, arp: 0.48, filter: 0.92 },
-  ride: { kick: 0.94, hatClosed: 0.58, hatOpen: 0.7, clap: 0.64, bass: 0.86, pad: 0.64, arp: 0.36, filter: 0.76 },
+type Ease = 'linear' | 'holdThen' | 'thenHold';
+
+interface PhasePath {
+  start: Arrangement;
+  end: Arrangement;
+  ease: Ease;
+}
+
+/**
+ * The DJ path. `holdThen` sits in the breakdown, then climbs (the
+ * last bars do more). `thenHold` dumps quickly and hangs.
+ */
+const PHASE_PATH: Record<Phase, PhasePath> = {
+  intro: {
+    ease: 'linear',
+    start: { kick: 0, hatClosed: 0, hatOpen: 0, hatTick: 0, clap: 0, bass: 0, pad: 0.78, arp: 0.08, filter: 0.1 },
+    end: { kick: 0.38, hatClosed: 0, hatOpen: 0, hatTick: 0, clap: 0, bass: 0, pad: 0.72, arp: 0.12, filter: 0.2 },
+  },
+  groove: {
+    ease: 'linear',
+    start: { kick: 0.76, hatClosed: 0.2, hatOpen: 0, hatTick: 0, clap: 0.18, bass: 0.7, pad: 0.6, arp: 0.1, filter: 0.26 },
+    end: { kick: 0.84, hatClosed: 0.38, hatOpen: 0, hatTick: 0, clap: 0.32, bass: 0.78, pad: 0.62, arp: 0.16, filter: 0.32 },
+  },
+  lift: {
+    ease: 'linear',
+    start: { kick: 0.84, hatClosed: 0.4, hatOpen: 0.15, hatTick: 0, clap: 0.36, bass: 0.8, pad: 0.64, arp: 0.2, filter: 0.34 },
+    end: { kick: 0.9, hatClosed: 0.52, hatOpen: 0.4, hatTick: 0.16, clap: 0.5, bass: 0.86, pad: 0.66, arp: 0.28, filter: 0.46 },
+  },
+  peak: {
+    ease: 'linear',
+    start: { kick: 0.9, hatClosed: 0.52, hatOpen: 0.42, hatTick: 0.18, clap: 0.52, bass: 0.86, pad: 0.66, arp: 0.28, filter: 0.48 },
+    end: { kick: 0.92, hatClosed: 0.56, hatOpen: 0.5, hatTick: 0.22, clap: 0.58, bass: 0.88, pad: 0.68, arp: 0.3, filter: 0.54 },
+  },
+  break: {
+    ease: 'thenHold',
+    start: { kick: 0.35, hatClosed: 0.12, hatOpen: 0, hatTick: 0, clap: 0, bass: 0.15, pad: 0.9, arp: 0.32, filter: 0.36 },
+    end: { kick: 0, hatClosed: 0, hatOpen: 0, hatTick: 0, clap: 0, bass: 0, pad: 0.94, arp: 0.18, filter: 0.22 },
+  },
+  build: {
+    ease: 'holdThen',
+    start: { kick: 0, hatClosed: 0, hatOpen: 0, hatTick: 0, clap: 0, bass: 0, pad: 0.9, arp: 0.36, filter: 0.24 },
+    end: { kick: 0.74, hatClosed: 0.55, hatOpen: 0.28, hatTick: 0.4, clap: 0.48, bass: 0.06, pad: 0.78, arp: 0.48, filter: 0.9 },
+  },
+  drop: {
+    ease: 'linear',
+    start: { kick: 1, hatClosed: 0.7, hatOpen: 0.86, hatTick: 0.7, clap: 0.82, bass: 1, pad: 0.7, arp: 0.32, filter: 0.92 },
+    end: { kick: 1, hatClosed: 0.72, hatOpen: 0.88, hatTick: 0.74, clap: 0.84, bass: 1, pad: 0.68, arp: 0.3, filter: 0.9 },
+  },
+  ride: {
+    ease: 'linear',
+    start: { kick: 0.96, hatClosed: 0.62, hatOpen: 0.72, hatTick: 0.48, clap: 0.7, bass: 0.92, pad: 0.66, arp: 0.24, filter: 0.78 },
+    end: { kick: 0.72, hatClosed: 0.36, hatOpen: 0.22, hatTick: 0.12, clap: 0.4, bass: 0.58, pad: 0.7, arp: 0.16, filter: 0.42 },
+  },
 };
 
 export function rngFor(seed: string, ...parts: Array<string | number>): () => number {
@@ -262,15 +318,17 @@ export function voiceLead(prev: number[], next: number[]): number[] {
         }
       }
     }
-    if (used.has(best)) best = best < 70 ? best + 12 : best - 12;
+    if (used.has(best)) best = best < (MUSIC.VOICE_LO + MUSIC.VOICE_HI) / 2 ? best + 12 : best - 12;
     used.add(best);
     out.push(best);
   }
   return uncluster(out);
 }
 
-export function arrangementFor(mood: MoodLike, _dna: Dna, section: number): Arrangement {
-  const base = PHASE_MIX[phaseFor(section)];
+export function arrangementFor(mood: MoodLike, _dna: Dna, section: number, bar = 0): Arrangement {
+  const path = PHASE_PATH[phaseFor(section)];
+  const t = easeT(bar / Math.max(1, MUSIC.BARS_PER_SECTION - 1), path.ease);
+  const base = lerpArr(path.start, path.end, t);
   const d = mood.density;
   const space = mood.group === 'space' ? 0.78 : 1;
   const cold = mood.group === 'cold' ? 0.85 : 1;
@@ -278,11 +336,12 @@ export function arrangementFor(mood: MoodLike, _dna: Dna, section: number): Arra
     kick: base.kick * space,
     hatClosed: base.hatClosed * (0.75 + d * 0.35) * cold,
     hatOpen: base.hatOpen * (0.7 + d * 0.4),
+    hatTick: base.hatTick * (0.7 + d * 0.4) * cold,
     clap: base.clap * space,
     bass: base.bass * space,
     pad: base.pad,
-    arp: base.arp * (0.65 + d * 0.5),
-    filter: clamp(base.filter + d * 0.08, 0, 1),
+    arp: base.arp * (0.65 + d * 0.45),
+    filter: clamp(base.filter + d * 0.06, 0, 1),
   };
 }
 
@@ -309,19 +368,21 @@ export function composeSection(seed: string, section: number, mood: MoodLike, dn
     const quality = qualities[Math.floor(i / hold)];
     const tones = chordTones(tonicMidi, scale, deg, quality);
     voices = i === 0 ? placeVoicing(tones) : voiceLead(voices, tones);
-    const root = midiOf(tonicMidi - 12, scale, deg, 0);
-    const fifth = midiOf(tonicMidi - 12, scale, deg + 4, 0);
-    const arpBase = tonicMidi + 12;
+    const subRoot = midiOf(tonicMidi - 12, scale, deg, 0);
+    const midRoot = midiOf(tonicMidi, scale, deg, 0);
+    const midFifth = midiOf(tonicMidi, scale, deg + 4, 0);
     bars.push({
       chordDeg: deg,
       quality,
       voices: [...voices],
-      pad: [voices[0] - 12, voices[1], voices[2]],
-      bass: bassHits(root, fifth, dna.bounce),
-      arp: arpHits(arpPattern, arpBase, scale, deg),
+      pad: [...voices],
+      bass: midHits(midRoot, midFifth, dna.bounce, i),
+      sub: subHits(subRoot),
+      arp: arpHits(arpPattern, tonicMidi, scale, deg),
       kicks: fourOnFloor(),
       hatsClosed: closedHats(),
       hatsOpen: openHats(),
+      hatsTick: tickHats(),
       claps: claps(),
     });
   }
@@ -386,13 +447,34 @@ function arpHits(pattern: number[], tonicMidi: number, scale: readonly number[],
   }));
 }
 
-function bassHits(root: number, fifth: number, bounce: number): PitchHit[] {
-  const alt = bounce > 0.62 ? fifth : root;
+/** Long rooted sub — the floor the kick locks to. */
+function subHits(root: number): PitchHit[] {
   return [
-    { at: 2, notes: [root], vel: 0.78, dur: 2 },
-    { at: 6, notes: [root], vel: 0.7, dur: 2 },
-    { at: 10, notes: [root], vel: 0.74, dur: 2 },
-    { at: 14, notes: [alt], vel: 0.66, dur: 2 },
+    { at: 0, notes: [root], vel: 0.84, dur: 7 },
+    { at: 8, notes: [root], vel: 0.8, dur: 7 },
+  ];
+}
+
+/**
+ * Offbeat mid-bass roll an octave above the sub. Bounce walks the
+ * last hit; odd bars can pick up a syncopation. The structure, not
+ * a new riff every section.
+ */
+function midHits(root: number, fifth: number, bounce: number, bar: number): PitchHit[] {
+  const late = bounce > 0.75 ? Math.min(root + 12, 60) : bounce > 0.5 ? fifth : root;
+  if (bar % 2 === 1 && bounce > 0.48) {
+    return [
+      { at: 2, notes: [root], vel: 0.76, dur: 3 },
+      { at: 6, notes: [root], vel: 0.68, dur: 3 },
+      { at: 11, notes: [root], vel: 0.6, dur: 2 },
+      { at: 14, notes: [late], vel: 0.7, dur: 3 },
+    ];
+  }
+  return [
+    { at: 2, notes: [root], vel: 0.78, dur: 3 },
+    { at: 6, notes: [root], vel: 0.7, dur: 3 },
+    { at: 10, notes: [root], vel: 0.74, dur: 3 },
+    { at: 14, notes: [late], vel: 0.68, dur: 3 },
   ];
 }
 
@@ -402,6 +484,11 @@ function fourOnFloor(): PulseHit[] {
 
 function closedHats(): PulseHit[] {
   return [0, 2, 4, 6, 8, 10, 12, 14].map((at) => ({ at, vel: at % 4 === 0 ? 0.22 : 0.4 }));
+}
+
+/** Off-grid 16ths. The mix law (hatTick) decides whether they speak. */
+function tickHats(): PulseHit[] {
+  return [1, 3, 5, 7, 9, 11, 13, 15].map((at) => ({ at, vel: 0.26 }));
 }
 
 function openHats(): PulseHit[] {
@@ -428,4 +515,33 @@ function uncluster(notes: number[]): number[] {
 
 function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+function lerpArr(a: Arrangement, b: Arrangement, t: number): Arrangement {
+  return {
+    kick: lerp(a.kick, b.kick, t),
+    hatClosed: lerp(a.hatClosed, b.hatClosed, t),
+    hatOpen: lerp(a.hatOpen, b.hatOpen, t),
+    hatTick: lerp(a.hatTick, b.hatTick, t),
+    clap: lerp(a.clap, b.clap, t),
+    bass: lerp(a.bass, b.bass, t),
+    pad: lerp(a.pad, b.pad, t),
+    arp: lerp(a.arp, b.arp, t),
+    filter: lerp(a.filter, b.filter, t),
+  };
+}
+
+function easeT(t: number, ease: Ease): number {
+  const x = clamp(t, 0, 1);
+  if (ease === 'holdThen') {
+    if (x < 0.4) return 0;
+    const u = (x - 0.4) / 0.6;
+    return u * u;
+  }
+  if (ease === 'thenHold') return x < 0.3 ? x / 0.3 : 1;
+  return x;
 }

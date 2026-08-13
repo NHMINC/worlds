@@ -86,6 +86,8 @@ for (const seed of seeds) {
   let held = 0;
   let holdChecks = 0;
   let bars = 0;
+  let highPad = 0;
+  let subAboveMid = 0;
   const loops = new Set<string>();
 
   for (const seed of seeds) {
@@ -95,7 +97,7 @@ for (const seed of seeds) {
       for (let section = 0; section < 8; section++) {
         const score = composeSection(seed, section, m, dna);
         const bpm = tempoFor(m, dna);
-        if (bpm < 120 || bpm > 128) check(`${seed} ${group} tempo in house range`, false, `${bpm}`);
+        if (bpm < 118 || bpm > 123) check(`${seed} ${group} tempo in house range`, false, `${bpm}`);
         loops.add(score.bars.filter((_, i) => i % 4 === 0).map((b) => b.chordDeg).join(','));
         for (let i = 0; i < score.bars.length; i++) {
           const bar = score.bars[i];
@@ -106,19 +108,25 @@ for (const seed of seeds) {
             holdChecks++;
             if (bar.chordDeg === score.bars[i - 1].chordDeg) held++;
           }
-          const pitchedHits = [...bar.bass, ...bar.arp, ...bar.pad.map((n) => ({ notes: [n] }))];
+          const pitchedHits = [...bar.bass, ...bar.sub, ...bar.arp, ...bar.pad.map((n) => ({ notes: [n] }))];
           for (const h of pitchedHits) {
             for (const n of h.notes) {
               pitched++;
               if (!inScale(n, score.tonicMidi, score.scale)) outOfScale++;
             }
           }
+          if (bar.pad.some((n) => n > 76)) highPad++;
+          const subN = bar.sub[0]?.notes[0] ?? 0;
+          const midN = bar.bass[0]?.notes[0] ?? 0;
+          if (subN >= midN) subAboveMid++;
         }
       }
     }
   }
 
   check('notes stay in the mode', outOfScale === 0, `${outOfScale}/${pitched} off-scale`);
+  check('pad stays in the chest', highPad === 0, `${highPad} bars with a high pad`);
+  check('sub sits under the mid bass', subAboveMid === 0, `${subAboveMid} bars inverted`);
   check('four-on-the-floor in every bar', floorBars === bars, `${floorBars}/${bars}`);
   check('chords hold for four bars', held === holdChecks, `${held}/${holdChecks}`);
   check('several distinct loops across seeds', loops.size >= 4, `${loops.size} unique`);
@@ -126,12 +134,19 @@ for (const seed of seeds) {
 
 {
   const dna = dnaFromSeed('brook-tide-1');
-  const intro = arrangementFor(mood, dna, 0);
-  const drop = arrangementFor(mood, dna, 6);
-  const brk = arrangementFor(mood, dna, 4);
+  const intro = arrangementFor(mood, dna, 0, 0);
+  const drop = arrangementFor(mood, dna, 6, 0);
+  const brk = arrangementFor(mood, dna, 4, 8);
+  const build0 = arrangementFor(mood, dna, 5, 0);
+  const buildEnd = arrangementFor(mood, dna, 5, 15);
+  const peak = arrangementFor(mood, dna, 3, 15);
   check('drop is louder than intro', drop.kick > intro.kick && drop.bass > intro.bass);
+  check('drop brings 16th ticks, intro does not', drop.hatTick > 0.4 && intro.hatTick < 0.05);
   check('breakdown pulls the kick', brk.kick < 0.1);
-  check('build opens the filter', arrangementFor(mood, dna, 5).filter > intro.filter);
+  check('build holds, then opens the filter', build0.filter < 0.35 && buildEnd.filter > intro.filter + 0.4);
+  check('build withholds the bass for the drop', buildEnd.bass < 0.15 && drop.bass > 0.8);
+  check('build kick grows from silence', build0.kick < 0.1 && buildEnd.kick > 0.5);
+  check('peak is not the release', peak.filter < drop.filter && peak.kick < drop.kick);
 }
 
 {
@@ -145,7 +160,7 @@ for (const seed of seeds) {
 {
   for (const g of GROUPS) check(`${g} has a mode`, Boolean(modeFor(g, 0.7)));
   check('phases cycle', phaseFor(0) === 'intro' && phaseFor(4) === 'break' && phaseFor(8) === 'intro');
-  check('constants are the knobs', MUSIC.BPM_BASE === 124);
+  check('constants are the knobs', MUSIC.BPM_BASE === 121);
   const dna = dnaFromSeed('brook-tide-1');
   check('loop is four chords', loopChords('brook-tide-1', 0, modeFor('green', dna.brightness)).length === 4);
 }
