@@ -1,9 +1,8 @@
 import type { ReactElement } from 'react';
 import type { RigMode, Tool } from '../render/engine';
 import {
-  IconCompass, IconFitHeight, IconFullscreen, IconFullscreenExit, IconGear, IconGlobe,
-  IconInspect, IconLabel, IconLand, IconLetterbox, IconMusic, IconMusicOff, IconOrbits,
-  IconPlace, IconRocket,
+  IconCompass, IconFitHeight, IconGear, IconGlobe, IconInspect, IconLabel,
+  IconLand, IconLetterbox, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconRocket,
 } from './icons';
 
 interface Props {
@@ -36,8 +35,6 @@ interface Props {
   openManager: () => void;
   openMap: () => void;
   openSettings: () => void;
-  fullscreen: boolean;
-  toggleFullscreen: () => void;
 }
 
 // Terrain sculpting arrives later; for now close-up editing is naming only.
@@ -139,14 +136,6 @@ export function Toolbar(props: Props) {
           title="Volume"
         />
       )}
-
-      <button
-        className={`tb-btn ${props.fullscreen ? 'active' : ''}`}
-        title={props.fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
-        onClick={props.toggleFullscreen}
-      >
-        {props.fullscreen ? <IconFullscreenExit /> : <IconFullscreen />}
-      </button>
 
       <button className="tb-btn" title="Settings" onClick={props.openSettings}>
         <IconGear />

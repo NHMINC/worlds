@@ -126,15 +126,3 @@ export const IconGlobe = (p: IconProps) => (
     <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
   </svg>
 );
-
-export const IconFullscreen = (p: IconProps) => (
-  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M8 3H4v4M16 3h4v4M8 21H4v-4M16 21h4v-4" />
-  </svg>
-);
-
-export const IconFullscreenExit = (p: IconProps) => (
-  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M8 3v4H4M16 3v4h4M8 21v-4H4M16 21v-4h4" />
-  </svg>
-);
