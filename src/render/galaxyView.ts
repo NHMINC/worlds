@@ -267,7 +267,7 @@ export class GalaxyView {
     if (dist > appear) return 0;
     // Individual beacons earn pixels as you close on pick range; far
     // out the grain and the integral are the photograph.
-    const zoomFade = smoothstep(26, 16, zoom);
+    const zoomFade = smoothstep(16, 9, zoom);
     return smoothstep(appear, appear * 0.35, dist) * zoomFade;
   }
 
@@ -755,12 +755,16 @@ export class GalaxyView {
       if (dx * fwd.x + dy * fwd.y + dz * fwd.z < 0.02) continue;
       scored.push({ o, d });
     }
-    scored.sort((a, b) => {
-      const sa = Math.log10(1 + a.o.star.luminosity) / Math.max(0.25, a.d);
-      const sb = Math.log10(1 + b.o.star.luminosity) / Math.max(0.25, b.d);
-      return sb - sa;
-    });
-    const near = scored.slice(0, RESOLVE_MAX).map((s) => s.o);
+    // Half the slots to whatever is physically nearest (mostly faint
+    // beads), half to the brightest by received flux (the blooms) —
+    // a photograph, not a supergiant convention.
+    scored.sort((a, b) => a.d - b.d);
+    const nearest = scored.slice(0, RESOLVE_MAX / 2);
+    const rest = scored.slice(RESOLVE_MAX / 2);
+    const flux = (s: { o: GalaxyObject; d: number }) =>
+      Math.max(s.o.star.luminosity, 1e-4) / Math.max(s.d * s.d, 1e-4);
+    rest.sort((a, b) => flux(b) - flux(a));
+    const near = [...nearest, ...rest.slice(0, RESOLVE_MAX - nearest.length)].map((s) => s.o);
     for (const pin of [this.selected, this.home, this.hereObj]) {
       if (!pin || near.some((o) => o.id === pin.id)) continue;
       const c = galToCart(pin.pos);
@@ -769,7 +773,7 @@ export class GalaxyView {
       near.unshift(pin);
       if (near.length > RESOLVE_MAX) near.pop();
     }
-    this.discs.setStars(near);
+    this.discs.setStars(near, cam);
     this.discs.syncCamera(this.camera);
     this.discIds.clear();
     for (const o of near) this.discIds.add(o.id);
