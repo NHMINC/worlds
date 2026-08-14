@@ -271,11 +271,18 @@ export interface NearQuery {
   /** Max objects to return. */
   limit?: number;
   /**
-   * IMF quantile floor. 0 = every star in the cell; 0.99 = the massive
-   * tail only. This is how a phone resolves 10⁹ addresses: it asks for
-   * the bright end of nearby cells, not a list of the galaxy.
+   * How deep into the faint IMF to go. 0.9 = currently luminous + nebulae
+   * (the massive *dead* tail is not bright). 0 = include FGK and cool
+   * dwarfs. Present-day light, not ZAMS mass.
    */
   uMin?: number;
+}
+
+function pushNear(out: GalaxyObject[], seen: Set<number>, o: GalaxyObject | null, limit: number): boolean {
+  if (!o || seen.has(o.id) || out.length >= limit) return out.length >= limit;
+  seen.add(o.id);
+  out.push(o);
+  return out.length >= limit;
 }
 
 /** Walk a neighbourhood of cells; return occupied objects (capped). */
@@ -298,6 +305,8 @@ export function objectsNear(
   const izc = Math.floor(((p.z / zMax + 1) / 2) * nz);
   const diz = Math.max(1, Math.ceil((dR / Math.max(0.2, 2 * zMax)) * nz));
   const out: GalaxyObject[] = [];
+  const seen = new Set<number>();
+  const perCell = uMin > 0.9 ? 4 : uMin > 0.5 ? 10 : 28;
   for (let ir = ir0; ir <= ir1 && out.length < limit; ir++) {
     for (let dt = -dit; dt <= dit && out.length < limit; dt++) {
       const it = (itc + dt + nth * 8) % nth;
@@ -305,10 +314,42 @@ export function objectsNear(
         const cell = ir * nth * nz + it * nz + iz;
         const n = slotsInCell(seed, cell);
         if (n <= 0) continue;
-        const s0 = Math.floor(n * uMin);
-        for (let s = n - 1; s >= s0 && out.length < limit; s--) {
+        let taken = 0;
+        const sHi = Math.floor(n * 0.7);
+        for (let s = n - 1; s >= sHi && taken < perCell && out.length < limit; s--) {
           const o = objectAt(seed, packId(cell, s));
-          if (o) out.push(o);
+          if (!o) continue;
+          const remnant =
+            o.star.phase === 'white_dwarf' ||
+            o.star.phase === 'neutron_star' ||
+            o.star.phase === 'pulsar' ||
+            o.star.phase === 'black_hole';
+          const lit =
+            o.star.nebula !== 'none' ||
+            o.star.phase === 'wolf_rayet' ||
+            (!remnant && o.star.luminosity >= 0.45);
+          if (!lit) continue;
+          if (pushNear(out, seen, o, limit)) return out;
+          taken++;
+        }
+        if (uMin <= 0.93) {
+          const [a, b] = slotRangeForMass(n, 0.55, 1.35);
+          for (let s = a; s < b && taken < perCell * 2 && out.length < limit; s++) {
+            const o = objectAt(seed, packId(cell, s));
+            if (!o) continue;
+            const st = o.star;
+            if (st.phase !== 'main_sequence') continue;
+            if (st.mk !== 'F' && st.mk !== 'G' && st.mk !== 'K') continue;
+            if (pushNear(out, seen, o, limit)) return out;
+            taken++;
+          }
+        }
+        if (uMin <= 0.35) {
+          const step = Math.max(1, Math.floor(n / 24));
+          for (let s = 0; s < n && taken < perCell * 3 && out.length < limit; s += step) {
+            if (pushNear(out, seen, objectAt(seed, packId(cell, s)), limit)) return out;
+            taken++;
+          }
         }
       }
     }

@@ -58,7 +58,7 @@ const STAR_VERT = /* glsl */ `
     vPulse = pulse;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     float dist = max(0.8, -mv.z);
-    gl_PointSize = aSize * aVis * pulse * uPixel * (42.0 / dist);
+    gl_PointSize = min(22.0, aSize * aVis * pulse * uPixel * (36.0 / dist));
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -247,17 +247,9 @@ export class GalaxyView {
     if (zoom > FIELD_ONLY_ZOOM) return 0;
     const cam = this.camera.position;
     const dist = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
-    const appear = zoom * 1.5 + 1.8;
+    const appear = zoom * 1.8 + 2.2;
     if (dist > appear) return 0;
-    const neb = o.star.nebula !== 'none';
-    const L = Math.max(1e-8, o.star.luminosity);
-    const floor = neb
-      ? Math.pow(Math.max(zoom, 4) / 16, 2.8)
-      : Math.pow(Math.max(zoom, 0.55) / 5.8, 3.5);
-    if (L < floor * 0.2) return 0;
-    const bright = L / Math.max(floor, 1e-8);
-    const near = 1 - dist / appear;
-    return clamp01(smoothstep(0.2, 1.15, bright) * smoothstep(0.02, 0.4, near));
+    return smoothstep(appear, appear * 0.35, dist);
   }
 
   private applyVis(): void {
@@ -316,6 +308,9 @@ export class GalaxyView {
       const gal = cartToGal(this.look.x, this.look.y, this.look.z);
       const dR = Math.min(5.2, Math.max(0.18, this.radius * 0.72));
       this.objects = objectsNear(this.seed, gal, dR, { uMin: this.uMinForZoom(), limit: 2400 });
+      for (const pin of [this.home, this.hereObj]) {
+        if (pin && !this.objects.some((o) => o.id === pin.id)) this.objects.push(pin);
+      }
     }
     this.byId.clear();
     for (const o of this.objects) this.byId.set(o.id, o);

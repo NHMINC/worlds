@@ -4,7 +4,7 @@ import { AmbientMusic } from './audio/ambient';
 import { db, deleteSystem, touchSystem } from './store/db';
 import { exportSystem, importSystem } from './store/exportImport';
 import { CURRENT_GEN_VERSION, effectivePhysics, systemAt, type SystemSpec } from './world/systemgen';
-import { type GalaxyObject } from './world/galaxy';
+import { objectAt, type GalaxyObject } from './world/galaxy';
 import { discoverHabitable } from './world/discover';
 import { PALETTE } from './world/palettes';
 import { uuid } from './world/rng';
@@ -196,20 +196,31 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function visitAlive(s: SystemMeta): boolean {
+    if (s.starId == null) return false;
+    return objectAt(s.galaxySeed ?? UNIVERSE.CANONICAL_SEED, s.starId) != null;
+  }
+
+  async function ensureFirstCamp(): Promise<SystemMeta[]> {
+    const start = discoverHabitable();
+    const meta = newSystemMeta(start.spec.star.name, start.spec.seed, {
+      starId: start.starId,
+      galaxySeed: UNIVERSE.CANONICAL_SEED,
+    });
+    await db.transaction('rw', db.systems, async () => {
+      const existing = await db.systems.toArray();
+      if (!existing.some(visitAlive)) await db.systems.add(meta);
+    });
+    return (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
+  }
+
   async function boot(engine: Engine): Promise<void> {
-    let list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null);
-    if (list.length === 0) {
-      const start = discoverHabitable();
-      const meta = newSystemMeta(start.spec.star.name, start.spec.seed, {
-        starId: start.starId,
-        galaxySeed: UNIVERSE.CANONICAL_SEED,
-      });
-      await db.transaction('rw', db.systems, async () => {
-        const existing = await db.systems.toArray();
-        if (!existing.some((s) => s.starId != null)) await db.systems.add(meta);
-      });
-      list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null);
+    const raw = await db.systems.orderBy('updatedAt').reverse().toArray();
+    for (const s of raw) {
+      if (s.starId != null && !visitAlive(s)) await deleteSystem(s.id);
     }
+    let list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
+    if (list.length === 0) list = await ensureFirstCamp();
     setSystems(list);
     const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
     const target = list.find((s) => s.id === lastId) ?? list[0];
@@ -221,7 +232,7 @@ export default function App() {
     if (!engine) return;
     const s = await db.systems.get(id);
     if (!s) return;
-    if (s.starId == null) return;
+    if (s.starId == null || !visitAlive(s)) return;
     const sysSpec = systemAt(s.galaxySeed ?? UNIVERSE.CANONICAL_SEED, s.starId);
     const [bs, terr, lbs, objs] = await Promise.all([
       db.bodyState.where('systemId').equals(id).toArray(),
@@ -266,16 +277,8 @@ export default function App() {
 
   async function handleDelete(id: string): Promise<void> {
     await deleteSystem(id);
-    let list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null);
-    if (list.length === 0) {
-      const start = discoverHabitable();
-      const meta = newSystemMeta(start.spec.star.name, start.spec.seed, {
-        starId: start.starId,
-        galaxySeed: UNIVERSE.CANONICAL_SEED,
-      });
-      await db.systems.add(meta);
-      list = [meta];
-    }
+    let list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
+    if (list.length === 0) list = await ensureFirstCamp();
     setSystems(list);
     if (system?.id === id) await openSystem(list[0].id);
   }
