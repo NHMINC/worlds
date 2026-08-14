@@ -4,7 +4,7 @@
  * spinners — plus basinFetch: ponds near zero, oceans near one.
  * Run: npx tsx scripts/check-seastate.ts */
 import { generateSystem } from '../src/world/systemgen';
-import { seaState, tidalForcing, classify } from '../src/world/physics';
+import { UNIVERSE, seaState, tidalForcing, classify, waveSlope } from '../src/world/physics';
 import { generateLevels, basinFetch, waterLevelFor } from '../src/world/toygen';
 import { frequencyForSize, getGrid } from '../src/world/geodesic';
 
@@ -66,6 +66,22 @@ console.log(`  wet fetch mean=${(wetF / Math.max(1, wet) / 255).toFixed(2)} min=
 check(wet === 0 || maxWet > 200, 'no basin reaches high fetch');
 check(shoreLand > 0, 'no shore land inherited fetch');
 check(ms < 100, `basinFetch too slow: ${ms.toFixed(1)}ms`);
+
+// Cox–Munk slope law: airless seas are the calm mirror; wind opens the path;
+// across-path is tighter (the Earth glitter streak).
+const calm = waveSlope(0);
+const blow = waveSlope(1);
+console.log(
+  `\nslope: calm along=${calm.along.toFixed(3)} across=${calm.across.toFixed(3)}` +
+  `  wind along=${blow.along.toFixed(3)} across=${blow.across.toFixed(3)}`,
+);
+check(calm.along === UNIVERSE.WAVE_SLOPE_CALM, 'calm slope is not WAVE_SLOPE_CALM');
+check(blow.along === UNIVERSE.WAVE_SLOPE_WIND, 'wind slope is not WAVE_SLOPE_WIND');
+check(calm.across < calm.along, 'calm glitter is not elongated');
+check(blow.across < blow.along, 'wind glitter is not elongated');
+check(blow.along > calm.along * 4, 'wind does not open the path');
+check(waveSlope(-1).along === calm.along, 'energy < 0 not clamped');
+check(waveSlope(2).along === blow.along, 'energy > 1 not clamped');
 
 console.log(fail === 0 ? '\nALL CHECKS PASSED' : `\n${fail} CHECKS FAILED`);
 process.exit(fail === 0 ? 0 : 1);

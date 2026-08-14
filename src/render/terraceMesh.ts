@@ -783,15 +783,17 @@ void main() {
 `;
 
 /**
- * Cel-shaded water. Three stylized ingredients, all from drifting 3D value
+ * Cel-shaded water. Stylized ingredients, all from drifting 3D value
  * noise anchored to the sphere (no textures, no tiling, no orientation):
  *  - the fresnel depth gradient is quantized into a few flat bands whose
  *    boundaries wobble and swim with the noise, so the sea reads as moving
  *    tone bands rather than a smooth static gradient;
  *  - hard-edged ripple highlights — two noise fields multiplied and cut at a
  *    threshold, giving sparse wobbly bright patches that drift and morph
- *    (the classic toon-water glint pattern);
- *  - a crisp, hard-edged sun glint whose outline dances with the waves.
+ *    (the classic toon-water sparkle);
+ *  - Cox–Munk sunglint: sea-state slope variance opens a glitter path
+ *    elongated in the sun–camera plane (Earth-from-orbit), tight as a
+ *    mirror when the sea is still. Applied after air, extinction only.
  * Fine ripples hand over to a planetary-scale field at far zoom so the sea
  * keeps moving from any distance without aliasing into shimmer.
  */
@@ -944,9 +946,8 @@ void main() {
   lap *= 0.55 + 0.45 * n1;                                      // waves slosh against the shelf
   c = mix(c, vec3(0.93, 0.98, 1.0), 0.5 * lap);
 
-  // Stylized sun glint: a crisp-edged patch (not a soft sheen) whose outline
-  // dances because the normal rides the same waves.
-  // Glint outline: waves dance it — a still sea throws one clean disc.
+  // Wave-perturbed normal: refraction wobble and close-up glitter jitter.
+  // From orbit the bump is small and the glitter path is the slope law.
   vec3 nS = normalize(n0
     + (0.10 * ((n1 - 0.5) * t1 + (n2 - 0.5) * t2) * att
     +  0.09 * ((m1 - 0.5) * t1 + (m2 - 0.5) * t2)) * sea);
@@ -981,18 +982,46 @@ void main() {
     }
   }
 
-  vec3 h = normalize(uLightDir + view);
-  float sd = clamp(dot(nS, h), 0.0, 1.0);
-  float sw = max(fwidth(sd) * 1.5, 0.01);
-  float glint = smoothstep(0.935 - sw, 0.935 + sw, sd);
-  float halo = pow(sd, 24.0);
-
-  // Day/night: night water sinks to a deep moonlit blue, and the sun glint
-  // only lives on the day side (and never on ice).
+  // Day/night: night water sinks to a deep moonlit blue. Sunglint is
+  // computed here (Cox–Munk) but applied AFTER the air: in-scatter must
+  // not dye the sun the sky's colour (the same lesson as foam).
   vec3 alb = c; // true color, for the torch: darkness hides it, light returns it
   float dayW = smoothstep(-0.14, 0.10, dot(n0, uLightDir));
   c = mix(c * vec3(0.26, 0.32, 0.50), c, dayW);
-  c += vec3(1.0, 0.98, 0.9) * (0.30 * glint + 0.10 * halo) * dayW * (1.0 - ice);
+
+  // Cox–Munk glitter path. The geometric sphere is the macrosurface;
+  // waves are a slope distribution whose variance is sea-state energy
+  // (physics.waveSlope). Along-path vs across-path: required slope grows
+  // slower in the sun–camera plane, so the glint is a streak from orbit
+  // and a sparkle field up close (nS jitters the half-vector as we zoom).
+  vec3 h = normalize(uLightDir + view);
+  vec3 hN = normalize(mix(h, nS, mix(0.08, 0.45, att)));
+  float wind = clamp(uWaveEnergy, 0.0, 1.0);
+  float sigAlong = mix(${UNIVERSE.WAVE_SLOPE_CALM}, ${UNIVERSE.WAVE_SLOPE_WIND}, wind);
+  float sigAcross = sigAlong * ${UNIVERSE.WAVE_SLOPE_ANISO};
+  // Principal plane in the tangent: projections of sun and view. Required
+  // slope grows slower along that azimuth, so the glint is a streak.
+  vec3 tL = uLightDir - n0 * dot(uLightDir, n0);
+  vec3 tV = view - n0 * dot(view, n0);
+  vec3 alongDir = tL + tV;
+  float ad2 = dot(alongDir, alongDir);
+  vec3 T = ad2 > 1e-8 ? alongDir * inversesqrt(ad2) : t1;
+  vec3 B = cross(n0, T);
+  float hn = max(dot(hN, n0), 1e-4);
+  float tanA = dot(hN, T) / hn;
+  float tanB = dot(hN, B) / hn;
+  float expo = (tanA * tanA) / max(sigAlong, 1e-5)
+             + (tanB * tanB) / max(sigAcross, 1e-5);
+  // A little of the ripple field so the path isn't a painted ellipse;
+  // keep the floor high or the glitter vanishes into noise from orbit.
+  float spark = mix(ripF, rip, att);
+  float shape = exp(-expo) * mix(0.85, 1.25, spark) * step(0.0, dot(hN, n0));
+  // Peak is the sun: mix toward sun-white so the core reads as a reflection
+  // (adding onto already-bright cel water just made lighter cyan). GLINT_GAIN
+  // saturates the inner path; the NDF still sets the falloff.
+  float glintAmt = clamp(shape * ${UNIVERSE.GLINT_GAIN}, 0.0, 1.0)
+                 * dayW * (1.0 - ice);
+  vec3 glintC = vec3(1.0, 0.94, 0.78);
 
   // Fresnel reflection: at grazing incidence the sea is a MIRROR (Schlick
   // reflectance walks toward 1). The reflected ray first asks the
@@ -1115,6 +1144,13 @@ void main() {
     c += tl / (1.0 + dot(tl, vec3(0.333)));
     c += torchGlow(uCamPos, vPos);
   }
+  // Sunglint after the air, same order as foam: mix toward the sun's
+  // colour, not toward an extincted copy. From orbit the in-scattered sea
+  // is already bright; multiplying the sun by exp(-tau) made the "glint"
+  // darker than the ocean (a muddy haze). Ice has no liquid facets.
+  c = mix(c, glintC, glintAmt);
+  c = mix(c, vec3(1.0, 0.98, 0.92), glintAmt * glintAmt);
+  alpha = mix(alpha, 1.0, glintAmt);
   // Foam is always white; day/night is brightness only. After the air, or
   // the sky paints the surf blue.
   c = mix(c, vec3(0.97, 1.0, 1.0) * mix(0.30, 1.0, dayW), foam);

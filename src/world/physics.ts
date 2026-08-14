@@ -208,6 +208,20 @@ export const UNIVERSE = {
    * this universe — energy stays physical, presentation scales. */
   WAVE_GAIN: 1.35,
 
+  /**
+   * Cox–Munk mean-square facet slope of a liquid sea. Energy 0 (airless
+   * mirror, no wind) sits at CALM — a tight sunglint coin. Energy 1 (full
+   * wind + tide) sits at WIND — a wide glitter path. ANISO is across-path
+   * / along-path: required slope grows slower in the sun–camera plane, so
+   * Earth-from-orbit sunglint is a streak, not a disc. Physical, not a
+   * paint. GLINT_GAIN scales the NDF so the specular core is sun-white;
+   * the path's falloff is the NDF itself (do not lift the tails).
+   */
+  WAVE_SLOPE_CALM: 0.003,
+  WAVE_SLOPE_WIND: 0.034,
+  WAVE_SLOPE_ANISO: 0.22,
+  GLINT_GAIN: 3.2,
+
   /** The universe's gearbox: wall seconds → system seconds. Everything
    * celestial (orbits, spin, days, seasons) turns this much slower than
    * the wall clock, so a dawn is something you can watch. Applied where
@@ -1097,6 +1111,19 @@ export function seaState(p: BodyPhysics, tide = 0): SeaState {
     tempo: Math.sqrt(Math.min(3, Math.max(0.05, p.gravity))),
     tide,
   };
+}
+
+/**
+ * Cox–Munk mean-square slope of a liquid sea from sea-state energy.
+ * Along-path is the sun–camera plane; across-path is tighter (ANISO).
+ * The water shader compiles the same numbers — this copy is for tests
+ * and anyone reasoning about the law without opening GLSL.
+ */
+export function waveSlope(energy: number): { along: number; across: number } {
+  const along =
+    UNIVERSE.WAVE_SLOPE_CALM +
+    (UNIVERSE.WAVE_SLOPE_WIND - UNIVERSE.WAVE_SLOPE_CALM) * clamp01(energy);
+  return { along, across: along * UNIVERSE.WAVE_SLOPE_ANISO };
 }
 
 // ------------------------------------------------------------------ classification
