@@ -191,6 +191,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   scale the orbit radius toward what is already framed; the eased
   radius is the only smoothing, and the look point never moves on a
   zoom (momentum-thruster zoom was tried and retired — harder to aim).
+  One continuous motion crosses at most `ZOOM_GESTURE_SPAN` (~2.6×) in
+  scale — never London-from-orbit in one pinch; a ~0.6 s pause starts
+  the next motion. After a pinch, the surviving finger is NOT a drag:
+  rotation resumes only with a fresh single-finger touch.
   The detection bubble (`DETECT_R`, `RESOLVE_DIST`) is wide so the sky
   fills well before arrival; the catalog walk stays bounded via an
   absolute-lattice coarsening that panning cannot re-roll. A beacon
