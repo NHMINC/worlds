@@ -65,12 +65,14 @@ export const UNIVERSE = {
   STAR_DISK_LUM: 3.8,
 
   /**
-   * Eye/optics glare: the PSF that turns flux into a wash. Angular
-   * half-width at A_HAB·SPACE_SCALE for L=1 (radians). Scales as
-   * sqrt(flux) so a close approach fills the view and the outer
-   * system keeps a tight spike. GLARE_GAIN is the core brightness.
+   * Eye/optics glare: ONE radially uniform falloff around the disk.
+   * Angular half-width at A_HAB·SPACE_SCALE for L=1 (radians); scales
+   * as sqrt(flux) so a close approach widens the wash and the outer
+   * system keeps a bright point. GLARE_GAIN is the core brightness.
+   * The sun should only dominate the frame when you are looking at
+   * it up close — not filter the whole system view.
    */
-  STAR_GLARE_ANG: 0.22,
+  STAR_GLARE_ANG: 0.12,
   STAR_GLARE_GAIN: 3.4,
 
   /**
@@ -93,10 +95,18 @@ export const UNIVERSE = {
    * Display knee for body irradiance. Raw 1/r² at the inner edge is
    * ~8× habitable; the scene is exposed for A_HAB and brighter flux
    * compresses through this so Mercury-path worlds wash toward white
-   * instead of clipping a hole. Dimmer than 1 is untouched — the
-   * outer system is allowed to fade.
+   * instead of clipping a hole.
    */
   STAR_IRR_KNEE: 0.28,
+
+  /**
+   * Eye adaptation on the dim side (display exponent below flux 1).
+   * The law stays inverse-square; the EYE is logarithmic — an outer
+   * world still fades with distance, but the way a dusk fades to a
+   * watcher, not the way a photometer reads it. Without this, a far
+   * day side drops below its own moonlit night tint.
+   */
+  STAR_IRR_ADAPT: 0.55,
 
   /** Accretion disk temperature: T_disk = DISK_C · L^0.25 · a^-DISK_P (K). */
   DISK_C: 2670,
@@ -1314,11 +1324,13 @@ export function starIrradiance(L: number, a: number): number {
 
 /**
  * LDR response to stellar irradiance. Exposed for A_HAB (irr = 1).
- * The law is still inverse-square; the screen is the limit.
+ * The law is still inverse-square; the screen and the eye are the
+ * limits: bright flux compresses through the knee, dim flux through
+ * the adaptation exponent. Monotonic — farther is always dimmer.
  */
 export function starIrradianceDisplay(irr: number): number {
   const x = Math.max(0, irr);
-  if (x <= 1) return x;
+  if (x <= 1) return Math.pow(x, UNIVERSE.STAR_IRR_ADAPT);
   return 1 + (x - 1) / (1 + UNIVERSE.STAR_IRR_KNEE * (x - 1));
 }
 

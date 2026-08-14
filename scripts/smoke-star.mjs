@@ -64,11 +64,19 @@ await page.screenshot({ path: 'previews/star-2-close.png' });
 await lookAtSun(3800, 80, 0);
 await page.screenshot({ path: 'previews/star-3-outer.png' });
 
-// From the ground, looking at the sun.
+// From the ground, looking at the sun. Pick the clearest sky — on a
+// hothouse the deck hides the disk, which is the law working, not the
+// look we are checking here.
 const home = await page.evaluate(() => {
   const e = window.__engine;
-  const rocky = [...e['bodies'].values()].find((rt) => rt.spec.kind === 'rocky' && !rt.spec.parent);
-  return rocky?.spec.id ?? null;
+  let best = null;
+  let bestP = Infinity;
+  for (const rt of e['bodies'].values()) {
+    if (rt.spec.kind !== 'rocky' || rt.spec.parent) continue;
+    const p = rt.phys.atmosphere.pressure;
+    if (p < bestP) { bestP = p; best = rt.spec.id; }
+  }
+  return best;
 });
 if (home) {
   await page.evaluate((id) => {

@@ -33,9 +33,12 @@ if (Math.abs(half - 4) > 1e-9) bad(`½ distance should be 4× flux, got ${half}`
 const dimL = starIrradiance(0.25, UNIVERSE.A_HAB);
 if (Math.abs(dimL - 0.25) > 1e-9) bad(`L=0.25 at HZ should be 0.25, got ${dimL}`);
 
-// --- display knee: dim side untouched, bright side compressed ---
+// --- display response: monotonic, anchored at 1, compressed both ways ---
 if (starIrradianceDisplay(1) !== 1) bad(`display(1) should be 1`);
-if (starIrradianceDisplay(0.2) !== 0.2) bad(`display must not lift the dim side`);
+const dim = starIrradianceDisplay(0.2);
+if (!(dim > 0.2 && dim < 1)) bad(`dim side should adapt up but stay dim, got ${dim}`);
+if (starIrradianceDisplay(0.05) >= dim) bad(`farther must still read dimmer`);
+if (starIrradianceDisplay(0) !== 0) bad(`no flux is still black`);
 const hot = starIrradianceDisplay(8);
 if (!(hot > 1 && hot < 8)) bad(`display(8) should compress into (1, 8), got ${hot}`);
 if (starIrradianceDisplay(16) <= hot) bad(`brighter flux must still read brighter after the knee`);
