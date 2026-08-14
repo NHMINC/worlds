@@ -213,6 +213,12 @@ for (let i = 0; i < SYSTEMS; i++) {
   if (col < 0.08 || col > 0.16) {
     bad(`AIR COLUMN OFF (sunsets/sky): σH=${col.toFixed(3)}`);
   }
+  // The halo is a line through the well, not a filled shell: AIR_LINE
+  // (density at half-glow) must sit inside the first couple of scale
+  // heights so 1 atm upper air shows space.
+  if (UNIVERSE.AIR_LINE < 0.12 || UNIVERSE.AIR_LINE > 0.4) {
+    bad(`AIR_LINE OFF (limb should be a line): ${UNIVERSE.AIR_LINE}`);
+  }
 }
 
 // --- geology: deterministic, depth-lawful ---

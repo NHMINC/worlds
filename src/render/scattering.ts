@@ -1,3 +1,5 @@
+import { UNIVERSE } from '../world/physics';
+
 /**
  * THE scattering law — the only copy. Exponential air (physics.airExtinction:
  * sigma, scale height, per-wavelength weights all derived from chemistry),
@@ -5,7 +7,7 @@
  * attenuation toward the sun. Every shader that meets the air — terrain,
  * water, and the sky shell — compiles this same chunk and marches the same
  * integral along its own view rays. The camera is just wherever it is:
- * from orbit these numbers read as the blue limb and hazy distance; from
+ * from orbit these numbers read as the blue limb line and hazy distance; from
  * the ground the identical numbers read as a bright sky, red sunsets and a
  * dark star-lit night. Nothing is imposed per viewpoint.
  */
@@ -171,11 +173,25 @@ vec3 airScatter(vec3 a, vec3 b, vec3 lightDir, out vec3 tau) {
     // segments but collapses to zero when one step is optically thick —
     // hothouse air would swallow its own glow.
     vec3 w = exp(-tau) * (1.0 - exp(-dtau));
-    insc += (Tsun + Tdif) * w;
+    // The visible halo is a LINE. A sideways look through an exponential
+    // (Earth from the ISS: a thin blue band, then black) only lights the
+    // well-mixed lower column — most of the mass, a couple of scale
+    // heights. Display-stretched H makes a grazing chord through the
+    // thin leftover long enough that linear in-scatter fills the shell
+    // out to the boundary; at 1 atm that leftover is transparent and
+    // you see space. Extinction (tau) still integrates the full
+    // exponential. Emission is gated by density so the glow has fallen
+    // to half at ρ = AIR_LINE; aerosol decks keep their own weight
+    // (a deck is opaque wherever it sits).
+    float emit = (rho * rho) / (rho * rho + ${UNIVERSE.AIR_LINE * UNIVERSE.AIR_LINE});
+    float deck = uAeroTau * deckRho(r);
+    emit = max(emit, deck / (deck + 0.08));
+    insc += (Tsun + Tdif) * w * emit;
     // The starlight floor belongs to shadowed air only: next to any
     // sunlight it is nothing, and adding it to daylight would wash the
-    // sky grey. Night and twilight air keep their faint glow.
-    amb += (1.0 - lit) * w;
+    // sky grey. Night and twilight air keep their faint glow — also
+    // a line, not a filled night shell.
+    amb += (1.0 - lit) * w * emit;
     tau += dtau;
   }
   return uSunLum * insc + uAirNight * amb;
