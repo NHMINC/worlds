@@ -121,17 +121,18 @@ if (await galaxyBtn.count()) {
     : { x: 640, y: 400 };
   if (close.n) {
     await page.mouse.click(tap.x, tap.y);
-    await page.waitForTimeout(2800);
+    try {
+      await page.waitForFunction(() => !document.querySelector('.galaxy-explorer'), { timeout: 20000 });
+    } catch {
+      console.error('FAIL: tapping a rendered star did not set course');
+      errors.push('rendered star tap did not set course');
+    }
     const afterGo = await page.evaluate(() => ({
       explorer: Boolean(document.querySelector('.galaxy-explorer')),
       title: document.querySelector('.tb-world')?.textContent ?? '',
     }));
     console.log('AFTER DISC TAP', JSON.stringify(afterGo));
     await page.screenshot({ path: 'previews/galaxy-3-tap.png' });
-    if (afterGo.explorer) {
-      console.error('FAIL: tapping a rendered star did not set course');
-      errors.push('rendered star tap did not set course');
-    }
   }
 } else {
   console.error('NO GALAXY BUTTON');

@@ -273,6 +273,7 @@ export class GalaxyView {
       const wy = starPos.getY(i);
       const wz = starPos.getZ(i);
       const near =
+        this.radius < RESOLVE_DIST ||
         this.discIds.has(o.id) ||
         Math.hypot(wx - this.camera.position.x, wy - this.camera.position.y, wz - this.camera.position.z) < RESOLVE_DIST;
       const v = near ? 0 : this.resolveAmt(o, wx, wy, wz);
@@ -284,7 +285,7 @@ export class GalaxyView {
     const nebPos = this.nebPts.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < this.nebIds.length; i++) {
       const o = this.byId.get(this.nebIds[i])!;
-      const hid = this.discIds.has(o.id);
+      const hid = this.radius < RESOLVE_DIST || this.discIds.has(o.id);
       const v = hid ? 0 : this.resolveAmt(o, nebPos.getX(i), nebPos.getY(i), nebPos.getZ(i));
       nebVis[i] = v;
       if (hid || v > 0.45) n++;
@@ -745,7 +746,11 @@ export class GalaxyView {
       if (dx * fwd.x + dy * fwd.y + dz * fwd.z < 0.02) continue;
       scored.push({ o, d });
     }
-    scored.sort((a, b) => a.d - b.d);
+    scored.sort((a, b) => {
+      const sa = Math.log10(1 + a.o.star.luminosity) / Math.max(0.25, a.d);
+      const sb = Math.log10(1 + b.o.star.luminosity) / Math.max(0.25, b.d);
+      return sb - sa;
+    });
     const near = scored.slice(0, RESOLVE_MAX).map((s) => s.o);
     for (const pin of [this.selected, this.home, this.hereObj]) {
       if (!pin || near.some((o) => o.id === pin.id)) continue;
