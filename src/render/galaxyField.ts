@@ -6,6 +6,11 @@
  * Young light traces the arm crests (O/B live there); dust lanes sit on
  * the inner edge of the shock. That is why a face-on view reads as a
  * grand-design spiral, not a uniform disk. Not a painted texture.
+ *
+ * The field is ONLY the integral. Individual stars are catalog rows
+ * (objectsNear → beacons and photospheres in galaxyView); hash-noise
+ * sparkle in here was a painted starfield — dots that swam with the
+ * camera and could never be tapped — and it is gone.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -37,18 +42,13 @@ const FRAG = /* glsl */ `
   uniform float uArmA;
   uniform float uHaloA;
   uniform float uResolve;
+  uniform float uSteps;
   varying vec2 vUv;
 
   float sech2(float x) {
     float e = exp(clamp(x, -12.0, 12.0));
     float s = 2.0 / (e + 1.0 / e);
     return s * s;
-  }
-
-  float hash13(vec3 p) {
-    p = fract(p * 0.1031);
-    p += dot(p, p.zyx + 31.32);
-    return fract((p.x + p.y) * p.z);
   }
 
   float armPhase(float R, float theta) {
@@ -79,23 +79,16 @@ const FRAG = /* glsl */ `
     vec3 bmin = vec3(-uRmax * 1.25, -uZthick * 8.0, -uRmax * 1.25);
     vec3 bmax = -bmin;
     vec2 hit = boxHit(uCam, rd, bmin, bmax);
-    if (hit.y < max(hit.x, 0.0)) {
-      float sky = hash13(rd * 380.0);
-      if (sky > 0.997) {
-        gl_FragColor = vec4(vec3(0.8, 0.86, 1.0) * 0.45, 0.45);
-      } else {
-        discard;
-      }
-      return;
-    }
+    if (hit.y < max(hit.x, 0.0)) discard;
 
     float t0 = max(hit.x, 0.0);
     float t1 = hit.y;
-    float dt = (t1 - t0) / 40.0;
+    float dt = (t1 - t0) / uSteps;
     vec3 acc = vec3(0.0);
     float trans = 1.0;
 
     for (int i = 0; i < 40; i++) {
+      if (float(i) >= uSteps) break;
       if (trans < 0.02) break;
       float t = t0 + (float(i) + 0.5) * dt;
       vec3 p = uCam + rd * t;
@@ -128,23 +121,15 @@ const FRAG = /* glsl */ `
       float extinct = 1.0 - 0.82 * lane * clamp(thinMass * 1.4, 0.0, 1.0);
       emit *= extinct;
 
-      // Close in, the integral breaks into sparkle — the IMF tail resolving,
-      // not stored rows. Face-on stays a smooth Hubble glow.
-      float grid = mix(18.0, 86.0, uResolve);
-      float h = hash13(floor(p * grid + 0.5));
-      float rare = mix(0.0016, 0.038, uResolve) * (young * 4.0 + bulge * 1.6 + bar);
-      if (h > 1.0 - rare) {
-        emit += vec3(1.0, 0.93, 0.82) * mix(14.0, 6.5, uResolve) * (h - (1.0 - rare)) / max(rare, 1e-5);
-      }
+      // Close in, the smooth glow steps aside for the catalog: real
+      // objectsNear beacons take over, so the integral dims rather
+      // than fakes points of its own.
       emit *= mix(1.0, 0.58, uResolve);
 
       float dens = (bulge + bar + young + thick * 0.3) * dt * 0.55;
       acc += trans * emit * dt * 1.65;
       trans *= exp(-dens * 1.15);
     }
-
-    float sky = hash13(rd * 400.0);
-    if (sky > 0.996) acc += vec3(0.85, 0.9, 1.0) * 0.55;
 
     acc *= uDim;
     float a = clamp(max(1.0 - trans, length(acc) * 0.35), 0.0, 1.0);
@@ -176,6 +161,7 @@ export function createGalaxyField(): { mesh: THREE.Mesh; mat: THREE.ShaderMateri
       uArmA: { value: UNIVERSE.GALAXY_ARM_A },
       uHaloA: { value: UNIVERSE.GALAXY_HALO_A },
       uResolve: { value: 0 },
+      uSteps: { value: 40 },
     },
     transparent: true,
     depthWrite: false,
@@ -192,6 +178,7 @@ export function updateGalaxyField(
   camera: THREE.PerspectiveCamera,
   dim = 1,
   resolve = 0,
+  steps = 40,
 ): void {
   camera.updateMatrixWorld();
   mat.uniforms.uCam.value.copy(camera.position);
@@ -199,4 +186,5 @@ export function updateGalaxyField(
   mat.uniforms.uInvView.value.copy(camera.matrixWorld);
   mat.uniforms.uDim.value = dim;
   mat.uniforms.uResolve.value = resolve;
+  mat.uniforms.uSteps.value = Math.max(4, Math.min(40, steps));
 }

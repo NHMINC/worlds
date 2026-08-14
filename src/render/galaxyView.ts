@@ -158,7 +158,10 @@ export class GalaxyView {
     if (this.home) this.byId.set(this.home.id, this.home);
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // The field is a full-screen raymarch: cost is pixels × steps. A phone
+    // at dpr 3 rendered 4× the pixels of dpr 1.5 for a soft glow that
+    // cannot show the difference. Beacons stay crisp enough at 1.5.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setClearColor(new THREE.Color('#070b14'), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.08, 400);
 
@@ -311,10 +314,15 @@ export class GalaxyView {
 
   private refreshIfNeeded(): void {
     const uMin = this.uMinForZoom();
+    // Quantize the query RELATIVE to zoom: a fixed 0.1-kpc grid re-ran
+    // objectsNear (and rebuilt every point buffer) on nearly every frame
+    // of a zoom animation. Bins of ~a quarter of the view move the key
+    // only when the answer could actually change.
+    const q = Math.max(0.1, this.radius * 0.25);
     const key =
       this.radius > 30
         ? `far:${this.filter}`
-        : `${this.look.x.toFixed(1)}:${this.look.z.toFixed(1)}:${this.radius.toFixed(1)}:${this.filter}:${uMin.toFixed(3)}`;
+        : `${Math.round(this.look.x / q)}:${Math.round(this.look.z / q)}:${Math.round(Math.log(this.radius) / 0.18)}:${this.filter}:${uMin.toFixed(3)}`;
     if (key === this.qKey) return;
     this.qKey = key;
     this.loadLocal();
@@ -911,7 +919,8 @@ export class GalaxyView {
     const amongStars = this.radius < RESOLVE_DIST;
     const resolve = amongStars ? 0 : clamp01((28 - this.radius) / 24);
     const dim = amongStars ? 0.16 : this.filter === 'all' ? 1 : 0.18;
-    updateGalaxyField(this.fieldMat, this.camera, dim, resolve);
+    // A nearly-invisible field does not deserve a full march.
+    updateGalaxyField(this.fieldMat, this.camera, dim, resolve, dim < 0.2 ? 14 : 32);
     const ringS = Math.max(0.05, this.radius * 0.032);
     this.pickRing.scale.setScalar(ringS);
     this.homeRing.scale.setScalar(ringS);
