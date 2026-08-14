@@ -184,13 +184,26 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   stratified IMF.   Distant catalog rows are tiny points of light — never
   grown `GL_POINTS` (those become squares on a phone). Inside ~7 kpc
   the nearest stars become photospheres from `evolve()` (`galaxyStar.ts`):
-  teff colour, limb, remnant, nebula. The field’s cubic sparkle turns
-  off there — that hash was a stand-in until the discs arrived.
-  We only mesh what we occupy.
+  teff colour, limb, remnant, nebula. We only mesh what we occupy.
   Tap a resolved disc to set course; a still-point source only selects
   or zooms. A star is pickable only when the camera is inside ~10 kpc
   of it. The in-system night shell (`buildStars`) is still unseeded and
   must retire so ground and explorer agree. A painted starfield is a lie.
+- **The photograph is turbulence, in the integral only.**
+  The ISM is log-normal: every smooth law in the field shader is
+  multiplied by `exp(σ·fBm)` (`GALAXY_TURB_SIGMA/FREQ`). One clump
+  field carries three consequences — knotted young light, Hα beads
+  where a dense clump sits on the crest (Strömgren: needs gas *and*
+  O stars), and fractal dust that **reddens** through per-channel
+  transmittance (`GALAXY_DUST_RGB`; blue dies first, lanes go brown).
+  **No sampled point "grain", no hash sparkle**: both were tried and
+  retired — tens of thousands of non-addressable dots read as rain,
+  swam with the camera, and ate the phone's frame budget. Every
+  individual star the explorer draws is a catalog row (`objectsNear`
+  beacons, `galaxyStar.ts` photospheres) resolved around the camera.
+  Rotation stays decreed for when a renderer needs it: flat curve
+  `v(R) = GALAXY_V_ROT`, pattern speed `GALAXY_OMEGA_P`, corotating
+  frame so arms and addresses stand still.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper

@@ -17,8 +17,7 @@ import {
 import { classifyStar, teffToRgb } from '../world/stellar';
 import { createGalaxyField, updateGalaxyField } from './galaxyField';
 import { createStarDiscs, RESOLVE_DIST, RESOLVE_MAX, type StarDiscs } from './galaxyStar';
-
-const ZOOM_MIN = 0.4;
+const ZOOM_MIN = 0.18;
 const ZOOM_MAX = 70;
 /** Orbit radius (kpc) inside which a resolved star may be picked. */
 const PICK_ZOOM = 14;
@@ -263,7 +262,10 @@ export class GalaxyView {
     const dist = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
     const appear = zoom * 1.8 + 2.2;
     if (dist > appear) return 0;
-    return smoothstep(appear, appear * 0.35, dist);
+    // Individual beacons earn pixels as you close on pick range; far
+    // out the integral is the photograph.
+    const zoomFade = smoothstep(16, 9, zoom);
+    return smoothstep(appear, appear * 0.35, dist) * zoomFade;
   }
 
   private applyVis(): void {
@@ -754,12 +756,16 @@ export class GalaxyView {
       if (dx * fwd.x + dy * fwd.y + dz * fwd.z < 0.02) continue;
       scored.push({ o, d });
     }
-    scored.sort((a, b) => {
-      const sa = Math.log10(1 + a.o.star.luminosity) / Math.max(0.25, a.d);
-      const sb = Math.log10(1 + b.o.star.luminosity) / Math.max(0.25, b.d);
-      return sb - sa;
-    });
-    const near = scored.slice(0, RESOLVE_MAX).map((s) => s.o);
+    // Half the slots to whatever is physically nearest (mostly faint
+    // beads), half to the brightest by received flux (the blooms) —
+    // a photograph, not a supergiant convention.
+    scored.sort((a, b) => a.d - b.d);
+    const nearest = scored.slice(0, RESOLVE_MAX / 2);
+    const rest = scored.slice(RESOLVE_MAX / 2);
+    const flux = (s: { o: GalaxyObject; d: number }) =>
+      Math.max(s.o.star.luminosity, 1e-4) / Math.max(s.d * s.d, 1e-4);
+    rest.sort((a, b) => flux(b) - flux(a));
+    const near = [...nearest, ...rest.slice(0, RESOLVE_MAX - nearest.length)].map((s) => s.o);
     for (const pin of [this.selected, this.home, this.hereObj]) {
       if (!pin || near.some((o) => o.id === pin.id)) continue;
       const c = galToCart(pin.pos);
@@ -768,7 +774,7 @@ export class GalaxyView {
       near.unshift(pin);
       if (near.length > RESOLVE_MAX) near.pop();
     }
-    this.discs.setStars(near);
+    this.discs.setStars(near, cam);
     this.discs.syncCamera(this.camera);
     this.discIds.clear();
     for (const o of near) this.discIds.add(o.id);
@@ -918,9 +924,9 @@ export class GalaxyView {
     this.nebMat.uniforms.uPixel.value = px;
     const amongStars = this.radius < RESOLVE_DIST;
     const resolve = amongStars ? 0 : clamp01((28 - this.radius) / 24);
-    const dim = amongStars ? 0.16 : this.filter === 'all' ? 1 : 0.18;
+    const dim = amongStars ? 0.24 : this.filter === 'all' ? 1 : 0.18;
     // A nearly-invisible field does not deserve a full march.
-    updateGalaxyField(this.fieldMat, this.camera, dim, resolve, dim < 0.2 ? 14 : 32);
+    updateGalaxyField(this.fieldMat, this.camera, dim, resolve, dim < 0.3 ? 16 : 36);
     const ringS = Math.max(0.05, this.radius * 0.032);
     this.pickRing.scale.setScalar(ringS);
     this.homeRing.scale.setScalar(ringS);

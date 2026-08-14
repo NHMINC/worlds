@@ -6,7 +6,7 @@
 import { UNIVERSE } from '../src/world/physics';
 import {
   objectAt, objectsNear, homeStar, density, inSpiralArm, chemistry,
-  catalogSize, slotsInCell, cellCount, sampleDust, isBeacon, packId,
+  catalogSize, slotsInCell, cellCount, sampleDust, packId,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
@@ -228,6 +228,10 @@ check(sunDisc > 0.03 && sunDisc < 0.16, `Sun analog disc ${sunDisc} is not a pho
 check(bhDisc > wdDisc, `BH visual ${bhDisc} should beat a WD pin`);
 check(starKind(asObj(bh)) === 5, `BH kind ${starKind(asObj(bh))}`);
 check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, got ${starKind(asObj(freshWd))}`);
+
+// (The sampled "grain" starfield is gone: it drew tens of thousands of
+// non-addressable points — a painted starfield by the charter's own
+// words. The only stars the explorer draws are catalog rows.)
 
 const start = discoverHabitable(seed, mulberry32(xmur3('first-camp')()));
 check(start.spec.bodies.some((b) => b.kind === 'rocky' && b.physics.life), `discoverHabitable found no living world (${start.starId})`);

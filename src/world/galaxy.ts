@@ -307,10 +307,31 @@ export function objectsNear(
   const out: GalaxyObject[] = [];
   const seen = new Set<number>();
   const perCell = uMin > 0.9 ? 4 : uMin > 0.5 ? 10 : 28;
-  for (let ir = ir0; ir <= ir1 && out.length < limit; ir++) {
-    for (let dt = -dit; dt <= dit && out.length < limit; dt++) {
-      const it = (itc + dt + nth * 8) % nth;
-      for (let iz = Math.max(0, izc - diz); iz <= Math.min(nz - 1, izc + diz) && out.length < limit; iz++) {
+  // Visit the window in a golden-ratio scatter, not ring by ring:
+  // a row-ordered walk fills the limit entirely from the window's
+  // inner edge and prints an arc of stars kiloparsecs from the query
+  // (the "needle"). A low-discrepancy stride keeps coverage even no
+  // matter where the limit truncates. Deterministic, so the same
+  // camera still resolves the same sky.
+  const nRings = Math.max(1, ir1 - ir0 + 1);
+  const nThW = 2 * dit + 1;
+  const izLo = Math.max(0, izc - diz);
+  const izHi = Math.min(nz - 1, izc + diz);
+  const nZW = Math.max(1, izHi - izLo + 1);
+  const totalCells = nRings * nThW * nZW;
+  let stride = Math.max(1, Math.round(totalCells * 0.6180339887));
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  while (gcd(stride, totalCells) !== 1) stride++;
+  const budget = Math.min(totalCells, 24_000);
+  for (let j = 0; j < budget && out.length < limit; j++) {
+    const k = (j * stride) % totalCells;
+    const ir = ir0 + Math.floor(k / (nThW * nZW));
+    const rem = k % (nThW * nZW);
+    const dt = Math.floor(rem / nZW) - dit;
+    const iz = izLo + (rem % nZW);
+    const it = (itc + dt + nth * 8) % nth;
+    {
+      {
         const cell = ir * nth * nz + it * nz + iz;
         const n = slotsInCell(seed, cell);
         if (n <= 0) continue;
