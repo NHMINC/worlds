@@ -1252,8 +1252,13 @@ body,
 }
 
 @media (max-width: 720px) {
+  .galaxy-top {
+    flex-wrap: wrap;
+  }
   .galaxy-presets {
-    display: none;
+    order: 3;
+    width: 100%;
+    justify-content: flex-start;
   }
   .galaxy-census {
     display: none;
@@ -1261,6 +1266,9 @@ body,
   .galaxy-dossier {
     top: auto;
     bottom: calc(64px + env(safe-area-inset-bottom));
-    width: calc(100vw - 24px);
+    width: min(280px, calc(100vw - 24px));
+  }
+  .gd-grid {
+    display: none;
   }
 }
