@@ -277,10 +277,11 @@ These are product rules, not optional polish.
 ### Atmosphere
 
 - One progressive horizon: exponential air, not a planet limb + haze
-  deck + rim glow as three shells. Vacuum has no scatterers — the
-  glow dies with the scale height (`AIR_H` in `UNIVERSE`). The limb
-  is a readable halo on the sphere, not a line on the dirt and not
-  a bloom that lights space.
+  deck + rim glow as three shells. Vacuum has no scatterers. The
+  visible halo is a **line**: a long tangent through the well-mixed
+  lower column (`AIR_LINE` in `UNIVERSE`). At 1 atm the upper layers
+  are transparent — black space shows through — and the glow does
+  not fill the shell out to the boundary.
 - Thick air reduces visibility through **optical depth**, not a texture.
   Multiple scattering (diffusion floor) exists so thick atmospheres are
   dim, not pitch-black at the ground — that is transport, not weather.

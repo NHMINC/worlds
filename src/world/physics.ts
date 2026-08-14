@@ -142,18 +142,29 @@ export const UNIVERSE = {
    * with the exponential, so the limb is a halo that hugs the sphere,
    * not a bloom that lights space. AIR_H is the reference world's
    * scale height (1 g, 288 K, mu 29 air) as a fraction of its radius:
-   * toy-compressed so the envelope READS on a holdable globe (~24×
-   * real H/R, 7H ≈ 22% of the radius on a 1 g world). Tighter than
-   * that and the air sits on the dirt; looser and vacuum glows.
-   * Every other sky derives from it. AIR_SIGMA is the reference
-   * surface extinction per radius of path (Beer–Lambert). Sized with
-   * AIR_H so an Earthlike column reaches grazing optical depth ~2 at
-   * the horizon — the regime where red starts outliving blue
-   * (sunsets) — while the vertical column stays clear enough to see
-   * space at night.
+   * toy-compressed so a holdable globe has room for a limb (~24×
+   * real H/R). The GLOW is not that whole shell: ISS photographs are
+   * a thin blue line, then black, because a sideways look through
+   * the exponential only lights the dense well (see AIR_LINE).
+   * AIR_SIGMA is the reference surface extinction per radius of path
+   * (Beer–Lambert). Sized with AIR_H so an Earthlike column reaches
+   * grazing optical depth ~2 at the horizon — the regime where red
+   * starts outliving blue (sunsets) — while the vertical column
+   * stays clear enough to see space at night.
    */
   AIR_H: 0.032,
   AIR_SIGMA: 3.45,
+  /**
+   * Limb LINE: in-scatter that reads as the planetary halo lives in the
+   * well-mixed lower column (most of the mass, a couple of scale heights).
+   * AIR_LINE is the density — fraction of surface — at which that glow
+   * has fallen to half. Above it, 1 atm air is transparent and you see
+   * space through the upper layers; the halo is a bright tangent line,
+   * not a filled shell out to 7H. Extinction still uses the full
+   * exponential, so a thick world can still hide stars. Aerosol decks
+   * keep their own weight (a deck is opaque wherever it sits).
+   */
+  AIR_LINE: 0.22,
 
   /**
    * Display luminance of unscattered sunlight relative to a unit diffuse
