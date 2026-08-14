@@ -305,10 +305,19 @@ export class GalaxyView {
     const dist = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
     const appear = zoom * 1.8 + 2.2;
     if (dist > appear) return 0;
+    // Fade to ZERO at the edge of the query sphere itself (loadLocal's
+    // dR around the look point). The old camera-only fade was wider
+    // than the sphere the query fills, so every star the pan added or
+    // dropped at the fringe popped in at full brightness instead of
+    // fading — "stars flash into existence".
+    const dRq = Math.min(5.2, Math.max(0.18, zoom * 0.72));
+    const dLook = Math.hypot(wx - this.look.x, wy - this.look.y, wz - this.look.z);
+    const edge = smoothstep(dRq, dRq * 0.55, dLook);
+    if (edge <= 0) return 0;
     // Individual beacons earn pixels as you close on pick range; far
     // out the integral is the photograph.
     const zoomFade = smoothstep(16, 9, zoom);
-    return smoothstep(appear, appear * 0.35, dist) * zoomFade;
+    return smoothstep(appear, appear * 0.35, dist) * zoomFade * edge;
   }
 
   private applyVis(): void {
@@ -808,8 +817,12 @@ export class GalaxyView {
     scored.sort((a, b) => a.d - b.d);
     const nearest = scored.slice(0, RESOLVE_MAX / 2);
     const rest = scored.slice(RESOLVE_MAX / 2);
+    // Sticky: an already-meshed star keeps its disc unless clearly
+    // beaten, so the roster does not churn at the score boundary
+    // (photospheres flashing in and out every frame).
     const flux = (s: { o: GalaxyObject; d: number }) =>
-      Math.max(s.o.star.luminosity, 1e-4) / Math.max(s.d * s.d, 1e-4);
+      (Math.max(s.o.star.luminosity, 1e-4) / Math.max(s.d * s.d, 1e-4)) *
+      (this.discIds.has(s.o.id) ? 1.3 : 1);
     rest.sort((a, b) => flux(b) - flux(a));
     const near = [...nearest, ...rest.slice(0, RESOLVE_MAX - nearest.length)].map((s) => s.o);
     for (const pin of [this.selected, this.home, this.hereObj]) {

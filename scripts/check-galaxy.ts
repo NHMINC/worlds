@@ -233,6 +233,26 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
 // non-addressable points — a painted starfield by the charter's own
 // words. The only stars the explorer draws are catalog rows.)
 
+// The near-query is a LAW of the cells, not of the window: panning a
+// hair must keep most of the sky (no re-rolled star field), and no
+// single cell may own a visible clump of the sample.
+{
+  const p = { R: UNIVERSE.R_SUN, theta: 1.0, z: 0 };
+  const a = objectsNear(seed, p, 2.0, { uMin: 0.97, limit: 800 });
+  const b = objectsNear(seed, { ...p, theta: p.theta + 0.15 / p.R }, 2.0, { uMin: 0.97, limit: 800 });
+  check(a.length > 100, `near-query too sparse (${a.length})`);
+  const ids = new Set(a.map((o) => o.id));
+  const shared = b.filter((o) => ids.has(o.id)).length;
+  check(shared / Math.max(1, b.length) > 0.55, `pan stability ${shared}/${b.length}`);
+  const perCell = new Map<number, number>();
+  for (const o of a) {
+    const c = Math.floor(o.id / UNIVERSE.GALAXY_MAX_SLOT);
+    perCell.set(c, (perCell.get(c) ?? 0) + 1);
+  }
+  const maxShare = Math.max(...perCell.values()) / Math.max(1, a.length);
+  check(maxShare < 0.05, `one cell owns ${(maxShare * 100).toFixed(1)}% of the sample`);
+}
+
 const start = discoverHabitable(seed, mulberry32(xmur3('first-camp')()));
 check(start.spec.bodies.some((b) => b.kind === 'rocky' && b.physics.life), `discoverHabitable found no living world (${start.starId})`);
 console.log(`  first camp: ${classifyStar(start.obj.star)} #${start.starId} body ${start.bodyId}`);

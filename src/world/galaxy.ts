@@ -229,8 +229,24 @@ export function slotsInCell(seed: string, cell: number): number {
 /**
  * The object at a catalog id, or null if that slot is empty.
  * Pure and O(1). This is the whole galaxy.
+ *
+ * Memoized: pure means cacheable, and the explorer re-asks for the
+ * same neighbourhood on every camera bin — without the memo each
+ * rebuild re-ran evolve() thousands of times and hitched the frame.
  */
+const objMemo = new Map<string, GalaxyObject | null>();
+
 export function objectAt(seed: string, id: number): GalaxyObject | null {
+  const memoKey = `${seed}:${id}`;
+  const hit = objMemo.get(memoKey);
+  if (hit !== undefined) return hit;
+  const o = objectAtRaw(seed, id);
+  if (objMemo.size > 130_000) objMemo.clear();
+  objMemo.set(memoKey, o);
+  return o;
+}
+
+function objectAtRaw(seed: string, id: number): GalaxyObject | null {
   const { cell, slot } = splitId(id);
   if (cell < 0 || cell >= cellCount() || slot < 0) return null;
   const filled = slotsInCell(seed, cell);
@@ -282,6 +298,16 @@ export interface NearQuery {
   uMin?: number;
 }
 
+/** Absolute per-cell coin: pure of the cell id, uncorrelated with the
+ * lattice. The keep-sets it produces are nested as the threshold falls. */
+function cellHash01(cell: number): number {
+  let h = cell | 0;
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
 function pushNear(out: GalaxyObject[], seen: Set<number>, o: GalaxyObject | null, limit: number): boolean {
   if (!o || seen.has(o.id) || out.length >= limit) return out.length >= limit;
   seen.add(o.id);
@@ -311,37 +337,63 @@ export function objectsNear(
   const out: GalaxyObject[] = [];
   const seen = new Set<number>();
   const perCell = uMin > 0.9 ? 4 : uMin > 0.5 ? 10 : 28;
-  // Visit the window in a golden-ratio scatter, not ring by ring:
-  // a row-ordered walk fills the limit entirely from the window's
-  // inner edge and prints an arc of stars kiloparsecs from the query
-  // (the "needle"). A low-discrepancy stride keeps coverage even no
-  // matter where the limit truncates. Deterministic, so the same
-  // camera still resolves the same sky.
+  // The sample must be a LAW of the cells, not of the query window.
+  // A window-relative walk returned a different subset after every
+  // small pan — stars flashed in, were replaced, and each visited
+  // cell dumped its whole per-cell budget while its neighbours gave
+  // nothing (clumps of "crap" with voids between). Instead: keep a
+  // cell iff an absolute hash of its id clears the budget threshold.
+  // The keep-set is pan-stable (a cell's coin never re-flips) and
+  // nested in zoom (lower thresholds keep subsets), and hash order is
+  // uncorrelated with position, so coverage stays even. Kept cells
+  // are then visited nearest-first, so the limit truncates at the far
+  // fringe — where the view fade already sits — and a flyby is stars
+  // drifting in at the edge, not a re-rolled sky.
   const nRings = Math.max(1, ir1 - ir0 + 1);
   const nThW = 2 * dit + 1;
   const izLo = Math.max(0, izc - diz);
   const izHi = Math.min(nz - 1, izc + diz);
-  const nZW = Math.max(1, izHi - izLo + 1);
-  const totalCells = nRings * nThW * nZW;
-  let stride = Math.max(1, Math.round(totalCells * 0.6180339887));
-  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
-  while (gcd(stride, totalCells) !== 1) stride++;
-  const budget = Math.min(totalCells, 24_000);
-  for (let j = 0; j < budget && out.length < limit; j++) {
-    const k = (j * stride) % totalCells;
-    const ir = ir0 + Math.floor(k / (nThW * nZW));
-    const rem = k % (nThW * nZW);
-    const dt = Math.floor(rem / nZW) - dit;
-    const iz = izLo + (rem % nZW);
-    const it = (itc + dt + nth * 8) % nth;
+  const totalCells = nRings * nThW * Math.max(1, izHi - izLo + 1);
+  const CELL_BUDGET = 6000;
+  // Quantized to powers of two: the raw ratio drifts with every small
+  // window reshape, re-rolling the keep-set's fringe. Power-of-2 bins
+  // change rarely, and when they do the sets stay nested.
+  const rawThr = Math.min(1, CELL_BUDGET / Math.max(1, totalCells));
+  const thr = rawThr >= 1 ? 1 : Math.pow(2, Math.round(Math.log2(rawThr)));
+  const px = p.R * Math.cos(p.theta);
+  const py = p.R * Math.sin(p.theta);
+  const kept: Array<{ cell: number; d2: number }> = [];
+  for (let ir = ir0; ir <= ir1; ir++) {
+    const R = ((ir + 0.5) / nr) * rMax;
+    for (let dt = -dit; dt <= dit; dt++) {
+      const it = (itc + dt + nth * 8) % nth;
+      const th = ((it + 0.5) / nth) * TAU;
+      const cx = R * Math.cos(th) - px;
+      const cy = R * Math.sin(th) - py;
+      for (let iz = izLo; iz <= izHi; iz++) {
+        const cell = ir * nth * nz + it * nz + iz;
+        if (cellHash01(cell) >= thr) continue;
+        const cz = ((iz + 0.5) / nz - 0.5) * 2 * zMax - p.z;
+        kept.push({ cell, d2: cx * cx + cy * cy + cz * cz });
+      }
+    }
+  }
+  kept.sort((a, b) => a.d2 - b.d2);
+  // Spread the limit across the WHOLE window: if the kept cells would
+  // overfill it, each contributes fewer stars (down to its single
+  // brightest) so the sample spans every kpc of the view instead of
+  // exhausting the limit on the nearest hundred cells — that both
+  // clumped the sky and re-rolled most of it on every pan.
+  const perCap = Math.max(1, Math.min(perCell, Math.ceil(limit / Math.max(1, kept.length))));
+  for (let j = 0; j < kept.length && out.length < limit; j++) {
     {
       {
-        const cell = ir * nth * nz + it * nz + iz;
+        const cell = kept[j].cell;
         const n = slotsInCell(seed, cell);
         if (n <= 0) continue;
         let taken = 0;
         const sHi = Math.floor(n * 0.7);
-        for (let s = n - 1; s >= sHi && taken < perCell && out.length < limit; s--) {
+        for (let s = n - 1; s >= sHi && taken < perCap && out.length < limit; s--) {
           const o = objectAt(seed, packId(cell, s));
           if (!o) continue;
           const remnant =
@@ -359,7 +411,7 @@ export function objectsNear(
         }
         if (uMin <= 0.93) {
           const [a, b] = slotRangeForMass(n, 0.55, 1.35);
-          for (let s = a; s < b && taken < perCell * 2 && out.length < limit; s++) {
+          for (let s = a; s < b && taken < perCap * 2 && out.length < limit; s++) {
             const o = objectAt(seed, packId(cell, s));
             if (!o) continue;
             const st = o.star;
@@ -371,7 +423,7 @@ export function objectsNear(
         }
         if (uMin <= 0.35) {
           const step = Math.max(1, Math.floor(n / 24));
-          for (let s = 0; s < n && taken < perCell * 3 && out.length < limit; s += step) {
+          for (let s = 0; s < n && taken < perCap * 3 && out.length < limit; s += step) {
             if (pushNear(out, seen, objectAt(seed, packId(cell, s)), limit)) return out;
             taken++;
           }

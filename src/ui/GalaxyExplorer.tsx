@@ -99,9 +99,15 @@ export function GalaxyExplorer(props: Props) {
     };
   }, [seed, props.hereStarId]);
 
+  const lastCensusAt = useRef(0);
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !ready) return;
+    // The census walks every beacon; during a flight the resolved count
+    // shifts constantly, and recounting per change stuttered the pan.
+    const now = performance.now();
+    if (now - lastCensusAt.current < 400) return;
+    lastCensusAt.current = now;
     setCensus(view.census());
     setCount(frame.resolved);
   }, [frame.resolved, filter, ready]);
