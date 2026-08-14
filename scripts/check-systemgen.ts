@@ -133,14 +133,17 @@ for (let i = 0; i < SYSTEMS; i++) {
     // --- spin laws ---
     if (body.tidallyLocked && body.obliquity !== 0) bad(`LOCKED WITH TILT: ${seed} ${body.id}`);
 
-    // --- limb law: temperate air is a skin. Vacuum has no scatterers, so
-    // 7H (where the exponential has died) must not become a halo that
-    // lights space. Hot low-g air is allowed to sit taller — that is the
-    // barometric law, not a leftover display stretch.
+    // --- limb law: temperate air is a readable halo that still dies
+    // with the exponential. Too tall and vacuum glows; too short and
+    // the envelope sits on the dirt. Hot low-g air may sit taller —
+    // that is the barometric law.
     if (body.kind === 'rocky' && p.gravity > 0.8 && p.TsurfK > 250 && p.TsurfK < 320) {
       const ext = airExtinction(p);
-      if (ext && 7 * ext.scaleH > 0.18) {
+      if (ext && 7 * ext.scaleH > 0.36) {
         bad(`TEMPERATE AIR HALO: ${seed} ${body.id} 7H=${(7 * ext.scaleH).toFixed(3)}`);
+      }
+      if (ext && 7 * ext.scaleH < 0.08) {
+        bad(`TEMPERATE AIR INVISIBLE: ${seed} ${body.id} 7H=${(7 * ext.scaleH).toFixed(3)}`);
       }
     }
   }
@@ -193,17 +196,16 @@ for (let i = 0; i < SYSTEMS; i++) {
   }
 }
 
-// --- limb law (universe knobs): vacuum does not scatter ---
+// --- limb law (universe knobs): a readable halo that dies in vacuum ---
 {
-  // 7H is where the exponential has died. On the reference 1 g world that
-  // skin must stay well inside 15% of the radius or the glow lights space.
-  // Real H/R is AIR_HR_HOME — we exaggerate so a holdable globe shows a
-  // rim, not a halo.
-  if (7 * UNIVERSE.AIR_H > 0.15) {
+  // 7H is where the exponential has died. On the reference 1 g world the
+  // envelope must READ as a halo (~20% of the radius) without lighting
+  // space (the old 0.05 stretch put 7H at 35%). Real H/R is AIR_HR_HOME.
+  if (7 * UNIVERSE.AIR_H > 0.28) {
     bad(`AIR TOO PUFFY: 7H=${(7 * UNIVERSE.AIR_H).toFixed(3)} (vacuum would glow)`);
   }
-  if (UNIVERSE.AIR_H < 4 * UNIVERSE.AIR_HR_HOME) {
-    bad(`AIR_H THINNER THAN A READABLE TOY RIM: ${UNIVERSE.AIR_H}`);
+  if (7 * UNIVERSE.AIR_H < 0.18) {
+    bad(`AIR TOO TIGHT: 7H=${(7 * UNIVERSE.AIR_H).toFixed(3)} (halo would hug the dirt)`);
   }
   // σ·H is the Earthlike vertical column. The Chapman slant was sized so
   // this product reaches grazing optical depth ~2 (sunsets); keep it.
