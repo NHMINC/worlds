@@ -193,7 +193,7 @@ export function slotRangeForMass(n: number, mLo: number, mHi: number): [number, 
   return [a, b];
 }
 
-function cellCenter(cell: number): GalPos {
+export function cellCenter(cell: number): GalPos {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
   const iz = cell % nz;
   const it = Math.floor(cell / nz) % nth;

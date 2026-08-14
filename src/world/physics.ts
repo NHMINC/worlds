@@ -392,6 +392,20 @@ export const UNIVERSE = {
   GALAXY_POPULATION: 1_000_000_000,
 
   /**
+   * The sector map: the explorer's projection of the catalog grid.
+   * SECTORS pizza slices × SECTOR_RINGS annuli, ring boundaries placed
+   * by EQUAL ENCLOSED MASS (inverse CDF of the same density law), so
+   * inner arcs are thin, outer arcs are wide, and every arc holds
+   * roughly the same number of stars. Each arc is an exact block of
+   * catalog cells — the address system is untouched. Real stars are
+   * drawn only INSIDE an arc (the brightest SECTOR_STARS of it, a
+   * magnitude-limited survey); the map itself draws no stars at all.
+   */
+  GALAXY_SECTORS: 120,
+  GALAXY_SECTOR_RINGS: 40,
+  GALAXY_SECTOR_STARS: 2500,
+
+  /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:
    * ξ ∝ M^α on [IMF_BD, IMF_MIN] (brown dwarfs), [IMF_MIN, IMF_BRK],
    * then [IMF_BRK, IMF_MAX]. Remnant thresholds in Msun: below WD a dead

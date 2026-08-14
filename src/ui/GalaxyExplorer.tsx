@@ -42,14 +42,16 @@ export function GalaxyExplorer(props: Props) {
   const [filter, setFilter] = useState<GalaxyFilter>('all');
   const [census, setCensus] = useState<Record<string, number>>({});
   const [frame, setFrame] = useState<GalaxyFrame>({
+    mode: 'map',
     theta: 0,
     phi: 0,
     radius: 40,
     pickable: false,
     resolved: 0,
     discs: 0,
+    sector: null,
+    population: 0,
   });
-  const [count, setCount] = useState(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -66,11 +68,13 @@ export function GalaxyExplorer(props: Props) {
         onGo: (obj) => goRef.current(obj),
         onFrame: (f) => {
           setFrame((prev) =>
+            prev.mode !== f.mode ||
             Math.abs(prev.radius - f.radius) > 0.08 ||
             Math.abs(prev.phi - f.phi) > 0.02 ||
             prev.pickable !== f.pickable ||
-            Math.abs(prev.resolved - f.resolved) > 2 ||
-            prev.discs !== f.discs
+            prev.resolved !== f.resolved ||
+            prev.discs !== f.discs ||
+            prev.sector !== f.sector
               ? f
               : prev,
           );
@@ -79,8 +83,6 @@ export function GalaxyExplorer(props: Props) {
       view.setHere(props.hereStarId ?? null);
       viewRef.current = view;
       (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView = view;
-      setCensus(view.census());
-      setCount(view.beaconCount());
       setReady(true);
       ro = new ResizeObserver(() => {
         view?.resize(wrap.clientWidth, wrap.clientHeight);
@@ -99,26 +101,21 @@ export function GalaxyExplorer(props: Props) {
     };
   }, [seed, props.hereStarId]);
 
-  const lastCensusAt = useRef(0);
+  useEffect(() => {
+    if (ready) viewRef.current?.setVisited(props.visitedStarIds ?? []);
+  }, [props.visitedStarIds, ready]);
+
+  // Census only changes when the arc or the filter does — never per frame.
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !ready) return;
-    // The census walks every beacon; during a flight the resolved count
-    // shifts constantly, and recounting per change stuttered the pan.
-    const now = performance.now();
-    if (now - lastCensusAt.current < 400) return;
-    lastCensusAt.current = now;
-    setCensus(view.census());
-    setCount(frame.resolved);
-  }, [frame.resolved, filter, ready]);
+    setCensus(frame.mode === 'arc' ? view.census() : {});
+  }, [frame.mode, frame.sector, filter, ready]);
 
   function applyFilter(f: GalaxyFilter): void {
     setFilter(f);
     viewRef.current?.setFilter(f);
-    if (viewRef.current) {
-      setCensus(viewRef.current.census());
-      setCount(viewRef.current.beaconCount());
-    }
+    if (viewRef.current) setCensus(viewRef.current.census());
   }
 
   const st = selected?.star;
@@ -126,21 +123,34 @@ export function GalaxyExplorer(props: Props) {
   const incDeg = (frame.phi * 180) / Math.PI;
   const censusKeys = Object.keys(census).sort((a, b) => (census[b] ?? 0) - (census[a] ?? 0));
   const censusMax = Math.max(1, ...censusKeys.map((k) => census[k] ?? 0));
+  const inArc = frame.mode === 'arc';
 
   return (
     <div className="galaxy-explorer">
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
-        {!ready && <div className="galaxy-loading">Evaluating the mass model…</div>}
+        {!ready && <div className="galaxy-loading">Charting the sectors…</div>}
       </div>
 
       <header className="galaxy-top">
         <div className="galaxy-brand">
-          <div className="galaxy-title">Helix</div>
+          <div className="galaxy-title">
+            {inArc ? (
+              <>
+                <button className="gx-chip gx-crumb" onClick={() => viewRef.current?.exitArc()}>
+                  Helix
+                </button>
+                <span className="gx-crumb-sep"> › </span>
+                {frame.sector}
+              </>
+            ) : (
+              'Helix'
+            )}
+          </div>
           <div className="galaxy-sub">
-            {frame.pickable
-              ? `SBbc · ${count} systems in reach`
-              : `SBbc · ${UNIVERSE.GALAXY_POPULATION.toExponential(0)} addressable systems · zoom in`}
+            {inArc
+              ? `${frame.population.toLocaleString()} systems in this arc · brightest ${frame.resolved.toLocaleString()} shown`
+              : `SBbc · ${UNIVERSE.GALAXY_POPULATION.toExponential(0)} addressable systems · tap an arc`}
           </div>
         </div>
         <div className="galaxy-presets">
@@ -191,32 +201,40 @@ export function GalaxyExplorer(props: Props) {
         </aside>
       )}
 
-      <aside className="galaxy-census">
-        <div className="gx-kicker">In view</div>
-        {censusKeys.slice(0, 8).map((k) => (
-          <div key={k} className="gx-bar-row">
-            <span>{k}</span>
-            <i style={{ width: `${(100 * (census[k] ?? 0)) / censusMax}%` }} />
-            <em>{census[k]}</em>
-          </div>
-        ))}
-      </aside>
+      {inArc && censusKeys.length > 0 && (
+        <aside className="galaxy-census">
+          <div className="gx-kicker">In this arc</div>
+          {censusKeys.slice(0, 8).map((k) => (
+            <div key={k} className="gx-bar-row">
+              <span>{k}</span>
+              <i style={{ width: `${(100 * (census[k] ?? 0)) / censusMax}%` }} />
+              <em>{census[k]}</em>
+            </div>
+          ))}
+        </aside>
+      )}
 
       <footer className="galaxy-bottom">
-        <div className="galaxy-filters">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              className={`gx-chip ${filter === f.id ? 'active' : ''}`}
-              onClick={() => applyFilter(f.id)}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        {inArc && (
+          <div className="galaxy-filters">
+            {FILTERS.map((f) => (
+              <button
+                key={f.id}
+                className={`gx-chip ${filter === f.id ? 'active' : ''}`}
+                onClick={() => applyFilter(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
-          {frame.discs > 0 ? ' · tap a star to go' : frame.pickable ? ' · tap a star' : ' · fly in to pick'}
+          {inArc
+            ? frame.discs > 0
+              ? ' · tap a star to go · zoom out for the map'
+              : ' · tap a star'
+            : ' · tap an arc to enter · markers are worlds'}
         </div>
       </footer>
     </div>

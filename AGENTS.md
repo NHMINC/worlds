@@ -176,46 +176,39 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   front only multiplies the same Chapman transmittance the sky already
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
-- **The sky is the catalog.** The galaxy explorer *is* that catalog:
-  a GPU raymarch of the same density / young-light / dust-lane law
-  (`galaxyField.ts`) plus `objectsNear` — not a painted spiral, not a
-  7k sample list. ~10⁹ stars are addressable (`objectAt`). Face-on
-  they are the integral. Zooming asks nearby cells for more of their
-  stratified IMF.   Distant catalog rows are tiny points of light — never
-  grown `GL_POINTS` (those become squares on a phone). Inside ~7 kpc
-  the nearest stars become photospheres from `evolve()` (`galaxyStar.ts`):
-  teff colour, limb, remnant, nebula. We only mesh what we occupy.
-  Tap a resolved disc to set course; a still-point source only selects
-  or zooms. A star is pickable only when the camera is inside ~10 kpc
-  of it. **Zoom is direct, gentle, and never redirects**: wheel/pinch
-  scale the orbit radius toward what is already framed; the eased
-  radius is the only smoothing, and the look point never moves on a
-  zoom (momentum-thruster zoom was tried and retired — harder to aim).
-  One continuous motion crosses at most `ZOOM_GESTURE_SPAN` (~2.6×) in
-  scale — never London-from-orbit in one pinch; a ~0.6 s pause starts
-  the next motion. After a pinch, the surviving finger is NOT a drag:
-  rotation resumes only with a fresh single-finger touch.
-  The detection bubble (`DETECT_R`, `RESOLVE_DIST`) is wide so the sky
-  fills well before arrival; the catalog walk stays bounded via an
-  absolute-lattice coarsening that panning cannot re-roll. A beacon
-  hides only when its own photosphere mesh exists — never wholesale by
-  distance, or stars vanish mid-zoom that the camera never passed. The in-system night shell (`buildStars`) is still unseeded and
-  must retire so ground and explorer agree. A painted starfield is a lie.
-- **The photograph is turbulence, in the integral only.**
-  The ISM is log-normal: every smooth law in the field shader is
-  multiplied by `exp(σ·fBm)` (`GALAXY_TURB_SIGMA/FREQ`). One clump
-  field carries three consequences — knotted young light, Hα beads
-  where a dense clump sits on the crest (Strömgren: needs gas *and*
-  O stars), and fractal dust that **reddens** through per-channel
-  transmittance (`GALAXY_DUST_RGB`; blue dies first, lanes go brown).
-  **No sampled point "grain", no hash sparkle**: both were tried and
-  retired — tens of thousands of non-addressable dots read as rain,
-  swam with the camera, and ate the phone's frame budget. Every
-  individual star the explorer draws is a catalog row (`objectsNear`
-  beacons, `galaxyStar.ts` photospheres) resolved around the camera.
-  Rotation stays decreed for when a renderer needs it: flat curve
-  `v(R) = GALAXY_V_ROT`, pattern speed `GALAXY_OMEGA_P`, corotating
-  frame so arms and addresses stand still.
+- **The explorer is a SECTOR MAP, not a free flight.** The galaxy is
+  divided into `GALAXY_SECTORS` pizza slices × `GALAXY_SECTOR_RINGS`
+  annuli (`src/world/sectors.ts`); one intersection — a "thick arc" —
+  is an EXACT block of catalog cells, so the address grid is untouched.
+  Ring boundaries sit at EQUAL ENCLOSED MASS (inverse CDF of the same
+  density law): inner arcs are thin, outer arcs wide, every arc holds
+  roughly the same number of stars. Two views, both static:
+  - **Map**: a saucer mesh of arc tiles (`galaxySectors.ts`) coloured
+    by the density law — golden bulge/bar, blue crests, brown lanes —
+    plus markers for home, here, visited systems, and ~100
+    deterministic systems of interest (`systemsOfInterest`). NO stars
+    are drawn on the map; the tile speckle is chart fabric, not a sky.
+  - **Arc**: tap a tile and its brightest ~`GALAXY_SECTOR_STARS` REAL
+    stars load ONCE (`sectorSample` — a magnitude-limited survey:
+    living turnoff band + a small massive tip, ranked by light), with
+    photospheres from `evolve()` (`galaxyStar.ts`) for the nearest
+    few. Tap a disc to set course. Zoom out (or the breadcrumb) to
+    return to the map.
+  Nothing queries or rebuilds per camera move in either mode — the
+  free-flight explorer's blink / cluster / stutter / re-roll bug class
+  was structural, and it is retired along with the raymarched field
+  and the dynamic beacon system. A painted starfield is still a lie:
+  every individual star drawn anywhere is an addressable catalog row.
+  The in-system night shell (`buildStars`) is still unseeded and must
+  retire so ground and explorer agree.
+- **Explorer gestures.** Zoom is direct, gentle, and never redirects:
+  wheel/pinch scale the orbit radius toward what is already framed;
+  the eased radius is the only smoothing and the look point never
+  moves on a zoom. One continuous motion crosses at most
+  `ZOOM_GESTURE_SPAN` (~2.6×); a ~0.6 s pause starts the next motion.
+  After a pinch, the surviving finger is NOT a drag — rotation resumes
+  only with a fresh single-finger touch. In arc mode, zooming out past
+  the arc's span returns to the map.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
@@ -482,7 +475,8 @@ Code map (start here):
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
 | Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
-| Galaxy explorer (GPU field + catalog beacons) | `src/render/galaxyField.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Sector map (arc grid, equal-mass rings, surveys) | `src/world/sectors.ts` |
+| Galaxy explorer (saucer mesh + arc view) | `src/render/galaxySectors.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Close-up photospheres (LOD from `evolve()`) | `src/render/galaxyStar.ts` |
 | First landing (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
