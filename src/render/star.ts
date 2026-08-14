@@ -108,9 +108,9 @@ void main() {
   // convective. Scale is a few cells across the disk — readable, not
   // a noise texture.
   float conv = clamp((6800.0 - uTeff) / 2800.0, 0.0, 1.0);
-  float gFreq = mix(7.0, 14.0, clamp((uTeff - 3200.0) / 4000.0, 0.0, 1.0));
+  float gFreq = mix(4.5, 8.5, clamp((uTeff - 3200.0) / 4000.0, 0.0, 1.0));
   float cells = fbm(n * gFreq + vec3(uTime * 0.11, uSeed, -uTime * 0.07));
-  float gran = mix(1.0, mix(0.78, 1.22, cells), conv * 0.85);
+  float gran = mix(1.0, mix(0.48, 1.28, cells), max(conv, 0.35));
 
   // Spots: cooler magnetic concentrations. Coverage follows activity.
   float spotN = fbm(n * 5.2 + vec3(uSeed * 3.1, 4.2, uTime * 0.02));
@@ -132,14 +132,16 @@ void main() {
 
   // Cel bands on the live disk so the sun matches the worlds it lights:
   // three calm steps, then the furnace underneath.
-  float bands = 0.78 + 0.12 * smoothstep(0.15, 0.28, mu) + 0.10 * smoothstep(0.55, 0.72, mu);
-  vec3 hot = mix(uColor, vec3(1.0), 0.55 + 0.25 * clamp((uTeff - 4000.0) / 5000.0, 0.0, 1.0));
-  vec3 cool = uColor * vec3(0.55, 0.38, 0.22);
+  float bands = 0.74 + 0.14 * smoothstep(0.12, 0.30, mu) + 0.12 * smoothstep(0.52, 0.74, mu);
+  vec3 hot = mix(uColor, vec3(1.0), 0.22 + 0.35 * clamp((uTeff - 3800.0) / 5000.0, 0.0, 1.0));
+  vec3 cool = uColor * vec3(0.72, 0.48, 0.26);
   vec3 c = mix(cool, hot, clamp(gran, 0.0, 1.4));
-  c *= limb * bands * uDiskLum;
-  c += hot * flares * 3.4;
-  // Core walks to white — the disk is brighter than the display.
-  c = mix(c, vec3(1.0), clamp((limb * uDiskLum - 1.6) * 0.28, 0.0, 0.85));
+  // Luminance lives in μ. Centre just above 1 so hot granules clip
+  // to white and the dark lanes stay; the limb stays well under 1
+  // so Teff colour survives the LDR. uDiskLum is the centre gain.
+  float lum = mix(0.82, 0.38 * uDiskLum, mu * mu);
+  c *= limb * bands * lum * gran;
+  c += hot * flares * 2.6;
   c *= uAirT;
   gl_FragColor = vec4(c, 1.0);
 }
@@ -207,7 +209,7 @@ void main() {
     float stream = fbm(vec3(ang * 2.2, dir.z * 3.4, uSeed + uTime * 0.04));
     stream = pow(clamp(stream, 0.0, 1.0), 2.4);
     float dens = uCorona * rhoC + uWind * rhoW * mix(0.25, 1.0, stream);
-    acc += uColor * dens * dt / max(uPhotoR, 1.0);
+    acc += uColor * dens * dt * 0.28;
   }
 
   // Prominences: the same flare sites as the photosphere, seen as
@@ -225,7 +227,7 @@ void main() {
     float off = length(perp) / max(uPhotoR, 1.0);
     float hgt = (along - uPhotoR) / max(uPhotoR, 1.0);
     float tongue = exp(-off * 14.0) * exp(-max(hgt, 0.0) * 7.0) * step(0.0, hgt + 0.08);
-    acc += uColor * vec3(1.15, 0.95, 0.75) * tongue * pulse * uActivity * uFlare * 0.9;
+    acc += uColor * vec3(1.2, 0.92, 0.7) * tongue * pulse * uActivity * uFlare * 1.6;
   }
 
   acc *= uAirT;
@@ -264,12 +266,15 @@ void main() {
   // The photosphere mesh owns the disk. This PSF is the OVERSPILL:
   // diffraction core + a 1/θ scatter tail. Flux is inverse-square at
   // the eye; the engine already sized the quad to sqrt(flux).
-  float core = exp(-r * r * 28.0) * uFlux * uGain;
-  float tail = (0.22 * uFlux * uGain) / (0.08 + 6.5 * r);
-  // A faint diffraction cross (aperture), elongated a little so the
-  // wash reads as glare and not a fog filter.
+  // Surface brightness of the disk is distance-independent; the PSF
+  // CORE stays a burning point. Only the wings scale with flux (how
+  // much light is in the aperture) — a distant sun is a spike, a
+  // close one is a wash. pow<1 lifts the outer system onto the LDR.
+  float f = pow(max(uFlux, 0.03), 0.42);
+  float core = exp(-r * r * 16.0) * uGain * (0.65 + 0.9 * clamp(uFlux, 0.0, 2.5));
+  float tail = (0.55 * f * uGain) / (0.04 + 3.4 * r);
   float ax = min(abs(vUv.x), abs(vUv.y));
-  float spike = exp(-ax * 55.0) * exp(-r * 2.4) * uFlux * 0.18 * uGain;
+  float spike = exp(-ax * 36.0) * exp(-r * 1.5) * (0.35 + 0.5 * clamp(uFlux, 0.0, 1.5)) * uGain;
   // Soft hole over the disk so we do not double-paint the globe.
   float ring = smoothstep(uDisk * 0.72, uDisk * 1.15, r);
   vec3 c = uColor * (core + tail + spike) * ring;

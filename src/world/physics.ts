@@ -62,7 +62,7 @@ export const UNIVERSE = {
    * clip to white and the limb keep colour. Universe-level, never
    * per-star — Teff only tints, it does not dim the furnace.
    */
-  STAR_DISK_LUM: 6.5,
+  STAR_DISK_LUM: 3.8,
 
   /**
    * Eye/optics glare: the PSF that turns flux into a wash. Angular
@@ -70,8 +70,8 @@ export const UNIVERSE = {
    * sqrt(flux) so a close approach fills the view and the outer
    * system keeps a tight spike. GLARE_GAIN is the core brightness.
    */
-  STAR_GLARE_ANG: 0.14,
-  STAR_GLARE_GAIN: 2.4,
+  STAR_GLARE_ANG: 0.22,
+  STAR_GLARE_GAIN: 3.4,
 
   /**
    * K-corona + wind: Thomson column of photosphere light. CORONA is
@@ -79,8 +79,8 @@ export const UNIVERSE = {
    * carries streamers into the system. Both scatter the star's own
    * colour — a blue star does not grow an orange halo.
    */
-  STAR_CORONA: 0.55,
-  STAR_WIND: 0.42,
+  STAR_CORONA: 0.95,
+  STAR_WIND: 0.72,
 
   /**
    * Flare visibility. Activity (starActivity) decides whether the
