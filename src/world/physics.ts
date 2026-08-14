@@ -280,22 +280,21 @@ export const UNIVERSE = {
   R_SUN: 8.2,
 
   /**
-   * Implicit catalog grid: a star is a cell + slot, never a stored row.
-   * Density × volume × GALAXY_N_K is the expected count; a leftover
-   * fraction is a Bernoulli draw so sparse halo/outer-disk cells are not
-   * a rounding desert. GALAXY_N_K is a *sample* density — the catalog is
-   * a representative draw of the mass model, not the Milky Way headcount
-   * (a phone cannot hold 10¹¹ rows, and objectAt is O(1) either way).
-   * The explorer’s Hubble glow is the same density law on the GPU —
-   * cost is pixels × steps, not a point per star. Zooming in resolves
-   * objectAt rows in the current volume (the ones you can set course
-   * to). Halo cells stay sparse; arms fill up.
+   * Implicit catalog: a star is (cell, slot), never a stored row.
+   * Occupancy is density × volume × GALAXY_N_K — that product *is* the
+   * population, not a sample of it. objectAt is O(1) at 10⁹ ids the
+   * same as at ten. We never enumerate the galaxy; the explorer asks
+   * objectsNear for the volume it occupies. GALAXY_POPULATION is the
+   * design headcount (∫ density dV × N_K). The grid is fine enough
+   * that the densest cell stays under MAX_SLOT. Halo cells stay
+   * sparse; arms fill up.
    */
-  GALAXY_NR: 48,
-  GALAXY_NTH: 96,
-  GALAXY_NZ: 12,
-  GALAXY_MAX_SLOT: 10,
-  GALAXY_N_K: 90,
+  GALAXY_NR: 288,
+  GALAXY_NTH: 576,
+  GALAXY_NZ: 18,
+  GALAXY_MAX_SLOT: 8192,
+  GALAXY_N_K: 12_600_000,
+  GALAXY_POPULATION: 1_000_000_000,
 
   /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:

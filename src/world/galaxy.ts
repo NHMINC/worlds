@@ -1,8 +1,13 @@
 /**
  * The shared galaxy: an SBbc (grand-design barred spiral) as a density
  * field plus an implicit stellar catalog. Nothing is stored. A star is
- * (seed, cell, slot) → position, population, IMF draw, birth time,
- * chemistry, then stellar.evolve.
+ * (seed, cell, slot) → position, population, IMF quantile, birth time,
+ * chemistry, then stellar.evolve. The address *is* the star. We do not
+ * keep a list of 7k samples; occupancy is the population.
+ *
+ * Within a cell the IMF is stratified: slot 0 is the low-mass end,
+ * slot n−1 is the high-mass end. Zooming in is “include more slots,”
+ * not “load a bigger array.”
  *
  * Lin–Shu arms are a cosine overdensity on a logarithmic spiral; the bar
  * is a Ferrers ellipsoid; the halo is a potential-shaped envelope. We do
@@ -163,6 +168,31 @@ export function packId(cell: number, slot: number): number {
   return cell * UNIVERSE.GALAXY_MAX_SLOT + slot;
 }
 
+/** Inverse of imfMass — u in [0,1) for a given ZAMS mass. */
+export function imfQuantile(mass: number): number {
+  let lo = 0;
+  let hi = 1;
+  for (let i = 0; i < 36; i++) {
+    const mid = (lo + hi) * 0.5;
+    if (imfMass(mid) < mass) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * Slot span inside a cell whose stratified IMF masses fall in [mLo, mHi].
+ * High slots are massive (u → 1).
+ */
+export function slotRangeForMass(n: number, mLo: number, mHi: number): [number, number] {
+  if (n <= 0) return [0, 0];
+  const u0 = imfQuantile(mLo);
+  const u1 = imfQuantile(mHi);
+  const a = Math.max(0, Math.floor(Math.min(u0, u1) * n));
+  const b = Math.min(n, Math.ceil(Math.max(u0, u1) * n));
+  return [a, b];
+}
+
 function cellCenter(cell: number): GalPos {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
   const iz = cell % nz;
@@ -227,29 +257,56 @@ export function objectAt(seed: string, id: number): GalaxyObject | null {
   if (pop === 'thin' && arm) uAge = Math.pow(uAge, 2.2);
   const ageGyr = ageLo + uAge * Math.max(0.01, ageHi - ageLo);
   const { feh, carbon } = chemistry(pop, pos.R, ageGyr, rng());
-  const massZams = imfMass(rng());
+  // Stratified IMF: the cell *is* the population. Slot 0 is the
+  // brown-dwarf tail; slot n−1 is the O-star tip. Jitter so two
+  // adjacent slots are not a ladder of twins.
+  const jitter = u01(seed, 'imfJ', cell, slot);
+  const uImf = Math.min(0.999999, (slot + jitter) / Math.max(1, filled));
+  const massZams = imfMass(uImf);
   const star = evolve({ massZams, ageGyr, feh, carbon, inArm: arm });
   return { id, pos, pop, inArm: arm, star };
 }
 
+export interface NearQuery {
+  /** Max objects to return. */
+  limit?: number;
+  /**
+   * IMF quantile floor. 0 = every star in the cell; 0.99 = the massive
+   * tail only. This is how a phone resolves 10⁹ addresses: it asks for
+   * the bright end of nearby cells, not a list of the galaxy.
+   */
+  uMin?: number;
+}
+
 /** Walk a neighbourhood of cells; return occupied objects (capped). */
-export function objectsNear(seed: string, p: GalPos, dR: number, limit = 80): GalaxyObject[] {
+export function objectsNear(
+  seed: string,
+  p: GalPos,
+  dR: number,
+  limitOrOpts: number | NearQuery = 80,
+): GalaxyObject[] {
+  const opts: NearQuery = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
+  const limit = opts.limit ?? 80;
+  const uMin = Math.max(0, Math.min(0.999, opts.uMin ?? 0));
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const ir0 = Math.max(0, Math.floor(((p.R - dR) / rMax) * nr));
   const ir1 = Math.min(nr - 1, Math.floor(((p.R + dR) / rMax) * nr));
   const dTh = dR / Math.max(0.4, p.R);
-  const itc = Math.floor((((p.theta % TAU) + TAU) % TAU / TAU) * nth);
+  const itc = Math.floor(((((p.theta % TAU) + TAU) % TAU) / TAU) * nth);
   const dit = Math.max(1, Math.ceil((dTh / TAU) * nth));
   const izc = Math.floor(((p.z / zMax + 1) / 2) * nz);
+  const diz = Math.max(1, Math.ceil((dR / Math.max(0.2, 2 * zMax)) * nz));
   const out: GalaxyObject[] = [];
   for (let ir = ir0; ir <= ir1 && out.length < limit; ir++) {
     for (let dt = -dit; dt <= dit && out.length < limit; dt++) {
       const it = (itc + dt + nth * 8) % nth;
-      for (let iz = Math.max(0, izc - 1); iz <= Math.min(nz - 1, izc + 1) && out.length < limit; iz++) {
+      for (let iz = Math.max(0, izc - diz); iz <= Math.min(nz - 1, izc + diz) && out.length < limit; iz++) {
         const cell = ir * nth * nz + it * nz + iz;
         const n = slotsInCell(seed, cell);
-        for (let s = 0; s < n && out.length < limit; s++) {
+        if (n <= 0) continue;
+        const s0 = Math.floor(n * uMin);
+        for (let s = n - 1; s >= s0 && out.length < limit; s--) {
           const o = objectAt(seed, packId(cell, s));
           if (o) out.push(o);
         }
@@ -271,36 +328,41 @@ export function homeStarId(seed = UNIVERSE.CANONICAL_SEED): number {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, R_SUN: rSun } = UNIVERSE;
   const irSun = Math.round((rSun / rMax) * nr);
   const izMid = Math.floor(nz / 2);
+  const it0 = Math.floor(u01(seed, 'home-az') * nth);
   let best = -1;
   let bestScore = -1e9;
-  for (let dir = 0; dir <= 4; dir++) {
+  for (let dir = 0; dir <= 3; dir++) {
     for (const sign of dir === 0 ? [0] : [-1, 1]) {
       const ir = irSun + sign * dir;
       if (ir < 2 || ir >= nr - 1) continue;
       for (let dz = -1; dz <= 1; dz++) {
         const iz = izMid + dz;
         if (iz < 0 || iz >= nz) continue;
-        for (let it = 0; it < nth; it++) {
-          const cell = ir * nth * nz + it * nz + iz;
-          const n = slotsInCell(seed, cell);
-          for (let s = 0; s < n; s++) {
-            const o = objectAt(seed, packId(cell, s));
-            if (!o) continue;
-            const st = o.star;
-            if (st.phase !== 'main_sequence') continue;
-            if (st.mk !== 'G' && st.mk !== 'K' && st.mk !== 'F') continue;
-            if (st.lumClass !== 'V' && st.lumClass !== 'VI') continue;
-            if (o.pop === 'halo') continue;
-            const score =
-              (st.mk === 'G' ? 4 : st.mk === 'K' ? 2.5 : 1) +
-              (o.pop === 'thin' ? 1.2 : 0) +
-              (1 - Math.abs(st.feh)) +
-              (st.nebula === 'none' ? 0.3 : 0) -
-              Math.abs(o.pos.R - rSun) * 0.15 -
-              Math.abs(o.pos.z) * 0.4;
-            if (score > bestScore) {
-              bestScore = score;
-              best = o.id;
+        for (let w = 0; w <= 10; w++) {
+          for (const sw of w === 0 ? [0] : [-1, 1]) {
+            const it = (it0 + sw * w + nth) % nth;
+            const cell = ir * nth * nz + it * nz + iz;
+            const n = slotsInCell(seed, cell);
+            const [s0, s1] = slotRangeForMass(n, 0.55, 1.3);
+            for (let s = s0; s < s1; s++) {
+              const o = objectAt(seed, packId(cell, s));
+              if (!o) continue;
+              const st = o.star;
+              if (st.phase !== 'main_sequence') continue;
+              if (st.mk !== 'G' && st.mk !== 'K' && st.mk !== 'F') continue;
+              if (st.lumClass !== 'V' && st.lumClass !== 'VI') continue;
+              if (o.pop === 'halo') continue;
+              const score =
+                (st.mk === 'G' ? 4 : st.mk === 'K' ? 2.5 : 1) +
+                (o.pop === 'thin' ? 1.2 : 0) +
+                (1 - Math.abs(st.feh)) +
+                (st.nebula === 'none' ? 0.3 : 0) -
+                Math.abs(o.pos.R - rSun) * 0.15 -
+                Math.abs(o.pos.z) * 0.4;
+              if (score > bestScore) {
+                bestScore = score;
+                best = o.id;
+              }
             }
           }
         }
@@ -317,6 +379,45 @@ export function homeStar(seed = UNIVERSE.CANONICAL_SEED): GalaxyObject | null {
   return objectAt(seed, homeStarId(seed));
 }
 
+/**
+ * FGK dwarfs near the solar circle — a query, not a catalog dump.
+ * Used by first-landing search. Never walks the whole grid.
+ */
+export function solarCircleHosts(seed: string, max = 160): GalaxyObject[] {
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, R_SUN: rSun } = UNIVERSE;
+  const irSun = Math.round((rSun / rMax) * nr);
+  const izMid = Math.floor(nz / 2);
+  const it0 = Math.floor(u01(seed, 'hosts-az') * nth);
+  const out: GalaxyObject[] = [];
+  for (let w = 0; w < nth && out.length < max; w++) {
+    const it = (it0 + w * 11) % nth;
+    for (let dir = 0; dir <= 2 && out.length < max; dir++) {
+      for (const sign of dir === 0 ? [0] : [-1, 1]) {
+        const ir = irSun + sign * dir;
+        if (ir < 2 || ir >= nr - 1) continue;
+        for (let dz = -1; dz <= 1 && out.length < max; dz++) {
+          const iz = izMid + dz;
+          if (iz < 0 || iz >= nz) continue;
+          const cell = ir * nth * nz + it * nz + iz;
+          const n = slotsInCell(seed, cell);
+          const [s0, s1] = slotRangeForMass(n, 0.55, 1.35);
+          for (let s = s0; s < s1 && out.length < max; s++) {
+            const o = objectAt(seed, packId(cell, s));
+            if (!o) continue;
+            const st = o.star;
+            if (st.phase !== 'main_sequence') continue;
+            if (st.mk !== 'F' && st.mk !== 'G' && st.mk !== 'K') continue;
+            if (st.lumClass !== 'V' && st.lumClass !== 'VI') continue;
+            if (o.pop === 'halo') continue;
+            out.push(o);
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
 /** Galactocentric cylindrical → Cartesian (disk in XZ, Y is height). */
 export function galToCart(p: GalPos): { x: number; y: number; z: number } {
   return {
@@ -326,12 +427,9 @@ export function galToCart(p: GalPos): { x: number; y: number; z: number } {
   };
 }
 
-/**
- * Walk every occupied slot. Init-only: ~cells × cheap density, then
- * objectAt on the filled ones. The catalog is still not stored — this
- * is a throwaway sample for a viewer.
- */
-const catalogMemo = new Map<string, GalaxyObject[]>();
+export function cartToGal(x: number, y: number, z: number): GalPos {
+  return { R: Math.hypot(x, z), theta: Math.atan2(z, x), z: y };
+}
 
 /**
  * A catalog row bright enough to draw as a pickable point. Hubble
@@ -357,22 +455,6 @@ export function isBeacon(o: GalaxyObject): boolean {
   }
   if (st.mk === 'O' || st.mk === 'B' || st.mk === 'A' || st.mk === 'F') return true;
   return st.luminosity >= 0.8;
-}
-
-export function collectCatalog(seed: string): GalaxyObject[] {
-  const hit = catalogMemo.get(seed);
-  if (hit) return hit;
-  const out: GalaxyObject[] = [];
-  const cells = cellCount();
-  for (let cell = 0; cell < cells; cell++) {
-    const n = slotsInCell(seed, cell);
-    for (let s = 0; s < n; s++) {
-      const o = objectAt(seed, packId(cell, s));
-      if (o) out.push(o);
-    }
-  }
-  catalogMemo.set(seed, out);
-  return out;
 }
 
 export interface DensitySample {

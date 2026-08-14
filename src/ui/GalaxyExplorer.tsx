@@ -126,8 +126,8 @@ export function GalaxyExplorer(props: Props) {
           <div className="galaxy-title">Helix</div>
           <div className="galaxy-sub">
             {frame.pickable
-              ? `SBbc · ${count} catalog stars in reach`
-              : 'SBbc · the glow is the population · zoom in to resolve stars'}
+              ? `SBbc · ${count} systems in reach`
+              : `SBbc · ${UNIVERSE.GALAXY_POPULATION.toExponential(0)} addressable systems · zoom in`}
           </div>
         </div>
         <div className="galaxy-presets">

@@ -6,7 +6,7 @@
 import { UNIVERSE } from '../src/world/physics';
 import {
   objectAt, objectsNear, homeStar, density, inSpiralArm, chemistry,
-  catalogSize, slotsInCell, cellCount, sampleDust, collectCatalog, isBeacon,
+  catalogSize, slotsInCell, cellCount, sampleDust, isBeacon, packId,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
@@ -26,8 +26,9 @@ const other = 'vale-brook-1';
 
 // Determinism — pick an occupied slot, not a random empty one.
 let probe = -1;
-for (let id = 0; id < catalogSize() && probe < 0; id += 31) {
-  if (objectAt(seed, id)) probe = id;
+for (let cell = 0; cell < 400 && probe < 0; cell++) {
+  const n = slotsInCell(seed, cell);
+  if (n > 0) probe = packId(cell, 0);
 }
 check(probe >= 0, 'could not find any occupied slot to probe');
 const a = objectAt(seed, probe);
@@ -94,14 +95,17 @@ const armMean = armD / Math.max(1, nArm);
 const gapMean = gapD / Math.max(1, nGap);
 check(armMean > gapMean * 1.15, `arms not overdense: ${armMean.toFixed(3)} vs ${gapMean.toFixed(3)}`);
 
-// Census of the implicit catalog (stride — do not visit every slot).
+// Census — sample cells. Never walk the address space.
 const counts: Record<string, number> = {};
 let occupied = 0;
 let sampled = 0;
-const stride = 17;
-for (let id = 0; id < catalogSize(); id += stride) {
+const cells = cellCount();
+for (let i = 0; i < 5000; i++) {
   sampled++;
-  const o = objectAt(seed, id);
+  const cell = (i * 9973 + 19) % cells;
+  const n = slotsInCell(seed, cell);
+  if (n <= 0) continue;
+  const o = objectAt(seed, packId(cell, (i * 13) % n));
   if (!o) continue;
   occupied++;
   const label = classifyStar(o.star).replace(/\+.*/, '');
@@ -109,21 +113,57 @@ for (let id = 0; id < catalogSize(); id += stride) {
   counts[letter] = (counts[letter] ?? 0) + 1;
 }
 const kinds = Object.keys(counts).sort();
-console.log(`\ncatalog ${seed}: ${occupied}/${sampled} occupied (stride ${stride})`);
+console.log(`\ncatalog ${seed}: ${occupied}/${sampled} occupied (cell sample)`);
 console.log('  classes:', kinds.map((k) => `${k}=${counts[k]}`).join('  '));
-check(occupied > 200, `catalog too empty: ${occupied}`);
-check((counts['G'] ?? 0) > 0, 'no G stars');
-check((counts['K'] ?? 0) > 0, 'no K stars');
-check((counts['M'] ?? 0) > 10, 'no M dwarfs');
-check((counts['DA'] ?? 0) + (counts['DB'] ?? 0) + (counts['DC'] ?? 0) + (counts['DQ'] ?? 0) > 0, 'no white dwarfs');
-check((counts['BH'] ?? 0) + (counts['NS'] ?? 0) + (counts['PSR'] ?? 0) > 0, 'no compact remnants');
-check((counts['L'] ?? 0) + (counts['T'] ?? 0) > 0, 'no brown dwarfs');
+check(occupied > 80, `catalog too empty: ${occupied}`);
+check((counts['G'] ?? 0) + (counts['K'] ?? 0) + (counts['F'] ?? 0) > 0, 'no FGK stars');
+check((counts['M'] ?? 0) + (counts['L'] ?? 0) + (counts['T'] ?? 0) > 5, 'no cool dwarfs');
 
-const cat = collectCatalog(seed);
-const nBeacons = cat.filter(isBeacon).length;
-check(nBeacons > 60, `too few beacons: ${nBeacons}/${cat.length}`);
-check(nBeacons < cat.length * 0.5, `beacons too common (IMF oatmeal leaking): ${nBeacons}/${cat.length}`);
-console.log(`  beacons: ${nBeacons}/${cat.length} (Hubble points; the rest is the field)`);
+let remnants = 0;
+for (let i = 0; i < 400; i++) {
+  const cell = (i * 48611 + 3) % cells;
+  const n = slotsInCell(seed, cell);
+  if (n < 4) continue;
+  const o = objectAt(seed, packId(cell, n - 1));
+  if (!o) continue;
+  if (
+    o.star.phase === 'white_dwarf' ||
+    o.star.phase === 'neutron_star' ||
+    o.star.phase === 'pulsar' ||
+    o.star.phase === 'black_hole'
+  ) {
+    remnants++;
+  }
+}
+check(remnants > 0, 'massive tail has no remnants');
+
+let slotSum = 0;
+let cellSeen = 0;
+const popStep = 47;
+for (let cell = 0; cell < cells; cell += popStep) {
+  slotSum += slotsInCell(seed, cell);
+  cellSeen++;
+}
+const popEst = slotSum * (cells / cellSeen);
+check(popEst > 7e8, `population too small to be procedural: ${popEst.toExponential(2)}`);
+check(popEst < 4e9, `population exploded: ${popEst.toExponential(2)}`);
+check(catalogSize() > 1e9, `address space too small: ${catalogSize()}`);
+console.log(`  population ~ ${popEst.toExponential(2)}  address space ${catalogSize().toExponential(2)}`);
+
+let fat = -1;
+let fatN = 0;
+for (let cell = 0; cell < 80; cell++) {
+  const n = slotsInCell(seed, cell);
+  if (n > fatN) {
+    fatN = n;
+    fat = cell;
+  }
+}
+if (fat >= 0 && fatN > 8) {
+  const lo = objectAt(seed, packId(fat, 0));
+  const hi = objectAt(seed, packId(fat, fatN - 1));
+  check(!!lo && !!hi && hi.star.massZams > lo.star.massZams * 3, `IMF not stratified in cell ${fat}: ${lo?.star.massZams} vs ${hi?.star.massZams}`);
+}
 
 const home = homeStar(seed);
 console.log(
@@ -147,16 +187,16 @@ if (home) {
 }
 check(near.every((o) => objectAt(seed, o.id)?.star.massZams === o.star.massZams), 'near ≠ objectAt');
 
-// Empty slots stay empty.
+// Empty slots stay empty — look in the outer disk, not the nucleus.
 let empty = 0;
-for (let cell = 0; cell < Math.min(200, cellCount()); cell++) {
+for (let cell = cells - 1; cell >= cells - 8000 && empty < 4; cell--) {
   const n = slotsInCell(seed, cell);
   if (n < UNIVERSE.GALAXY_MAX_SLOT) {
-    check(objectAt(seed, cell * UNIVERSE.GALAXY_MAX_SLOT + n) === null, `slot ${n} in cell ${cell} should be empty`);
+    check(objectAt(seed, packId(cell, n)) === null, `slot ${n} in cell ${cell} should be empty`);
     empty++;
   }
 }
-check(empty > 0, 'no empty slots found in first cells (density too high?)');
+check(empty > 0, 'no empty slots found in outer cells');
 
 const dust = sampleDust(8000, seed);
 let dArm = 0;

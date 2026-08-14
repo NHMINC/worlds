@@ -7,9 +7,11 @@
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import {
-  collectCatalog,
+  cartToGal,
   galToCart,
   homeStar,
+  objectAt,
+  objectsNear,
   type GalaxyObject,
 } from '../world/galaxy';
 import { classifyStar, teffToRgb } from '../world/stellar';
@@ -89,8 +91,9 @@ interface Callbacks {
 }
 
 export class GalaxyView {
-  readonly objects: GalaxyObject[];
+  objects: GalaxyObject[] = [];
   readonly home: GalaxyObject | null;
+  private seed: string;
 
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
@@ -134,6 +137,7 @@ export class GalaxyView {
   private pinchMidY = 0;
   private idle = 0;
   private resolved = 0;
+  private qKey = '';
   private filter: GalaxyFilter = 'all';
   private selected: GalaxyObject | null = null;
   private lastT = performance.now();
@@ -141,9 +145,9 @@ export class GalaxyView {
   constructor(canvas: HTMLCanvasElement, seed: string, callbacks: Callbacks) {
     this.canvas = canvas;
     this.callbacks = callbacks;
-    this.objects = collectCatalog(seed);
+    this.seed = seed;
     this.home = homeStar(seed);
-    for (const o of this.objects) this.byId.set(o.id, o);
+    if (this.home) this.byId.set(this.home.id, this.home);
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -196,14 +200,16 @@ export class GalaxyView {
     this.theta = this.tgtTheta;
     this.phi = this.tgtPhi;
     this.radius = this.tgtRadius;
+    this.applyCam();
+    this.loadLocal();
     this.raf = requestAnimationFrame(this.frame);
   }
 
   private hereObj: GalaxyObject | null = null;
 
   setHere(id: number | null): void {
-    const o = id != null ? this.byId.get(id) : undefined;
-    this.hereObj = o ?? null;
+    const o = id != null ? objectAt(this.seed, id) : null;
+    this.hereObj = o;
     if (!o) {
       this.hereRing.visible = false;
       this.applyVis();
@@ -212,11 +218,13 @@ export class GalaxyView {
     const c = galToCart(o.pos);
     this.hereRing.position.set(c.x, c.y, c.z);
     this.hereRing.visible = true;
+    this.qKey = '';
     this.applyVis();
   }
 
   setFilter(f: GalaxyFilter): void {
     this.filter = f;
+    this.qKey = '';
     this.applyVis();
   }
 
@@ -273,6 +281,68 @@ export class GalaxyView {
     }
     this.visNeb.needsUpdate = true;
     this.resolved = n;
+  }
+
+  private uMinForZoom(): number {
+    const z = this.radius;
+    if (this.filter === 'cool') {
+      if (z > 10) return 0.9;
+      if (z > 4) return 0.4;
+      return 0;
+    }
+    if (z > 22) return 0.9985;
+    if (z > 14) return 0.994;
+    if (z > 9) return 0.97;
+    if (z > 5) return 0.86;
+    if (z > 2.4) return 0.5;
+    return 0;
+  }
+
+  private refreshIfNeeded(): void {
+    const uMin = this.uMinForZoom();
+    const key =
+      this.radius > 30
+        ? `far:${this.filter}`
+        : `${this.look.x.toFixed(1)}:${this.look.z.toFixed(1)}:${this.radius.toFixed(1)}:${this.filter}:${uMin.toFixed(3)}`;
+    if (key === this.qKey) return;
+    this.qKey = key;
+    this.loadLocal();
+  }
+
+  private loadLocal(): void {
+    if (this.radius > 30) {
+      this.objects = [];
+    } else {
+      const gal = cartToGal(this.look.x, this.look.y, this.look.z);
+      const dR = Math.min(5.2, Math.max(0.18, this.radius * 0.72));
+      this.objects = objectsNear(this.seed, gal, dR, { uMin: this.uMinForZoom(), limit: 2400 });
+    }
+    this.byId.clear();
+    for (const o of this.objects) this.byId.set(o.id, o);
+    if (this.home) this.byId.set(this.home.id, this.home);
+    if (this.hereObj) this.byId.set(this.hereObj.id, this.hereObj);
+    this.rebuildPoints();
+  }
+
+  private rebuildPoints(): void {
+    this.scene.remove(this.starPts, this.nebPts);
+    this.starPts.geometry.dispose();
+    this.nebPts.geometry.dispose();
+    this.starMat.dispose();
+    this.nebMat.dispose();
+    const stars = this.buildStars();
+    this.starPts = stars.pts;
+    this.starMat = stars.mat;
+    this.visStar = stars.vis;
+    this.ids = stars.ids;
+    this.scene.add(this.starPts);
+    const nebs = this.buildNebulae();
+    this.nebPts = nebs.pts;
+    this.nebMat = nebs.mat;
+    this.visNeb = nebs.vis;
+    this.nebIds = nebs.ids;
+    this.scene.add(this.nebPts);
+    this.applyVis();
   }
 
   setPreset(p: GalaxyPreset): void {
@@ -398,14 +468,15 @@ export class GalaxyView {
     ids: number[];
   } {
     const stars = this.objects.filter((o) => o.star.nebula === 'none' || o.star.phase === 'main_sequence' || o.star.phase === 'giant' || o.star.phase === 'supergiant' || o.star.phase === 'subgiant' || o.star.phase === 'wolf_rayet' || o.star.phase === 'carbon_star' || o.star.phase === 'brown_dwarf' || o.star.phase === 'white_dwarf' || o.star.phase === 'neutron_star' || o.star.phase === 'pulsar' || o.star.phase === 'black_hole');
-    const n = stars.length;
+    const n = Math.max(1, stars.length);
     const pos = new Float32Array(n * 3);
     const col = new Float32Array(n * 3);
     const size = new Float32Array(n);
     const pulse = new Float32Array(n);
     const visArr = new Float32Array(n);
     const ids: number[] = [];
-    for (let i = 0; i < n; i++) {
+    if (stars.length === 0) visArr[0] = 0;
+    for (let i = 0; i < stars.length; i++) {
       const o = stars[i];
       const c = galToCart(o.pos);
       pos[i * 3] = c.x;
@@ -684,6 +755,7 @@ export class GalaxyView {
     this.radius += (this.tgtRadius - this.radius) * (1 - Math.exp(-dt * 3.6));
     this.look.lerp(this.tgtLook, 1 - Math.exp(-dt * 3.2));
     this.applyCam();
+    this.refreshIfNeeded();
     this.applyVis();
     if (this.selected && this.tgtRadius > PICK_ZOOM) this.select(null);
     const t = now * 0.001;
