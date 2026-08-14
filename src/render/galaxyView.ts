@@ -19,6 +19,9 @@ import { createGalaxyField, updateGalaxyField } from './galaxyField';
 import { createStarDiscs, RESOLVE_DIST, RESOLVE_MAX, type StarDiscs } from './galaxyStar';
 const ZOOM_MIN = 0.18;
 const ZOOM_MAX = 70;
+/** The field marches in a buffer this fraction of the screen: the glow is
+ * low-frequency, so quarter the pixels is invisible and 4× cheaper. */
+const FIELD_RES = 0.5;
 /** Orbit radius (kpc) inside which a resolved star may be picked. */
 const PICK_ZOOM = 14;
 /** Face-on: the field is the photograph; catalog points stay dark. */
@@ -110,6 +113,13 @@ export class GalaxyView {
   private nebPts: THREE.Points;
   private fieldMesh: THREE.Mesh;
   private fieldMat: THREE.ShaderMaterial;
+  /** The raymarch runs off-screen at FIELD_RES; this quad shows it. */
+  private fieldScene = new THREE.Scene();
+  private fieldRT: THREE.WebGLRenderTarget;
+  private fieldComposite: THREE.Mesh;
+  private fieldCompositeMat: THREE.ShaderMaterial;
+  private tmpSize = new THREE.Vector2();
+  private tmpClear = new THREE.Color();
   private visStar: THREE.BufferAttribute;
   private visNeb: THREE.BufferAttribute;
   private starMat: THREE.ShaderMaterial;
@@ -167,8 +177,41 @@ export class GalaxyView {
     const field = createGalaxyField();
     this.fieldMesh = field.mesh;
     this.fieldMat = field.mat;
-    this.fieldMesh.renderOrder = -10;
-    this.scene.add(this.fieldMesh);
+    // The march runs in its own scene at FIELD_RES of the screen; the
+    // main scene only pays for one textured quad.
+    this.fieldScene.add(this.fieldMesh);
+    this.fieldRT = new THREE.WebGLRenderTarget(2, 2, {
+      depthBuffer: false,
+      stencilBuffer: false,
+    });
+    this.fieldRT.texture.minFilter = THREE.LinearFilter;
+    this.fieldRT.texture.magFilter = THREE.LinearFilter;
+    this.fieldCompositeMat = new THREE.ShaderMaterial({
+      vertexShader: /* glsl */ `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        precision mediump float;
+        uniform sampler2D uTex;
+        varying vec2 vUv;
+        void main() {
+          gl_FragColor = texture2D(uTex, vUv);
+        }
+      `,
+      uniforms: { uTex: { value: this.fieldRT.texture } },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.fieldComposite = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.fieldCompositeMat);
+    this.fieldComposite.frustumCulled = false;
+    this.fieldComposite.renderOrder = -10;
+    this.scene.add(this.fieldComposite);
 
     const stars = this.buildStars();
     this.starPts = stars.pts;
@@ -470,6 +513,9 @@ export class GalaxyView {
     this.starMat.dispose();
     this.nebMat.dispose();
     this.fieldMat.dispose();
+    this.fieldComposite.geometry.dispose();
+    this.fieldCompositeMat.dispose();
+    this.fieldRT.dispose();
     this.homeRing.geometry.dispose();
     (this.homeRing.material as THREE.Material).dispose();
     this.hereRing.geometry.dispose();
@@ -934,6 +980,21 @@ export class GalaxyView {
     this.pickRing.rotation.z = t * 0.35;
     this.homeRing.rotation.z = -t * 0.12;
     this.hereRing.rotation.z = t * 0.2;
+    // Field pass: march the integral into the low-res buffer, then draw
+    // the scene over it. Additive composite over black equals the old
+    // in-scene additive blend, at a quarter of the march pixels.
+    this.renderer.getDrawingBufferSize(this.tmpSize);
+    const fw = Math.max(2, Math.round(this.tmpSize.x * FIELD_RES));
+    const fh = Math.max(2, Math.round(this.tmpSize.y * FIELD_RES));
+    if (this.fieldRT.width !== fw || this.fieldRT.height !== fh) this.fieldRT.setSize(fw, fh);
+    this.renderer.getClearColor(this.tmpClear);
+    const clearA = this.renderer.getClearAlpha();
+    this.renderer.setRenderTarget(this.fieldRT);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear();
+    this.renderer.render(this.fieldScene, this.camera);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(this.tmpClear, clearA);
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onFrame?.({
       theta: this.theta,

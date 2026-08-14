@@ -238,14 +238,18 @@ export function objectAt(seed: string, id: number): GalaxyObject | null {
 
   const rng = rngFor(seed, cell, slot);
   const mid = cellCenter(cell);
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
-  const dR = rMax / nr;
-  const dTh = TAU / nth;
+  const { GALAXY_NZ: nz } = UNIVERSE;
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / nz;
+  // Scatter ISOTROPICALLY over the largest bin dimension. The cell is an
+  // address bin, not a physical box: cells are needles (fine in R and θ,
+  // 0.4 kpc tall), and confining slots to their own needle printed the
+  // lattice as vertical chains of stars. One cube of side dz for all
+  // three axes dissolves the grid; occupancy still carries the density
+  // law, and a star's id (cell, slot) never moves.
   const pos: GalPos = {
-    R: Math.max(0.05, mid.R + (rng() - 0.5) * dR),
-    theta: mid.theta + (rng() - 0.5) * dTh,
+    R: Math.max(0.05, mid.R + (rng() - 0.5) * dz),
+    theta: mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R),
     z: mid.z + (rng() - 0.5) * dz,
   };
   const parts = densityParts(pos);
