@@ -904,8 +904,8 @@ export class Engine {
     // The sky shell: the same scattering law, marched along the rays that
     // cross the air without striking the globe. From orbit those are the
     // limb; from the ground they are the whole sky. Its top sits where the
-    // exponential air has genuinely run out (~7 scale heights) — a skin,
-    // not a halo. Vacuum past that has nothing to scatter.
+    // exponential air has genuinely run out (~7 scale heights) — a
+    // readable halo, not a bloom. Vacuum past that has nothing to scatter.
     let atmoMat: THREE.ShaderMaterial | undefined;
     let atmoExtMat: THREE.ShaderMaterial | undefined;
     if (tier === 2 && air) {
