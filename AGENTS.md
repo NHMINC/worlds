@@ -187,7 +187,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   teff colour, limb, remnant, nebula. We only mesh what we occupy.
   Tap a resolved disc to set course; a still-point source only selects
   or zooms. A star is pickable only when the camera is inside ~10 kpc
-  of it. The in-system night shell (`buildStars`) is still unseeded and
+  of it. **Zoom is a thruster, not a teleport**: wheel/pinch adds to a
+  log-space radial velocity that glides under drag; opposite input
+  brakes, then reverses. The velocity cap is the law that keeps a
+  flick from crossing many catalog bins in one step. A beacon hides
+  only when its own photosphere mesh exists — never wholesale by
+  distance, or stars vanish mid-zoom that the camera never passed. The in-system night shell (`buildStars`) is still unseeded and
   must retire so ground and explorer agree. A painted starfield is a lie.
 - **The photograph is turbulence, in the integral only.**
   The ISM is log-normal: every smooth law in the field shader is
