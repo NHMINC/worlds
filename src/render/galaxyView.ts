@@ -58,7 +58,7 @@ const STAR_VERT = /* glsl */ `
     vPulse = pulse;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     float dist = max(0.8, -mv.z);
-    gl_PointSize = aSize * aVis * pulse * uPixel * (42.0 / dist);
+    gl_PointSize = min(22.0, aSize * aVis * pulse * uPixel * (36.0 / dist));
     gl_Position = projectionMatrix * mv;
   }
 `;

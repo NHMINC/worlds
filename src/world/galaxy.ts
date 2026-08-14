@@ -319,7 +319,15 @@ export function objectsNear(
         for (let s = n - 1; s >= sHi && taken < perCell && out.length < limit; s--) {
           const o = objectAt(seed, packId(cell, s));
           if (!o) continue;
-          const lit = o.star.nebula !== 'none' || o.star.luminosity >= 0.45 || o.star.phase === 'wolf_rayet';
+          const remnant =
+            o.star.phase === 'white_dwarf' ||
+            o.star.phase === 'neutron_star' ||
+            o.star.phase === 'pulsar' ||
+            o.star.phase === 'black_hole';
+          const lit =
+            o.star.nebula !== 'none' ||
+            o.star.phase === 'wolf_rayet' ||
+            (!remnant && o.star.luminosity >= 0.45);
           if (!lit) continue;
           if (pushNear(out, seen, o, limit)) return out;
           taken++;
