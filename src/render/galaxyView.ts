@@ -20,7 +20,7 @@ import { createGalaxyField, updateGalaxyField } from './galaxyField';
 const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 70;
 /** Orbit radius (kpc) inside which a resolved star may be picked. */
-const PICK_ZOOM = 9.5;
+const PICK_ZOOM = 14;
 /** Face-on: the field is the photograph; catalog points stay dark. */
 const FIELD_ONLY_ZOOM = 32;
 
@@ -629,21 +629,58 @@ export class GalaxyView {
     this.tgtRadius = next;
   }
 
-  private pick(cx: number, cy: number): void {
-    if (!this.canPick()) {
-      this.select(null);
-      return;
+  /** Client-pixel position of a catalog object, or null if off-screen. */
+  projectClient(obj: GalaxyObject): { x: number; y: number } | null {
+    const rect = this.canvas.getBoundingClientRect();
+    const c = galToCart(obj.pos);
+    const v = new THREE.Vector3(c.x, c.y, c.z).project(this.camera);
+    if (v.z < -1 || v.z > 1) return null;
+    return {
+      x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
+      y: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
+    };
+  }
+
+  private hitWaypoints(x: number, y: number, rect: DOMRect): GalaxyObject | null {
+    let best: GalaxyObject | null = null;
+    let bestD = 36;
+    const v = new THREE.Vector3();
+    for (const o of [this.hereObj, this.home]) {
+      if (!o) continue;
+      const c = galToCart(o.pos);
+      v.set(c.x, c.y, c.z).project(this.camera);
+      if (v.z < -1 || v.z > 1) continue;
+      const sx = (v.x * 0.5 + 0.5) * rect.width;
+      const sy = (-v.y * 0.5 + 0.5) * rect.height;
+      const d = Math.hypot(sx - x, sy - y);
+      if (d < bestD) {
+        bestD = d;
+        best = o;
+      }
     }
+    return best;
+  }
+
+  private pick(cx: number, cy: number): void {
     const rect = this.canvas.getBoundingClientRect();
     const x = cx - rect.left;
     const y = cy - rect.top;
+    const waypoint = this.hitWaypoints(x, y, rect);
+    if (waypoint) {
+      this.focus(waypoint);
+      return;
+    }
+    if (!this.canPick()) {
+      this.zoomToward(cx, cy, 0.7);
+      return;
+    }
     let best = -1;
-    let bestD = 16;
+    let bestD = 32;
     const vis = this.visStar.array as Float32Array;
     const pos = this.starPts.geometry.getAttribute('position') as THREE.BufferAttribute;
     const v = new THREE.Vector3();
     for (let i = 0; i < this.ids.length; i++) {
-      if (vis[i] < 0.55) continue;
+      if (vis[i] < 0.2) continue;
       v.set(pos.getX(i), pos.getY(i), pos.getZ(i)).project(this.camera);
       const sx = (v.x * 0.5 + 0.5) * rect.width;
       const sy = (-v.y * 0.5 + 0.5) * rect.height;
@@ -657,7 +694,7 @@ export class GalaxyView {
     const nebVis = this.visNeb.array as Float32Array;
     const nebPos = this.nebPts.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < this.nebIds.length; i++) {
-      if (nebVis[i] < 0.55) continue;
+      if (nebVis[i] < 0.2) continue;
       v.set(nebPos.getX(i), nebPos.getY(i), nebPos.getZ(i)).project(this.camera);
       const sx = (v.x * 0.5 + 0.5) * rect.width;
       const sy = (-v.y * 0.5 + 0.5) * rect.height;
@@ -727,7 +764,7 @@ export class GalaxyView {
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch0 = 0;
     if (this.pointers.size === 0) {
-      if (this.dragging && this.moved < 8) this.pick(e.clientX, e.clientY);
+      if (this.dragging && this.moved < 22) this.pick(e.clientX, e.clientY);
       this.dragging = false;
     }
   };

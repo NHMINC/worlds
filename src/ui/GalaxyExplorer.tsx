@@ -73,6 +73,7 @@ export function GalaxyExplorer(props: Props) {
       });
       view.setHere(props.hereStarId ?? null);
       viewRef.current = view;
+      (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView = view;
       setCensus(view.census());
       setCount(view.beaconCount());
       setReady(true);
@@ -89,6 +90,7 @@ export function GalaxyExplorer(props: Props) {
       ro?.disconnect();
       view?.dispose();
       viewRef.current = null;
+      delete (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView;
     };
   }, [seed, props.hereStarId]);
 
