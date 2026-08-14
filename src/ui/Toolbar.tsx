@@ -48,7 +48,7 @@ export function Toolbar(props: Props) {
   const orbit = props.mode === 'orbit';
   return (
     <div className="toolbar">
-      <button className="tb-btn tb-world" title="Star systems" onClick={props.openManager}>
+      <button className="tb-btn tb-world" title="Places you’ve been" onClick={props.openManager}>
         <IconGlobe />
         <span className="tb-world-name">{props.title}</span>
       </button>

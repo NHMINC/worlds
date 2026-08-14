@@ -103,10 +103,13 @@ CANONICAL_SEED + UNIVERSE mass model (SBbc)
   → snow capacity, sea state, palette, life odds
 ```
 
-`generateSystem(seed)` is the inner bottle (private universes, old
-exports). Canonical play is `objectAt` → `systemAt(galaxySeed, starId)`
-— a pure function. The **galaxy explorer** is how you discover: the
-points are the catalog; set course loads that star. Not a mint button.
+Canonical play is `objectAt` → `systemAt(galaxySeed, starId)` — a pure
+function. The **galaxy explorer** is how you discover: the points are
+the catalog; set course loads that star. We **store visits only**
+(overlays, camera, labels). We do not mint systems. A first landing
+searches the catalog for a star that already has a habitable world.
+`generateSystem(seed)` remains the inner assembler and a legacy bottle
+for old files — it is not a player verb.
 
 Related laws that must stay physics, not flags:
 
@@ -416,6 +419,7 @@ Code map (start here):
 | Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Galaxy explorer (catalog viewer) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| First landing (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |
