@@ -104,10 +104,13 @@ CANONICAL_SEED + UNIVERSE mass model (SBbc)
 ```
 
 Canonical play is `objectAt` → `systemAt(galaxySeed, starId)` — a pure
-function. The **galaxy explorer** is how you discover: the points are
-the catalog; set course loads that star. We **store visits only**
-(overlays, camera, labels). We do not mint systems. A first landing
-searches the catalog for a star that already has a habitable world.
+function. The **galaxy explorer** is how you discover: the Hubble glow
+is the mass model on the GPU (surface brightness = the integrated
+population — that is how a phone shows ~10¹¹ stars); the points you
+can tap are catalog beacons (`objectAt` samples, not the IMF oatmeal).
+Set course loads that star. We **store visits only** (overlays, camera,
+labels). We do not mint systems. A first landing searches the catalog
+for a star that already has a habitable world.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
 
@@ -148,10 +151,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - Light comes from the **loaded** star at the origin. Day/night is spin
   + orbit as functions of `(spec, unix time t)` — deterministic, no
   “bake a sun behind the camera.”
-- **The sky is the catalog.** The galaxy explorer *is* that catalog
-  (density field + `objectAt` points, not a painted spiral). The
-  in-system night shell (`buildStars`) is still unseeded and must
-  retire so ground and explorer agree. A painted starfield is a lie.
+- **The sky is the catalog.** The galaxy explorer *is* that catalog:
+  a GPU raymarch of the same density / young-light / dust-lane law
+  (`galaxyField.ts`) plus pickable `objectAt` beacons — not a painted
+  spiral, not 52k mass-traced dust points. Billions of stars are the
+  integral (pixels × steps). Instantiating 10¹¹ Three.js points is
+  the extreme cost; evaluating the field is not. The in-system night
+  shell (`buildStars`) is still unseeded and must retire so ground
+  and explorer agree. A painted starfield is a lie.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
@@ -418,7 +425,7 @@ Code map (start here):
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
 | Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
-| Galaxy explorer (catalog viewer) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (GPU field + catalog beacons) | `src/render/galaxyField.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | First landing (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |

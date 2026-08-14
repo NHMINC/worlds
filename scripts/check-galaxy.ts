@@ -6,7 +6,7 @@
 import { UNIVERSE } from '../src/world/physics';
 import {
   objectAt, objectsNear, homeStar, density, inSpiralArm, chemistry,
-  catalogSize, slotsInCell, cellCount, sampleDust,
+  catalogSize, slotsInCell, cellCount, sampleDust, collectCatalog, isBeacon,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
@@ -118,6 +118,12 @@ check((counts['M'] ?? 0) > 10, 'no M dwarfs');
 check((counts['DA'] ?? 0) + (counts['DB'] ?? 0) + (counts['DC'] ?? 0) + (counts['DQ'] ?? 0) > 0, 'no white dwarfs');
 check((counts['BH'] ?? 0) + (counts['NS'] ?? 0) + (counts['PSR'] ?? 0) > 0, 'no compact remnants');
 check((counts['L'] ?? 0) + (counts['T'] ?? 0) > 0, 'no brown dwarfs');
+
+const cat = collectCatalog(seed);
+const nBeacons = cat.filter(isBeacon).length;
+check(nBeacons > 60, `too few beacons: ${nBeacons}/${cat.length}`);
+check(nBeacons < cat.length * 0.5, `beacons too common (IMF oatmeal leaking): ${nBeacons}/${cat.length}`);
+console.log(`  beacons: ${nBeacons}/${cat.length} (Hubble points; the rest is the field)`);
 
 const home = homeStar(seed);
 console.log(

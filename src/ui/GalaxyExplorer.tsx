@@ -61,15 +61,10 @@ export function GalaxyExplorer(props: Props) {
         },
       });
       view.setHere(props.hereStarId ?? null);
-      if (props.hereStarId != null) {
-        const here = view.objects.find((o) => o.id === props.hereStarId);
-        if (here) setSelected(here);
-      }
       viewRef.current = view;
       setCensus(view.census());
-      setCount(view.objects.length);
+      setCount(view.beaconCount());
       setReady(true);
-      if (!props.hereStarId && view.home) setSelected(view.home);
       ro = new ResizeObserver(() => {
         view?.resize(wrap.clientWidth, wrap.clientHeight);
       });
@@ -89,7 +84,10 @@ export function GalaxyExplorer(props: Props) {
   function applyFilter(f: GalaxyFilter): void {
     setFilter(f);
     viewRef.current?.setFilter(f);
-    if (viewRef.current) setCensus(viewRef.current.census());
+    if (viewRef.current) {
+      setCensus(viewRef.current.census());
+      setCount(viewRef.current.beaconCount());
+    }
   }
 
   const st = selected?.star;
@@ -102,13 +100,15 @@ export function GalaxyExplorer(props: Props) {
     <div className="galaxy-explorer">
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
-        {!ready && <div className="galaxy-loading">Unfolding the catalog…</div>}
+        {!ready && <div className="galaxy-loading">Evaluating the mass model…</div>}
       </div>
 
       <header className="galaxy-top">
         <div className="galaxy-brand">
           <div className="galaxy-title">Helix</div>
-          <div className="galaxy-sub">SBbc · grand-design barred spiral · {count || '…'} objects</div>
+          <div className="galaxy-sub">
+            SBbc · the glow is the population · {count || '…'} beacons you can tap
+          </div>
         </div>
         <div className="galaxy-presets">
           {PRESETS.map((p) => (
@@ -122,35 +122,41 @@ export function GalaxyExplorer(props: Props) {
         </button>
       </header>
 
-      <aside className={`galaxy-dossier ${selected ? 'open' : ''}`}>
-        {selected && st ? (
-          <>
+      {selected && st && (
+        <aside className="galaxy-dossier">
+          <div className="gd-head">
             <div className="gd-kicker">
               {selected.pop} {selected.inArm ? '· arm' : ''}
               {props.visitedStarIds?.includes(selected.id) ? ' · visited' : ''}
             </div>
-            <div className="gd-class">{cls}</div>
-            <div className="gd-phase">{st.phase.replace(/_/g, ' ')}</div>
-            <dl className="gd-grid">
-              <div><dt>R</dt><dd>{selected.pos.R.toFixed(2)} kpc</dd></div>
-              <div><dt>z</dt><dd>{selected.pos.z.toFixed(2)} kpc</dd></div>
-              <div><dt>Age</dt><dd>{st.ageGyr.toFixed(2)} Gyr</dd></div>
-              <div><dt>Mass</dt><dd>{st.mass.toFixed(2)} M☉</dd></div>
-              <div><dt>L</dt><dd>{st.luminosity < 0.01 ? st.luminosity.toExponential(1) : st.luminosity.toFixed(2)} L☉</dd></div>
-              <div><dt>Teff</dt><dd>{st.teff > 0 ? `${Math.round(st.teff)} K` : '—'}</dd></div>
-              <div><dt>[Fe/H]</dt><dd>{st.feh >= 0 ? '+' : ''}{st.feh.toFixed(2)}</dd></div>
-              <div><dt>C/O</dt><dd>{st.carbon.toFixed(2)}</dd></div>
-            </dl>
-            {st.nebula !== 'none' && <div className="gd-nebula">{st.nebula === 'hii' ? 'H II region' : st.nebula === 'planetary' ? 'Planetary nebula' : 'Supernova remnant'}</div>}
-            <div className="gd-id">#{selected.id}</div>
-            <button className="gd-go" onClick={() => props.onSetCourse(selected)}>
-              Set course
+            <button
+              type="button"
+              className="gd-x"
+              aria-label="Close star detail"
+              onClick={() => viewRef.current?.dismiss()}
+            >
+              ×
             </button>
-          </>
-        ) : (
-          <p className="gd-empty">Tap a star. The points are the catalog.</p>
-        )}
-      </aside>
+          </div>
+          <div className="gd-class">{cls}</div>
+          <div className="gd-phase">{st.phase.replace(/_/g, ' ')}</div>
+          <dl className="gd-grid">
+            <div><dt>R</dt><dd>{selected.pos.R.toFixed(2)} kpc</dd></div>
+            <div><dt>z</dt><dd>{selected.pos.z.toFixed(2)} kpc</dd></div>
+            <div><dt>Age</dt><dd>{st.ageGyr.toFixed(2)} Gyr</dd></div>
+            <div><dt>Mass</dt><dd>{st.mass.toFixed(2)} M☉</dd></div>
+            <div><dt>L</dt><dd>{st.luminosity < 0.01 ? st.luminosity.toExponential(1) : st.luminosity.toFixed(2)} L☉</dd></div>
+            <div><dt>Teff</dt><dd>{st.teff > 0 ? `${Math.round(st.teff)} K` : '—'}</dd></div>
+            <div><dt>[Fe/H]</dt><dd>{st.feh >= 0 ? '+' : ''}{st.feh.toFixed(2)}</dd></div>
+            <div><dt>C/O</dt><dd>{st.carbon.toFixed(2)}</dd></div>
+          </dl>
+          {st.nebula !== 'none' && <div className="gd-nebula">{st.nebula === 'hii' ? 'H II region' : st.nebula === 'planetary' ? 'Planetary nebula' : 'Supernova remnant'}</div>}
+          <div className="gd-id">#{selected.id}</div>
+          <button className="gd-go" onClick={() => props.onSetCourse(selected)}>
+            Set course
+          </button>
+        </aside>
+      )}
 
       <aside className="galaxy-census">
         <div className="gx-kicker">In view</div>

@@ -333,6 +333,32 @@ export function galToCart(p: GalPos): { x: number; y: number; z: number } {
  */
 const catalogMemo = new Map<string, GalaxyObject[]>();
 
+/**
+ * A catalog row bright enough to draw as a pickable point. Hubble
+ * photographs are young light and remnants, not the M-dwarf oatmeal
+ * the IMF actually produces. The rest of the population is the GPU
+ * field — the integral, not a point list.
+ */
+export function isBeacon(o: GalaxyObject): boolean {
+  const st = o.star;
+  if (st.nebula !== 'none') return true;
+  if (
+    st.phase === 'white_dwarf' ||
+    st.phase === 'neutron_star' ||
+    st.phase === 'pulsar' ||
+    st.phase === 'black_hole' ||
+    st.phase === 'giant' ||
+    st.phase === 'supergiant' ||
+    st.phase === 'wolf_rayet' ||
+    st.phase === 'carbon_star' ||
+    st.phase === 'subgiant'
+  ) {
+    return true;
+  }
+  if (st.mk === 'O' || st.mk === 'B' || st.mk === 'A' || st.mk === 'F') return true;
+  return st.luminosity >= 0.8;
+}
+
 export function collectCatalog(seed: string): GalaxyObject[] {
   const hit = catalogMemo.get(seed);
   if (hit) return hit;

@@ -286,7 +286,9 @@ export const UNIVERSE = {
    * a rounding desert. GALAXY_N_K is a *sample* density — the catalog is
    * a representative draw of the mass model, not the Milky Way headcount
    * (a phone cannot hold 10¹¹ rows, and objectAt is O(1) either way).
-   * Halo cells stay sparse; arms fill up.
+   * The explorer’s Hubble glow is the same density law on the GPU —
+   * cost is pixels × steps, not a point per star. Halo cells stay
+   * sparse; arms fill up.
    */
   GALAXY_NR: 48,
   GALAXY_NTH: 96,

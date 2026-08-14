@@ -1,7 +1,7 @@
 /**
- * The galaxy explorer: a viewer of the implicit catalog. Stars, remnants
- * and nebulae are objectAt samples. The disk, bar and bulge are the
- * density law sampled cheaper. Nothing here is a painted spiral.
+ * The galaxy explorer: the mass model on the GPU (the Hubble glow) plus
+ * catalog beacons you can tap. Billions of stars are the integral, not
+ * a point list. Nothing here is a painted spiral.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -9,11 +9,11 @@ import {
   collectCatalog,
   galToCart,
   homeStar,
-  sampleDust,
+  isBeacon,
   type GalaxyObject,
-  type Population,
 } from '../world/galaxy';
 import { classifyStar, teffToRgb } from '../world/stellar';
+import { createGalaxyField, updateGalaxyField } from './galaxyField';
 
 export type GalaxyFilter = 'all' | 'hot' | 'sunlike' | 'cool' | 'remnant' | 'nebula' | 'halo' | 'arm';
 export type GalaxyPreset = 'face' | 'edge' | 'home' | 'arm';
@@ -33,14 +33,6 @@ export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
   if (f === 'halo') return o.pop === 'halo';
   return o.inArm;
 }
-
-const POP_RGB: Record<Population, [number, number, number]> = {
-  thin: [0.42, 0.58, 0.92],
-  thick: [0.55, 0.48, 0.78],
-  bulge: [0.95, 0.72, 0.42],
-  bar: [0.88, 0.62, 0.38],
-  halo: [0.35, 0.4, 0.55],
-};
 
 const STAR_VERT = /* glsl */ `
   attribute vec3 aColor;
@@ -76,33 +68,6 @@ const STAR_FRAG = /* glsl */ `
   }
 `;
 
-const DUST_VERT = /* glsl */ `
-  attribute vec3 aColor;
-  attribute float aSize;
-  attribute float aVis;
-  uniform float uPixel;
-  varying vec3 vColor;
-  void main() {
-    vColor = aColor;
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    float dist = max(1.2, -mv.z);
-    gl_PointSize = aSize * aVis * uPixel * (110.0 / dist);
-    gl_Position = projectionMatrix * mv;
-  }
-`;
-
-const DUST_FRAG = /* glsl */ `
-  uniform float uDim;
-  varying vec3 vColor;
-  void main() {
-    vec2 p = gl_PointCoord * 2.0 - 1.0;
-    float r2 = dot(p, p);
-    if (r2 > 1.0) discard;
-    float a = exp(-r2 * 2.1) * 0.55 * uDim;
-    gl_FragColor = vec4(vColor, a);
-  }
-`;
-
 export interface GalaxyFrame {
   theta: number;
   phi: number;
@@ -128,12 +93,12 @@ export class GalaxyView {
 
   private starPts: THREE.Points;
   private nebPts: THREE.Points;
-  private dustPts: THREE.Points;
+  private fieldMesh: THREE.Mesh;
+  private fieldMat: THREE.ShaderMaterial;
   private visStar: THREE.BufferAttribute;
   private visNeb: THREE.BufferAttribute;
   private starMat: THREE.ShaderMaterial;
   private nebMat: THREE.ShaderMaterial;
-  private dustMat: THREE.ShaderMaterial;
   private homeRing: THREE.Mesh;
   private hereRing: THREE.Mesh;
   private pickRing: THREE.Mesh;
@@ -173,12 +138,11 @@ export class GalaxyView {
     this.renderer.setClearColor(new THREE.Color('#070b14'), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.08, 400);
 
-    this.scene.fog = new THREE.FogExp2(0x070b14, 0.0035);
-
-    const dust = this.buildDust();
-    this.dustPts = dust.pts;
-    this.dustMat = dust.mat;
-    this.scene.add(this.dustPts);
+    const field = createGalaxyField();
+    this.fieldMesh = field.mesh;
+    this.fieldMat = field.mat;
+    this.fieldMesh.renderOrder = -10;
+    this.scene.add(this.fieldMesh);
 
     const stars = this.buildStars();
     this.starPts = stars.pts;
@@ -207,6 +171,7 @@ export class GalaxyView {
     }
     this.hereRing.visible = false;
     this.pickRing.visible = false;
+    this.applyVis();
 
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown);
@@ -230,28 +195,45 @@ export class GalaxyView {
     this.hereObj = o ?? null;
     if (!o) {
       this.hereRing.visible = false;
+      this.applyVis();
       return;
     }
     const c = galToCart(o.pos);
     this.hereRing.position.set(c.x, c.y, c.z);
     this.hereRing.visible = true;
+    this.applyVis();
   }
 
   setFilter(f: GalaxyFilter): void {
     this.filter = f;
+    this.applyVis();
+  }
+
+  dismiss(): void {
+    this.select(null);
+  }
+
+  private isDrawn(o: GalaxyObject): boolean {
+    if (!matchesFilter(o, this.filter)) return false;
+    if (this.filter !== 'all') return true;
+    if (this.home && o.id === this.home.id) return true;
+    if (this.hereObj && o.id === this.hereObj.id) return true;
+    return isBeacon(o);
+  }
+
+  private applyVis(): void {
     const starVis = this.visStar.array as Float32Array;
     for (let i = 0; i < this.ids.length; i++) {
       const o = this.byId.get(this.ids[i])!;
-      starVis[i] = matchesFilter(o, f) ? 1 : 0;
+      starVis[i] = this.isDrawn(o) ? 1 : 0;
     }
     this.visStar.needsUpdate = true;
     const nebVis = this.visNeb.array as Float32Array;
     for (let i = 0; i < this.nebIds.length; i++) {
       const o = this.byId.get(this.nebIds[i])!;
-      nebVis[i] = matchesFilter(o, f) ? 1 : 0;
+      nebVis[i] = this.isDrawn(o) ? 1 : 0;
     }
     this.visNeb.needsUpdate = true;
-    this.dustMat.uniforms.uDim.value = f === 'all' ? 1 : 0.35;
   }
 
   setPreset(p: GalaxyPreset): void {
@@ -300,12 +282,16 @@ export class GalaxyView {
   census(): Record<string, number> {
     const c: Record<string, number> = {};
     for (const o of this.objects) {
-      if (!matchesFilter(o, this.filter)) continue;
+      if (!this.isDrawn(o)) continue;
       const k = classifyStar(o.star).replace(/\+.*/, '').replace(/[0-9].*/, '');
       const letter = /^[OBAFGKMLT]/.test(k) ? k[0] : k;
       c[letter] = (c[letter] ?? 0) + 1;
     }
     return c;
+  }
+
+  beaconCount(): number {
+    return this.objects.filter((o) => this.isDrawn(o)).length;
   }
 
   resize(w: number, h: number): void {
@@ -324,10 +310,10 @@ export class GalaxyView {
     this.canvas.removeEventListener('wheel', this.onWheel);
     this.starPts.geometry.dispose();
     this.nebPts.geometry.dispose();
-    this.dustPts.geometry.dispose();
+    this.fieldMesh.geometry.dispose();
     this.starMat.dispose();
     this.nebMat.dispose();
-    this.dustMat.dispose();
+    this.fieldMat.dispose();
     this.homeRing.geometry.dispose();
     (this.homeRing.material as THREE.Material).dispose();
     this.hereRing.geometry.dispose();
@@ -364,42 +350,6 @@ export class GalaxyView {
     return mesh;
   }
 
-  private buildDust(): { pts: THREE.Points; mat: THREE.ShaderMaterial } {
-    const samples = sampleDust(52000);
-    const n = samples.length;
-    const pos = new Float32Array(n * 3);
-    const col = new Float32Array(n * 3);
-    const size = new Float32Array(n);
-    const vis = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      const s = samples[i];
-      pos[i * 3] = s.x;
-      pos[i * 3 + 1] = s.y;
-      pos[i * 3 + 2] = s.z;
-      const rgb = POP_RGB[s.pop];
-      const b = Math.min(1.15, 0.35 + s.d * 0.7);
-      col[i * 3] = rgb[0] * b;
-      col[i * 3 + 1] = rgb[1] * b;
-      col[i * 3 + 2] = rgb[2] * b;
-      size[i] = 2.2 + Math.min(7, s.d * 4.5);
-      vis[i] = 1;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
-    geo.setAttribute('aVis', new THREE.BufferAttribute(vis, 1));
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: DUST_VERT,
-      fragmentShader: DUST_FRAG,
-      uniforms: { uPixel: { value: 1 }, uDim: { value: 1 } },
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    return { pts: new THREE.Points(geo, mat), mat };
-  }
-
   private buildStars(): {
     pts: THREE.Points;
     mat: THREE.ShaderMaterial;
@@ -425,7 +375,7 @@ export class GalaxyView {
       col[i * 3 + 1] = rgb[1];
       col[i * 3 + 2] = rgb[2];
       const L = Math.max(1e-6, o.star.luminosity);
-      size[i] = 1.1 + Math.min(6.5, Math.log10(1 + L) * 2.4 + (o.star.phase === 'black_hole' ? 1.8 : 0));
+      size[i] = 1.6 + Math.min(8.2, Math.log10(1 + L) * 2.8 + (o.star.phase === 'black_hole' ? 1.8 : 0));
       pulse[i] = o.star.phase === 'pulsar' ? 1 : 0;
       visArr[i] = 1;
       ids.push(o.id);
@@ -527,6 +477,20 @@ export class GalaxyView {
         best = this.ids[i];
       }
     }
+    const nebVis = this.visNeb.array as Float32Array;
+    const nebPos = this.nebPts.geometry.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < this.nebIds.length; i++) {
+      if (nebVis[i] < 0.5) continue;
+      v.set(nebPos.getX(i), nebPos.getY(i), nebPos.getZ(i)).project(this.camera);
+      const sx = (v.x * 0.5 + 0.5) * rect.width;
+      const sy = (-v.y * 0.5 + 0.5) * rect.height;
+      if (v.z < -1 || v.z > 1) continue;
+      const d = Math.hypot(sx - x, sy - y);
+      if (d < bestD) {
+        bestD = d;
+        best = this.nebIds[i];
+      }
+    }
     const o = best >= 0 ? this.byId.get(best) ?? null : null;
     this.select(o);
   }
@@ -608,7 +572,7 @@ export class GalaxyView {
     const px = this.renderer.getPixelRatio();
     this.starMat.uniforms.uPixel.value = px;
     this.nebMat.uniforms.uPixel.value = px;
-    this.dustMat.uniforms.uPixel.value = px;
+    updateGalaxyField(this.fieldMat, this.camera, this.filter === 'all' ? 1 : 0.18);
     this.pickRing.rotation.z = t * 0.35;
     this.homeRing.rotation.z = -t * 0.12;
     this.hereRing.rotation.z = t * 0.2;
