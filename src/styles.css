@@ -1084,6 +1084,33 @@ body,
   padding: 14px 16px 16px;
 }
 
+.gd-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.gd-x {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px 0 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.gd-x:hover {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+
 .gd-kicker,
 .gx-kicker {
   font-size: 10px;

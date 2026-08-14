@@ -62,7 +62,13 @@ types or star types.
   class, white dwarfs, neutron stars, pulsars, black holes, Wolf–Rayet,
   carbon stars, H II, planetary nebulae, and SN remnants are
   `evolve(mass, age, Z)` plus a short-lived nebula window. We do not
-  store the galaxy. `objectAt(seed, id)` is O(1).
+  store the galaxy. A star is an address: `objectAt(seed, id)` is O(1)
+  at a billion ids the same as at ten. Occupancy is
+  `density × volume × GALAXY_N_K` — that *is* the population
+  (~`GALAXY_POPULATION`). We never `collectCatalog`. The explorer
+  asks `objectsNear` for the volume it occupies; within a cell the
+  IMF is stratified so zooming in is “include more slots,” not
+  “load a bigger array.”
 - **Toy constants live in `UNIVERSE` (`src/world/physics.ts`).** Compress
   mass, distance, and time so a whole system fits in a bottle and stays
   fun — but keep the compression **visible and named**, not scattered
@@ -104,10 +110,18 @@ CANONICAL_SEED + UNIVERSE mass model (SBbc)
 ```
 
 Canonical play is `objectAt` → `systemAt(galaxySeed, starId)` — a pure
-function. The **galaxy explorer** is how you discover: the points are
-the catalog; set course loads that star. We **store visits only**
-(overlays, camera, labels). We do not mint systems. A first landing
-searches the catalog for a star that already has a habitable world.
+function. Every occupied slot is addressable, the way No Man’s Sky
+addresses a system: the id *is* the star, not an index into a stored
+list. The **galaxy explorer** is how you discover: the Hubble glow
+is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
+As you zoom and fly, `objectsNear` resolves the massive tail of
+nearby cells, then more of the IMF. You cannot pick a star until
+you are close enough that it has resolved. Set course loads that
+star. We **store visits only** (overlays, camera, labels). We do
+not mint systems. A first landing may sample thousands of FGK hosts
+near the solar circle (the home point) to find a world that already
+has life — that is a query, not a catalog. Changing the grid
+renumbers `starId`; old visits from the 7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
 
@@ -148,10 +162,15 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - Light comes from the **loaded** star at the origin. Day/night is spin
   + orbit as functions of `(spec, unix time t)` — deterministic, no
   “bake a sun behind the camera.”
-- **The sky is the catalog.** The galaxy explorer *is* that catalog
-  (density field + `objectAt` points, not a painted spiral). The
-  in-system night shell (`buildStars`) is still unseeded and must
-  retire so ground and explorer agree. A painted starfield is a lie.
+- **The sky is the catalog.** The galaxy explorer *is* that catalog:
+  a GPU raymarch of the same density / young-light / dust-lane law
+  (`galaxyField.ts`) plus `objectsNear` — not a painted spiral, not a
+  7k sample list. ~10⁹ stars are addressable (`objectAt`). Face-on
+  they are the integral. Zooming asks nearby cells for more of their
+  stratified IMF. A star is pickable only when the camera is inside
+  ~10 kpc of it. The in-system night shell (`buildStars`) is still
+  unseeded and must retire so ground and explorer agree. A painted
+  starfield is a lie.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
@@ -418,7 +437,7 @@ Code map (start here):
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
 | Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
-| Galaxy explorer (catalog viewer) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (GPU field + catalog beacons) | `src/render/galaxyField.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | First landing (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
