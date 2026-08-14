@@ -184,13 +184,27 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   stratified IMF.   Distant catalog rows are tiny points of light — never
   grown `GL_POINTS` (those become squares on a phone). Inside ~7 kpc
   the nearest stars become photospheres from `evolve()` (`galaxyStar.ts`):
-  teff colour, limb, remnant, nebula. The field’s cubic sparkle turns
-  off there — that hash was a stand-in until the discs arrived.
-  We only mesh what we occupy.
+  teff colour, limb, remnant, nebula. We only mesh what we occupy.
   Tap a resolved disc to set course; a still-point source only selects
   or zooms. A star is pickable only when the camera is inside ~10 kpc
   of it. The in-system night shell (`buildStars`) is still unseeded and
   must retire so ground and explorer agree. A painted starfield is a lie.
+- **The photograph is turbulence + a star sample, on the clock.**
+  The ISM is log-normal: every smooth law in the field shader is
+  multiplied by `exp(σ·fBm)` (`GALAXY_TURB_SIGMA/FREQ`). One clump
+  field carries three consequences — knotted young light, Hα beads
+  where a dense clump sits on the crest (Strömgren: needs gas *and*
+  O stars), and fractal dust that **reddens** through per-channel
+  transmittance (`GALAXY_DUST_RGB`; blue dies first, lanes go brown).
+  The grain you fly through is `galaxyStarfield.ts`: ~42k true 3D
+  points inverse-transform-sampled from the same density law (never
+  stored, never pickable — the pickable sky stays `objectAt`).
+  Dynamics: flat rotation curve `v(R) = GALAXY_V_ROT`, pattern speed
+  `GALAXY_OMEGA_P`; we render in the wave's corotating frame so arms
+  and addresses stand still while disk stars stream through at
+  Ω(R) − Ω_p — prograde inside corotation (R_c = v/Ω_p ≈ 8.4 kpc),
+  retrograde beyond, from unix time in the vertex shader. Not an
+  animation loop; a clock.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
@@ -459,6 +473,7 @@ Code map (start here):
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Galaxy explorer (GPU field + catalog beacons) | `src/render/galaxyField.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Close-up photospheres (LOD from `evolve()`) | `src/render/galaxyStar.ts` |
+| Star-field grain + orbital drift (corotating frame) | `src/render/galaxyStarfield.ts` |
 | First landing (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |

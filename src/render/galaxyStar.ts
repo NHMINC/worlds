@@ -136,10 +136,17 @@ const FRAG = /* glsl */ `
       a = max(limb, glow);
       col = mix(col, vec3(0.85, 0.9, 1.0), 0.3);
     } else {
-      float limb = pow(max(0.0, 1.0 - r * r), 0.5);
-      float glow = (1.0 - smoothstep(0.38, 1.0, r)) * 0.7;
-      a = max(limb, glow);
-      col = mix(col * (0.62 + 0.38 * limb), vec3(1.0), limb * 0.18);
+      // A photographed star: white-hot core, tinted halo falling as a
+      // gaussian, faint diffraction spikes. Colour lives in the halo.
+      float core = exp(-r * r * 26.0);
+      float halo = exp(-r * r * 3.4) * 0.5;
+      float spike = (exp(-abs(p.x) * 16.0) + exp(-abs(p.y) * 16.0)) * exp(-r * 1.8) * 0.22;
+      a = core + halo + spike;
+      col = mix(col, vec3(1.0), core * 0.75);
+      if (kind > 0.5) {
+        // Giants: cooler, wider envelope — the halo carries more flux.
+        a = core * 0.8 + halo * 1.5 + spike;
+      }
     }
 
     if (a < 0.02) discard;
@@ -156,7 +163,7 @@ type Slot = {
 
 export type StarDiscs = {
   group: THREE.Group;
-  setStars: (stars: GalaxyObject[]) => void;
+  setStars: (stars: GalaxyObject[], cam: THREE.Vector3) => void;
   syncCamera: (camera: THREE.Camera) => void;
   pick: (raycaster: THREE.Raycaster) => GalaxyObject | null;
   list: () => GalaxyObject[];
@@ -207,7 +214,7 @@ export function createStarDiscs(): StarDiscs {
     slot.kind.needsUpdate = true;
   }
 
-  function setStars(stars: GalaxyObject[]) {
+  function setStars(stars: GalaxyObject[], cam: THREE.Vector3) {
     current = stars.slice(0, RESOLVE_MAX);
     worlds.length = 0;
     radii.length = 0;
@@ -221,7 +228,16 @@ export function createStarDiscs(): StarDiscs {
       const c = galToCart(o.pos);
       const p = new THREE.Vector3(c.x, c.y, c.z);
       worlds.push(p);
-      const rad = visualRadiusKpc(o) * 1.35;
+      // Photographic bloom: apparent radius goes with received flux,
+      // ang ∝ (L/d²)^¼ — a supergiant blooms, a G dwarf stays a bead,
+      // a white dwarf a pin. Angular clamp so nothing walls the frame.
+      const dist = p.distanceTo(cam);
+      const L = Math.max(o.star.luminosity, 1e-4);
+      let ang = 0.011 * Math.pow(L / Math.max(dist * dist, 1e-4), 0.25);
+      if (o.star.nebula !== 'none') ang *= 2.6;
+      if (o.star.phase === 'black_hole') ang = 0.012;
+      ang = THREE.MathUtils.clamp(ang, 0.0035, 0.042);
+      const rad = ang * dist;
       radii.push(rad);
       slot.mesh.position.copy(p);
       slot.mesh.scale.setScalar(rad);

@@ -13,6 +13,7 @@ import { systemAt } from '../src/world/systemgen';
 import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
 import { starKind, visualRadiusKpc } from '../src/render/galaxyStar';
+import { createStarfield, FIELD_STAR_COUNT } from '../src/render/galaxyStarfield';
 import type { GalaxyObject } from '../src/world/galaxy';
 import type { StellarState } from '../src/world/stellar';
 
@@ -228,6 +229,43 @@ check(sunDisc > 0.03 && sunDisc < 0.16, `Sun analog disc ${sunDisc} is not a pho
 check(bhDisc > wdDisc, `BH visual ${bhDisc} should beat a WD pin`);
 check(starKind(asObj(bh)) === 5, `BH kind ${starKind(asObj(bh))}`);
 check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, got ${starKind(asObj(freshWd))}`);
+
+// The photographic grain: same law, deterministic, orbiting the middle.
+{
+  const sfA = createStarfield(seed);
+  const sfB = createStarfield(seed);
+  const sfC = createStarfield(other);
+  check(sfA.count === FIELD_STAR_COUNT, `starfield count ${sfA.count}`);
+  const a1 = sfA.pts.geometry.getAttribute('aRTZ');
+  const b1 = sfB.pts.geometry.getAttribute('aRTZ');
+  const c1 = sfC.pts.geometry.getAttribute('aRTZ');
+  let same = true;
+  let diff = false;
+  for (let i = 0; i < 300; i++) {
+    if (a1.getX(i) !== b1.getX(i) || a1.getY(i) !== b1.getY(i)) same = false;
+    if (a1.getX(i) !== c1.getX(i) || a1.getY(i) !== c1.getY(i)) diff = true;
+  }
+  check(same, 'starfield not deterministic for one seed');
+  check(diff, 'starfield identical across different seeds');
+  // Corotation sits just outside the solar circle, and drift changes
+  // sign across it: prograde inside, retrograde outside.
+  const rc = UNIVERSE.GALAXY_V_ROT / UNIVERSE.GALAXY_OMEGA_P;
+  check(rc > UNIVERSE.R_SUN && rc < UNIVERSE.GALAXY_R_MAX, `corotation ${rc} kpc out of the disk`);
+  const dr = sfA.pts.geometry.getAttribute('aDrift');
+  let pro = 0;
+  let retro = 0;
+  for (let i = 0; i < sfA.count; i++) {
+    const R = a1.getX(i);
+    const d = dr.getX(i);
+    if (R < rc - 0.5 && d > 0) pro++;
+    if (R > rc + 0.5 && d < 0) retro++;
+  }
+  check(pro > 1000, `no prograde stream inside corotation (${pro})`);
+  check(retro > 200, `no retrograde stream outside corotation (${retro})`);
+  sfA.dispose();
+  sfB.dispose();
+  sfC.dispose();
+}
 
 const start = discoverHabitable(seed, mulberry32(xmur3('first-camp')()));
 check(start.spec.bodies.some((b) => b.kind === 'rocky' && b.physics.life), `discoverHabitable found no living world (${start.starId})`);
