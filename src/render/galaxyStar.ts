@@ -11,8 +11,9 @@ import { teffToRgb } from '../world/stellar';
 
 /** Max photospheres in the close-up pass. Cheap until you arrive. */
 export const RESOLVE_MAX = 28;
-/** kpc — only then does type / radius / phase earn a disc. */
-export const RESOLVE_DIST = 7.2;
+/** kpc — only then does type / radius / phase earn a disc. Tripled from
+ * 7.2: the detection bubble should light up well before arrival. */
+export const RESOLVE_DIST = 21.6;
 
 const KIND = {
   photo: 0,

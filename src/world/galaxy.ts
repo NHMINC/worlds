@@ -360,19 +360,37 @@ export function objectsNear(
   // change rarely, and when they do the sets stay nested.
   const rawThr = Math.min(1, CELL_BUDGET / Math.max(1, totalCells));
   const thr = rawThr >= 1 ? 1 : Math.pow(2, Math.round(Math.log2(rawThr)));
+  // A wide detection bubble covers millions of cells — too many even to
+  // hash-test. Coarsen the walk on an ABSOLUTE lattice (indices ≡ 0 mod
+  // stride, never window-relative, so panning cannot re-roll it) and
+  // compensate the keep probability, leaving the expected kept count —
+  // and the nested-subset property — intact.
+  let sR = 1;
+  let sT = 1;
+  let sZ = 1;
+  const nZW = Math.max(1, izHi - izLo + 1);
+  for (let g = 0; g < 10 && (nRings / sR) * (nThW / sT) * (nZW / sZ) > 300_000; g++) {
+    if (nRings / sR >= nThW / sT && nRings / sR >= nZW / sZ) sR *= 2;
+    else if (nThW / sT >= nZW / sZ) sT *= 2;
+    else sZ *= 2;
+  }
+  const thrEff = Math.min(1, thr * sR * sT * sZ);
   const px = p.R * Math.cos(p.theta);
   const py = p.R * Math.sin(p.theta);
   const kept: Array<{ cell: number; d2: number }> = [];
   for (let ir = ir0; ir <= ir1; ir++) {
+    if (ir % sR !== 0 && sR > 1) continue;
     const R = ((ir + 0.5) / nr) * rMax;
     for (let dt = -dit; dt <= dit; dt++) {
       const it = (itc + dt + nth * 8) % nth;
+      if (it % sT !== 0 && sT > 1) continue;
       const th = ((it + 0.5) / nth) * TAU;
       const cx = R * Math.cos(th) - px;
       const cy = R * Math.sin(th) - py;
       for (let iz = izLo; iz <= izHi; iz++) {
+        if (iz % sZ !== 0 && sZ > 1) continue;
         const cell = ir * nth * nz + it * nz + iz;
-        if (cellHash01(cell) >= thr) continue;
+        if (cellHash01(cell) >= thrEff) continue;
         const cz = ((iz + 0.5) / nz - 0.5) * 2 * zMax - p.z;
         kept.push({ cell, d2: cx * cx + cy * cy + cz * cz });
       }
