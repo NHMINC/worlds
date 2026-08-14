@@ -181,10 +181,16 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (`galaxyField.ts`) plus `objectsNear` — not a painted spiral, not a
   7k sample list. ~10⁹ stars are addressable (`objectAt`). Face-on
   they are the integral. Zooming asks nearby cells for more of their
-  stratified IMF. A star is pickable only when the camera is inside
-  ~10 kpc of it. The in-system night shell (`buildStars`) is still
-  unseeded and must retire so ground and explorer agree. A painted
-  starfield is a lie.
+  stratified IMF.   Distant catalog rows are tiny points of light — never
+  grown `GL_POINTS` (those become squares on a phone). Inside ~7 kpc
+  the nearest stars become photospheres from `evolve()` (`galaxyStar.ts`):
+  teff colour, limb, remnant, nebula. The field’s cubic sparkle turns
+  off there — that hash was a stand-in until the discs arrived.
+  We only mesh what we occupy.
+  Tap a resolved disc to set course; a still-point source only selects
+  or zooms. A star is pickable only when the camera is inside ~10 kpc
+  of it. The in-system night shell (`buildStars`) is still unseeded and
+  must retire so ground and explorer agree. A painted starfield is a lie.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
@@ -452,6 +458,7 @@ Code map (start here):
 | Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Galaxy explorer (GPU field + catalog beacons) | `src/render/galaxyField.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Close-up photospheres (LOD from `evolve()`) | `src/render/galaxyStar.ts` |
 | First landing (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
