@@ -294,6 +294,7 @@ export class Engine {
   private lastFrame = 0;
   private cameraDirtySince = 0;
   private disposed = false;
+  private paused = false;
 
   private raycaster = new THREE.Raycaster();
   private tagV = new THREE.Vector3();
@@ -1969,8 +1970,17 @@ export class Engine {
 
   // ---------------------------------------------------------------- frame
 
+  setPaused(p: boolean): void {
+    if (p === this.paused) return;
+    this.paused = p;
+    if (!p && !this.disposed) {
+      this.lastFrame = performance.now();
+      requestAnimationFrame(this.frame);
+    }
+  }
+
   private frame = (now: number): void => {
-    if (this.disposed) return;
+    if (this.disposed || this.paused) return;
     requestAnimationFrame(this.frame);
     const dt = Math.min(0.05, (now - this.lastFrame) / 1000);
     this.lastFrame = now;

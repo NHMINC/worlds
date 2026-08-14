@@ -52,7 +52,9 @@ export function SystemManager(props: Props) {
               <li key={s.id} className={s.id === props.currentId ? 'current' : ''}>
                 <button className="world-open" onClick={() => props.onOpen(s.id)}>
                   <span className="world-name">{s.name}</span>
-                  <span className="world-sub">seed “{s.seed}”</span>
+                  <span className="world-sub">
+                    {s.starId != null ? `helix #${s.starId}` : `seed “${s.seed}”`}
+                  </span>
                 </button>
                 <button className="mini-btn" title="Export as file" onClick={() => props.onExport(s.id)}>
                   Export

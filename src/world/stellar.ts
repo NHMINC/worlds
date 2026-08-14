@@ -109,6 +109,30 @@ export function mkFromTeff(teff: number): MKClass {
   return mkGrade(teff).mk;
 }
 
+/** Cheap blackbody (Tanner–Helland-ish) for photosphere colour. */
+export function teffToRgb(teff: number): [number, number, number] {
+  if (teff <= 0) return [0.12, 0.1, 0.16];
+  const t = Math.max(1, Math.min(40, teff / 1000));
+  let r: number;
+  let g: number;
+  let b: number;
+  if (t <= 6.6) {
+    r = 1;
+    g = Math.max(0, Math.min(1, 0.3901 * Math.log(t) + 0.48));
+    b = t <= 1.9 ? 0 : Math.max(0, Math.min(1, 0.5432 * Math.log(t - 0.8) + 0.12));
+  } else {
+    r = Math.max(0.6, Math.min(1, 1.2929 * Math.pow(t - 6, -0.1332)));
+    g = Math.max(0.7, Math.min(1, 1.1295 * Math.pow(t - 6, -0.0755)));
+    b = 1;
+  }
+  return [r, g, b];
+}
+
+export function rgbToHex(rgb: [number, number, number]): string {
+  const h = (x: number) => Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16).padStart(2, '0');
+  return `#${h(rgb[0])}${h(rgb[1])}${h(rgb[2])}`;
+}
+
 /**
  * MK letter + subtype 0–9. Subtype 0 is the hot edge of the class,
  * 9 the cool edge — the usual MK numbering.

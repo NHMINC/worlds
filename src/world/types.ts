@@ -63,6 +63,9 @@ export interface SystemMeta {
   createdAt: number;
   updatedAt: number;
   cam?: SavedCamera;
+  /** Catalog address when this system was discovered, not minted. */
+  starId?: number;
+  galaxySeed?: string;
 }
 
 /** Per-body dials and naming, overriding the physics-derived defaults. */

@@ -126,3 +126,13 @@ export const IconGlobe = (p: IconProps) => (
     <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
   </svg>
 );
+
+export const IconGalaxy = (p: IconProps) => (
+  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <ellipse cx="12" cy="12" rx="9" ry="3.6" />
+    <ellipse cx="12" cy="12" rx="5.5" ry="2.1" opacity="0.7" />
+    <path d="M12 8.4c2.4 1 4.2 2.2 4.2 3.6S14.4 14.6 12 15.6 7.8 14.8 7.8 13.4 9.6 9.4 12 8.4z" opacity="0.85" />
+    <circle cx="16.4" cy="9.2" r="0.7" fill="currentColor" stroke="none" />
+    <circle cx="8.2" cy="13.6" r="0.55" fill="currentColor" stroke="none" />
+  </svg>
+);
