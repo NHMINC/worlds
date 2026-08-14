@@ -127,8 +127,9 @@ vec3 airScatter(vec3 a, vec3 b, vec3 lightDir, out vec3 tau) {
     // blacks out limb-grazing air, but a tangent sunbeam really crosses a
     // FINITE column, Ch(0) = sqrt(pi*R/2H) vertical columns. uAirCurv is
     // the REAL planet's 2H/(pi*R) from the barometric law (the drawn
-    // shell is display-stretched): each world's temperature, air
-    // chemistry, gravity and radius decide how red its sunsets burn.
+    // shell is a toy-compressed skin, not a halo): each world's
+    // temperature, air chemistry, gravity and radius decide how red
+    // its sunsets burn.
     // A sun below the sample's horizontal (mu < 0) dives to a tangent
     // point and climbs back out — twice the tangent column at its lowest,
     // denser point, minus the ascent. That doubly-grazed light is the
