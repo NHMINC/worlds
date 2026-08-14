@@ -6,7 +6,7 @@
  * seeds, that is a generator bug, not a test to skip.
  */
 import { classify, effectivePhysics, generateSystem, homeBodyId, lockedToStar } from '../src/world/systemgen';
-import { UNIVERSE } from '../src/world/physics';
+import { UNIVERSE, airExtinction } from '../src/world/physics';
 import { Geology, geologyFor } from '../src/world/geology';
 import { MAX_LEVEL } from '../src/world/toygen';
 
@@ -132,6 +132,17 @@ for (let i = 0; i < SYSTEMS; i++) {
 
     // --- spin laws ---
     if (body.tidallyLocked && body.obliquity !== 0) bad(`LOCKED WITH TILT: ${seed} ${body.id}`);
+
+    // --- limb law: temperate air is a skin. Vacuum has no scatterers, so
+    // 7H (where the exponential has died) must not become a halo that
+    // lights space. Hot low-g air is allowed to sit taller — that is the
+    // barometric law, not a leftover display stretch.
+    if (body.kind === 'rocky' && p.gravity > 0.8 && p.TsurfK > 250 && p.TsurfK < 320) {
+      const ext = airExtinction(p);
+      if (ext && 7 * ext.scaleH > 0.18) {
+        bad(`TEMPERATE AIR HALO: ${seed} ${body.id} 7H=${(7 * ext.scaleH).toFixed(3)}`);
+      }
+    }
   }
 
   for (const m of moons) {
@@ -179,6 +190,26 @@ for (let i = 0; i < SYSTEMS; i++) {
       for (let it = 0; it < 3; it++) E -= (E - p.ecc * Math.sin(E) - M) / (1 - p.ecc * Math.cos(E));
       if (Math.abs(E - p.ecc * Math.sin(E) - M) > 1e-9) bad(`KEPLER NOT CONVERGED: ${seed} ${p.id}`);
     }
+  }
+}
+
+// --- limb law (universe knobs): vacuum does not scatter ---
+{
+  // 7H is where the exponential has died. On the reference 1 g world that
+  // skin must stay well inside 15% of the radius or the glow lights space.
+  // Real H/R is AIR_HR_HOME — we exaggerate so a holdable globe shows a
+  // rim, not a halo.
+  if (7 * UNIVERSE.AIR_H > 0.15) {
+    bad(`AIR TOO PUFFY: 7H=${(7 * UNIVERSE.AIR_H).toFixed(3)} (vacuum would glow)`);
+  }
+  if (UNIVERSE.AIR_H < 4 * UNIVERSE.AIR_HR_HOME) {
+    bad(`AIR_H THINNER THAN A READABLE TOY RIM: ${UNIVERSE.AIR_H}`);
+  }
+  // σ·H is the Earthlike vertical column. The Chapman slant was sized so
+  // this product reaches grazing optical depth ~2 (sunsets); keep it.
+  const col = UNIVERSE.AIR_SIGMA * UNIVERSE.AIR_H;
+  if (col < 0.08 || col > 0.16) {
+    bad(`AIR COLUMN OFF (sunsets/sky): σH=${col.toFixed(3)}`);
   }
 }
 
