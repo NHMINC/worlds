@@ -41,7 +41,7 @@ const VERT = /* glsl */ `
     float dist = max(0.05, -mv.z);
     gl_PointSize = clamp(aSize * uPixel * (9.0 / dist), 0.75, 6.0 * uPixel);
     // Inverse-square: nearby grains brighten as you fly past them.
-    vMag = aMag * clamp(16.0 / (dist * dist), 0.08, 2.6) * uDim;
+    vMag = aMag * clamp(16.0 / (dist * dist), 0.14, 2.6) * uDim;
     vColor = aColor;
     gl_Position = projectionMatrix * mv;
   }
@@ -102,7 +102,7 @@ function sampleGrains(seed: string): Grain[] {
 
   while (out.length < FIELD_STAR_COUNT) {
     const pick = rng();
-    if (pick < 0.58) {
+    if (pick < 0.64) {
       // Old thin disk — the K-dwarf oatmeal, mildly arm-weighted (mass wave).
       const R = expR(rng, U.GALAXY_RD, U.GALAXY_R_MAX);
       const th = rng() * Math.PI * 2;
@@ -114,7 +114,7 @@ function sampleGrains(seed: string): Grain[] {
         mag: 0.25 + rng() * 0.5,
         drift: relOmega(R),
       });
-    } else if (pick < 0.72) {
+    } else if (pick < 0.78) {
       // Young blue population — born on the crest, still on it.
       const R = expR(rng, U.GALAXY_RD, U.GALAXY_R_MAX);
       const th = rng() * Math.PI * 2;
@@ -128,7 +128,7 @@ function sampleGrains(seed: string): Grain[] {
         // Fresh from the crest: barely sheared off the wave yet.
         drift: relOmega(R) * 0.15,
       });
-    } else if (pick < 0.8) {
+    } else if (pick < 0.86) {
       // Red giants — bright, orange, everywhere the old disk is.
       const R = expR(rng, U.GALAXY_RD, U.GALAXY_R_MAX);
       const th = rng() * Math.PI * 2;
@@ -142,15 +142,18 @@ function sampleGrains(seed: string): Grain[] {
       });
     } else if (pick < 0.92) {
       // Bulge — golden, dense, fast Ω capped by the softening radius.
+      // Tail clipped and flattened: a spheroid, not a polar needle.
       const r = -U.GALAXY_RE_BULGE * 0.62 * Math.log(1 - rng() * 0.998);
+      if (r > U.GALAXY_RE_BULGE * 2.6) continue;
       const th = rng() * Math.PI * 2;
       const cz = 2 * rng() - 1;
       out.push({
         R: r * Math.sqrt(Math.max(0.001, 1 - cz * cz)),
-        th, z: r * cz * 0.62,
+        th, z: r * cz * 0.45,
         teff: 4200 + rng() * 1500,
-        size: 0.85 + rng() * 1.0,
-        mag: 0.3 + rng() * 0.55,
+        size: 0.8 + rng() * 0.8,
+        // Faint per grain: the field integral owns the core's glow.
+        mag: 0.14 + rng() * 0.28,
         drift: relOmega(Math.max(r, 0.7)),
       });
     } else if (pick < 0.975) {

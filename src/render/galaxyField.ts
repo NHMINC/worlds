@@ -160,28 +160,32 @@ const FRAG = /* glsl */ `
 
       // H II: a dense clump on the crest with hot stars inside ionises.
       // Strömgren-style — needs both the gas (clump) and the O stars
-      // (young), so the pink knots bead along the arms like M101.
-      float hii = smoothstep(0.55, 1.6, clump * (0.4 + 0.6 * crest)) * crest;
+      // (young). Tight threshold: beads along the arm, not a pink arm.
+      float hii = smoothstep(0.85, 2.1, clump * (0.35 + 0.65 * crest)) * crest;
 
       vec3 gold = vec3(1.0, 0.72, 0.38);
+      vec3 warm = vec3(0.95, 0.85, 0.66);
       vec3 blue = vec3(0.45, 0.68, 1.0);
       vec3 halpha = vec3(1.0, 0.30, 0.44);
       vec3 emit = vec3(0.0);
-      emit += bulge * gold * 2.4;
+      emit += bulge * gold * 2.0;
       emit += bar * gold * 1.35;
-      emit += young * blue * 1.25;
-      emit += young * halpha * hii * 3.6;
+      // The old disk shines too — the smooth luminous sheet the arms
+      // are embroidered on. Without it the galaxy is a skeleton.
+      emit += thinMass * warm * 0.5;
+      emit += young * blue * 1.5;
+      emit += young * halpha * hii * 2.3;
       emit += thick * vec3(0.55, 0.48, 0.7) * 0.22;
       emit += halo * vec3(0.4, 0.46, 0.65) * 0.12;
 
       // Fractal dust filaments on the inner edge of the shock. The fine
       // octave breaks the lane into the brown threads a photograph has.
       float filament = smoothstep(-0.18, 0.32, sFine + 0.45 * s);
-      float dust = lane * clamp(thinMass * 1.6, 0.0, 1.4) * (0.25 + 1.5 * filament) * clump;
+      float dust = lane * clamp(thinMass * 1.6, 0.0, 1.4) * (0.2 + 1.2 * filament) * clump;
       // Self-extinction of light born at this step (half its own column).
-      emit *= exp(-dust * uDustRGB * 0.8);
+      emit *= exp(-dust * uDustRGB * 0.6);
 
-      float dens = (bulge + bar + young * 0.8 + thick * 0.3) * 0.55 + dust * 1.05;
+      float dens = (bulge + bar + young * 0.8 + thick * 0.3) * 0.55 + dust * 0.8;
       acc += trans * emit * dt * 1.65;
       trans *= exp(-(dens * uDustRGB * 0.6 + dens * 0.55) * dt * 1.15);
     }
@@ -190,6 +194,10 @@ const FRAG = /* glsl */ `
     if (sky > 0.996) acc += vec3(0.85, 0.9, 1.0) * 0.55;
 
     acc *= uDim * mix(1.0, 0.62, uResolve);
+    // Hue-preserving Reinhard: the core saturates toward its own gold,
+    // not toward clipped white.
+    float lum = dot(acc, vec3(0.299, 0.587, 0.114));
+    acc /= 1.0 + lum * 0.28;
     float tAvg = (trans.r + trans.g + trans.b) / 3.0;
     float a = clamp(max(1.0 - tAvg, length(acc) * 0.35), 0.0, 1.0);
     gl_FragColor = vec4(acc, a);

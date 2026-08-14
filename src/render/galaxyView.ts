@@ -265,7 +265,10 @@ export class GalaxyView {
     const dist = Math.hypot(wx - cam.x, wy - cam.y, wz - cam.z);
     const appear = zoom * 1.8 + 2.2;
     if (dist > appear) return 0;
-    return smoothstep(appear, appear * 0.35, dist);
+    // Individual beacons earn pixels as you close on pick range; far
+    // out the grain and the integral are the photograph.
+    const zoomFade = smoothstep(26, 16, zoom);
+    return smoothstep(appear, appear * 0.35, dist) * zoomFade;
   }
 
   private applyVis(): void {
