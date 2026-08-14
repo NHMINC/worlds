@@ -10,10 +10,13 @@
  * r⁻⁶ near the limb and Parker r⁻² into the system (starWind).
  *
  * Glare is the eye: flux through the pupil (starEyeFlux, inverse-square
- * in the display stretch) spread by a PSF. Close in, the wash fills the
- * view. Out in the Kuiper it is a tight spike. We never paint a sunset
- * onto the disk; air in front multiplies the same Chapman transmittance
- * the sky already computed (uAirT).
+ * in the display stretch) spread as ONE radially uniform falloff. Close
+ * in, the wash fills the view; out in the Kuiper it is a bright point.
+ * The activity (granules, spots, flares) lives ON the disk — off the
+ * disk the light radiates out smoothly, no streaks, no rings, no
+ * texture. We never paint a sunset onto the disk; air in front
+ * multiplies the same Chapman transmittance the sky already computed
+ * (uAirT).
  */
 import * as THREE from 'three';
 import {
@@ -156,21 +159,21 @@ void main() {
 }
 `;
 
+// The corona is ONE smooth radial glow — light radiating out uniformly.
+// Density is Baumbach r⁻⁶ plus a Parker r⁻² wind, integrated along the
+// chord, with a window that reaches exactly zero before the mesh edge so
+// the shell has no visible rim. No angular structure: streamer noise and
+// limb tongues read as "a texture around the sun," not as light.
 const CORONA_FRAG = /* glsl */ `
 precision highp float;
 uniform vec3 uColor;
 uniform vec3 uCam;
 uniform vec3 uAirT;
-uniform float uTime;
-uniform float uSeed;
 uniform float uPhotoR;
 uniform float uOuterR;
 uniform float uCorona;
 uniform float uWind;
-uniform float uActivity;
-uniform float uFlare;
 varying vec3 vWorld;
-${STAR_NOISE}
 
 void main() {
   vec3 rd = normalize(vWorld - uCam);
@@ -200,34 +203,12 @@ void main() {
   for (int i = 0; i < 8; i++) {
     vec3 p = ro + rd * (t0 + (float(i) + 0.5) * dt);
     float r = max(length(p), uPhotoR);
-    vec3 dir = p / r;
     float rhoC = pow(uPhotoR / r, 6.0);
     float rhoW = pow(uPhotoR / r, 2.0);
-    // Magnetic streamers: angular noise, frozen on the rotating frame,
-    // advected slowly so the wind reads as a flow not a texture.
-    float ang = atan(dir.y, dir.x);
-    float stream = fbm(vec3(ang * 2.2, dir.z * 3.4, uSeed + uTime * 0.04));
-    stream = pow(clamp(stream, 0.0, 1.0), 2.4);
-    float dens = uCorona * rhoC + uWind * rhoW * mix(0.25, 1.0, stream);
-    acc += uColor * dens * dt * 0.28;
-  }
-
-  // Prominences: the same flare sites as the photosphere, seen as
-  // tongues off the limb. They die with height (scale height ~ 0.15 R).
-  for (int i = 0; i < 5; i++) {
-    vec3 ax = hashDir(float(i), uSeed);
-    float ph = hash21(vec2(float(i) * 7.7, uSeed));
-    float om = 0.35 + 0.55 * hash21(vec2(uSeed, float(i) * 3.3));
-    float pulse = pow(max(0.0, sin(uTime * om + ph * 6.28318)), 10.0);
-    if (pulse < 0.05) continue;
-    // Closest approach of this ray to the flare axis, outside the disk.
-    vec3 hit = ro + rd * max(t0, 0.0);
-    float along = max(dot(hit, ax), 0.0);
-    vec3 perp = hit - ax * along;
-    float off = length(perp) / max(uPhotoR, 1.0);
-    float hgt = (along - uPhotoR) / max(uPhotoR, 1.0);
-    float tongue = exp(-off * 14.0) * exp(-max(hgt, 0.0) * 7.0) * step(0.0, hgt + 0.08);
-    acc += uColor * vec3(1.2, 0.92, 0.7) * tongue * pulse * uActivity * uFlare * 1.6;
+    // Fade the wind term to zero well inside the shell: the glow dies
+    // in the maths, not at the geometry, so there is no circle.
+    float window = smoothstep(uOuterR, uOuterR * 0.45, r);
+    acc += uColor * (uCorona * rhoC + uWind * rhoW * window) * dt * 0.28;
   }
 
   acc *= uAirT;
@@ -263,21 +244,20 @@ varying vec2 vUv;
 void main() {
   float r = length(vUv);
   if (r > 1.0) discard;
-  // The photosphere mesh owns the disk. This PSF is the OVERSPILL:
-  // diffraction core + a 1/θ scatter tail. Flux is inverse-square at
-  // the eye; the engine already sized the quad to sqrt(flux).
-  // Surface brightness of the disk is distance-independent; the PSF
-  // CORE stays a burning point. Only the wings scale with flux (how
-  // much light is in the aperture) — a distant sun is a spike, a
-  // close one is a wash. pow<1 lifts the outer system onto the LDR.
+  // The photosphere mesh owns the disk. This is the glare: the eye's
+  // response to raw flux, ONE radially uniform falloff. Inverse-square
+  // lives in uFlux (the engine sized the quad to sqrt(flux) too), so a
+  // distant sun is a small bright point and a close one washes the
+  // view. The window term reaches exactly zero at the quad edge — the
+  // glow ends in the maths, never as a visible rim.
   float f = pow(max(uFlux, 0.03), 0.42);
-  float core = exp(-r * r * 16.0) * uGain * (0.65 + 0.9 * clamp(uFlux, 0.0, 2.5));
-  float tail = (0.55 * f * uGain) / (0.04 + 3.4 * r);
-  float ax = min(abs(vUv.x), abs(vUv.y));
-  float spike = exp(-ax * 36.0) * exp(-r * 1.5) * (0.35 + 0.5 * clamp(uFlux, 0.0, 1.5)) * uGain;
+  float core = exp(-r * r * 16.0) * (0.65 + 0.9 * clamp(uFlux, 0.0, 2.5));
+  float tail = (0.5 * f) / (0.04 + 3.4 * r * r);
+  float window = 1.0 - r * r;
+  window *= window;
   // Soft hole over the disk so we do not double-paint the globe.
   float ring = smoothstep(uDisk * 0.72, uDisk * 1.15, r);
-  vec3 c = uColor * (core + tail + spike) * ring;
+  vec3 c = uColor * ((core + tail) * uGain * window) * ring;
   c *= uAirT;
   float a = clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0);
   if (a < 0.003) discard;
@@ -310,7 +290,10 @@ export function makeStar(spec: StarSpec): StarView {
   const color = new THREE.Color(spec.color);
   const lightC = new THREE.Color(spec.lightColor);
   const photoR = spec.radius;
-  const outerR = photoR * 8.5;
+  // A tight halo: the visible corona hugs the disk. Reach into the
+  // system is the glare quad's job (inverse-square at the eye), not a
+  // giant shell the camera can see the edge of.
+  const outerR = photoR * 4;
 
   const photoMat = new THREE.ShaderMaterial({
     vertexShader: PHOTO_VERT,
@@ -338,14 +321,10 @@ export function makeStar(spec: StarSpec): StarView {
       uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
       uCam: { value: new THREE.Vector3() },
       uAirT: { value: new THREE.Vector3(1, 1, 1) },
-      uTime: { value: 0 },
-      uSeed: { value: seed },
       uPhotoR: { value: photoR },
       uOuterR: { value: outerR },
       uCorona: { value: UNIVERSE.STAR_CORONA },
       uWind: { value: UNIVERSE.STAR_WIND * wind },
-      uActivity: { value: activity },
-      uFlare: { value: UNIVERSE.STAR_FLARE },
     },
     transparent: true,
     depthWrite: false,
@@ -396,7 +375,7 @@ export function makeStar(spec: StarSpec): StarView {
       tmpAir.copy(airT);
       const d = Math.max(camPos.length(), photoR * 1.05);
       const flux = starEyeFlux(spec.luminosity, d);
-      const ang = Math.min(1.15, UNIVERSE.STAR_GLARE_ANG * Math.sqrt(Math.max(flux, 1e-4)));
+      const ang = Math.min(0.7, UNIVERSE.STAR_GLARE_ANG * Math.sqrt(Math.max(flux, 1e-4)));
       const scale = d * Math.tan(ang);
       const disk = photoR / Math.max(scale, 1e-4);
 
@@ -405,7 +384,6 @@ export function makeStar(spec: StarSpec): StarView {
       photoMat.uniforms.uTime.value = time;
       coronaMat.uniforms.uCam.value.copy(camPos);
       coronaMat.uniforms.uAirT.value.copy(tmpAir);
-      coronaMat.uniforms.uTime.value = time;
       glareMat.uniforms.uAirT.value.copy(tmpAir);
       glareMat.uniforms.uFlux.value = flux;
       glareMat.uniforms.uScale.value = scale;
