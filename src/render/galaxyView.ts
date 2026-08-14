@@ -22,6 +22,12 @@ const ZOOM_MAX = 70;
 /** The field marches in a buffer this fraction of the screen: the glow is
  * low-frequency, so quarter the pixels is invisible and 4× cheaper. */
 const FIELD_RES = 0.5;
+/** Zoom thruster: velocity cap (log-radius per second — the speed limit
+ * through catalog bins), drag (glide decay), and input gains. */
+const ZOOM_V_MAX = 1.5;
+const ZOOM_DRAG = 1.3;
+const ZOOM_WHEEL_GAIN = 3.2;
+const ZOOM_PINCH_GAIN = 9;
 /** Orbit radius (kpc) inside which a resolved star may be picked. */
 const PICK_ZOOM = 14;
 /** Face-on: the field is the photograph; catalog points stay dark. */
@@ -142,6 +148,8 @@ export class GalaxyView {
   private tgtTheta = 0.35;
   private tgtPhi = 0.42;
   private tgtRadius = 38;
+  /** Log-space radial velocity (the zoom thruster's momentum). */
+  private zoomVel = 0;
   private look = new THREE.Vector3();
   private tgtLook = new THREE.Vector3();
   private dragging = false;
@@ -329,10 +337,12 @@ export class GalaxyView {
       const wx = starPos.getX(i);
       const wy = starPos.getY(i);
       const wz = starPos.getZ(i);
-      const near =
-        this.radius < RESOLVE_DIST ||
-        this.discIds.has(o.id) ||
-        Math.hypot(wx - this.camera.position.x, wy - this.camera.position.y, wz - this.camera.position.z) < RESOLVE_DIST;
+      // A beacon hides ONLY when its own photosphere mesh exists. The
+      // old gate hid every beacon within RESOLVE_DIST of the camera
+      // (and all of them below that zoom), but only RESOLVE_MAX stars
+      // ever get discs — the rest simply vanished mid-zoom, stars
+      // blinking out that the camera never passed.
+      const near = this.discIds.has(o.id);
       const v = near ? 0 : this.resolveAmt(o, wx, wy, wz);
       starVis[i] = v;
       if (near || v > 0.45) n++;
@@ -342,7 +352,7 @@ export class GalaxyView {
     const nebPos = this.nebPts.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < this.nebIds.length; i++) {
       const o = this.byId.get(this.nebIds[i])!;
-      const hid = this.radius < RESOLVE_DIST || this.discIds.has(o.id);
+      const hid = this.discIds.has(o.id);
       const v = hid ? 0 : this.resolveAmt(o, nebPos.getX(i), nebPos.getY(i), nebPos.getZ(i));
       nebVis[i] = v;
       if (hid || v > 0.45) n++;
@@ -709,9 +719,18 @@ export class GalaxyView {
     this.look.copy(this.tgtLook);
   }
 
-  private zoomToward(cx: number, cy: number, factor: number): void {
-    const next = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.tgtRadius * factor));
-    if (factor < 1) {
+  /**
+   * Zoom is a THRUSTER, not a teleport: input adds to a log-space
+   * radial velocity, the camera glides on it, drag bleeds it off, and
+   * opposite input brakes then reverses. The velocity cap is what
+   * keeps a flick from hurling the camera through many catalog bins
+   * in one step — acceleration is free, speed is bounded.
+   */
+  private zoomImpulse(cx: number, cy: number, dv: number): void {
+    this.zoomVel = Math.max(-ZOOM_V_MAX, Math.min(ZOOM_V_MAX, this.zoomVel + dv));
+    if (dv < 0) {
+      // Zooming in steers: pull the look point toward what the cursor
+      // (or pinch centre) is over, proportional to the burn.
       const rect = this.canvas.getBoundingClientRect();
       const ndc = new THREE.Vector3(
         ((cx - rect.left) / Math.max(1, rect.width)) * 2 - 1,
@@ -726,13 +745,11 @@ export class GalaxyView {
         const t = this.look.clone().sub(this.camera.position).dot(n) / denom;
         if (t > 0.2) {
           const hit = this.camera.position.clone().add(dir.multiplyScalar(t));
-          const pull = (1 - factor) * 0.45;
-          this.tgtLook.lerp(hit, pull);
+          this.tgtLook.lerp(hit, Math.min(0.4, -dv * 0.9));
           this.clampLook();
         }
       }
     }
-    this.tgtRadius = next;
   }
 
   /** Client-pixel position of a catalog object, or null if off-screen. */
@@ -855,7 +872,8 @@ export class GalaxyView {
       return;
     }
     if (!this.canPick()) {
-      this.zoomToward(cx, cy, 0.7);
+      // A tap in the un-pickable range is a burn toward the tap point.
+      this.zoomImpulse(cx, cy, -0.55);
       return;
     }
     let best = -1;
@@ -922,9 +940,9 @@ export class GalaxyView {
       this.pinchMidX = midX;
       this.pinchMidY = midY;
       if (this.pinch0 > 0) {
-        const ratio = d / this.pinch0;
-        this.tgtRadius = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.tgtRadius / ratio));
-        this.radius = this.tgtRadius;
+        // Spread = thrust inward, squeeze = brake / thrust outward.
+        const ratio = d / Math.max(1e-3, this.pinch0);
+        this.zoomImpulse(midX, midY, -Math.log(Math.max(0.2, ratio)) * ZOOM_PINCH_GAIN);
       }
       this.pinch0 = d;
       this.moved += 4;
@@ -955,7 +973,7 @@ export class GalaxyView {
 
   private onWheel = (e: WheelEvent): void => {
     e.preventDefault();
-    this.zoomToward(e.clientX, e.clientY, Math.exp(e.deltaY * 0.0014));
+    this.zoomImpulse(e.clientX, e.clientY, e.deltaY * 0.0014 * ZOOM_WHEEL_GAIN);
     this.idle = 0;
   };
 
@@ -968,6 +986,15 @@ export class GalaxyView {
     if (!this.dragging && this.idle > 2.4 && this.radius > 20) this.tgtTheta += dt * 0.045;
     this.theta += (this.tgtTheta - this.theta) * (1 - Math.exp(-dt * 4.2));
     this.phi += (this.tgtPhi - this.phi) * (1 - Math.exp(-dt * 4.2));
+    // Integrate the zoom thruster: velocity moves the target radius,
+    // drag bleeds the glide, the bounds kill momentum on contact.
+    if (Math.abs(this.zoomVel) > 1e-4) {
+      const next = this.tgtRadius * Math.exp(this.zoomVel * dt);
+      this.tgtRadius = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, next));
+      if (this.tgtRadius !== next) this.zoomVel = 0;
+      this.idle = 0;
+    }
+    this.zoomVel *= Math.exp(-dt * ZOOM_DRAG);
     this.radius += (this.tgtRadius - this.radius) * (1 - Math.exp(-dt * 3.6));
     this.look.lerp(this.tgtLook, 1 - Math.exp(-dt * 3.2));
     this.applyCam();
