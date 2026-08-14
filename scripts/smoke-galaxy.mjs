@@ -91,26 +91,42 @@ if (await galaxyBtn.count()) {
     errors.push('home ring tap did not select');
   }
 
-  const other = await page.evaluate(() => {
+  const approached = await page.evaluate(() => {
     const v = window.__galaxyView;
-    const homeId = v.home?.id;
-    for (const o of v.objects) {
-      if (o.id === homeId) continue;
-      const p = v.projectClient(o);
-      if (p && p.x > 80 && p.x < 1200 && p.y > 80 && p.y < 720) return { id: o.id, ...p };
-    }
-    return null;
+    const o = v.approachNearest?.();
+    return o ? { id: o.id, phase: o.star.phase } : null;
   });
-  console.log('OTHER STAR', JSON.stringify(other));
-  if (other) {
-    await page.mouse.click(other.x, other.y);
-    await page.waitForTimeout(800);
-    const afterStar = await page.evaluate(() => document.querySelector('.gd-class')?.textContent ?? null);
-    console.log('AFTER STAR TAP', afterStar);
+  console.log('APPROACH', JSON.stringify(approached));
+  await page.waitForTimeout(2200);
+  const close = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    const discs = v.resolvedStars?.() ?? [];
+    const first = discs[0] ? v.projectClient(discs[0]) : null;
+    return {
+      n: discs.length,
+      sample: discs.slice(0, 4).map((o) => o.star.phase),
+      first,
+      radius: v.radius ?? null,
+    };
+  });
+  console.log('DISCS', JSON.stringify(close));
+  await page.screenshot({ path: 'previews/galaxy-3-discs.png' });
+  if (!close.n) {
+    console.error('FAIL: no photospheres after flying in');
+    errors.push('no photospheres after approach');
+  }
+  if (close.first) {
+    await page.mouse.click(close.first.x, close.first.y);
+    await page.waitForTimeout(2800);
+    const afterGo = await page.evaluate(() => ({
+      explorer: Boolean(document.querySelector('.galaxy-explorer')),
+      title: document.querySelector('.tb-world')?.textContent ?? '',
+    }));
+    console.log('AFTER DISC TAP', JSON.stringify(afterGo));
     await page.screenshot({ path: 'previews/galaxy-3-tap.png' });
-    if (!afterStar) {
-      console.error('FAIL: tapping a resolved star did not open a dossier');
-      errors.push('resolved star tap did not select');
+    if (afterGo.explorer) {
+      console.error('FAIL: tapping a rendered star did not set course');
+      errors.push('rendered star tap did not set course');
     }
   }
 } else {

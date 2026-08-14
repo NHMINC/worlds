@@ -35,6 +35,8 @@ export function GalaxyExplorer(props: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<GalaxyView | null>(null);
+  const goRef = useRef(props.onSetCourse);
+  goRef.current = props.onSetCourse;
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<GalaxyObject | null>(null);
   const [filter, setFilter] = useState<GalaxyFilter>('all');
@@ -45,6 +47,7 @@ export function GalaxyExplorer(props: Props) {
     radius: 40,
     pickable: false,
     resolved: 0,
+    discs: 0,
   });
   const [count, setCount] = useState(0);
 
@@ -60,12 +63,14 @@ export function GalaxyExplorer(props: Props) {
       if (cancelled) return;
       view = new GalaxyView(canvas, seed, {
         onSelect: setSelected,
+        onGo: (obj) => goRef.current(obj),
         onFrame: (f) => {
           setFrame((prev) =>
             Math.abs(prev.radius - f.radius) > 0.08 ||
             Math.abs(prev.phi - f.phi) > 0.02 ||
             prev.pickable !== f.pickable ||
-            Math.abs(prev.resolved - f.resolved) > 2
+            Math.abs(prev.resolved - f.resolved) > 2 ||
+            prev.discs !== f.discs
               ? f
               : prev,
           );
@@ -205,7 +210,7 @@ export function GalaxyExplorer(props: Props) {
         </div>
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
-          {frame.pickable ? ' · tap a star' : ' · fly in to pick'}
+          {frame.discs > 0 ? ' · tap a star to go' : frame.pickable ? ' · tap a star' : ' · fly in to pick'}
         </div>
       </footer>
     </div>

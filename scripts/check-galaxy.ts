@@ -12,6 +12,9 @@ import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar'
 import { systemAt } from '../src/world/systemgen';
 import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
+import { starKind, visualRadiusKpc } from '../src/render/galaxyStar';
+import type { GalaxyObject } from '../src/world/galaxy';
+import type { StellarState } from '../src/world/stellar';
 
 let fail = 0;
 const check = (cond: boolean, msg: string) => {
@@ -213,6 +216,18 @@ for (const s of dust) {
 }
 check(dust.length > 2000, `dust sample too thin: ${dust.length}`);
 check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
+
+function asObj(star: StellarState): GalaxyObject {
+  return { id: 1, pos: { R: 8, theta: 0, z: 0 }, pop: 'thin', inArm: true, star };
+}
+const sunDisc = visualRadiusKpc(asObj(sun));
+const wdDisc = visualRadiusKpc(asObj(wd));
+const bhDisc = visualRadiusKpc(asObj(bh));
+check(wdDisc < sunDisc, `WD disc ${wdDisc} should be smaller than the Sun ${sunDisc}`);
+check(sunDisc > 0.006 && sunDisc < 0.05, `Sun analog disc ${sunDisc} is not a photosphere`);
+check(bhDisc > wdDisc, `BH visual ${bhDisc} should beat a WD pin`);
+check(starKind(asObj(bh)) === 5, `BH kind ${starKind(asObj(bh))}`);
+check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, got ${starKind(asObj(freshWd))}`);
 
 const start = discoverHabitable(seed, mulberry32(xmur3('first-camp')()));
 check(start.spec.bodies.some((b) => b.kind === 'rocky' && b.physics.life), `discoverHabitable found no living world (${start.starId})`);
