@@ -20,6 +20,7 @@ const GAS_FRAG = /* glsl */ `
 precision highp float;
 uniform vec3 uColor;
 uniform vec3 uLightDir;
+uniform float uSunIrr;
 varying vec3 vNormal;
 void main() {
   vec3 n = normalize(vNormal);
@@ -28,7 +29,7 @@ void main() {
   float ql = 0.7 + 0.14 * smoothstep(0.0, 0.15, dl) + 0.16 * smoothstep(0.4, 0.55, dl);
   float day = smoothstep(-0.16, 0.12, dl);
   vec3 night = c * vec3(0.22, 0.27, 0.42);
-  gl_FragColor = vec4(mix(night, c * ql, day), 1.0);
+  gl_FragColor = vec4(mix(night, c * ql * uSunIrr, day), 1.0);
 }
 `;
 
@@ -39,6 +40,7 @@ export function makeGasGiantMaterial(spec: GasSpec): THREE.ShaderMaterial {
     uniforms: {
       uColor: { value: new THREE.Vector3(...spec.color) },
       uLightDir: { value: new THREE.Vector3(1, 0, 0) },
+      uSunIrr: { value: 1 },
     },
   });
 }

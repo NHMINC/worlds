@@ -162,6 +162,20 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - Light comes from the **loaded** star at the origin. Day/night is spin
   + orbit as functions of `(spec, unix time t)` — deterministic, no
   “bake a sun behind the camera.”
+- **The star is a furnace, not a sticker.** Photosphere Teff is
+  Stefan–Boltzmann from L and R (`starTeff`). Limb darkening is the
+  Eddington grey atmosphere. Granules, spots and flares follow the
+  convective dynamo (`starActivity`); the K-corona and the wind are
+  Thomson scatter of *that* photosphere’s light (`starWind`) — a blue
+  star does not grow an orange halo. Inverse-square is two distances
+  and one law: bodies use physics `a` (`starIrradiance`, the same `a`
+  T_eq already drank); the eye uses the display stretch
+  (`starEyeFlux`, referenced to `A_HAB · SPACE_SCALE`). Glare is the
+  eye’s PSF on that flux, not a painted sprite. The disk draws *after*
+  the sky shell so the LDR star-veil cannot filter the sun; air in
+  front only multiplies the same Chapman transmittance the sky already
+  computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
+  `src/render/star.ts`.
 - **The sky is the catalog.** The galaxy explorer *is* that catalog:
   a GPU raymarch of the same density / young-light / dust-lane law
   (`galaxyField.ts`) plus `objectsNear` — not a painted spiral, not a
@@ -452,6 +466,7 @@ Code map (start here):
 | Per-cell geology (mining truth) | `src/world/geology.ts` |
 | Grid | `src/world/geodesic.ts` |
 | Scene, camera, reflections, capture | `src/render/engine.ts` |
+| Star (photosphere, corona, wind, glare) | `src/render/star.ts` |
 | Terrain + water shaders, surf, foam | `src/render/terraceMesh.ts` |
 | Sky shell | `src/render/atmosphere.ts` |
 | Shared air integral | `src/render/scattering.ts` |
