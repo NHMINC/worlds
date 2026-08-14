@@ -139,19 +139,21 @@ export const UNIVERSE = {
   /**
    * Aerial perspective: air is densest at the ground and thins as
    * exp(-h/H), H = kT/(mg). Vacuum has no scatterers — the glow dies
-   * with the exponential, so a planet's limb is a thin skin, not a
-   * halo that lights space. AIR_H is the reference world's scale height
-   * (1 g, 288 K, mu 29 air) as a fraction of its radius: toy-compressed
-   * so the rim reads on a holdable globe (~12× real H/R), but still a
-   * skin (7H ≈ 11% of the radius on a 1 g world). Every other sky
-   * derives from it. AIR_SIGMA is the reference surface extinction per
-   * radius of path (Beer–Lambert). Sized with AIR_H so an Earthlike
-   * column reaches grazing optical depth ~2 at the horizon — the
-   * regime where red starts outliving blue (sunsets) — while the
-   * vertical column stays clear enough to see space at night.
+   * with the exponential, so the limb is a halo that hugs the sphere,
+   * not a bloom that lights space. AIR_H is the reference world's
+   * scale height (1 g, 288 K, mu 29 air) as a fraction of its radius:
+   * toy-compressed so the envelope READS on a holdable globe (~24×
+   * real H/R, 7H ≈ 22% of the radius on a 1 g world). Tighter than
+   * that and the air sits on the dirt; looser and vacuum glows.
+   * Every other sky derives from it. AIR_SIGMA is the reference
+   * surface extinction per radius of path (Beer–Lambert). Sized with
+   * AIR_H so an Earthlike column reaches grazing optical depth ~2 at
+   * the horizon — the regime where red starts outliving blue
+   * (sunsets) — while the vertical column stays clear enough to see
+   * space at night.
    */
-  AIR_H: 0.016,
-  AIR_SIGMA: 6.9,
+  AIR_H: 0.032,
+  AIR_SIGMA: 3.45,
 
   /**
    * Display luminance of unscattered sunlight relative to a unit diffuse
@@ -1072,9 +1074,10 @@ export function hazeSpec(p: BodyPhysics): { color: RGB; opacity: number } | null
  * horizon sunbeam's air column is (~1/sqrt(curve) vertical columns), i.e.
  * how hard sunsets redden: cold, heavy, high-gravity air hugs its world
  * and burns deep red; hot light low-g air is puffy and barely tints. The
- * drawn shell (scaleH) is toy-compressed so the rim reads on a holdable
- * globe, but it stays a skin — vacuum has nothing to scatter — while
- * the sunlight filter uses the real slenderness.
+ * drawn shell (scaleH) is toy-compressed so the halo reads on a
+ * holdable globe, but it still dies with the exponential — vacuum
+ * has nothing to scatter — while the sunlight filter uses the real
+ * slenderness.
  */
 export function airExtinction(p: BodyPhysics): {
   sigma: number;
