@@ -233,6 +233,83 @@ export const UNIVERSE = {
    * wall time becomes system time; wave/foam animation keeps its own
    * cosmetic clock. */
   TIME_SCALE: 1 / 3,
+
+  /**
+   * The shared galaxy. One seed, one SBbc (grand-design barred spiral).
+   * Everyone who plays the canonical game is in this galaxy. A different
+   * seed through the same laws is a private universe; cosmic-engineer
+   * knobs later are other values in this block, not another generator.
+   */
+  CANONICAL_SEED: 'helix',
+
+  /** Age of the galaxy (Gyr). Stars older than this were not born here. */
+  GALAXY_AGE_GYR: 13.0,
+
+  /**
+   * Toy-compressed SBbc mass model (lengths in kpc). Rd is the thin-disk
+   * scale length; the bar, bulge, thick disk and halo are ratios of it.
+   * ARM_M = 2 is the grand-design pair; PITCH is the logarithmic-spiral
+   * pitch (SBbc is open, ~18°). ARM_A is the density-wave contrast.
+   */
+  GALAXY_RD: 3.5,
+  GALAXY_R_MAX: 16,
+  GALAXY_ZD: 0.3,
+  GALAXY_Z_THICK: 0.9,
+  GALAXY_RD_THICK: 4.2,
+  GALAXY_RE_BULGE: 0.7,
+  GALAXY_BAR_A: 3.2,
+  GALAXY_BAR_B: 0.85,
+  GALAXY_BAR_C: 0.35,
+  GALAXY_ARM_M: 2,
+  GALAXY_PITCH: (18 * Math.PI) / 180,
+  GALAXY_ARM_A: 0.85,
+  GALAXY_HALO_A: 8,
+
+  /** Solar circle (kpc) — home-star search and the thin-disk yardstick. */
+  R_SUN: 8.2,
+
+  /**
+   * Implicit catalog grid: a star is a cell + slot, never a stored row.
+   * Density × volume × GALAXY_N_K is the expected count; a leftover
+   * fraction is a Bernoulli draw so sparse halo/outer-disk cells are not
+   * a rounding desert. GALAXY_N_K is a *sample* density — the catalog is
+   * a representative draw of the mass model, not the Milky Way headcount
+   * (a phone cannot hold 10¹¹ rows, and objectAt is O(1) either way).
+   * Halo cells stay sparse; arms fill up.
+   */
+  GALAXY_NR: 48,
+  GALAXY_NTH: 96,
+  GALAXY_NZ: 12,
+  GALAXY_MAX_SLOT: 10,
+  GALAXY_N_K: 90,
+
+  /**
+   * Kroupa IMF (number, not mass), amplitudes matched at the breaks:
+   * ξ ∝ M^α on [IMF_BD, IMF_MIN] (brown dwarfs), [IMF_MIN, IMF_BRK],
+   * then [IMF_BRK, IMF_MAX]. Remnant thresholds in Msun: below WD a dead
+   * star is a white dwarf; below NS a neutron star; else a black hole.
+   */
+  IMF_BD: 0.01,
+  IMF_MIN: 0.08,
+  IMF_BRK: 0.5,
+  IMF_MAX: 120,
+  IMF_A0: -0.3,
+  IMF_A1: -1.3,
+  IMF_A2: -2.3,
+  REMNANT_WD: 8,
+  REMNANT_NS: 25,
+
+  /**
+   * Short phases, toy-stretched so they are findable in the bottle the
+   * way TIME_SCALE stretches a dawn. Real PN/SNR last 10^4 yr; here they
+   * last these Gyr so a traveler can discover them. The law is still
+   * “time since death,” not a painted nebula type.
+   */
+  HII_GYR: 0.012,
+  PN_GYR: 0.04,
+  SNR_GYR: 0.06,
+  PULSAR_GYR: 0.12,
+  WR_TAIL: 0.12,
 };
 
 // ------------------------------------------------------------------ types

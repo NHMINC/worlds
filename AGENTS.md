@@ -9,14 +9,21 @@ win** — the README still describes an earlier realistic-globe era.
 
 ## What this is
 
-A **procedural mini-universe in a bottle**. One seed unfolds into a star,
-planets, and moons that exist and run because of mathematics and physics —
-not because we catalogued planet types and painted skins.
+A **procedural galaxy in a bottle**. One canonical seed unfolds into a
+single **grand-design barred spiral** (Hubble SBbc — two long arms, a
+bar, a bulge: the accepted beautiful galaxy, and our own Milky Way’s
+class). Stars, remnants, and nebulae are a cheap function of that seed
+plus laws. You **discover** a star system by going there; you do not
+mint one. The stars in the sky **are** that catalog.
 
-You can fly the system, orbit a world, and land on it. Worlds are small
-Goldberg-hex globes with layered strata (Godus-like onion rings, a blending
-skin over discrete columns) in Caribbean / cel-shaded tones. The feeling:
-a perfect little world model you could hold. Chill, bright, readable.
+Worlds stay small Goldberg-hex globes with layered strata (Godus-like
+onion rings) in Caribbean / cel-shaded tones. The feeling: a perfect
+little universe you could hold. Chill, bright, readable.
+
+Everyone who plays the canonical game is in **the same galaxy**. Private
+universes (another seed through the same laws) and cosmic-engineer knobs
+(other `UNIVERSE` values) come later. Multiplayer only works once these
+laws are boringly stable — a generator change moves every address.
 
 We are **cosmic engineers**. We set base rules (constants, conservation,
 causal order). The world is supposed to *emerge*. Prefer one law that
@@ -38,19 +45,24 @@ never the system seed — so a restart is a new piece, not a replay.
 > **When a world looks wrong, fix the law, not the world.**
 > **If the cosmic engineer set only constants and laws, would this still happen?**
 
-This is a physics engine with toy scaling, not a catalogue of planet types.
+This is a physics engine with toy scaling, not a catalogue of planet
+types or star types.
 
 - **Archetypes are outputs, never inputs.** There is no `if (iceball)` /
-  `if (hothouse)` generator switch. Iceballs, methane seas, eyeball worlds,
-  living paradises, and airless rocks are attractor regions of one causal
-  chain. If a class of world looks wrong, the condensation, escape, or
-  temperature law is wrong.
-- **Chemistry is the single source of truth.** Stellar metallicity → disk
-  condensation at that orbit → one elemental inventory per body → partition
-  into core / crust / ocean / atmosphere. Visuals (palette, ocean tint,
-  sky colour, gas-giant colour, snow, ice) **derive** from that inventory.
-  Do not add a tint, a texture, or a special-case mesh that chemistry
-  cannot explain.
+  `if (hothouse)` / `if (pulsar)` generator switch. Iceballs, O stars,
+  pulsars, H II regions, and living paradises are attractor regions of
+  one causal chain. If a class looks wrong, the mass, clock, chemistry,
+  or density law is wrong.
+- **Chemistry is the single source of truth.** Galactic position →
+  [Fe/H] and C/O → stellar inventory → disk condensation at that orbit
+  → one elemental inventory per body → core / crust / ocean /
+  atmosphere. Visuals **derive** from that inventory. Do not add a tint
+  or a special-case mesh that chemistry cannot explain.
+- **The stellar zoo is a clock, not a list.** Harvard class, luminosity
+  class, white dwarfs, neutron stars, pulsars, black holes, Wolf–Rayet,
+  carbon stars, H II, planetary nebulae, and SN remnants are
+  `evolve(mass, age, Z)` plus a short-lived nebula window. We do not
+  store the galaxy. `objectAt(seed, id)` is O(1).
 - **Toy constants live in `UNIVERSE` (`src/world/physics.ts`).** Compress
   mass, distance, and time so a whole system fits in a bottle and stays
   fun — but keep the compression **visible and named**, not scattered
@@ -59,9 +71,14 @@ This is a physics engine with toy scaling, not a catalogue of planet types.
   not a one-off `if (sunset) color = orange`.
 - **Documented simplifications** (decreed, not hidden): metallic core and
   spin-aligned dipole on every body (a compass works); orbits are stable
-  by fiat; interiors, plate tectonics, and **weather** are out of scope
-  until we take them on as laws. Clouds are not a painted deck; aerosol
-  opacity lives inside `airExtinction` / the scattering integral.
+  by fiat; we do not integrate an N-body galaxy for 10 Gyr (Lin–Shu
+  density field + IMF + closed-form stellar clock instead); interstellar
+  travel is a deterministic set-course, not a real light-year cruise;
+  short nebula phases are toy-stretched (`HII_GYR`, `PN_GYR`, `SNR_GYR`)
+  so they are findable, the way `TIME_SCALE` stretches a dawn; interiors,
+  plate tectonics, and **weather** are out of scope until we take them
+  on as laws. Clouds are not a painted deck; aerosol opacity lives
+  inside `airExtinction` / the scattering integral.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
@@ -73,7 +90,10 @@ is the job.
 ## Causal chain (do not skip steps)
 
 ```
-star (seed, metallicity, C/O, luminosity)
+CANONICAL_SEED + UNIVERSE mass model (SBbc)
+  → density / rotation / population (thin, thick, halo, bulge, bar)
+  → star at (R, θ, z): IMF mass, birth time, [Fe/H], C/O
+  → evolve(mass, age, Z) → MK class / remnant / nebula
   → disk chemistry at orbital radius (condensation sequence)
   → body inventory + bulk density + radius
   → gravity (derived: g = G_TOY · densityRel · radiusRel — never a slider)
@@ -82,6 +102,10 @@ star (seed, metallicity, C/O, luminosity)
   → hydrosphere phase (none / ice / liquid water / liquid methane)
   → snow capacity, sea state, palette, life odds
 ```
+
+`generateSystem(seed)` is the inner bottle. The galaxy lookup is
+`objectAt(galaxySeed, starId)` then, next, `systemAt(galaxySeed, starId)`
+— a pure function, not a “create system” button. The player discovers.
 
 Related laws that must stay physics, not flags:
 
@@ -117,9 +141,18 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - `scattering.ts` is **the only copy** of the air law. Terrain, water, and
   the sky shell compile the same GLSL and march the same integral.
   Viewpoint only changes which rays you own (ground hit vs sky miss).
-- Light comes from the star at the origin. Day/night is spin + orbit as
-  functions of `(spec, unix time t)` — deterministic, no “bake a sun
-  behind the camera.”
+- Light comes from the **loaded** star at the origin. Day/night is spin
+  + orbit as functions of `(spec, unix time t)` — deterministic, no
+  “bake a sun behind the camera.”
+- **The sky is the catalog.** The unseeded random star shell is retired
+  once the galaxy law is wired. Night stars, the disk band, pulsars,
+  and the sun you orbit are the same function. A painted starfield is
+  a lie.
+- **Render distance** (the only things that “run”): one star system
+  fully instantiated; one planetoid + its moons in close LOD; one
+  high-res landscape. Everything else is the same laws sampled cheaper
+  (points, dots, the band). At any Unix time `t` we already know where
+  every star and planet is — we just do not mesh them.
 
 Camera rigs (`src/render/engine.ts`):
 
@@ -145,8 +178,9 @@ you will debug a stale engine class. The app lives at
   Colour is the physics-derived onion ramp (`toyPalette.paletteFor`),
   **re-anchored on the body’s actual waterline** so a raised sea does not
   leave drowned peaks wearing seabed colours.
-- **Addressable universe:** `(systemSeed, bodyId, cell)` names a piece of
-  ground forever. That address is the contract for inspection, mining,
+- **Addressable universe:** `(galaxySeed, starId, bodyId, cell)` names a
+  piece of ground forever. Today’s `(systemSeed, bodyId, cell)` is the
+  inner tuple. That address is the contract for inspection, mining,
   bases, labels, and every other player mark. Player terrain edits are
   **absolute level overlays**, never deltas, stored sparsely.
   `effectiveLevel(cell) = override ?? generated(cell)`.
@@ -157,9 +191,10 @@ you will debug a stale engine class. The app lives at
   seed would change, and keep old behaviour for systems pinned to a
   previous version.
 
-Time: orbits and spins are pure functions of spec and wall-clock Unix
-time (geared by `UNIVERSE.TIME_SCALE`). No hidden simulation step that
-diverges from that.
+Time: orbits, spins, and the stellar clock are pure functions of spec
+and wall-clock Unix time (geared by `UNIVERSE.TIME_SCALE`). No hidden
+galaxy or system simulation step that diverges from that. A star’s
+phase at time `t` is `evolve(mass, age(t), Z)`.
 
 **Music** is progressive house as a law. `src/audio/theory.ts` is the
 score: ~124 BPM, four-on-the-floor, a 4-chord loop held for bars at a
@@ -181,15 +216,17 @@ never store generated terrain, chemistry, or meshes.
 
 | Stored | Regenerated |
 |--------|-------------|
-| `SystemMeta` (seed, genVersion, camera) | Star, orbits, inventories, atmospheres |
+| `SystemMeta` (seed, genVersion, camera; later `starId`) | Galaxy catalog, stellar phase, orbits, inventories, atmospheres |
 | Sparse terrain overrides `[cell, level, …]` | Hex columns, hydrology, snow line |
-| Labels, objects (city / town / landmark, later bases) | Palettes, geology, sea state |
+| Labels, objects (city / town / landmark, later bases) | Palettes, geology, sea state, stellar phase |
 | Optional per-body dials (dev terraforming) | Geology at `(dir, layer)` |
 
 **Export is first-class.** One self-contained `.tinysystem.json`
 (`formatVersion: 4`, `src/store/exportImport.ts`). Import creates a new
 system id and copies the overlay. A friend can load your file and stand
 on the same hex of the same world. Native iOS uses the share sheet.
+Older exports are **private bottles** — they are not objects placed into
+the canonical galaxy. The shared sky is `objectAt(CANONICAL_SEED, id)`.
 
 When you add player state (mined voids, placed bases, cargo, claims):
 
@@ -229,7 +266,7 @@ are **overlays on the addressable grid**, not new planet types.
 
 When those features land, they still obey the charter: no ore that
 chemistry cannot explain, no building that cannot be named by
-`(systemSeed, bodyId, cell)`, no save that cannot leave the device.
+`(galaxySeed, starId, bodyId, cell)`, no save that cannot leave the device.
 
 ---
 
@@ -333,6 +370,9 @@ These are allowed as *future physics*, not as painted features:
   exist; lush biomes as a sim is later).
 - Interiors and plate tectonics (columns plus hydrology/coastal-plain
   process passes stand in for now).
+- Wiring the catalog into the sky shader and interstellar travel (the
+  **law** is in `galaxy.ts` / `stellar.ts`; the viewer is next).
+- Live multiplayer. Freeze generation before anyone shares a hex live.
 
 Player features (mining, bases, cargo) are **not** in this bucket — they
 are overlays. See **Player layer**.
@@ -341,15 +381,16 @@ are overlays. See **Player layer**.
 
 ## How we change things
 
-1. **Reproduce with a seed**, not a one-off mesh edit. Create systems,
-   land, walk, flood the sea slider. Smoke scripts in `scripts/smoke-*.mjs`
-   (Playwright against `localhost:5173`) exist for horizon, reflections,
-   flood, torch, sky, land, etc. Use them; add one if you invent a new
-   failure mode.
-2. **Fix the law** in `physics.ts` / `scattering.ts` / the relevant
-   shader’s shared chunk. If you must add an approximation (Chapman slant,
-   Eddington diffusion, Schlick), comment *why* it is the law, not a
-   bandage. Delete patches when the law makes them redundant.
+1. **Reproduce with a seed**, not a one-off mesh edit. Sample `objectAt`,
+   land, walk, flood the sea slider. `scripts/check-galaxy.ts` is the
+   catalog law; smoke scripts in `scripts/smoke-*.mjs` (Playwright against
+   `localhost:5173`) exist for horizon, reflections, flood, torch, sky,
+   land, etc. Use them; add one if you invent a new failure mode.
+2. **Fix the law** in `physics.ts` / `galaxy.ts` / `stellar.ts` /
+   `scattering.ts` / the relevant shader’s shared chunk. If you must add
+   an approximation (Chapman slant, Eddington diffusion, Schlick), comment
+   *why* it is the law, not a bandage. Delete patches when the law makes
+   them redundant.
 3. **Bump `CURRENT_GEN_VERSION`** if a given seed’s generated terrain or
    system layout would change. Player overlays stay valid because they are
    absolute cell levels.
@@ -369,6 +410,8 @@ Code map (start here):
 | Area | Where |
 |------|--------|
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
+| Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
+| Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |

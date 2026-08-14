@@ -165,7 +165,10 @@ export function generateSystem(seed: string): SystemSpec {
 
   // --- the star: type sets luminosity; metallicity seeds the whole disk.
   // M-dwarfs matter: their habitable band sits inside the tidal-locking
-  // radius, which is where eyeball worlds are born. ---
+  // radius, which is where eyeball worlds are born.
+  // This G/K/M/F dice is the *private bottle* until systemAt(galaxySeed,
+  // starId) drinks evolve() from galaxy.ts. Do not bump CURRENT_GEN_VERSION
+  // for the galaxy catalog — that law is a new address, not a new roll. ---
   const starRoll = rng();
   const Z = 0.45 + Math.pow(rng(), 1.6) * 1.9; // metallicity, rel solar
   // Disk C/O ratio (rel solar): most disks sit oxygen-rich near 1; the
