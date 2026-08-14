@@ -277,7 +277,9 @@ These are product rules, not optional polish.
 ### Atmosphere
 
 - One progressive horizon: exponential air, not a planet limb + haze
-  deck + rim glow as three shells.
+  deck + rim glow as three shells. Vacuum has no scatterers — the
+  glow dies with the scale height (`AIR_H` in `UNIVERSE`), so the
+  limb is a thin skin on the sphere, not a halo that lights space.
 - Thick air reduces visibility through **optical depth**, not a texture.
   Multiple scattering (diffusion floor) exists so thick atmospheres are
   dim, not pitch-black at the ground — that is transport, not weather.

@@ -606,7 +606,7 @@ export class Engine {
         tu.uWaveEnergy.value = seaSt.energy;
         tu.uWaveTempo.value = seaSt.tempo;
         tu.uAirSigma.value = ext?.sigma ?? 0;
-        tu.uAirH.value = ext?.scaleH ?? 0.05;
+        tu.uAirH.value = ext?.scaleH ?? UNIVERSE.AIR_H;
         tu.uAirCurv.value = ext?.curve ?? 1;
         tu.uAeroTau.value = ext?.aeroTau ?? 0;
         if (ext) {
@@ -634,7 +634,7 @@ export class Engine {
           wu.uIceFloor.value =
             h.state === 'ice' && phys.atmosphere.pressure < UNIVERSE.LIQUID_MIN_P ? 1 : 0;
           wu.uAirSigma.value = ext?.sigma ?? 0;
-          wu.uAirH.value = ext?.scaleH ?? 0.05;
+          wu.uAirH.value = ext?.scaleH ?? UNIVERSE.AIR_H;
           wu.uAirCurv.value = ext?.curve ?? 1;
           wu.uAeroTau.value = ext?.aeroTau ?? 0;
           if (ext) {
@@ -648,7 +648,7 @@ export class Engine {
         if (assets.atmoMat) {
           const au = assets.atmoMat.uniforms;
           au.uAirSigma.value = ext?.sigma ?? 0;
-          au.uAirH.value = ext?.scaleH ?? 0.05;
+          au.uAirH.value = ext?.scaleH ?? UNIVERSE.AIR_H;
           au.uAirCurv.value = ext?.curve ?? 1;
           au.uAeroTau.value = ext?.aeroTau ?? 0;
           if (ext) {
@@ -904,7 +904,8 @@ export class Engine {
     // The sky shell: the same scattering law, marched along the rays that
     // cross the air without striking the globe. From orbit those are the
     // limb; from the ground they are the whole sky. Its top sits where the
-    // exponential air has genuinely run out (~6 scale heights).
+    // exponential air has genuinely run out (~7 scale heights) — a skin,
+    // not a halo. Vacuum past that has nothing to scatter.
     let atmoMat: THREE.ShaderMaterial | undefined;
     let atmoExtMat: THREE.ShaderMaterial | undefined;
     if (tier === 2 && air) {
