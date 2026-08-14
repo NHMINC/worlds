@@ -36,6 +36,7 @@ const FRAG = /* glsl */ `
   uniform float uPitch;
   uniform float uArmA;
   uniform float uHaloA;
+  uniform float uResolve;
   varying vec2 vUv;
 
   float sech2(float x) {
@@ -127,11 +128,15 @@ const FRAG = /* glsl */ `
       float extinct = 1.0 - 0.82 * lane * clamp(thinMass * 1.4, 0.0, 1.0);
       emit *= extinct;
 
-      float h = hash13(floor(p * 22.0 + 0.5));
-      float rare = 0.0018 * (young * 4.0 + bulge * 1.6 + bar);
+      // Close in, the integral breaks into sparkle — the IMF tail resolving,
+      // not stored rows. Face-on stays a smooth Hubble glow.
+      float grid = mix(18.0, 86.0, uResolve);
+      float h = hash13(floor(p * grid + 0.5));
+      float rare = mix(0.0016, 0.038, uResolve) * (young * 4.0 + bulge * 1.6 + bar);
       if (h > 1.0 - rare) {
-        emit += vec3(1.0, 0.93, 0.82) * 14.0 * (h - (1.0 - rare)) / max(rare, 1e-5);
+        emit += vec3(1.0, 0.93, 0.82) * mix(14.0, 6.5, uResolve) * (h - (1.0 - rare)) / max(rare, 1e-5);
       }
+      emit *= mix(1.0, 0.58, uResolve);
 
       float dens = (bulge + bar + young + thick * 0.3) * dt * 0.55;
       acc += trans * emit * dt * 0.42;
@@ -170,6 +175,7 @@ export function createGalaxyField(): { mesh: THREE.Mesh; mat: THREE.ShaderMateri
       uPitch: { value: UNIVERSE.GALAXY_PITCH },
       uArmA: { value: UNIVERSE.GALAXY_ARM_A },
       uHaloA: { value: UNIVERSE.GALAXY_HALO_A },
+      uResolve: { value: 0 },
     },
     transparent: true,
     depthWrite: false,
@@ -185,10 +191,12 @@ export function updateGalaxyField(
   mat: THREE.ShaderMaterial,
   camera: THREE.PerspectiveCamera,
   dim = 1,
+  resolve = 0,
 ): void {
   camera.updateMatrixWorld();
   mat.uniforms.uCam.value.copy(camera.position);
   mat.uniforms.uInvProj.value.copy(camera.projectionMatrixInverse);
   mat.uniforms.uInvView.value.copy(camera.matrixWorld);
   mat.uniforms.uDim.value = dim;
+  mat.uniforms.uResolve.value = resolve;
 }

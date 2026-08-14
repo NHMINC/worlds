@@ -106,11 +106,15 @@ CANONICAL_SEED + UNIVERSE mass model (SBbc)
 Canonical play is `objectAt` → `systemAt(galaxySeed, starId)` — a pure
 function. The **galaxy explorer** is how you discover: the Hubble glow
 is the mass model on the GPU (surface brightness = the integrated
-population — that is how a phone shows ~10¹¹ stars); the points you
-can tap are catalog beacons (`objectAt` samples, not the IMF oatmeal).
-Set course loads that star. We **store visits only** (overlays, camera,
-labels). We do not mint systems. A first landing searches the catalog
-for a star that already has a habitable world.
+population — that is how a phone shows ~10¹¹ stars). Those stars
+*exist* as procedural outcomes; we do not store them. Face-on, they
+are the integral. As you zoom and fly, `objectAt` samples in that
+volume resolve into points — giants first, then sunlike, then the
+M-dwarf oatmeal. You cannot pick a star until you are close enough
+that it has resolved. Set course loads that star. We **store visits
+only** (overlays, camera, labels). We do not mint systems. A first
+landing searches the catalog for a star that already has a habitable
+world.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
 
@@ -153,12 +157,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   “bake a sun behind the camera.”
 - **The sky is the catalog.** The galaxy explorer *is* that catalog:
   a GPU raymarch of the same density / young-light / dust-lane law
-  (`galaxyField.ts`) plus pickable `objectAt` beacons — not a painted
-  spiral, not 52k mass-traced dust points. Billions of stars are the
-  integral (pixels × steps). Instantiating 10¹¹ Three.js points is
-  the extreme cost; evaluating the field is not. The in-system night
-  shell (`buildStars`) is still unseeded and must retire so ground
-  and explorer agree. A painted starfield is a lie.
+  (`galaxyField.ts`) plus `objectAt` points that **resolve with zoom**
+  — not a painted spiral, not every catalog row drawn at once.
+  Billions of stars are the integral (pixels × steps). Instantiating
+  10¹¹ Three.js points is the extreme cost; evaluating the field, then
+  sampling the volume you occupy, is not. A star is pickable only
+  when the camera is inside ~10 kpc of it. The in-system night shell
+  (`buildStars`) is still unseeded and must retire so ground and
+  explorer agree. A painted starfield is a lie.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper

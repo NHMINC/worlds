@@ -39,7 +39,13 @@ export function GalaxyExplorer(props: Props) {
   const [selected, setSelected] = useState<GalaxyObject | null>(null);
   const [filter, setFilter] = useState<GalaxyFilter>('all');
   const [census, setCensus] = useState<Record<string, number>>({});
-  const [frame, setFrame] = useState<GalaxyFrame>({ theta: 0, phi: 0, radius: 40 });
+  const [frame, setFrame] = useState<GalaxyFrame>({
+    theta: 0,
+    phi: 0,
+    radius: 40,
+    pickable: false,
+    resolved: 0,
+  });
   const [count, setCount] = useState(0);
 
   useEffect(() => {
@@ -56,7 +62,12 @@ export function GalaxyExplorer(props: Props) {
         onSelect: setSelected,
         onFrame: (f) => {
           setFrame((prev) =>
-            Math.abs(prev.radius - f.radius) > 0.08 || Math.abs(prev.phi - f.phi) > 0.02 ? f : prev,
+            Math.abs(prev.radius - f.radius) > 0.08 ||
+            Math.abs(prev.phi - f.phi) > 0.02 ||
+            prev.pickable !== f.pickable ||
+            Math.abs(prev.resolved - f.resolved) > 2
+              ? f
+              : prev,
           );
         },
       });
@@ -80,6 +91,13 @@ export function GalaxyExplorer(props: Props) {
       viewRef.current = null;
     };
   }, [seed, props.hereStarId]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !ready) return;
+    setCensus(view.census());
+    setCount(frame.resolved);
+  }, [frame.resolved, filter, ready]);
 
   function applyFilter(f: GalaxyFilter): void {
     setFilter(f);
@@ -107,7 +125,9 @@ export function GalaxyExplorer(props: Props) {
         <div className="galaxy-brand">
           <div className="galaxy-title">Helix</div>
           <div className="galaxy-sub">
-            SBbc · the glow is the population · {count || '…'} beacons you can tap
+            {frame.pickable
+              ? `SBbc · ${count} catalog stars in reach`
+              : 'SBbc · the glow is the population · zoom in to resolve stars'}
           </div>
         </div>
         <div className="galaxy-presets">
@@ -183,6 +203,7 @@ export function GalaxyExplorer(props: Props) {
         </div>
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
+          {frame.pickable ? ' · tap a star' : ' · fly in to pick'}
         </div>
       </footer>
     </div>
