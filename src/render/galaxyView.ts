@@ -28,6 +28,9 @@ const FIELD_RES = 0.5;
  * and retired: acceleration was harder to aim than a quiet direct dial. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
+/** Max scale change one continuous zoom motion may cross (a pause of
+ * ~0.6 s starts a new motion). Two or three neighbourhoods, not ten. */
+const ZOOM_GESTURE_SPAN = 2.6;
 /** Physically among the stars: the field dims to let the catalog carry. */
 const AMONG_DIST = 7.2;
 /** Stellar detection bubble: how far the catalog resolves around the look
@@ -725,14 +728,27 @@ export class GalaxyView {
     this.look.copy(this.tgtLook);
   }
 
+  /** Radius when the current zoom gesture began, for the span cap. */
+  private gestureR = 0;
+  private lastZoomAt = 0;
+
   /**
    * Direct zoom: scale the target radius, let the frame ease carry it.
    * The look point NEVER moves here — when you zoom you are zooming to
    * the thing you already framed, not being redirected toward whatever
    * happened to sit under the cursor.
+   *
+   * One MOTION crosses at most ZOOM_GESTURE_SPAN in scale: a single
+   * pinch cannot fall from the whole galaxy to one star ("London from
+   * outer space"). Pause, and the next motion starts a fresh span.
    */
   private zoom(factor: number): void {
-    this.tgtRadius = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, this.tgtRadius * factor));
+    const now = performance.now();
+    if (now - this.lastZoomAt > 600) this.gestureR = this.tgtRadius;
+    this.lastZoomAt = now;
+    const lo = Math.max(ZOOM_MIN, this.gestureR / ZOOM_GESTURE_SPAN);
+    const hi = Math.min(ZOOM_MAX, this.gestureR * ZOOM_GESTURE_SPAN);
+    this.tgtRadius = Math.max(lo, Math.min(hi, this.tgtRadius * factor));
     this.idle = 0;
   }
 
@@ -896,19 +912,30 @@ export class GalaxyView {
   }
 
   private onDown = (e: PointerEvent): void => {
-    this.canvas.setPointerCapture(e.pointerId);
+    try {
+      this.canvas.setPointerCapture(e.pointerId);
+    } catch {
+      // Synthetic events may carry an unknown pointerId; capture is optional.
+    }
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 1) {
+      // A fresh single-finger touch is the ONLY way back into rotation
+      // after a pinch (see onUp: lifting one pinch finger must not hand
+      // the survivor a drag).
       this.dragging = true;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
       this.moved = 0;
       this.idle = 0;
     } else if (this.pointers.size === 2) {
+      this.dragging = false;
       const pts = [...this.pointers.values()];
       this.pinch0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       this.pinchMidX = (pts[0].x + pts[1].x) * 0.5;
       this.pinchMidY = (pts[0].y + pts[1].y) * 0.5;
+      // A pinch is one zoom gesture: span-capped from here.
+      this.gestureR = this.tgtRadius;
+      this.lastZoomAt = performance.now();
     }
   };
 
@@ -952,6 +979,12 @@ export class GalaxyView {
     if (this.pointers.size < 2) this.pinch0 = 0;
     if (this.pointers.size === 0) {
       if (this.dragging && this.moved < 22) this.pick(e.clientX, e.clientY);
+      this.dragging = false;
+    } else {
+      // One pinch finger lifted: the survivor is NOT a drag. Fingers
+      // never leave together, and the half-second of accidental
+      // rotation on every pinch release made zooming feel haunted.
+      // Rotation resumes only with a fresh single-finger touch.
       this.dragging = false;
     }
   };
