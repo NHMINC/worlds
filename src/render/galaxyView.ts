@@ -908,8 +908,10 @@ export class GalaxyView {
     const px = this.renderer.getPixelRatio();
     this.starMat.uniforms.uPixel.value = px;
     this.nebMat.uniforms.uPixel.value = px;
-    const resolve = clamp01((28 - this.radius) / 24);
-    updateGalaxyField(this.fieldMat, this.camera, this.filter === 'all' ? 1 : 0.18, resolve);
+    const amongStars = this.radius < RESOLVE_DIST;
+    const resolve = amongStars ? 0 : clamp01((28 - this.radius) / 24);
+    const dim = amongStars ? 0.16 : this.filter === 'all' ? 1 : 0.18;
+    updateGalaxyField(this.fieldMat, this.camera, dim, resolve);
     const ringS = Math.max(0.05, this.radius * 0.032);
     this.pickRing.scale.setScalar(ringS);
     this.homeRing.scale.setScalar(ringS);

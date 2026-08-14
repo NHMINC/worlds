@@ -167,10 +167,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (`galaxyField.ts`) plus `objectsNear` — not a painted spiral, not a
   7k sample list. ~10⁹ stars are addressable (`objectAt`). Face-on
   they are the integral. Zooming asks nearby cells for more of their
-  stratified IMF. Distant catalog rows are tiny points of light — never
+  stratified IMF.   Distant catalog rows are tiny points of light — never
   grown `GL_POINTS` (those become squares on a phone). Inside ~7 kpc
   the nearest stars become photospheres from `evolve()` (`galaxyStar.ts`):
-  teff colour, limb, remnant, nebula. We only mesh what we occupy.
+  teff colour, limb, remnant, nebula. The field’s cubic sparkle turns
+  off there — that hash was a stand-in until the discs arrived.
+  We only mesh what we occupy.
   Tap a resolved disc to set course; a still-point source only selects
   or zooms. A star is pickable only when the camera is inside ~10 kpc
   of it. The in-system night shell (`buildStars`) is still unseeded and
