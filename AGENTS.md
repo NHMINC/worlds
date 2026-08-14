@@ -118,8 +118,9 @@ As you zoom and fly, `objectsNear` resolves the massive tail of
 nearby cells, then more of the IMF. You cannot pick a star until
 you are close enough that it has resolved. Set course loads that
 star. We **store visits only** (overlays, camera, labels). We do
-not mint systems. A first landing queries solar-circle hosts for a
-star that already has a habitable world. Changing the grid
+not mint systems. A first landing may sample thousands of FGK hosts
+near the solar circle (the home point) to find a world that already
+has life — that is a query, not a catalog. Changing the grid
 renumbers `starId`; old visits from the 7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
