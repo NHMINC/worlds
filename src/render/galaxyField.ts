@@ -69,14 +69,14 @@ const FRAG = /* glsl */ `
 
   vec3 rayDir() {
     vec4 clip = vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
-    vec4 view = uInvProj * clip;
-    view = vec4(view.xy / max(abs(view.w), 1e-6), -1.0, 0.0);
-    return normalize((uInvView * view).xyz);
+    vec4 world = uInvView * (uInvProj * clip);
+    vec3 pw = world.xyz / max(abs(world.w), 1e-6);
+    return normalize(pw - uCam);
   }
 
   void main() {
     vec3 rd = rayDir();
-    vec3 bmin = vec3(-uRmax * 1.15, -uZthick * 3.2, -uRmax * 1.15);
+    vec3 bmin = vec3(-uRmax * 1.25, -uZthick * 8.0, -uRmax * 1.25);
     vec3 bmax = -bmin;
     vec2 hit = boxHit(uCam, rd, bmin, bmax);
     if (hit.y < max(hit.x, 0.0)) {
@@ -139,7 +139,7 @@ const FRAG = /* glsl */ `
       emit *= mix(1.0, 0.58, uResolve);
 
       float dens = (bulge + bar + young + thick * 0.3) * dt * 0.55;
-      acc += trans * emit * dt * 0.42;
+      acc += trans * emit * dt * 1.65;
       trans *= exp(-dens * 1.15);
     }
 

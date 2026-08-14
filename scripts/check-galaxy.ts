@@ -175,8 +175,12 @@ console.log(
 check(!!home && (home.star.mk === 'G' || home.star.mk === 'K' || home.star.mk === 'F'), 'home star is not a FGK dwarf');
 check(!!home && home.star.phase === 'main_sequence', 'home star is not on the main sequence');
 
-const near = objectsNear(seed, home?.pos ?? { R: 8, theta: 0, z: 0 }, 1.2, 40);
+const near = objectsNear(seed, home?.pos ?? { R: 8, theta: 0, z: 0 }, 1.2, { uMin: 0.86, limit: 40 });
 check(near.length > 3, `neighbourhood empty: ${near.length}`);
+check(
+  near.some((o) => o.star.luminosity >= 0.2 || o.star.nebula !== 'none' || (o.star.mk === 'G' || o.star.mk === 'K' || o.star.mk === 'F')),
+  'neighbourhood is only dead remnants',
+);
 
 if (home) {
   const sysA = systemAt(seed, home.id);
