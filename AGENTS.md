@@ -103,9 +103,10 @@ CANONICAL_SEED + UNIVERSE mass model (SBbc)
   → snow capacity, sea state, palette, life odds
 ```
 
-`generateSystem(seed)` is the inner bottle. The galaxy lookup is
-`objectAt(galaxySeed, starId)` then, next, `systemAt(galaxySeed, starId)`
-— a pure function, not a “create system” button. The player discovers.
+`generateSystem(seed)` is the inner bottle (private universes, old
+exports). Canonical play is `objectAt` → `systemAt(galaxySeed, starId)`
+— a pure function. The **galaxy explorer** is how you discover: the
+points are the catalog; set course loads that star. Not a mint button.
 
 Related laws that must stay physics, not flags:
 
@@ -144,10 +145,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - Light comes from the **loaded** star at the origin. Day/night is spin
   + orbit as functions of `(spec, unix time t)` — deterministic, no
   “bake a sun behind the camera.”
-- **The sky is the catalog.** The unseeded random star shell is retired
-  once the galaxy law is wired. Night stars, the disk band, pulsars,
-  and the sun you orbit are the same function. A painted starfield is
-  a lie.
+- **The sky is the catalog.** The galaxy explorer *is* that catalog
+  (density field + `objectAt` points, not a painted spiral). The
+  in-system night shell (`buildStars`) is still unseeded and must
+  retire so ground and explorer agree. A painted starfield is a lie.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
@@ -370,8 +371,9 @@ These are allowed as *future physics*, not as painted features:
   exist; lush biomes as a sim is later).
 - Interiors and plate tectonics (columns plus hydrology/coastal-plain
   process passes stand in for now).
-- Wiring the catalog into the sky shader and interstellar travel (the
-  **law** is in `galaxy.ts` / `stellar.ts`; the viewer is next).
+- Wiring the catalog into the **in-system** night-sky shader (the explorer
+  already *is* the catalog; `buildStars()` in the system viewer is still
+  a random shell and must retire).
 - Live multiplayer. Freeze generation before anyone shares a hex live.
 
 Player features (mining, bases, cargo) are **not** in this bucket — they
@@ -412,6 +414,7 @@ Code map (start here):
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
 | Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
+| Galaxy explorer (catalog viewer) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |

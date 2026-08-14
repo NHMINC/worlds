@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import type { RigMode, Tool } from '../render/engine';
 import {
   IconCompass, IconFitHeight, IconGear, IconGlobe, IconInspect, IconLabel,
-  IconLand, IconLetterbox, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconRocket,
+  IconGalaxy, IconLand, IconLetterbox, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconRocket,
 } from './icons';
 
 interface Props {
@@ -34,6 +34,7 @@ interface Props {
   setVolume: (v: number) => void;
   openManager: () => void;
   openMap: () => void;
+  openGalaxy: () => void;
   openSettings: () => void;
 }
 
@@ -53,6 +54,9 @@ export function Toolbar(props: Props) {
       </button>
       <button className="tb-btn" title="System map" onClick={props.openMap}>
         <IconOrbits />
+      </button>
+      <button className="tb-btn" title="Galaxy — the shared catalog" onClick={props.openGalaxy}>
+        <IconGalaxy />
       </button>
 
       {orbit && (

@@ -3,13 +3,15 @@ import { Engine, type BodyOverrides, type RigMode, type Tool, type ViewState } f
 import { AmbientMusic } from './audio/ambient';
 import { db, deleteSystem, touchSystem } from './store/db';
 import { exportSystem, importSystem } from './store/exportImport';
-import { CURRENT_GEN_VERSION, effectivePhysics, generateSystem, type SystemSpec } from './world/systemgen';
+import { CURRENT_GEN_VERSION, effectivePhysics, generateSystem, systemAt, type SystemSpec } from './world/systemgen';
+import { homeStar, type GalaxyObject } from './world/galaxy';
 import { PALETTE } from './world/palettes';
 import { randomSeedString, uuid } from './world/rng';
 import type {
   BodyStateRecord, LabelRecord, ObjectKind, ObjectRecord, SystemMeta,
 } from './world/types';
 import { Toolbar } from './ui/Toolbar';
+import { GalaxyExplorer } from './ui/GalaxyExplorer';
 import { SystemManager, type NewSystemForm } from './ui/SystemManager';
 import { SettingsModal } from './ui/SettingsModal';
 import { PlaceDialog } from './ui/PlaceDialog';
@@ -44,7 +46,11 @@ interface PlaceDialogState {
 }
 
 /** A fresh system: the seed decides everything, the star lends its name. */
-function newSystemMeta(name: string, seed: string): SystemMeta {
+function newSystemMeta(
+  name: string,
+  seed: string,
+  extra?: { starId?: number; galaxySeed?: string },
+): SystemMeta {
   return {
     id: uuid(),
     name,
@@ -52,6 +58,7 @@ function newSystemMeta(name: string, seed: string): SystemMeta {
     genVersion: CURRENT_GEN_VERSION,
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    ...extra,
   };
 }
 
@@ -84,6 +91,7 @@ export default function App() {
   const [managerOpen, setManagerOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [galaxyOpen, setGalaxyOpen] = useState(false);
   const [placeDialog, setPlaceDialog] = useState<PlaceDialogState | null>(null);
   const [inspected, setInspected] = useState<InspectedCell | null>(null);
   const [musicOn, setMusicOn] = useState(false);
@@ -193,8 +201,17 @@ export default function App() {
     await db.transaction('rw', db.systems, async () => {
       const count = await db.systems.count();
       if (count === 0) {
-        const seed = randomSeedString();
-        await db.systems.add(newSystemMeta(generateSystem(seed).star.name, seed));
+        const home = homeStar();
+        if (home) {
+          const spec0 = systemAt(UNIVERSE.CANONICAL_SEED, home.id);
+          await db.systems.add(newSystemMeta(spec0.star.name, spec0.seed, {
+            starId: home.id,
+            galaxySeed: UNIVERSE.CANONICAL_SEED,
+          }));
+        } else {
+          const seed = randomSeedString();
+          await db.systems.add(newSystemMeta(generateSystem(seed).star.name, seed));
+        }
       }
     });
     const list = await db.systems.orderBy('updatedAt').reverse().toArray();
@@ -216,7 +233,9 @@ export default function App() {
     if (!engine) return;
     const s = await db.systems.get(id);
     if (!s) return;
-    const sysSpec = generateSystem(s.seed);
+    const sysSpec = s.starId != null
+      ? systemAt(s.galaxySeed ?? UNIVERSE.CANONICAL_SEED, s.starId)
+      : generateSystem(s.seed);
     const [bs, terr, lbs, objs] = await Promise.all([
       db.bodyState.where('systemId').equals(id).toArray(),
       db.terrain.where('systemId').equals(id).toArray(),
@@ -278,6 +297,26 @@ export default function App() {
       }
     }
   }
+
+  async function handleSetCourse(obj: GalaxyObject): Promise<void> {
+    const gSeed = UNIVERSE.CANONICAL_SEED;
+    const existing = systems.find((s) => s.starId === obj.id && (s.galaxySeed ?? gSeed) === gSeed);
+    if (existing) {
+      await openSystem(existing.id);
+      setGalaxyOpen(false);
+      return;
+    }
+    const spec0 = systemAt(gSeed, obj.id);
+    const meta = newSystemMeta(spec0.star.name, spec0.seed, { starId: obj.id, galaxySeed: gSeed });
+    await db.systems.add(meta);
+    setSystems(await db.systems.orderBy('updatedAt').reverse().toArray());
+    await openSystem(meta.id);
+    setGalaxyOpen(false);
+  }
+
+  useEffect(() => {
+    engineRef.current?.setPaused(galaxyOpen);
+  }, [galaxyOpen]);
 
   async function handleImport(file: File): Promise<void> {
     try {
@@ -452,30 +491,43 @@ export default function App() {
     <div className="app">
       <div ref={wrapRef} className="canvas-wrap">
         <canvas ref={canvasRef} />
-        <LabelsOverlay
-          subscribe={subscribeFrames}
-          projectCell={(cell) => projectCell(currentBodyId, cell)}
-          labels={bodyLabels}
-          objects={bodyObjects}
-          interactive={tool === 'label' || tool === 'object'}
-          onEditLabel={(l) => setPlaceDialog({ mode: 'label', bodyId: l.bodyId, cell: l.cell, existingLabel: l })}
-          onEditObject={(o) => setPlaceDialog({ mode: 'object', bodyId: o.bodyId, cell: o.cell, existingObject: o })}
-        />
-        <WorldTagsOverlay
-          tags={worldTags}
-          subscribe={subscribeFrames}
-          project={projectBody}
-          onTravel={(id) => engineRef.current?.travelTo(id)}
-        />
-        <FlightHud
-          subscribe={subscribeFrames}
-          onEnterOrbit={(style) => engineRef.current?.enterOrbit(undefined, style)}
-        />
-        {mode === 'surface' && (
-          <div className="surface-hint">drag to look · zoom in to walk · zoom out to stop or settle</div>
+        {!galaxyOpen && (
+          <>
+            <LabelsOverlay
+              subscribe={subscribeFrames}
+              projectCell={(cell) => projectCell(currentBodyId, cell)}
+              labels={bodyLabels}
+              objects={bodyObjects}
+              interactive={tool === 'label' || tool === 'object'}
+              onEditLabel={(l) => setPlaceDialog({ mode: 'label', bodyId: l.bodyId, cell: l.cell, existingLabel: l })}
+              onEditObject={(o) => setPlaceDialog({ mode: 'object', bodyId: o.bodyId, cell: o.cell, existingObject: o })}
+            />
+            <WorldTagsOverlay
+              tags={worldTags}
+              subscribe={subscribeFrames}
+              project={projectBody}
+              onTravel={(id) => engineRef.current?.travelTo(id)}
+            />
+            <FlightHud
+              subscribe={subscribeFrames}
+              onEnterOrbit={(style) => engineRef.current?.enterOrbit(undefined, style)}
+            />
+            {mode === 'surface' && (
+              <div className="surface-hint">drag to look · zoom in to walk · zoom out to stop or settle</div>
+            )}
+          </>
         )}
       </div>
 
+      {galaxyOpen && (
+        <GalaxyExplorer
+          hereStarId={system?.starId ?? null}
+          onSetCourse={(o) => void handleSetCourse(o)}
+          onClose={() => setGalaxyOpen(false)}
+        />
+      )}
+
+      {!galaxyOpen && (
       <Toolbar
         title={mode === 'flight' ? system?.name ?? '…' : bodyDisplayName(currentBodyId)}
         mode={mode}
@@ -497,14 +549,16 @@ export default function App() {
         setVolume={handleVolume}
         openManager={() => setManagerOpen(true)}
         openMap={() => setMapOpen(true)}
+        openGalaxy={() => setGalaxyOpen(true)}
         openSettings={() => setSettingsOpen(true)}
       />
+      )}
 
       {tool === 'inspect' && mode === 'orbit' && currentBody && (
         <InspectorPanel body={currentBody} physics={currentPhysics} cell={inspected} onClose={() => setTool('pan')} />
       )}
 
-      {mode === 'orbit' && currentBody?.kind === 'rocky' && (
+      {!galaxyOpen && mode === 'orbit' && currentBody?.kind === 'rocky' && (
         <div className="terraform" title="Terraforming dials for this world">
           <label>
             <span>sea</span>

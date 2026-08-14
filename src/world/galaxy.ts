@@ -263,7 +263,11 @@ export function objectsNear(seed: string, p: GalPos, dR: number, limit = 80): Ga
  * A thin-disk G/K dwarf near the solar circle — the galactic cousin of
  * homeBodyId. Scan is init-only; the id is then a constant of the seed.
  */
+const homeMemo = new Map<string, number>();
+
 export function homeStarId(seed = UNIVERSE.CANONICAL_SEED): number {
+  const hit = homeMemo.get(seed);
+  if (hit != null) return hit;
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, R_SUN: rSun } = UNIVERSE;
   const irSun = Math.round((rSun / rMax) * nr);
   const izMid = Math.floor(nz / 2);
@@ -304,10 +308,86 @@ export function homeStarId(seed = UNIVERSE.CANONICAL_SEED): number {
     }
   }
   if (best < 0) throw new Error(`no FGK dwarf near the solar circle for seed ${seed}`);
+  homeMemo.set(seed, best);
   return best;
 }
 
 /** Convenience: the canonical galaxy's home star. */
 export function homeStar(seed = UNIVERSE.CANONICAL_SEED): GalaxyObject | null {
   return objectAt(seed, homeStarId(seed));
+}
+
+/** Galactocentric cylindrical → Cartesian (disk in XZ, Y is height). */
+export function galToCart(p: GalPos): { x: number; y: number; z: number } {
+  return {
+    x: p.R * Math.cos(p.theta),
+    y: p.z,
+    z: p.R * Math.sin(p.theta),
+  };
+}
+
+/**
+ * Walk every occupied slot. Init-only: ~cells × cheap density, then
+ * objectAt on the filled ones. The catalog is still not stored — this
+ * is a throwaway sample for a viewer.
+ */
+const catalogMemo = new Map<string, GalaxyObject[]>();
+
+export function collectCatalog(seed: string): GalaxyObject[] {
+  const hit = catalogMemo.get(seed);
+  if (hit) return hit;
+  const out: GalaxyObject[] = [];
+  const cells = cellCount();
+  for (let cell = 0; cell < cells; cell++) {
+    const n = slotsInCell(seed, cell);
+    for (let s = 0; s < n; s++) {
+      const o = objectAt(seed, packId(cell, s));
+      if (o) out.push(o);
+    }
+  }
+  catalogMemo.set(seed, out);
+  return out;
+}
+
+export interface DensitySample {
+  x: number;
+  y: number;
+  z: number;
+  d: number;
+  pop: Population;
+}
+
+/**
+ * Sample the mass model on a coarse grid. The spiral, bar and bulge
+ * are the density law — not a painted texture. The explorer drinks this
+ * for the faint disk; stars come from collectCatalog.
+ */
+export function sampleDensityField(nR = 36, nTh = 72, nZ = 5): DensitySample[] {
+  const rMax = UNIVERSE.GALAXY_R_MAX;
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 2.4;
+  const out: DensitySample[] = [];
+  for (let ir = 0; ir < nR; ir++) {
+    const R = ((ir + 0.5) / nR) * rMax;
+    for (let it = 0; it < nTh; it++) {
+      const theta = ((it + 0.5) / nTh) * TAU;
+      for (let iz = 0; iz < nZ; iz++) {
+        const z = ((iz + 0.5) / nZ - 0.5) * 2 * zMax;
+        const parts = densityParts({ R, theta, z });
+        const d = parts.thin + parts.thick + parts.bulge + parts.bar + parts.halo;
+        if (d < 0.04) continue;
+        let pop: Population = 'thin';
+        let best = parts.thin;
+        const keys: Population[] = ['thick', 'bulge', 'bar', 'halo'];
+        for (const k of keys) {
+          if (parts[k] > best) {
+            best = parts[k];
+            pop = k;
+          }
+        }
+        const c = galToCart({ R, theta, z });
+        out.push({ x: c.x, y: c.y, z: c.z, d, pop });
+      }
+    }
+  }
+  return out;
 }
