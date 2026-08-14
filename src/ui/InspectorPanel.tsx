@@ -22,7 +22,7 @@ export interface InspectedCell {
 
 interface Props {
   body: BodySpec;
-  /** Effective physics (terraforming dials applied); generated if absent. */
+  /** Body physics from the catalog / generator. */
   physics?: BodyPhysics;
   cell: InspectedCell | null;
   onClose: () => void;

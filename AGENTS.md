@@ -128,10 +128,10 @@ Related laws that must stay physics, not flags:
   scatter, and an outgassing law for moons exist so systems are not all
   Sol clones. Tune those laws; do not inject “exotic planet” presets.
 
-Terraforming sliders (temp, sea level) are **dev tools** that re-run the
-physics pipeline (`effectivePhysics`, hydrosphere, palette). They are not
-a second visual path. Extremes should be reachable so we can inspect the
-laws. Production will drop the sliders; the pipeline stays.
+Worlds show the physics they were born with. There is no climate or sea
+slider — those were a dev inspect path. `effectivePhysics` still exists
+so a lawful override can re-run the pipeline in tests; it is not a
+player verb.
 
 ---
 
@@ -223,7 +223,6 @@ never store generated terrain, chemistry, or meshes.
 | `SystemMeta` (seed, genVersion, camera; later `starId`) | Galaxy catalog, stellar phase, orbits, inventories, atmospheres |
 | Sparse terrain overrides `[cell, level, …]` | Hex columns, hydrology, snow line |
 | Labels, objects (city / town / landmark, later bases) | Palettes, geology, sea state, stellar phase |
-| Optional per-body dials (dev terraforming) | Geology at `(dir, layer)` |
 
 **Export is first-class.** One self-contained `.tinysystem.json`
 (`formatVersion: 4`, `src/store/exportImport.ts`). Import creates a new
@@ -388,7 +387,7 @@ are overlays. See **Player layer**.
 ## How we change things
 
 1. **Reproduce with a seed**, not a one-off mesh edit. Sample `objectAt`,
-   land, walk, flood the sea slider. `scripts/check-galaxy.ts` is the
+   land, walk. `scripts/check-galaxy.ts` is the
    catalog law; smoke scripts in `scripts/smoke-*.mjs` (Playwright against
    `localhost:5173`) exist for horizon, reflections, flood, torch, sky,
    land, etc. Use them; add one if you invent a new failure mode.
