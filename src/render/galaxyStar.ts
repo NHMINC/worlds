@@ -182,6 +182,7 @@ export function createStarDiscs(): StarDiscs {
       fragmentShader: FRAG,
       transparent: true,
       depthWrite: false,
+      side: THREE.DoubleSide,
       blending: THREE.AdditiveBlending,
     });
     const mesh = new THREE.Mesh(plane, mat);
@@ -229,11 +230,9 @@ export function createStarDiscs(): StarDiscs {
     }
   }
 
-  const face = new THREE.Quaternion();
   function syncCamera(camera: THREE.Camera) {
-    camera.getWorldQuaternion(face);
     for (const slot of slots) {
-      if (slot.mesh.visible) slot.mesh.quaternion.copy(face);
+      if (slot.mesh.visible) slot.mesh.lookAt(camera.position);
     }
   }
 

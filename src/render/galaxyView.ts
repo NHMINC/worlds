@@ -59,7 +59,7 @@ const STAR_VERT = /* glsl */ `
     vPulse = pulse;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     float dist = max(0.8, -mv.z);
-    gl_PointSize = min(6.5, aSize * aVis * pulse * uPixel * (28.0 / dist));
+    gl_PointSize = min(3.2, aSize * aVis * pulse * uPixel * (18.0 / dist));
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -269,10 +269,15 @@ export class GalaxyView {
     let n = 0;
     for (let i = 0; i < this.ids.length; i++) {
       const o = this.byId.get(this.ids[i])!;
-      const hid = this.discIds.has(o.id);
-      const v = hid ? 0 : this.resolveAmt(o, starPos.getX(i), starPos.getY(i), starPos.getZ(i));
+      const wx = starPos.getX(i);
+      const wy = starPos.getY(i);
+      const wz = starPos.getZ(i);
+      const near =
+        this.discIds.has(o.id) ||
+        Math.hypot(wx - this.camera.position.x, wy - this.camera.position.y, wz - this.camera.position.z) < RESOLVE_DIST;
+      const v = near ? 0 : this.resolveAmt(o, wx, wy, wz);
       starVis[i] = v;
-      if (hid || v > 0.45) n++;
+      if (near || v > 0.45) n++;
     }
     this.visStar.needsUpdate = true;
     const nebVis = this.visNeb.array as Float32Array;
@@ -669,7 +674,7 @@ export class GalaxyView {
     const rect = this.canvas.getBoundingClientRect();
     const c = galToCart(obj.pos);
     const v = new THREE.Vector3(c.x, c.y, c.z).project(this.camera);
-    if (v.z < -1 || v.z > 1) return null;
+    if (v.z < -1.2 || v.z > 1.2) return null;
     return {
       x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
       y: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
@@ -722,20 +727,34 @@ export class GalaxyView {
 
   private updateDiscs(): void {
     const cam = this.camera.position;
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
     const scored: Array<{ o: GalaxyObject; d: number }> = [];
     const pool = this.objects.slice();
-    for (const pin of [this.home, this.hereObj]) {
+    for (const pin of [this.selected, this.home, this.hereObj]) {
       if (pin && !pool.some((o) => o.id === pin.id)) pool.push(pin);
     }
     for (const o of pool) {
-      if (!matchesFilter(o, this.filter)) continue;
+      if (!matchesFilter(o, this.filter) && o !== this.selected && o !== this.home && o !== this.hereObj) continue;
       const c = galToCart(o.pos);
-      const d = Math.hypot(c.x - cam.x, c.y - cam.y, c.z - cam.z);
+      const dx = c.x - cam.x;
+      const dy = c.y - cam.y;
+      const dz = c.z - cam.z;
+      const d = Math.hypot(dx, dy, dz);
       if (d >= RESOLVE_DIST || d < 0.02) continue;
+      if (dx * fwd.x + dy * fwd.y + dz * fwd.z < 0.02) continue;
       scored.push({ o, d });
     }
     scored.sort((a, b) => a.d - b.d);
     const near = scored.slice(0, RESOLVE_MAX).map((s) => s.o);
+    for (const pin of [this.selected, this.home, this.hereObj]) {
+      if (!pin || near.some((o) => o.id === pin.id)) continue;
+      const c = galToCart(pin.pos);
+      const d = Math.hypot(c.x - cam.x, c.y - cam.y, c.z - cam.z);
+      if (d >= RESOLVE_DIST || d < 0.02) continue;
+      near.unshift(pin);
+      if (near.length > RESOLVE_MAX) near.pop();
+    }
     this.discs.setStars(near);
     this.discs.syncCamera(this.camera);
     this.discIds.clear();
