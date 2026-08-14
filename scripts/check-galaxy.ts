@@ -9,6 +9,7 @@ import {
   catalogSize, slotsInCell, cellCount,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar';
+import { systemAt } from '../src/world/systemgen';
 
 let fail = 0;
 const check = (cond: boolean, msg: string) => {
@@ -128,6 +129,14 @@ check(!!home && home.star.phase === 'main_sequence', 'home star is not on the ma
 
 const near = objectsNear(seed, home?.pos ?? { R: 8, theta: 0, z: 0 }, 1.2, 40);
 check(near.length > 3, `neighbourhood empty: ${near.length}`);
+
+if (home) {
+  const sysA = systemAt(seed, home.id);
+  const sysB = systemAt(seed, home.id);
+  check(sysA.star.luminosity === sysB.star.luminosity && sysA.bodies.length === sysB.bodies.length, 'systemAt not deterministic');
+  check(Math.abs(sysA.star.luminosity - home.star.luminosity) < 1e-9 || home.star.luminosity === 0, `systemAt L ${sysA.star.luminosity} ≠ catalog ${home.star.luminosity}`);
+  check(sysA.seed === `${seed}:${home.id}`, `systemAt seed ${sysA.seed}`);
+}
 check(near.every((o) => objectAt(seed, o.id)?.star.massZams === o.star.massZams), 'near ≠ objectAt');
 
 // Empty slots stay empty.

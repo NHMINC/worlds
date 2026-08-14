@@ -965,3 +965,275 @@ body,
   0%, 100% { opacity: 0.9; }
   50% { opacity: 0.25; }
 }
+
+/* ---------------------------------------------------------------- galaxy explorer */
+
+.galaxy-explorer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: #070b14;
+  color: var(--text);
+}
+
+.galaxy-stage {
+  position: absolute;
+  inset: 0;
+}
+
+.galaxy-stage canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+}
+
+.galaxy-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  font-size: 12px;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+
+.galaxy-top,
+.galaxy-dossier,
+.galaxy-census,
+.galaxy-bottom {
+  position: absolute;
+  z-index: 2;
+  pointer-events: auto;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.galaxy-top {
+  top: calc(10px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  max-width: calc(100vw - 24px);
+}
+
+.galaxy-brand {
+  min-width: 0;
+  flex: 1;
+}
+
+.galaxy-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.galaxy-sub {
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.galaxy-presets {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.gx-chip {
+  padding: 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.gx-chip:hover,
+.gx-chip.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.gx-close {
+  flex-shrink: 0;
+}
+
+.galaxy-dossier {
+  top: calc(68px + env(safe-area-inset-top));
+  left: 12px;
+  width: min(280px, calc(100vw - 24px));
+  padding: 14px 16px 16px;
+}
+
+.gd-kicker,
+.gx-kicker {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.gd-class {
+  font-size: 28px;
+  font-weight: 560;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.gd-phase {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-transform: capitalize;
+  margin-bottom: 10px;
+}
+
+.gd-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  margin: 0 0 12px;
+}
+
+.gd-grid div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.gd-grid dt {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.gd-grid dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 13.5px;
+}
+
+.gd-nebula {
+  font-size: 12px;
+  color: #f0b7c8;
+  margin-bottom: 8px;
+}
+
+.gd-id {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 10px;
+}
+
+.gd-go {
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #102018;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.gd-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.galaxy-census {
+  top: calc(68px + env(safe-area-inset-top));
+  right: 12px;
+  width: 168px;
+  padding: 12px 14px;
+}
+
+.gx-bar-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 28px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.gx-bar-row i {
+  display: block;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  opacity: 0.75;
+}
+
+.gx-bar-row em {
+  font-style: normal;
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.galaxy-bottom {
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+}
+
+.galaxy-filters {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  flex: 1;
+  scrollbar-width: none;
+}
+
+.galaxy-filters::-webkit-scrollbar {
+  display: none;
+}
+
+.galaxy-readout {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-dim);
+}
+
+@media (max-width: 720px) {
+  .galaxy-presets {
+    display: none;
+  }
+  .galaxy-census {
+    display: none;
+  }
+  .galaxy-dossier {
+    top: auto;
+    bottom: calc(64px + env(safe-area-inset-bottom));
+    width: calc(100vw - 24px);
+  }
+}

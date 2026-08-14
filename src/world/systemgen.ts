@@ -2,6 +2,8 @@ import { mulberry32, xmur3 } from './rng';
 import {
   UNIVERSE, classify, gasColor, gasPhysics, hazeSpec, rockyPhysics, type BodyPhysics,
 } from './physics';
+import { objectAt, type GalaxyObject } from './galaxy';
+import { rgbToHex, teffToRgb, type StellarState } from './stellar';
 
 /**
  * The star system generator: one root seed deterministically unfolds into a
@@ -160,30 +162,73 @@ const A_MAX = 420;
 
 // ---------------------------------------------------------------- generator
 
+/** Private-bottle star dice. Stream must stay bit-identical for a given seed. */
+function rollBottleStar(rng: () => number): StarSpec {
+  const starRoll = rng();
+  const Z = 0.45 + Math.pow(rng(), 1.6) * 1.9;
+  const CO = 0.5 + Math.pow(rng(), 2.5) * 1.2;
+  if (starRoll < 0.44) {
+    return { name: starName(rng), radius: 18.4 + rng() * 4.8, color: '#fff1c4', lightColor: '#fff4dc', luminosity: 0.9 + rng() * 0.3, metallicity: Z, carbon: CO };
+  }
+  if (starRoll < 0.72) {
+    return { name: starName(rng), radius: 16.0 + rng() * 4.0, color: '#ffd9a0', lightColor: '#ffe2b8', luminosity: 0.42 + rng() * 0.2, metallicity: Z, carbon: CO };
+  }
+  if (starRoll < 0.88) {
+    return { name: starName(rng), radius: 12.8 + rng() * 2.8, color: '#ffb28a', lightColor: '#ffc9a4', luminosity: 0.07 + rng() * 0.09, metallicity: Z, carbon: CO };
+  }
+  return { name: starName(rng), radius: 20.8 + rng() * 5.6, color: '#f4f6ff', lightColor: '#eef2ff', luminosity: 1.7 + rng() * 0.7, metallicity: Z, carbon: CO };
+}
+
+/** Catalog star → bottle StarSpec. L, Z, C/O come from evolve(), not dice. */
+export function starSpecFromState(st: StellarState, rng: () => number): StarSpec {
+  const rgb = st.phase === 'black_hole' ? [0.12, 0.1, 0.16] as [number, number, number]
+    : st.phase === 'pulsar' || st.phase === 'neutron_star' ? [0.72, 0.82, 1] as [number, number, number]
+    : teffToRgb(st.teff);
+  const hex = rgbToHex(rgb);
+  const light = rgbToHex([
+    Math.min(1, rgb[0] * 1.05 + 0.08),
+    Math.min(1, rgb[1] * 1.04 + 0.06),
+    Math.min(1, rgb[2] * 1.02 + 0.04),
+  ]);
+  // GL radius: the bottle's G dwarf is ~20 for 1 Rsun. Floor so remnants still read.
+  const glR = 10 + 10 * Math.min(3.2, Math.sqrt(Math.max(0.04, st.radius)));
+  return {
+    name: starName(rng),
+    radius: glR,
+    color: hex,
+    lightColor: light,
+    luminosity: Math.max(1e-8, st.luminosity),
+    metallicity: Math.pow(10, st.feh),
+    carbon: st.carbon,
+  };
+}
+
 export function generateSystem(seed: string): SystemSpec {
   const rng = mulberry32(xmur3(`system:${seed}`)());
+  // G/K/M/F dice is the private bottle. Canonical play uses systemAt.
+  return assembleSystem(seed, rng, rollBottleStar(rng));
+}
 
-  // --- the star: type sets luminosity; metallicity seeds the whole disk.
-  // M-dwarfs matter: their habitable band sits inside the tidal-locking
-  // radius, which is where eyeball worlds are born.
-  // This G/K/M/F dice is the *private bottle* until systemAt(galaxySeed,
-  // starId) drinks evolve() from galaxy.ts. Do not bump CURRENT_GEN_VERSION
-  // for the galaxy catalog — that law is a new address, not a new roll. ---
-  const starRoll = rng();
-  const Z = 0.45 + Math.pow(rng(), 1.6) * 1.9; // metallicity, rel solar
-  // Disk C/O ratio (rel solar): most disks sit oxygen-rich near 1; the
-  // carbon-rich tail (~1 in 5 past 1.0) deals graphite crusts, starved
-  // water and deep methane hands.
-  const CO = 0.5 + Math.pow(rng(), 2.5) * 1.2;
-  const star: StarSpec =
-    starRoll < 0.44
-      ? { name: starName(rng), radius: 18.4 + rng() * 4.8, color: '#fff1c4', lightColor: '#fff4dc', luminosity: 0.9 + rng() * 0.3, metallicity: Z, carbon: CO } // G, warm
-      : starRoll < 0.72
-        ? { name: starName(rng), radius: 16.0 + rng() * 4.0, color: '#ffd9a0', lightColor: '#ffe2b8', luminosity: 0.42 + rng() * 0.2, metallicity: Z, carbon: CO } // K, orange
-        : starRoll < 0.88
-          ? { name: starName(rng), radius: 12.8 + rng() * 2.8, color: '#ffb28a', lightColor: '#ffc9a4', luminosity: 0.07 + rng() * 0.09, metallicity: Z, carbon: CO } // M, red dwarf
-          : { name: starName(rng), radius: 20.8 + rng() * 5.6, color: '#f4f6ff', lightColor: '#eef2ff', luminosity: 1.7 + rng() * 0.7, metallicity: Z, carbon: CO }; // F, bright
+/**
+ * Discover a system: the star is the catalog object; the planets unfold
+ * from (galaxySeed, starId) the way a bottle unfolds from a seed.
+ */
+export function systemAt(galaxySeed: string, starId: number): SystemSpec {
+  const obj = objectAt(galaxySeed, starId);
+  if (!obj) throw new Error(`empty catalog slot ${starId}`);
+  const seed = `${galaxySeed}:${starId}`;
+  const rng = mulberry32(xmur3(`system:${seed}`)());
+  return assembleSystem(seed, rng, starSpecFromState(obj.star, rng));
+}
+
+export function systemAtObject(obj: GalaxyObject, galaxySeed = UNIVERSE.CANONICAL_SEED): SystemSpec {
+  return systemAt(galaxySeed, obj.id);
+}
+
+function assembleSystem(seed: string, rng: () => number, star: StarSpec): SystemSpec {
   const L = star.luminosity;
+  const Z = star.metallicity;
+  const CO = star.carbon;
 
   // --- orbital skeleton: geometric accretion spacing, Kepler periods ---
   const N = planetCount(rng);
