@@ -357,37 +357,46 @@ export interface DensitySample {
   pop: Population;
 }
 
-/**
- * Sample the mass model on a coarse grid. The spiral, bar and bulge
- * are the density law — not a painted texture. The explorer drinks this
- * for the faint disk; stars come from collectCatalog.
- */
-export function sampleDensityField(nR = 36, nTh = 72, nZ = 5): DensitySample[] {
-  const rMax = UNIVERSE.GALAXY_R_MAX;
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 2.4;
-  const out: DensitySample[] = [];
-  for (let ir = 0; ir < nR; ir++) {
-    const R = ((ir + 0.5) / nR) * rMax;
-    for (let it = 0; it < nTh; it++) {
-      const theta = ((it + 0.5) / nTh) * TAU;
-      for (let iz = 0; iz < nZ; iz++) {
-        const z = ((iz + 0.5) / nZ - 0.5) * 2 * zMax;
-        const parts = densityParts({ R, theta, z });
-        const d = parts.thin + parts.thick + parts.bulge + parts.bar + parts.halo;
-        if (d < 0.04) continue;
-        let pop: Population = 'thin';
-        let best = parts.thin;
-        const keys: Population[] = ['thick', 'bulge', 'bar', 'halo'];
-        for (const k of keys) {
-          if (parts[k] > best) {
-            best = parts[k];
-            pop = k;
-          }
-        }
-        const c = galToCart({ R, theta, z });
-        out.push({ x: c.x, y: c.y, z: c.z, d, pop });
-      }
+function dominantPop(parts: Record<Population, number>): Population {
+  let pop: Population = 'thin';
+  let best = parts.thin;
+  const keys: Population[] = ['thick', 'bulge', 'bar', 'halo'];
+  for (const k of keys) {
+    if (parts[k] > best) {
+      best = parts[k];
+      pop = k;
     }
+  }
+  return pop;
+}
+
+/**
+ * Importance-sample the mass model. Arms, bar and bulge get more
+ * particles because they are denser — that is why a face-on view
+ * reads as a grand-design spiral, not a painted texture.
+ */
+export function sampleDust(count: number, seed = UNIVERSE.CANONICAL_SEED): DensitySample[] {
+  const rng = rngFor(seed, 'dust', count);
+  const rMax = UNIVERSE.GALAXY_R_MAX;
+  const zd = UNIVERSE.GALAXY_ZD;
+  const out: DensitySample[] = [];
+  // Saturate the core so the disk/arms still win draws (d ~ 0.1–0.7).
+  const dScale = 2.4;
+  let tries = 0;
+  const maxTries = count * 80;
+  while (out.length < count && tries < maxTries) {
+    tries++;
+    const R = rMax * Math.sqrt(rng());
+    const theta = rng() * TAU;
+    const u = Math.min(0.999, Math.max(0.001, rng()));
+    const z = 0.5 * zd * Math.log(u / (1 - u));
+    if (Math.abs(z) > UNIVERSE.GALAXY_Z_THICK * 3) continue;
+    const pos = { R, theta, z };
+    const parts = densityParts(pos);
+    const d = parts.thin + parts.thick + parts.bulge + parts.bar + parts.halo;
+    if (rng() > Math.min(1, d / dScale)) continue;
+    const c = galToCart(pos);
+    out.push({ x: c.x, y: c.y, z: c.z, d, pop: dominantPop(parts) });
   }
   return out;
 }

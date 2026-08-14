@@ -25,6 +25,7 @@ const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
 interface Props {
   galaxySeed?: string;
   hereStarId?: number | null;
+  visitedStarIds?: number[];
   onSetCourse: (obj: GalaxyObject) => void;
   onClose: () => void;
 }
@@ -60,11 +61,15 @@ export function GalaxyExplorer(props: Props) {
         },
       });
       view.setHere(props.hereStarId ?? null);
+      if (props.hereStarId != null) {
+        const here = view.objects.find((o) => o.id === props.hereStarId);
+        if (here) setSelected(here);
+      }
       viewRef.current = view;
       setCensus(view.census());
       setCount(view.objects.length);
       setReady(true);
-      if (view.home) setSelected(view.home);
+      if (!props.hereStarId && view.home) setSelected(view.home);
       ro = new ResizeObserver(() => {
         view?.resize(wrap.clientWidth, wrap.clientHeight);
       });
@@ -120,7 +125,10 @@ export function GalaxyExplorer(props: Props) {
       <aside className={`galaxy-dossier ${selected ? 'open' : ''}`}>
         {selected && st ? (
           <>
-            <div className="gd-kicker">{selected.pop} {selected.inArm ? '· arm' : ''}</div>
+            <div className="gd-kicker">
+              {selected.pop} {selected.inArm ? '· arm' : ''}
+              {props.visitedStarIds?.includes(selected.id) ? ' · visited' : ''}
+            </div>
             <div className="gd-class">{cls}</div>
             <div className="gd-phase">{st.phase.replace(/_/g, ' ')}</div>
             <dl className="gd-grid">

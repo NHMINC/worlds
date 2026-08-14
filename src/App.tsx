@@ -3,16 +3,17 @@ import { Engine, type BodyOverrides, type RigMode, type Tool, type ViewState } f
 import { AmbientMusic } from './audio/ambient';
 import { db, deleteSystem, touchSystem } from './store/db';
 import { exportSystem, importSystem } from './store/exportImport';
-import { CURRENT_GEN_VERSION, effectivePhysics, generateSystem, systemAt, type SystemSpec } from './world/systemgen';
-import { homeStar, type GalaxyObject } from './world/galaxy';
+import { CURRENT_GEN_VERSION, effectivePhysics, systemAt, type SystemSpec } from './world/systemgen';
+import { type GalaxyObject } from './world/galaxy';
+import { discoverHabitable } from './world/discover';
 import { PALETTE } from './world/palettes';
-import { randomSeedString, uuid } from './world/rng';
+import { uuid } from './world/rng';
 import type {
   BodyStateRecord, LabelRecord, ObjectKind, ObjectRecord, SystemMeta,
 } from './world/types';
 import { Toolbar } from './ui/Toolbar';
 import { GalaxyExplorer } from './ui/GalaxyExplorer';
-import { SystemManager, type NewSystemForm } from './ui/SystemManager';
+import { SystemManager } from './ui/SystemManager';
 import { SettingsModal } from './ui/SettingsModal';
 import { PlaceDialog } from './ui/PlaceDialog';
 import { LabelsOverlay } from './ui/LabelsOverlay';
@@ -196,36 +197,23 @@ export default function App() {
   }, []);
 
   async function boot(engine: Engine): Promise<void> {
-    // Transaction so a double-mount (React StrictMode) can't create two
-    // default systems from the same empty-database check.
-    await db.transaction('rw', db.systems, async () => {
-      const count = await db.systems.count();
-      if (count === 0) {
-        const home = homeStar();
-        if (home) {
-          const spec0 = systemAt(UNIVERSE.CANONICAL_SEED, home.id);
-          await db.systems.add(newSystemMeta(spec0.star.name, spec0.seed, {
-            starId: home.id,
-            galaxySeed: UNIVERSE.CANONICAL_SEED,
-          }));
-        } else {
-          const seed = randomSeedString();
-          await db.systems.add(newSystemMeta(generateSystem(seed).star.name, seed));
-        }
-      }
-    });
-    const list = await db.systems.orderBy('updatedAt').reverse().toArray();
-    // Systems are named after their star; adopt older placeholder names.
-    for (const s of list) {
-      if (s.name === 'New System') {
-        s.name = generateSystem(s.seed).star.name;
-        await db.systems.update(s.id, { name: s.name });
-      }
+    let list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null);
+    if (list.length === 0) {
+      const start = discoverHabitable();
+      const meta = newSystemMeta(start.spec.star.name, start.spec.seed, {
+        starId: start.starId,
+        galaxySeed: UNIVERSE.CANONICAL_SEED,
+      });
+      await db.transaction('rw', db.systems, async () => {
+        const existing = await db.systems.toArray();
+        if (!existing.some((s) => s.starId != null)) await db.systems.add(meta);
+      });
+      list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null);
     }
     setSystems(list);
     const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
     const target = list.find((s) => s.id === lastId) ?? list[0];
-    await openSystem(target.id, engine);
+    if (target) await openSystem(target.id, engine);
   }
 
   async function openSystem(id: string, engineArg?: Engine): Promise<void> {
@@ -233,9 +221,8 @@ export default function App() {
     if (!engine) return;
     const s = await db.systems.get(id);
     if (!s) return;
-    const sysSpec = s.starId != null
-      ? systemAt(s.galaxySeed ?? UNIVERSE.CANONICAL_SEED, s.starId)
-      : generateSystem(s.seed);
+    if (s.starId == null) return;
+    const sysSpec = systemAt(s.galaxySeed ?? UNIVERSE.CANONICAL_SEED, s.starId);
     const [bs, terr, lbs, objs] = await Promise.all([
       db.bodyState.where('systemId').equals(id).toArray(),
       db.terrain.where('systemId').equals(id).toArray(),
@@ -277,25 +264,20 @@ export default function App() {
 
   // ------------------------------------------------------------ systems
 
-  async function handleCreate(form: NewSystemForm): Promise<void> {
-    const s = newSystemMeta(form.name, form.seed);
-    await db.systems.add(s);
-    setSystems(await db.systems.orderBy('updatedAt').reverse().toArray());
-    await openSystem(s.id);
-  }
-
   async function handleDelete(id: string): Promise<void> {
     await deleteSystem(id);
-    const list = await db.systems.orderBy('updatedAt').reverse().toArray();
-    setSystems(list);
-    if (system?.id === id) {
-      if (list.length > 0) await openSystem(list[0].id);
-      else {
-        setSystem(null);
-        setSpec(null);
-        setManagerOpen(true);
-      }
+    let list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null);
+    if (list.length === 0) {
+      const start = discoverHabitable();
+      const meta = newSystemMeta(start.spec.star.name, start.spec.seed, {
+        starId: start.starId,
+        galaxySeed: UNIVERSE.CANONICAL_SEED,
+      });
+      await db.systems.add(meta);
+      list = [meta];
     }
+    setSystems(list);
+    if (system?.id === id) await openSystem(list[0].id);
   }
 
   async function handleSetCourse(obj: GalaxyObject): Promise<void> {
@@ -309,7 +291,7 @@ export default function App() {
     const spec0 = systemAt(gSeed, obj.id);
     const meta = newSystemMeta(spec0.star.name, spec0.seed, { starId: obj.id, galaxySeed: gSeed });
     await db.systems.add(meta);
-    setSystems(await db.systems.orderBy('updatedAt').reverse().toArray());
+    setSystems((await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null));
     await openSystem(meta.id);
     setGalaxyOpen(false);
   }
@@ -321,7 +303,7 @@ export default function App() {
   async function handleImport(file: File): Promise<void> {
     try {
       const id = await importSystem(file);
-      setSystems(await db.systems.orderBy('updatedAt').reverse().toArray());
+      setSystems((await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null));
       await openSystem(id);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Import failed');
@@ -522,6 +504,7 @@ export default function App() {
       {galaxyOpen && (
         <GalaxyExplorer
           hereStarId={system?.starId ?? null}
+          visitedStarIds={systems.map((s) => s.starId).filter((id): id is number => id != null)}
           onSetCourse={(o) => void handleSetCourse(o)}
           onClose={() => setGalaxyOpen(false)}
         />
@@ -590,7 +573,6 @@ export default function App() {
           systems={systems}
           currentId={system?.id ?? null}
           onOpen={(id) => void openSystem(id)}
-          onCreate={(f) => void handleCreate(f)}
           onDelete={(id) => void handleDelete(id)}
           onExport={(id) => void exportSystem(id)}
           onImport={(f) => void handleImport(f)}

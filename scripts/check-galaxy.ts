@@ -6,10 +6,12 @@
 import { UNIVERSE } from '../src/world/physics';
 import {
   objectAt, objectsNear, homeStar, density, inSpiralArm, chemistry,
-  catalogSize, slotsInCell, cellCount,
+  catalogSize, slotsInCell, cellCount, sampleDust,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
+import { discoverHabitable } from '../src/world/discover';
+import { mulberry32, xmur3 } from '../src/world/rng';
 
 let fail = 0;
 const check = (cond: boolean, msg: string) => {
@@ -149,6 +151,22 @@ for (let cell = 0; cell < Math.min(200, cellCount()); cell++) {
   }
 }
 check(empty > 0, 'no empty slots found in first cells (density too high?)');
+
+const dust = sampleDust(8000, seed);
+let dArm = 0;
+let dGap = 0;
+for (const s of dust) {
+  const R = Math.hypot(s.x, s.z);
+  const th = Math.atan2(s.z, s.x);
+  if (inSpiralArm(R, th)) dArm++;
+  else dGap++;
+}
+check(dust.length > 2000, `dust sample too thin: ${dust.length}`);
+check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
+
+const start = discoverHabitable(seed, mulberry32(xmur3('first-camp')()));
+check(start.spec.bodies.some((b) => b.kind === 'rocky' && b.physics.life), `discoverHabitable found no living world (${start.starId})`);
+console.log(`  first camp: ${classifyStar(start.obj.star)} #${start.starId} body ${start.bodyId}`);
 
 console.log(fail === 0 ? '\nALL CHECKS PASSED' : `\n${fail} CHECKS FAILED`);
 process.exit(fail === 0 ? 0 : 1);

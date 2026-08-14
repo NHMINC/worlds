@@ -9,7 +9,7 @@ import {
   collectCatalog,
   galToCart,
   homeStar,
-  sampleDensityField,
+  sampleDust,
   type GalaxyObject,
   type Population,
 } from '../world/galaxy';
@@ -43,7 +43,7 @@ const POP_RGB: Record<Population, [number, number, number]> = {
 };
 
 const STAR_VERT = /* glsl */ `
-  attribute vec3 color;
+  attribute vec3 aColor;
   attribute float aSize;
   attribute float aPulse;
   attribute float aVis;
@@ -52,7 +52,7 @@ const STAR_VERT = /* glsl */ `
   varying vec3 vColor;
   varying float vPulse;
   void main() {
-    vColor = color;
+    vColor = aColor;
     float pulse = aPulse > 0.5 ? 0.55 + 0.45 * sin(uTime * 18.0 + position.x * 7.0) : 1.0;
     vPulse = pulse;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -77,18 +77,16 @@ const STAR_FRAG = /* glsl */ `
 `;
 
 const DUST_VERT = /* glsl */ `
-  attribute vec3 color;
+  attribute vec3 aColor;
   attribute float aSize;
   attribute float aVis;
   uniform float uPixel;
   varying vec3 vColor;
-  varying float vA;
   void main() {
-    vColor = color;
-    vA = color.r + color.g + color.b;
+    vColor = aColor;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     float dist = max(1.2, -mv.z);
-    gl_PointSize = aSize * aVis * uPixel * (70.0 / dist);
+    gl_PointSize = aSize * aVis * uPixel * (110.0 / dist);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -100,7 +98,7 @@ const DUST_FRAG = /* glsl */ `
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
     if (r2 > 1.0) discard;
-    float a = exp(-r2 * 2.4) * 0.22 * uDim;
+    float a = exp(-r2 * 2.1) * 0.55 * uDim;
     gl_FragColor = vec4(vColor, a);
   }
 `;
@@ -175,7 +173,7 @@ export class GalaxyView {
     this.renderer.setClearColor(new THREE.Color('#070b14'), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.08, 400);
 
-    this.scene.fog = new THREE.FogExp2(0x070b14, 0.012);
+    this.scene.fog = new THREE.FogExp2(0x070b14, 0.0035);
 
     const dust = this.buildDust();
     this.dustPts = dust.pts;
@@ -225,8 +223,11 @@ export class GalaxyView {
     this.raf = requestAnimationFrame(this.frame);
   }
 
+  private hereObj: GalaxyObject | null = null;
+
   setHere(id: number | null): void {
     const o = id != null ? this.byId.get(id) : undefined;
+    this.hereObj = o ?? null;
     if (!o) {
       this.hereRing.visible = false;
       return;
@@ -264,13 +265,16 @@ export class GalaxyView {
       this.tgtPhi = 1.42;
       this.tgtRadius = 36;
       this.tgtLook.set(0, 0, 0);
-    } else if (p === 'home' && this.home) {
-      const c = galToCart(this.home.pos);
-      this.tgtLook.set(c.x, c.y, c.z);
-      this.tgtTheta = this.home.pos.theta + 0.55;
-      this.tgtPhi = 0.72;
-      this.tgtRadius = 6.5;
-      this.select(this.home);
+    } else if (p === 'home') {
+      const obj = this.hereObj ?? this.home;
+      if (obj) {
+        const c = galToCart(obj.pos);
+        this.tgtLook.set(c.x, c.y, c.z);
+        this.tgtTheta = obj.pos.theta + 0.55;
+        this.tgtPhi = 0.72;
+        this.tgtRadius = 6.5;
+        this.select(obj);
+      }
     } else {
       this.tgtTheta = 1.15;
       this.tgtPhi = 0.55;
@@ -361,7 +365,7 @@ export class GalaxyView {
   }
 
   private buildDust(): { pts: THREE.Points; mat: THREE.ShaderMaterial } {
-    const samples = sampleDensityField(34, 68, 5);
+    const samples = sampleDust(52000);
     const n = samples.length;
     const pos = new Float32Array(n * 3);
     const col = new Float32Array(n * 3);
@@ -373,16 +377,16 @@ export class GalaxyView {
       pos[i * 3 + 1] = s.y;
       pos[i * 3 + 2] = s.z;
       const rgb = POP_RGB[s.pop];
-      const b = Math.min(1, 0.18 + s.d * 0.55);
+      const b = Math.min(1.15, 0.35 + s.d * 0.7);
       col[i * 3] = rgb[0] * b;
       col[i * 3 + 1] = rgb[1] * b;
       col[i * 3 + 2] = rgb[2] * b;
-      size[i] = 1.6 + Math.min(5, s.d * 3.2);
+      size[i] = 2.2 + Math.min(7, s.d * 4.5);
       vis[i] = 1;
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
     geo.setAttribute('aVis', new THREE.BufferAttribute(vis, 1));
     const mat = new THREE.ShaderMaterial({
@@ -392,7 +396,6 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      vertexColors: true,
     });
     return { pts: new THREE.Points(geo, mat), mat };
   }
@@ -429,7 +432,7 @@ export class GalaxyView {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
     geo.setAttribute('aPulse', new THREE.BufferAttribute(pulse, 1));
     const vis = new THREE.BufferAttribute(visArr, 1);
@@ -441,7 +444,6 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      vertexColors: true,
     });
     return { pts: new THREE.Points(geo, mat), mat, vis, ids };
   }
@@ -478,7 +480,7 @@ export class GalaxyView {
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
     geo.setAttribute('aPulse', new THREE.BufferAttribute(pulse, 1));
     const vis = new THREE.BufferAttribute(visArr, 1);
@@ -490,7 +492,6 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
-      vertexColors: true,
     });
     return { pts: new THREE.Points(geo, mat), mat, vis, ids };
   }
