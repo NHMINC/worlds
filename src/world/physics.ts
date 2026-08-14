@@ -38,6 +38,66 @@ export const UNIVERSE = {
   T_HAB: 278,
   A_HAB: 90,
 
+  /**
+   * Render stretch of interplanetary space. Chemistry and T_eq read the
+   * compact `a`; the camera flies in a · SPACE_SCALE so worlds are
+   * destinations. Inverse-square at a BODY uses physics `a` (the same
+   * number T_eq already drank). Inverse-square at the EYE — glare,
+   * photosphere wash — uses the stretched distance, referenced to
+   * A_HAB · SPACE_SCALE (the bottle's 1 AU on screen).
+   */
+  SPACE_SCALE: 10,
+
+  /**
+   * Bottle radius of 1 Rsun. Stefan–Boltzmann Teff uses R / STAR_R_GL.
+   * The generator's G dwarf sits near 20; remnants floor above this.
+   */
+  STAR_R_GL: 20,
+  STAR_TEFF_SUN: 5772,
+
+  /**
+   * Photosphere display luminance (the disk before the eye's knee).
+   * A real photosphere is ~10⁹× the sky; an LDR screen cannot span
+   * that, so this one number is the exposure that makes the core
+   * clip to white and the limb keep colour. Universe-level, never
+   * per-star — Teff only tints, it does not dim the furnace.
+   */
+  STAR_DISK_LUM: 6.5,
+
+  /**
+   * Eye/optics glare: the PSF that turns flux into a wash. Angular
+   * half-width at A_HAB·SPACE_SCALE for L=1 (radians). Scales as
+   * sqrt(flux) so a close approach fills the view and the outer
+   * system keeps a tight spike. GLARE_GAIN is the core brightness.
+   */
+  STAR_GLARE_ANG: 0.14,
+  STAR_GLARE_GAIN: 2.4,
+
+  /**
+   * K-corona + wind: Thomson column of photosphere light. CORONA is
+   * the r⁻⁶ limb (Baumbach); WIND is the r⁻² Parker outflow that
+   * carries streamers into the system. Both scatter the star's own
+   * colour — a blue star does not grow an orange halo.
+   */
+  STAR_CORONA: 0.55,
+  STAR_WIND: 0.42,
+
+  /**
+   * Flare visibility. Activity (starActivity) decides whether the
+   * dynamo fires; this gain is how hard a reconnection reads on an
+   * LDR screen. Prominences are the same events seen on the limb.
+   */
+  STAR_FLARE: 1.2,
+
+  /**
+   * Display knee for body irradiance. Raw 1/r² at the inner edge is
+   * ~8× habitable; the scene is exposed for A_HAB and brighter flux
+   * compresses through this so Mercury-path worlds wash toward white
+   * instead of clipping a hole. Dimmer than 1 is untouched — the
+   * outer system is allowed to fade.
+   */
+  STAR_IRR_KNEE: 0.28,
+
   /** Accretion disk temperature: T_disk = DISK_C · L^0.25 · a^-DISK_P (K). */
   DISK_C: 2670,
   DISK_P: 0.55,
@@ -1216,6 +1276,85 @@ export function seaState(p: BodyPhysics, tide = 0): SeaState {
  * The water shader compiles the same numbers — this copy is for tests
  * and anyone reasoning about the law without opening GLSL.
  */
+/**
+ * Inverse-square irradiance at orbital radius `a` (physics GL, not the
+ * display stretch). L=1 at A_HAB is 1 — the exposure the shaders are
+ * graded for. Closer worlds bake; the outer system fades. Always the
+ * compact `a` chemistry already drank, never a · SPACE_SCALE.
+ */
+export function starIrradiance(L: number, a: number): number {
+  const r = Math.max(a, 1);
+  return Math.max(0, L) * (UNIVERSE.A_HAB * UNIVERSE.A_HAB) / (r * r);
+}
+
+/**
+ * LDR response to stellar irradiance. Exposed for A_HAB (irr = 1).
+ * The law is still inverse-square; the screen is the limit.
+ */
+export function starIrradianceDisplay(irr: number): number {
+  const x = Math.max(0, irr);
+  if (x <= 1) return x;
+  return 1 + (x - 1) / (1 + UNIVERSE.STAR_IRR_KNEE * (x - 1));
+}
+
+/**
+ * Photosphere Teff from Stefan–Boltzmann. T / Tsun = (L / R_rel²)^0.25
+ * with R_rel = radiusGL / STAR_R_GL. The same closed form stellar.ts
+ * uses on catalog stars; the bottle's G dwarf (L=1, R=STAR_R_GL) is
+ * 5772 K by construction.
+ */
+export function starTeff(L: number, radiusGL: number): number {
+  const R = Math.max(0.04, radiusGL / UNIVERSE.STAR_R_GL);
+  return UNIVERSE.STAR_TEFF_SUN * Math.pow(Math.max(L, 1e-8) / (R * R), 0.25);
+}
+
+/**
+ * Magnetic activity (0..1). Convective envelopes (Teff ≲ 6500 K) run
+ * a dynamo; activity rises as the convection zone deepens (cooler)
+ * and as luminosity feeds the field. Radiative envelopes are quiet
+ * on the flare axis — their energy leaves as a line-driven wind
+ * instead (starWind).
+ */
+export function starActivity(teff: number, L: number): number {
+  const conv = clamp01((6500 - teff) / 2500);
+  const mDwarf = clamp01((4000 - teff) / 1600);
+  // The dynamo is a convection-zone fraction, not a wattage. An M dwarf
+  // is MORE active because the envelope is deep; L only weakly feeds
+  // the field so a luminous G star does not out-flare a red dwarf.
+  const dynamo = 0.08 + 0.62 * conv + 0.48 * mDwarf;
+  const feed = 0.85 + 0.15 * clamp01(Math.sqrt(Math.min(Math.max(L, 0), 4)));
+  return clamp01(dynamo * feed);
+}
+
+/**
+ * Visible wind column (relative). Hot stars: line-driven Ṁ ~ L.
+ * Cool stars: Alfvén/Parker wind, weaker but still there. Thomson
+ * measure scales as Ṁ / v_w and v_w ~ sqrt(T), so hotter outflows
+ * are thinner for the same Ṁ — the two terms keep both ends of
+ * the MK sequence readable.
+ */
+export function starWind(L: number, teff: number): number {
+  const hot = clamp01((teff - 7500) / 15000);
+  const cool = clamp01((6000 - teff) / 3000);
+  const raw = (0.22 + 1.35 * hot + 0.48 * cool) * Math.sqrt(Math.max(L, 0.02));
+  // O-star Ṁ is huge; the screen is the limit. Dimmer than 1 is
+  // untouched so a K dwarf's breeze still reads.
+  if (raw <= 1) return raw;
+  return 1 + (raw - 1) / (1 + 0.2 * (raw - 1));
+}
+
+/**
+ * Eye-frame flux for glare. `d` is the RENDER distance to the star
+ * (camera in the SPACE_SCALE stretch). Referenced to A_HAB · SPACE_SCALE
+ * so a habitable-zone look at L=1 is flux 1 — the same exposure the
+ * body law uses, seen from the cockpit instead of the orbit.
+ */
+export function starEyeFlux(L: number, d: number): number {
+  const dRef = UNIVERSE.A_HAB * UNIVERSE.SPACE_SCALE;
+  const r = Math.max(d, 1);
+  return Math.max(0, L) * (dRef * dRef) / (r * r);
+}
+
 export function waveSlope(energy: number): { along: number; across: number } {
   const along =
     UNIVERSE.WAVE_SLOPE_CALM +

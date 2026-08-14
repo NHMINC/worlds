@@ -4,10 +4,14 @@ import {
   basinFetch, generateLevels, insolationAt, localTemp01, MAX_LEVEL, snowLineFor, waterLevelFor,
 } from '../world/toygen';
 import { paletteFor, SPACE_COLOR } from '../world/toyPalette';
-import { UNIVERSE, airExtinction, hazeSpec, seaState, tidalForcing } from '../world/physics';
+import {
+  UNIVERSE, airExtinction, hazeSpec, seaState, tidalForcing,
+  starIrradiance, starIrradianceDisplay,
+} from '../world/physics';
 import { TerraceJob, makeTerrainMaterial, makeWaterMaterial, skinLevel, terrace, warpPoint } from './terraceMesh';
 import { makeSkyShellMaterials } from './atmosphere';
 import { makeGasGiant } from './gasGiant';
+import { makeStar, type StarView } from './star';
 import type { BodySpec, SystemSpec } from '../world/systemgen';
 import { effectivePhysics, homeBodyId, lockedToStar } from '../world/systemgen';
 import type { BodyPhysics } from '../world/physics';
@@ -100,13 +104,10 @@ const TAP_SLOP_PX = 7;
 const TERRACE_ROUNDING = 0.3;
 
 /**
- * Display scale for interplanetary space. The PHYSICS keeps its compact
- * orbital distances (every law — disk chemistry, temperature, tidal locking
- * — reads the true a), but the RENDER world spreads 10x wider: worlds
- * become destinations rather than neighbors, and at most one is ever inside
- * LOD range at a time. Moons stay in their parent's local (unscaled) frame.
+ * Display scale for interplanetary space. Lives in UNIVERSE.SPACE_SCALE:
+ * chemistry still reads the compact `a`; the camera flies in the stretch.
  */
-const SPACE_SCALE = 10;
+const SPACE_SCALE = UNIVERSE.SPACE_SCALE;
 
 /** LOD ranges (world units to the body's surface) and budgets. */
 const TIER1_DIST = 180;
@@ -150,20 +151,6 @@ function stepFor(grid: GeoGrid): number {
   return Math.min(grid.cellSpacing() / 5, 0.012);
 }
 
-/** Soft radial glow for the sun sprite. */
-function makeGlowTexture(): THREE.Texture {
-  const c = document.createElement('canvas');
-  c.width = c.height = 256;
-  const g = c.getContext('2d')!;
-  const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
-  grad.addColorStop(0, 'rgba(255, 246, 220, 1)');
-  grad.addColorStop(0.22, 'rgba(255, 228, 170, 0.55)');
-  grad.addColorStop(0.55, 'rgba(255, 196, 130, 0.16)');
-  grad.addColorStop(1, 'rgba(255, 196, 130, 0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 256, 256);
-  return new THREE.CanvasTexture(c);
-}
 
 interface PointerInfo {
   x: number;
@@ -239,6 +226,7 @@ export class Engine {
   private overrides = new Map<string, BodyOverrides>();
   private systemRoot = new THREE.Group();
   private sunGroup = new THREE.Group();
+  private starView: StarView | null = null;
   private buildQueue: BuildTask[] = [];
 
   /** Wall-clock system time, geared down by UNIVERSE.TIME_SCALE: orbits
@@ -326,6 +314,7 @@ export class Engine {
   private tmpM4 = new THREE.Matrix4();
   private tmpC = new THREE.Color();
   private tmpSz = new THREE.Vector2();
+  private tmpAirT = new THREE.Vector3(1, 1, 1);
 
   constructor(canvas: HTMLCanvasElement, callbacks: EngineCallbacks) {
     this.canvas = canvas;
@@ -386,8 +375,9 @@ export class Engine {
       );
     };
     this.scene.add(makeStars(900, 1.6, 0.6), makeStars(140, 2.8, 1));
-    // Faint cool fill so tier-0 balls' night sides stay readable.
-    this.scene.add(new THREE.AmbientLight(0x30384a, 0.6));
+    // Faint cool fill so tier-0 balls' night sides stay readable. Kept
+    // low so the star's inverse-square is what lights the day side.
+    this.scene.add(new THREE.AmbientLight(0x30384a, 0.22));
   }
 
   // ---------------------------------------------------------------- system load
@@ -400,28 +390,16 @@ export class Engine {
     for (const rt of this.bodies.values()) this.disposeBody(rt);
     this.bodies.clear();
     this.systemRoot.clear();
+    this.starView?.dispose();
+    this.starView = null;
     this.sunGroup.clear();
     this.buildQueue = [];
     this.system = spec;
     this.overrides = state.overrides ?? new Map();
 
-    // The sun.
-    const sunGlobe = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 40, 24),
-      new THREE.MeshBasicMaterial({ color: new THREE.Color(spec.star.color) }),
-    );
-    sunGlobe.scale.setScalar(spec.star.radius);
-    const halo = new THREE.Sprite(
-      new THREE.SpriteMaterial({
-        map: makeGlowTexture(),
-        transparent: true,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    );
-    halo.scale.setScalar(spec.star.radius * 7);
-    const sunLight = new THREE.PointLight(new THREE.Color(spec.star.lightColor), 2.5, 0, 0);
-    this.sunGroup.add(sunGlobe, halo, sunLight);
+    // The star: photosphere + corona/wind + inverse-square glare.
+    this.starView = makeStar(spec.star);
+    this.sunGroup.add(this.starView.group);
     this.systemRoot.add(this.sunGroup);
 
     // Bodies: tier-0 spheres for everyone, chemistry-tinted atmosphere
@@ -1618,6 +1596,8 @@ export class Engine {
     for (const rt of this.bodies.values()) this.disposeBody(rt);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    this.starView?.dispose();
+    this.starView = null;
     this.reflRT?.dispose();
     this.colRT?.dispose();
     this.renderer.dispose();
@@ -2248,6 +2228,9 @@ export class Engine {
       }
     }
 
+    this.tmpAirT.set(1, 1, 1);
+    const starL = this.system?.star.luminosity ?? 1;
+
     for (const rt of this.bodies.values()) {
       // Orbit lines are wayfinding for the void: hide a body's own line when
       // the camera is close, so it never slices across the world's face —
@@ -2258,8 +2241,13 @@ export class Engine {
       }
       const qInv = this.tmpQ.copy(rt.spinQ).conjugate();
       const lightL = this.tmpV.copy(rt.pos).multiplyScalar(-1).normalize().applyQuaternion(qInv);
+      // Live heliocentric distance in physics units (pos is display-stretched).
+      const aPhys = Math.max(rt.pos.length() / SPACE_SCALE, 1);
+      const sunIrr = starIrradianceDisplay(starIrradiance(starL, aPhys));
+      const sunLum = UNIVERSE.SUN_LUM * sunIrr;
       if (rt.gasMat) {
         (rt.gasMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
+        rt.gasMat.uniforms.uSunIrr.value = sunIrr;
       }
       // The headlamp: on the ground, when the ambient daylight at the camera
       // dies — night, or a cloud deck the sun cannot pierce — a forward beam
@@ -2312,7 +2300,15 @@ export class Engine {
             Tdif *= Math.exp(-colUp * Math.sqrt(3 * Math.max(0, 1 - alb)));
             day = Math.max(day, Tsun + Tdif);
           }
+          // The sun as seen through this column: same Chapman T, no
+          // "lit" gate — if the disk is in the sky the air only tints it.
+          this.tmpAirT.set(
+            Math.exp(-Math.min((sigma * airW.x * rho * H + aeroTau * aeroW.x * above) * slantF, 40)),
+            Math.exp(-Math.min((sigma * airW.y * rho * H + aeroTau * aeroW.y * above) * slantF, 40)),
+            Math.exp(-Math.min((sigma * airW.z * rho * H + aeroTau * aeroW.z * above) * slantF, 40)),
+          );
         }
+        day *= sunIrr;
         torch = 1.4 * Math.min(1, Math.max(0, (0.14 - day) / 0.095));
         this.camera.getWorldDirection(torchDirL).applyQuaternion(qInv);
         this.torchLevel += (torch - this.torchLevel) * 0.08;
@@ -2329,6 +2325,8 @@ export class Engine {
       for (const assets of [rt.tier1, rt.tier2]) {
         if (!assets) continue;
         (assets.terrainMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
+        assets.terrainMat.uniforms.uSunIrr.value = sunIrr;
+        assets.terrainMat.uniforms.uSunLum.value = sunLum;
         // Terrain time drives only the shoreline surf; it and the sea share
         // one quarter-speed clock so waves and wash stay in step.
         assets.terrainMat.uniforms.uTime.value = shaderT * 0.25;
@@ -2348,6 +2346,8 @@ export class Engine {
         }
         if (assets.waterMat) {
           (assets.waterMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
+          assets.waterMat.uniforms.uSunIrr.value = sunIrr;
+          assets.waterMat.uniforms.uSunLum.value = sunLum;
           assets.waterMat.uniforms.uTime.value = shaderT * 0.25;
           (assets.waterMat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);
           assets.waterMat.uniforms.uTorch.value = torch;
@@ -2386,6 +2386,7 @@ export class Engine {
         if (assets.atmoMat) {
           (assets.atmoMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
           (assets.atmoMat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);
+          assets.atmoMat.uniforms.uSunLum.value = sunLum;
           assets.atmoMat.uniforms.uTorch.value = torch;
           if (torch > 0) {
             (assets.atmoMat.uniforms.uTorchDir.value as THREE.Vector3).copy(torchDirL);
@@ -2393,6 +2394,9 @@ export class Engine {
         }
       }
     }
+
+    const starT = this.epoch + (now / 1000) * UNIVERSE.TIME_SCALE;
+    this.starView?.update(this.camera.position, starT, this.tmpAirT);
 
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onFrame(this.getView());
