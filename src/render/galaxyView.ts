@@ -16,6 +16,7 @@ import {
 } from '../world/galaxy';
 import { classifyStar, teffToRgb } from '../world/stellar';
 import { createGalaxyField, updateGalaxyField } from './galaxyField';
+import { createStarDiscs, RESOLVE_DIST, RESOLVE_MAX, type StarDiscs } from './galaxyStar';
 
 const ZOOM_MIN = 0.4;
 const ZOOM_MAX = 70;
@@ -58,7 +59,7 @@ const STAR_VERT = /* glsl */ `
     vPulse = pulse;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
     float dist = max(0.8, -mv.z);
-    gl_PointSize = min(22.0, aSize * aVis * pulse * uPixel * (36.0 / dist));
+    gl_PointSize = min(3.2, aSize * aVis * pulse * uPixel * (18.0 / dist));
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -83,10 +84,13 @@ export interface GalaxyFrame {
   radius: number;
   pickable: boolean;
   resolved: number;
+  discs: number;
 }
 
 interface Callbacks {
   onSelect: (obj: GalaxyObject | null) => void;
+  /** Tap a photosphere — the star that left the point-source LOD. */
+  onGo?: (obj: GalaxyObject) => void;
   onFrame?: (f: GalaxyFrame) => void;
 }
 
@@ -114,6 +118,10 @@ export class GalaxyView {
   private homeRing: THREE.Mesh;
   private hereRing: THREE.Mesh;
   private pickRing: THREE.Mesh;
+  private discs: StarDiscs;
+  private discIds = new Set<number>();
+  private raycaster = new THREE.Raycaster();
+  private ndc = new THREE.Vector2();
 
   private ids: number[];
   private nebIds: number[];
@@ -173,6 +181,9 @@ export class GalaxyView {
     this.visNeb = nebs.vis;
     this.nebIds = nebs.ids;
     this.scene.add(this.nebPts);
+
+    this.discs = createStarDiscs();
+    this.scene.add(this.discs.group);
 
     this.homeRing = this.makeRing(0x9ec4ff, 0.28);
     this.hereRing = this.makeRing(0x7fa88b, 0.22);
@@ -258,18 +269,26 @@ export class GalaxyView {
     let n = 0;
     for (let i = 0; i < this.ids.length; i++) {
       const o = this.byId.get(this.ids[i])!;
-      const v = this.resolveAmt(o, starPos.getX(i), starPos.getY(i), starPos.getZ(i));
+      const wx = starPos.getX(i);
+      const wy = starPos.getY(i);
+      const wz = starPos.getZ(i);
+      const near =
+        this.radius < RESOLVE_DIST ||
+        this.discIds.has(o.id) ||
+        Math.hypot(wx - this.camera.position.x, wy - this.camera.position.y, wz - this.camera.position.z) < RESOLVE_DIST;
+      const v = near ? 0 : this.resolveAmt(o, wx, wy, wz);
       starVis[i] = v;
-      if (v > 0.45) n++;
+      if (near || v > 0.45) n++;
     }
     this.visStar.needsUpdate = true;
     const nebVis = this.visNeb.array as Float32Array;
     const nebPos = this.nebPts.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < this.nebIds.length; i++) {
       const o = this.byId.get(this.nebIds[i])!;
-      const v = this.resolveAmt(o, nebPos.getX(i), nebPos.getY(i), nebPos.getZ(i));
+      const hid = this.radius < RESOLVE_DIST || this.discIds.has(o.id);
+      const v = hid ? 0 : this.resolveAmt(o, nebPos.getX(i), nebPos.getY(i), nebPos.getZ(i));
       nebVis[i] = v;
-      if (v > 0.45) n++;
+      if (hid || v > 0.45) n++;
     }
     this.visNeb.needsUpdate = true;
     this.resolved = n;
@@ -388,7 +407,7 @@ export class GalaxyView {
     const starPos = this.starPts.geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < this.ids.length; i++) {
       const o = this.byId.get(this.ids[i])!;
-      if (this.resolveAmt(o, starPos.getX(i), starPos.getY(i), starPos.getZ(i)) <= 0.45) continue;
+      if (!this.discIds.has(o.id) && this.resolveAmt(o, starPos.getX(i), starPos.getY(i), starPos.getZ(i)) <= 0.45) continue;
       const k = classifyStar(o.star).replace(/\+.*/, '').replace(/[0-9].*/, '');
       const letter = /^[OBAFGKMLT]/.test(k) ? k[0] : k;
       c[letter] = (c[letter] ?? 0) + 1;
@@ -398,6 +417,27 @@ export class GalaxyView {
 
   beaconCount(): number {
     return this.resolved;
+  }
+
+  /** Photospheres currently meshed — the stars that left the point LOD. */
+  resolvedStars(): GalaxyObject[] {
+    return this.discs.list();
+  }
+
+  /**
+   * Fly to the nearest catalog object and sit inside resolve distance
+   * so the photosphere is a disc, not a point. Smoke / tests.
+   */
+  approachNearest(): GalaxyObject | null {
+    const best = this.selected ?? this.hereObj ?? this.home;
+    if (!best) return null;
+    this.focus(best);
+    this.tgtRadius = 1.8;
+    this.radius = 1.8;
+    this.look.copy(this.tgtLook);
+    this.applyCam();
+    this.updateDiscs();
+    return best;
   }
 
   resize(w: number, h: number): void {
@@ -426,6 +466,7 @@ export class GalaxyView {
     (this.hereRing.material as THREE.Material).dispose();
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
+    this.discs.dispose();
     this.renderer.dispose();
   }
 
@@ -482,7 +523,7 @@ export class GalaxyView {
       col[i * 3 + 1] = rgb[1];
       col[i * 3 + 2] = rgb[2];
       const L = Math.max(1e-6, o.star.luminosity);
-      size[i] = 1.6 + Math.min(8.2, Math.log10(1 + L) * 2.8 + (o.star.phase === 'black_hole' ? 1.8 : 0));
+      size[i] = 1.4 + Math.min(3.2, Math.log10(1 + L) * 1.5 + (o.star.phase === 'black_hole' ? 0.8 : 0));
       pulse[i] = o.star.phase === 'pulsar' ? 1 : 0;
       visArr[i] = 1;
       ids.push(o.id);
@@ -530,7 +571,7 @@ export class GalaxyView {
       col[i * 3] = rgb[0];
       col[i * 3 + 1] = rgb[1];
       col[i * 3 + 2] = rgb[2];
-      size[i] = 7 + (o.star.nebula === 'hii' ? 4 : 2);
+      size[i] = 3.2 + (o.star.nebula === 'hii' ? 1.2 : 0.4);
       pulse[i] = 0;
       visArr[i] = 1;
       ids.push(o.id);
@@ -634,7 +675,7 @@ export class GalaxyView {
     const rect = this.canvas.getBoundingClientRect();
     const c = galToCart(obj.pos);
     const v = new THREE.Vector3(c.x, c.y, c.z).project(this.camera);
-    if (v.z < -1 || v.z > 1) return null;
+    if (v.z < -1.2 || v.z > 1.2) return null;
     return {
       x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
       y: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
@@ -661,10 +702,80 @@ export class GalaxyView {
     return best;
   }
 
+  private pickResolved(cx: number, cy: number): GalaxyObject | null {
+    const rect = this.canvas.getBoundingClientRect();
+    this.ndc.set(
+      ((cx - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+      -((cy - rect.top) / Math.max(1, rect.height)) * 2 + 1,
+    );
+    this.camera.updateMatrixWorld();
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const rayHit = this.discs.pick(this.raycaster);
+    if (rayHit) return rayHit;
+    let best: GalaxyObject | null = null;
+    let bestD = 36;
+    for (const o of this.discs.list()) {
+      const p = this.projectClient(o);
+      if (!p) continue;
+      const d = Math.hypot(p.x - cx, p.y - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = o;
+      }
+    }
+    return best;
+  }
+
+  private updateDiscs(): void {
+    const cam = this.camera.position;
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    const scored: Array<{ o: GalaxyObject; d: number }> = [];
+    const pool = this.objects.slice();
+    for (const pin of [this.selected, this.home, this.hereObj]) {
+      if (pin && !pool.some((o) => o.id === pin.id)) pool.push(pin);
+    }
+    for (const o of pool) {
+      if (!matchesFilter(o, this.filter) && o !== this.selected && o !== this.home && o !== this.hereObj) continue;
+      const c = galToCart(o.pos);
+      const dx = c.x - cam.x;
+      const dy = c.y - cam.y;
+      const dz = c.z - cam.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d >= RESOLVE_DIST || d < 0.02) continue;
+      if (dx * fwd.x + dy * fwd.y + dz * fwd.z < 0.02) continue;
+      scored.push({ o, d });
+    }
+    scored.sort((a, b) => {
+      const sa = Math.log10(1 + a.o.star.luminosity) / Math.max(0.25, a.d);
+      const sb = Math.log10(1 + b.o.star.luminosity) / Math.max(0.25, b.d);
+      return sb - sa;
+    });
+    const near = scored.slice(0, RESOLVE_MAX).map((s) => s.o);
+    for (const pin of [this.selected, this.home, this.hereObj]) {
+      if (!pin || near.some((o) => o.id === pin.id)) continue;
+      const c = galToCart(pin.pos);
+      const d = Math.hypot(c.x - cam.x, c.y - cam.y, c.z - cam.z);
+      if (d >= RESOLVE_DIST || d < 0.02) continue;
+      near.unshift(pin);
+      if (near.length > RESOLVE_MAX) near.pop();
+    }
+    this.discs.setStars(near);
+    this.discs.syncCamera(this.camera);
+    this.discIds.clear();
+    for (const o of near) this.discIds.add(o.id);
+  }
+
   private pick(cx: number, cy: number): void {
     const rect = this.canvas.getBoundingClientRect();
     const x = cx - rect.left;
     const y = cy - rect.top;
+    const rendered = this.pickResolved(cx, cy);
+    if (rendered) {
+      this.select(rendered);
+      this.callbacks.onGo?.(rendered);
+      return;
+    }
     const waypoint = this.hitWaypoints(x, y, rect);
     if (waypoint) {
       this.focus(waypoint);
@@ -788,6 +899,7 @@ export class GalaxyView {
     this.look.lerp(this.tgtLook, 1 - Math.exp(-dt * 3.2));
     this.applyCam();
     this.refreshIfNeeded();
+    this.updateDiscs();
     this.applyVis();
     if (this.selected && this.tgtRadius > PICK_ZOOM) this.select(null);
     const t = now * 0.001;
@@ -796,8 +908,10 @@ export class GalaxyView {
     const px = this.renderer.getPixelRatio();
     this.starMat.uniforms.uPixel.value = px;
     this.nebMat.uniforms.uPixel.value = px;
-    const resolve = clamp01((28 - this.radius) / 24);
-    updateGalaxyField(this.fieldMat, this.camera, this.filter === 'all' ? 1 : 0.18, resolve);
+    const amongStars = this.radius < RESOLVE_DIST;
+    const resolve = amongStars ? 0 : clamp01((28 - this.radius) / 24);
+    const dim = amongStars ? 0.16 : this.filter === 'all' ? 1 : 0.18;
+    updateGalaxyField(this.fieldMat, this.camera, dim, resolve);
     const ringS = Math.max(0.05, this.radius * 0.032);
     this.pickRing.scale.setScalar(ringS);
     this.homeRing.scale.setScalar(ringS);
@@ -812,6 +926,7 @@ export class GalaxyView {
       radius: this.radius,
       pickable: this.canPick(),
       resolved: this.resolved,
+      discs: this.discIds.size,
     });
     this.raf = requestAnimationFrame(this.frame);
   };

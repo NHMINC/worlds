@@ -91,27 +91,48 @@ if (await galaxyBtn.count()) {
     errors.push('home ring tap did not select');
   }
 
-  const other = await page.evaluate(() => {
+  const approached = await page.evaluate(() => {
     const v = window.__galaxyView;
-    const homeId = v.home?.id;
-    for (const o of v.objects) {
-      if (o.id === homeId) continue;
-      const p = v.projectClient(o);
-      if (p && p.x > 80 && p.x < 1200 && p.y > 80 && p.y < 720) return { id: o.id, ...p };
-    }
-    return null;
+    const o = v.approachNearest?.();
+    return o ? { id: o.id, phase: o.star.phase } : null;
   });
-  console.log('OTHER STAR', JSON.stringify(other));
-  if (other) {
-    await page.mouse.click(other.x, other.y);
-    await page.waitForTimeout(800);
-    const afterStar = await page.evaluate(() => document.querySelector('.gd-class')?.textContent ?? null);
-    console.log('AFTER STAR TAP', afterStar);
-    await page.screenshot({ path: 'previews/galaxy-3-tap.png' });
-    if (!afterStar) {
-      console.error('FAIL: tapping a resolved star did not open a dossier');
-      errors.push('resolved star tap did not select');
+  console.log('APPROACH', JSON.stringify(approached));
+  await page.waitForTimeout(800);
+  const close = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    const discs = v.resolvedStars?.() ?? [];
+    const target = discs.find((o) => o.id === v.selectedObject?.()?.id) ?? discs[0];
+    const first = target ? v.projectClient(target) : null;
+    return {
+      n: discs.length,
+      sample: discs.slice(0, 4).map((o) => o.star.phase),
+      first,
+      radius: v.radius ?? null,
+    };
+  });
+  console.log('DISCS', JSON.stringify(close));
+  await page.screenshot({ path: 'previews/galaxy-3-discs.png' });
+  if (!close.n) {
+    console.error('FAIL: no photospheres after flying in');
+    errors.push('no photospheres after approach');
+  }
+  const tap = close.first && close.first.x > 40 && close.first.x < 1240 && close.first.y > 40 && close.first.y < 760
+    ? close.first
+    : { x: 640, y: 400 };
+  if (close.n) {
+    await page.mouse.click(tap.x, tap.y);
+    try {
+      await page.waitForFunction(() => !document.querySelector('.galaxy-explorer'), { timeout: 20000 });
+    } catch {
+      console.error('FAIL: tapping a rendered star did not set course');
+      errors.push('rendered star tap did not set course');
     }
+    const afterGo = await page.evaluate(() => ({
+      explorer: Boolean(document.querySelector('.galaxy-explorer')),
+      title: document.querySelector('.tb-world')?.textContent ?? '',
+    }));
+    console.log('AFTER DISC TAP', JSON.stringify(afterGo));
+    await page.screenshot({ path: 'previews/galaxy-3-tap.png' });
   }
 } else {
   console.error('NO GALAXY BUTTON');
