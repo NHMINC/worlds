@@ -380,10 +380,11 @@ export function homeStar(seed = UNIVERSE.CANONICAL_SEED): GalaxyObject | null {
 }
 
 /**
- * FGK dwarfs near the solar circle — a query, not a catalog dump.
- * Used by first-landing search. Never walks the whole grid.
+ * FGK dwarfs near the solar circle (the home point) — a query, not a
+ * catalog dump. First landing may sample thousands here. Never walks
+ * the whole grid.
  */
-export function solarCircleHosts(seed: string, max = 160): GalaxyObject[] {
+export function solarCircleHosts(seed: string, max = 7000): GalaxyObject[] {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, R_SUN: rSun } = UNIVERSE;
   const irSun = Math.round((rSun / rMax) * nr);
   const izMid = Math.floor(nz / 2);

@@ -50,8 +50,8 @@ export function discoverHabitable(
   galaxySeed = UNIVERSE.CANONICAL_SEED,
   rng: () => number = Math.random,
 ): Discovery {
-  const hosts = shuffle(solarCircleHosts(galaxySeed, 180), rng);
-  const limit = Math.min(hosts.length, 90);
+  const hosts = shuffle(solarCircleHosts(galaxySeed, 7000), rng);
+  const limit = Math.min(hosts.length, 400);
   for (let i = 0; i < limit; i++) {
     const obj = hosts[i]!;
     const spec = systemAt(galaxySeed, obj.id);
