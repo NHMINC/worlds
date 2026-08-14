@@ -224,7 +224,7 @@ const sunDisc = visualRadiusKpc(asObj(sun));
 const wdDisc = visualRadiusKpc(asObj(wd));
 const bhDisc = visualRadiusKpc(asObj(bh));
 check(wdDisc < sunDisc, `WD disc ${wdDisc} should be smaller than the Sun ${sunDisc}`);
-check(sunDisc > 0.006 && sunDisc < 0.05, `Sun analog disc ${sunDisc} is not a photosphere`);
+check(sunDisc > 0.03 && sunDisc < 0.16, `Sun analog disc ${sunDisc} is not a photosphere`);
 check(bhDisc > wdDisc, `BH visual ${bhDisc} should beat a WD pin`);
 check(starKind(asObj(bh)) === 5, `BH kind ${starKind(asObj(bh))}`);
 check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, got ${starKind(asObj(freshWd))}`);

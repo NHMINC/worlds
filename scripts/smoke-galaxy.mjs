@@ -97,11 +97,12 @@ if (await galaxyBtn.count()) {
     return o ? { id: o.id, phase: o.star.phase } : null;
   });
   console.log('APPROACH', JSON.stringify(approached));
-  await page.waitForTimeout(2200);
+  await page.waitForTimeout(800);
   const close = await page.evaluate(() => {
     const v = window.__galaxyView;
     const discs = v.resolvedStars?.() ?? [];
-    const first = discs[0] ? v.projectClient(discs[0]) : null;
+    const target = discs.find((o) => o.id === v.selectedObject?.()?.id) ?? discs[0];
+    const first = target ? v.projectClient(target) : null;
     return {
       n: discs.length,
       sample: discs.slice(0, 4).map((o) => o.star.phase),
@@ -115,7 +116,7 @@ if (await galaxyBtn.count()) {
     console.error('FAIL: no photospheres after flying in');
     errors.push('no photospheres after approach');
   }
-  if (close.first) {
+  if (close.first && close.first.x > 40 && close.first.x < 1240 && close.first.y > 40 && close.first.y < 760) {
     await page.mouse.click(close.first.x, close.first.y);
     await page.waitForTimeout(2800);
     const afterGo = await page.evaluate(() => ({
@@ -128,6 +129,9 @@ if (await galaxyBtn.count()) {
       console.error('FAIL: tapping a rendered star did not set course');
       errors.push('rendered star tap did not set course');
     }
+  } else {
+    console.error('FAIL: approached photosphere is off-screen');
+    errors.push('approached photosphere off-screen');
   }
 } else {
   console.error('NO GALAXY BUTTON');

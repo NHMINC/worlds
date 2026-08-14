@@ -183,7 +183,7 @@ export class GalaxyView {
     this.scene.add(this.nebPts);
 
     this.discs = createStarDiscs();
-    this.scene.add(this.discs.mesh);
+    this.scene.add(this.discs.group);
 
     this.homeRing = this.makeRing(0x9ec4ff, 0.28);
     this.hereRing = this.makeRing(0x7fa88b, 0.22);
@@ -423,21 +423,14 @@ export class GalaxyView {
    * so the photosphere is a disc, not a point. Smoke / tests.
    */
   approachNearest(): GalaxyObject | null {
-    let best: GalaxyObject | null = this.home;
-    let bestD = Infinity;
-    const cam = this.camera.position;
-    const pool = this.objects.length > 0 ? this.objects : this.home ? [this.home] : [];
-    for (const o of pool) {
-      const c = galToCart(o.pos);
-      const d = Math.hypot(c.x - cam.x, c.y - cam.y, c.z - cam.z);
-      if (d < bestD) {
-        bestD = d;
-        best = o;
-      }
-    }
+    const best = this.selected ?? this.hereObj ?? this.home;
     if (!best) return null;
     this.focus(best);
-    this.tgtRadius = 2.1;
+    this.tgtRadius = 1.8;
+    this.radius = 1.8;
+    this.look.copy(this.tgtLook);
+    this.applyCam();
+    this.updateDiscs();
     return best;
   }
 

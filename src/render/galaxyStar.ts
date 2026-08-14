@@ -35,27 +35,27 @@ export function visualRadiusKpc(o: GalaxyObject): number {
   const L = Math.max(s.luminosity, 1e-4);
   const R = Math.max(s.radius, 0.01);
   if (s.nebula === 'planetary' || s.nebula === 'snr' || s.nebula === 'hii') {
-    return THREE.MathUtils.clamp(0.055 * Math.pow(L, 0.18), 0.04, 0.16);
+    return THREE.MathUtils.clamp(0.22 * Math.pow(L, 0.16), 0.16, 0.42);
   }
   switch (s.phase) {
     case 'black_hole':
-      return 0.022;
+      return 0.09;
     case 'neutron_star':
-      return 0.009;
+      return 0.04;
     case 'pulsar':
-      return 0.014;
+      return 0.055;
     case 'white_dwarf':
-      return THREE.MathUtils.clamp(0.007 * Math.pow(R, 0.25), 0.005, 0.014);
+      return THREE.MathUtils.clamp(0.032 * Math.pow(R, 0.2), 0.028, 0.05);
     case 'wolf_rayet':
-      return THREE.MathUtils.clamp(0.018 * Math.pow(L, 0.12), 0.014, 0.05);
+      return THREE.MathUtils.clamp(0.08 * Math.pow(L, 0.1), 0.06, 0.16);
     default:
       break;
   }
   const giant = s.phase === 'giant' || s.phase === 'supergiant' || s.phase === 'carbon_star';
-  const fromL = 0.007 * Math.pow(L, 0.22);
-  const fromR = 0.004 * Math.pow(R, 0.35);
+  const fromL = 0.048 * Math.pow(L, 0.18);
+  const fromR = 0.03 * Math.pow(R, 0.28);
   const r = Math.max(fromL, fromR);
-  return THREE.MathUtils.clamp(r * (giant ? 1.7 : 1), giant ? 0.016 : 0.007, giant ? 0.09 : 0.045);
+  return THREE.MathUtils.clamp(r * (giant ? 1.8 : 1), giant ? 0.08 : 0.04, giant ? 0.32 : 0.14);
 }
 
 export function starKind(o: GalaxyObject): number {
@@ -82,21 +82,16 @@ function starRgb(o: GalaxyObject): THREE.Color {
 }
 
 const VERT = /* glsl */ `
-  attribute vec3 iPos;
-  attribute vec3 iCol;
-  attribute float iRad;
-  attribute float iKind;
-  uniform vec3 uRight;
-  uniform vec3 uUp;
   varying vec2 vUv;
   varying vec3 vCol;
   varying float vKind;
+  attribute vec3 iCol;
+  attribute float iKind;
   void main() {
     vUv = uv;
     vCol = iCol;
     vKind = iKind;
-    vec3 world = iPos + (uRight * position.x + uUp * position.y) * iRad;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(world, 1.0);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
@@ -115,36 +110,36 @@ const FRAG = /* glsl */ `
     float a = 1.0;
 
     if (kind > 5.5 && kind < 6.5) {
-      float ring = smoothstep(0.22, 0.38, r) * (1.0 - smoothstep(0.72, 1.0, r));
-      float core = (1.0 - smoothstep(0.0, 0.28, r)) * 0.35;
-      a = ring * 0.72 + core;
+      float ring = smoothstep(0.18, 0.36, r) * (1.0 - smoothstep(0.68, 1.0, r));
+      float core = (1.0 - smoothstep(0.0, 0.3, r)) * 0.45;
+      a = ring * 0.85 + core;
       col = mix(col, vec3(1.0), core);
     } else if (kind > 4.5 && kind < 5.5) {
-      float hole = 1.0 - smoothstep(0.18, 0.34, r);
-      float disk = smoothstep(0.32, 0.42, r) * (1.0 - smoothstep(0.55, 0.92, r));
-      a = max(disk * 0.9, 0.0);
-      col = mix(vec3(1.0, 0.82, 0.55), col, 0.45);
-      if (hole > 0.6) discard;
+      float hole = 1.0 - smoothstep(0.16, 0.32, r);
+      float disk = smoothstep(0.3, 0.4, r) * (1.0 - smoothstep(0.52, 0.95, r));
+      a = max(disk * 0.95, 0.0);
+      col = mix(vec3(1.0, 0.82, 0.55), col, 0.4);
+      if (hole > 0.55) discard;
     } else if (kind > 3.5 && kind < 4.5) {
-      float core = 1.0 - smoothstep(0.0, 0.18, r);
-      float beam = exp(-pow(abs(p.x) * 9.0, 2.0)) * (1.0 - smoothstep(0.15, 1.0, abs(p.y)));
-      a = max(core, beam * 0.85);
+      float core = 1.0 - smoothstep(0.0, 0.2, r);
+      float beam = exp(-pow(abs(p.x) * 8.0, 2.0)) * (1.0 - smoothstep(0.12, 1.0, abs(p.y)));
+      a = max(core, beam * 0.9);
       col = mix(col, vec3(0.85, 0.92, 1.0), beam);
     } else if (kind > 2.5 && kind < 3.5) {
-      float core = 1.0 - smoothstep(0.0, 0.22, r);
-      float halo = (1.0 - smoothstep(0.2, 1.0, r)) * 0.35;
+      float core = 1.0 - smoothstep(0.0, 0.24, r);
+      float halo = (1.0 - smoothstep(0.18, 1.0, r)) * 0.4;
       a = max(core, halo);
-      col = mix(col, vec3(1.0), core * 0.5);
+      col = mix(col, vec3(1.0), core * 0.55);
     } else if (kind > 1.5 && kind < 2.5) {
-      float limb = pow(max(0.0, 1.0 - r * r), 0.45);
-      float glow = (1.0 - smoothstep(0.55, 1.0, r)) * 0.4;
+      float limb = pow(max(0.0, 1.0 - r * r), 0.4);
+      float glow = (1.0 - smoothstep(0.5, 1.0, r)) * 0.5;
       a = max(limb, glow);
-      col = mix(col, vec3(0.85, 0.9, 1.0), 0.25);
+      col = mix(col, vec3(0.85, 0.9, 1.0), 0.3);
     } else {
-      float limb = pow(max(0.0, 1.0 - r * r), 0.55);
-      float glow = (1.0 - smoothstep(0.42, 1.0, r)) * 0.55;
-      a = max(limb, glow * 0.85);
-      col = mix(col * (0.55 + 0.45 * limb), vec3(1.0), limb * 0.35);
+      float limb = pow(max(0.0, 1.0 - r * r), 0.5);
+      float glow = (1.0 - smoothstep(0.38, 1.0, r)) * 0.7;
+      a = max(limb, glow);
+      col = mix(col * (0.45 + 0.55 * limb), vec3(1.0), limb * 0.45);
     }
 
     if (a < 0.02) discard;
@@ -152,8 +147,15 @@ const FRAG = /* glsl */ `
   }
 `;
 
-export type StarDiscs = {
+type Slot = {
   mesh: THREE.Mesh;
+  geo: THREE.BufferGeometry;
+  col: THREE.BufferAttribute;
+  kind: THREE.BufferAttribute;
+};
+
+export type StarDiscs = {
+  group: THREE.Group;
   setStars: (stars: GalaxyObject[]) => void;
   syncCamera: (camera: THREE.Camera) => void;
   pick: (raycaster: THREE.Raycaster) => GalaxyObject | null;
@@ -162,72 +164,77 @@ export type StarDiscs = {
 };
 
 export function createStarDiscs(): StarDiscs {
-  const plane = new THREE.PlaneGeometry(2, 2);
-  const geo = new THREE.InstancedBufferGeometry();
-  geo.index = plane.index ? plane.index.clone() : null;
-  geo.setAttribute('position', plane.attributes.position.clone());
-  geo.setAttribute('uv', plane.attributes.uv.clone());
+  const group = new THREE.Group();
+  group.renderOrder = 3;
+  const slots: Slot[] = [];
 
-  const iPos = new Float32Array(RESOLVE_MAX * 3);
-  const iCol = new Float32Array(RESOLVE_MAX * 3);
-  const iRad = new Float32Array(RESOLVE_MAX);
-  const iKind = new Float32Array(RESOLVE_MAX);
-  geo.setAttribute('iPos', new THREE.InstancedBufferAttribute(iPos, 3));
-  geo.setAttribute('iCol', new THREE.InstancedBufferAttribute(iCol, 3));
-  geo.setAttribute('iRad', new THREE.InstancedBufferAttribute(iRad, 1));
-  geo.setAttribute('iKind', new THREE.InstancedBufferAttribute(iKind, 1));
-  geo.instanceCount = 0;
-  plane.dispose();
-
-  const uRight = { value: new THREE.Vector3(1, 0, 0) };
-  const uUp = { value: new THREE.Vector3(0, 1, 0) };
-  const mat = new THREE.ShaderMaterial({
-    uniforms: { uRight, uUp },
-    vertexShader: VERT,
-    fragmentShader: FRAG,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.frustumCulled = false;
-  mesh.renderOrder = 3;
+  for (let i = 0; i < RESOLVE_MAX; i++) {
+    const plane = new THREE.PlaneGeometry(2, 2);
+    const n = plane.attributes.position.count;
+    const colArr = new Float32Array(n * 3);
+    const kindArr = new Float32Array(n);
+    const col = new THREE.BufferAttribute(colArr, 3);
+    const kind = new THREE.BufferAttribute(kindArr, 1);
+    plane.setAttribute('iCol', col);
+    plane.setAttribute('iKind', kind);
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: VERT,
+      fragmentShader: FRAG,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const mesh = new THREE.Mesh(plane, mat);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    mesh.renderOrder = 3;
+    group.add(mesh);
+    slots.push({ mesh, geo: plane, col, kind });
+  }
 
   let current: GalaxyObject[] = [];
   const worlds: THREE.Vector3[] = [];
   const radii: number[] = [];
 
+  function paint(slot: Slot, rgb: THREE.Color, k: number) {
+    const n = slot.col.count;
+    for (let i = 0; i < n; i++) {
+      slot.col.setXYZ(i, rgb.r, rgb.g, rgb.b);
+      slot.kind.setX(i, k);
+    }
+    slot.col.needsUpdate = true;
+    slot.kind.needsUpdate = true;
+  }
+
   function setStars(stars: GalaxyObject[]) {
     current = stars.slice(0, RESOLVE_MAX);
     worlds.length = 0;
     radii.length = 0;
-    for (let i = 0; i < current.length; i++) {
+    for (let i = 0; i < RESOLVE_MAX; i++) {
+      const slot = slots[i];
+      if (i >= current.length) {
+        slot.mesh.visible = false;
+        continue;
+      }
       const o = current[i];
       const c = galToCart(o.pos);
       const p = new THREE.Vector3(c.x, c.y, c.z);
       worlds.push(p);
-      const rad = visualRadiusKpc(o) * 2.4;
+      const rad = visualRadiusKpc(o) * 1.35;
       radii.push(rad);
-      iPos[i * 3] = p.x;
-      iPos[i * 3 + 1] = p.y;
-      iPos[i * 3 + 2] = p.z;
-      const col = starRgb(o);
-      iCol[i * 3] = col.r;
-      iCol[i * 3 + 1] = col.g;
-      iCol[i * 3 + 2] = col.b;
-      iRad[i] = rad;
-      iKind[i] = starKind(o);
+      slot.mesh.position.copy(p);
+      slot.mesh.scale.setScalar(rad);
+      slot.mesh.visible = true;
+      paint(slot, starRgb(o), starKind(o));
     }
-    geo.instanceCount = current.length;
-    (geo.getAttribute('iPos') as THREE.InstancedBufferAttribute).needsUpdate = true;
-    (geo.getAttribute('iCol') as THREE.InstancedBufferAttribute).needsUpdate = true;
-    (geo.getAttribute('iRad') as THREE.InstancedBufferAttribute).needsUpdate = true;
-    (geo.getAttribute('iKind') as THREE.InstancedBufferAttribute).needsUpdate = true;
   }
 
+  const face = new THREE.Quaternion();
   function syncCamera(camera: THREE.Camera) {
-    uRight.value.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-    uUp.value.setFromMatrixColumn(camera.matrixWorld, 1).normalize();
+    camera.getWorldQuaternion(face);
+    for (const slot of slots) {
+      if (slot.mesh.visible) slot.mesh.quaternion.copy(face);
+    }
   }
 
   const hit = new THREE.Vector3();
@@ -237,7 +244,7 @@ export function createStarDiscs(): StarDiscs {
     let bestD = Infinity;
     for (let i = 0; i < current.length; i++) {
       sphere.center.copy(worlds[i]);
-      sphere.radius = radii[i] * 0.55;
+      sphere.radius = radii[i] * 0.75;
       if (raycaster.ray.intersectSphere(sphere, hit)) {
         const d = hit.distanceTo(raycaster.ray.origin);
         if (d < bestD) {
@@ -250,14 +257,16 @@ export function createStarDiscs(): StarDiscs {
   }
 
   return {
-    mesh,
+    group,
     setStars,
     syncCamera,
     pick,
     list: () => current,
     dispose() {
-      geo.dispose();
-      mat.dispose();
+      for (const s of slots) {
+        s.geo.dispose();
+        (s.mesh.material as THREE.Material).dispose();
+      }
     },
   };
 }
