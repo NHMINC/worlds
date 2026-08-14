@@ -55,7 +55,7 @@ export function visualRadiusKpc(o: GalaxyObject): number {
   const fromL = 0.048 * Math.pow(L, 0.18);
   const fromR = 0.03 * Math.pow(R, 0.28);
   const r = Math.max(fromL, fromR);
-  return THREE.MathUtils.clamp(r * (giant ? 1.8 : 1), giant ? 0.08 : 0.04, giant ? 0.32 : 0.14);
+  return THREE.MathUtils.clamp(r * (giant ? 1.8 : 1), giant ? 0.08 : 0.055, giant ? 0.32 : 0.16);
 }
 
 export function starKind(o: GalaxyObject): number {
@@ -139,7 +139,7 @@ const FRAG = /* glsl */ `
       float limb = pow(max(0.0, 1.0 - r * r), 0.5);
       float glow = (1.0 - smoothstep(0.38, 1.0, r)) * 0.7;
       a = max(limb, glow);
-      col = mix(col * (0.45 + 0.55 * limb), vec3(1.0), limb * 0.45);
+      col = mix(col * (0.62 + 0.38 * limb), vec3(1.0), limb * 0.18);
     }
 
     if (a < 0.02) discard;
