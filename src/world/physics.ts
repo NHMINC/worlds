@@ -336,6 +336,31 @@ export const UNIVERSE = {
   GALAXY_ARM_A: 0.85,
   GALAXY_HALO_A: 8,
 
+  /**
+   * Rotation. The halo makes the curve flat: v(R) ≈ V_ROT, so
+   * Ω(R) = V_ROT / R falls outward while the two-armed density wave
+   * turns rigidly at OMEGA_P. We render in the wave's corotating
+   * frame — the arms stand still and the stars stream through them
+   * at Ω(R) − Ω_p: prograde inside corotation (R < V_ROT / OMEGA_P
+   * ≈ 8.4 kpc, just outside the solar circle, as decreed), retrograde
+   * beyond it. Units are toy: kpc and radians per second of wall
+   * clock, compressed so an orbit is minutes, not 200 Myr.
+   */
+  GALAXY_V_ROT: 0.021,
+  GALAXY_OMEGA_P: 0.0025,
+
+  /**
+   * The interstellar medium is supersonically turbulent, so its
+   * density is log-normal: ρ = ρ̄ · exp(σ·s) with s a zero-mean fBm
+   * field. TURB_SIGMA is that σ (clumping strength); TURB_FREQ is
+   * cycles per kpc of the largest eddies. Dust reddens: extinction
+   * per unit optical depth is DUST_RGB — blue dies first, which is
+   * why lanes look brown against the yellow bulge.
+   */
+  GALAXY_TURB_SIGMA: 1.35,
+  GALAXY_TURB_FREQ: 0.85,
+  GALAXY_DUST_RGB: [1.65, 1.0, 0.55] as [number, number, number],
+
   /** Solar circle (kpc) — home-star search and the thin-disk yardstick. */
   R_SUN: 8.2,
 

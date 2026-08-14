@@ -17,8 +17,9 @@ import {
 import { classifyStar, teffToRgb } from '../world/stellar';
 import { createGalaxyField, updateGalaxyField } from './galaxyField';
 import { createStarDiscs, RESOLVE_DIST, RESOLVE_MAX, type StarDiscs } from './galaxyStar';
+import { createStarfield, type Starfield } from './galaxyStarfield';
 
-const ZOOM_MIN = 0.4;
+const ZOOM_MIN = 0.18;
 const ZOOM_MAX = 70;
 /** Orbit radius (kpc) inside which a resolved star may be picked. */
 const PICK_ZOOM = 14;
@@ -119,6 +120,7 @@ export class GalaxyView {
   private hereRing: THREE.Mesh;
   private pickRing: THREE.Mesh;
   private discs: StarDiscs;
+  private starfield: Starfield;
   private discIds = new Set<number>();
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
@@ -167,6 +169,9 @@ export class GalaxyView {
     this.fieldMat = field.mat;
     this.fieldMesh.renderOrder = -10;
     this.scene.add(this.fieldMesh);
+
+    this.starfield = createStarfield(seed);
+    this.scene.add(this.starfield.pts);
 
     const stars = this.buildStars();
     this.starPts = stars.pts;
@@ -467,6 +472,7 @@ export class GalaxyView {
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
     this.discs.dispose();
+    this.starfield.dispose();
     this.renderer.dispose();
   }
 
@@ -910,8 +916,11 @@ export class GalaxyView {
     this.nebMat.uniforms.uPixel.value = px;
     const amongStars = this.radius < RESOLVE_DIST;
     const resolve = amongStars ? 0 : clamp01((28 - this.radius) / 24);
-    const dim = amongStars ? 0.16 : this.filter === 'all' ? 1 : 0.18;
+    const dim = amongStars ? 0.24 : this.filter === 'all' ? 1 : 0.18;
     updateGalaxyField(this.fieldMat, this.camera, dim, resolve);
+    // The grain of the photograph, on the clock: the drift term is
+    // Ω(R) − Ω_p per star; only unix time crosses the uniform.
+    this.starfield.update(Date.now() / 1000, px, this.filter === 'all' ? 1 : 0.3);
     const ringS = Math.max(0.05, this.radius * 0.032);
     this.pickRing.scale.setScalar(ringS);
     this.homeRing.scale.setScalar(ringS);
