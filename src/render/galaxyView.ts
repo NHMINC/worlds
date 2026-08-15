@@ -356,11 +356,12 @@ const STAR_FRAG = /* glsl */ `
     vec3 mrel = meanRel / wSum;
     float rMean = length(mrel) / max(radiusCat, 1e-4);
     float hard = clamp(vVis, 0.0, 1.0);
-    float e = hard * (1.2 - rMean);
+    float e = hard * (1.6 - 1.1 * rMean);
     if (vKind > 2.5) {
       // Shock strands: neighbouring filaments ride different shock
-      // speeds — the Veil's interleaved red and teal lacework.
-      e += 0.55 * nebField(vCenterCat + mrel * 2.6 + 91.0, uDustFreq * 1.6);
+      // speeds — the Veil's interleaved red and teal lacework. The
+      // lace survives ageing; the overall balance still reddens.
+      e += 0.12 + 0.6 * nebField(vCenterCat + mrel * 2.6 + 91.0, uDustFreq * 1.6);
     }
     vec3 lineSII = vec3(0.9, 0.18, 0.12);
     vec3 lineHa = vec3(1.0, 0.4, 0.36);
