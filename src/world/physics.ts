@@ -477,9 +477,9 @@ export const UNIVERSE = {
   SILHOUETTE_DUST_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,
   /** Emission-nebula glow gain (photograph stretch, not new energy).
-   *  Additive shells in the plane stack; 1.4 blew the midplane to
-   *  a white bar. 0.85 keeps the chaos without clipping the hue. */
-  NEB_EMISSION: 0.85,
+   *  Additive shells in the plane stack. 1.4 and 0.85 both blew
+   *  the midplane to a white bar; 0.5 leaves the red and the chaos. */
+  NEB_EMISSION: 0.5,
   /** Full-grown planetary-nebula shell radius (kpc, toy). */
   PN_R_MAX: 0.08,
   /** Full-grown supernova-remnant shell radius (kpc, toy). */

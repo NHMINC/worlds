@@ -138,7 +138,7 @@ export function emissionLook(
   const frac = clamp01(ev.ageGyr / UNIVERSE.HII_GYR);
   const radius = Math.max(0.03, Math.min(0.3, UNIVERSE.HII_R_K * Math.cbrt(Math.max(1, ev.luminosity))));
   const gain = 0.45 + 0.55 * (1 - frac);
-  return { radiusKpc: radius, gain, rgb: mixRgb(WHITE, [1, 0.66, 0.62], 0.35) };
+  return { radiusKpc: radius, gain, rgb: mixRgb([1, 0.42, 0.36], [1, 0.66, 0.62], 0.28) };
 }
 
 /**

@@ -342,7 +342,7 @@ const STAR_FRAG = /* glsl */ `
       float mask = smoothstep(1.0, 0.5, length(p));
       // Same photograph knob as the marched path — unresolved
       // shells used to ignore it and stack the midplane to white.
-      float a = vVis * uNebGain * 0.25 * mask;
+      float a = vVis * uNebGain * 0.12 * mask;
       if (a < 0.01) discard;
       gl_FragColor = vec4(vColor, a);
       return;
@@ -397,9 +397,6 @@ const STAR_FRAG = /* glsl */ `
     line = mix(line, lineOIII, smoothstep(0.55, 0.95, e));
     // Chemistry keeps a voice: the host tint leans the line blend.
     vec3 col = mix(line, vColor, 0.25);
-    // A little core heat, not a white wash — stacked shells in
-    // the plane already add; bleaching them made a white bar.
-    col = mix(col, vec3(1.0), min(0.12, 0.05 * em));
     gl_FragColor = vec4(col, min(em, 1.0));
   }
 `;
