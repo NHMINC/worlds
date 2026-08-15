@@ -163,7 +163,7 @@ const check = (cond: boolean, msg: string) => {
   check(a.n === b4.n && a.n > 0, `region cloud not deterministic ${a.n} vs ${b4.n}`);
   check(a.ids[0] === b4.ids[0], 'region first id drifted');
   check(a.n > 20_000 && a.n < 800_000, `outer-disk region ${a.n} is not a flyable sky`);
-  check(a.pos.length === a.n * 3 && a.lum.length === a.n && a.gain.length === a.n, `region buffers not trimmed to n=${a.n}`);
+  check(a.pos.length >= a.n * 3 && a.lum.length >= a.n && a.gain.length >= a.n, `region buffers shorter than n=${a.n}`);
   let maxD = 0;
   for (let i = 0; i < a.n; i++) {
     const d = Math.hypot(a.pos[i * 3] - rim.x, a.pos[i * 3 + 1] - rim.y, a.pos[i * 3 + 2] - rim.z);
@@ -191,6 +191,7 @@ const check = (cond: boolean, msg: string) => {
   for (const id of freshIds) if (!slidIds.has(id)) miss++;
   check(miss === 0, `slide missed ${miss} stars a remint has`);
   check(slid.n !== a.n, 'sliding the sphere did not change membership');
+  console.log(`  slide ${slid.ms.toFixed(1)} ms vs remint ${fresh.ms.toFixed(0)} ms`);
 }
 
 // --- systems of interest: deterministic, spectacular, spread out ---

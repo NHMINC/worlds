@@ -182,10 +182,26 @@ export function slotScatterKpc(): number {
  * spoke of the inner rings — a θ-wedge would miss the far side.
  */
 export function cellsOverlappingBall(x: number, y: number, z: number, r: number): number[] {
+  return cellsOverlappingAnnulus(x, y, z, 0, r);
+}
+
+/**
+ * Catalog cells whose scatter cubes may meet a Cartesian spherical
+ * shell rLo..rHi (inclusive). rLo = 0 is the filled ball.
+ */
+export function cellsOverlappingAnnulus(
+  x: number,
+  y: number,
+  z: number,
+  rLo: number,
+  rHi: number,
+): number[] {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const p = cartToGal(x, y, z);
-  const reach = r + slotScatterKpc() + 0.02;
+  const slack = slotScatterKpc() + 0.02;
+  const reach = rHi + slack;
+  const inner = Math.max(0, rLo - slack);
   const ir0 = Math.max(0, Math.floor(((p.R - reach) / rMax) * nr));
   const ir1 = Math.min(nr - 1, Math.floor(((p.R + reach) / rMax) * nr));
   const coversCore = p.R <= reach;
@@ -195,6 +211,7 @@ export function cellsOverlappingBall(x: number, y: number, z: number, r: number)
   const iz0 = Math.max(0, Math.floor((((p.z - reach) / zMax + 1) / 2) * nz));
   const iz1 = Math.min(nz - 1, Math.floor((((p.z + reach) / zMax + 1) / 2) * nz));
   const reach2 = reach * reach;
+  const inner2 = inner * inner;
   const out: number[] = [];
   for (let ir = ir0; ir <= ir1; ir++) {
     for (let dt = -dit; dt <= dit; dt++) {
@@ -205,7 +222,8 @@ export function cellsOverlappingBall(x: number, y: number, z: number, r: number)
         const mx = mid.R * Math.cos(mid.theta) - x;
         const my = mid.z - y;
         const mz = mid.R * Math.sin(mid.theta) - z;
-        if (mx * mx + my * my + mz * mz <= reach2) out.push(cell);
+        const d2 = mx * mx + my * my + mz * mz;
+        if (d2 <= reach2 && d2 >= inner2) out.push(cell);
       }
     }
   }
@@ -261,13 +279,27 @@ function cellVolume(cell: number): number {
 }
 
 /** How many slots in this cell are occupied. Density is the law. */
+let slotMemoSeed = '';
+const slotMemo = new Map<number, number>();
+
 export function slotsInCell(seed: string, cell: number): number {
+  if (seed !== slotMemoSeed) {
+    slotMemo.clear();
+    slotMemoSeed = seed;
+  }
+  const hit = slotMemo.get(cell);
+  if (hit !== undefined) return hit;
   const c = cellCenter(cell);
   const expect = density(c) * cellVolume(cell) * UNIVERSE.GALAXY_N_K;
-  if (expect <= 0) return 0;
+  if (expect <= 0) {
+    slotMemo.set(cell, 0);
+    return 0;
+  }
   const whole = Math.floor(expect);
   const extra = u01(seed, 'occ', cell) < expect - whole ? 1 : 0;
-  return Math.min(UNIVERSE.GALAXY_MAX_SLOT, whole + extra);
+  const n = Math.min(UNIVERSE.GALAXY_MAX_SLOT, whole + extra);
+  slotMemo.set(cell, n);
+  return n;
 }
 
 /**

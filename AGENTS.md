@@ -193,8 +193,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     every occupied slot is a point. Farther cells keep only the
     massive tail of their IMF.     The camera sits at the sphere centre — it does not tour the
     ball. Gestures **slide the sphere** through the catalog: stars
-    that cross in are minted, stars that leave drop out. Space
-    inside is drawn in a `GALAXY_REGION_VIEW_R` (40 kpc) ball
+    that cross in are minted, stars that leave drop out. The GPU
+    holds catalog positions; the vertex shader applies the
+    magnifier (`uCenter`, `uScale`). Membership is a **shell
+    walk** (`advanceRegionCloud`) on a worker — interior keepers
+    stay put; the frame only updates uniforms. We do not copy the
+    cloud or remesh on every slide. Space inside
+    is drawn in a `GALAXY_REGION_VIEW_R` (40 kpc) ball
     (offsets × VIEW_R/REGION_R); star size is not scaled. Cheap
     birth, no `evolve` until you tap. Distant stars are **1px
     pinpricks**. Closer ones grow from luminosity and distance.
