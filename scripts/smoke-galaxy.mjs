@@ -218,6 +218,25 @@ if (await galaxyBtn.count()) {
   if (arc2.stars < 1_000) errors.push(`saucer tap loaded only ${arc2.stars} stars`);
   if (!arc2.inBall) errors.push('saucer-tap cloud has stars outside the ball');
 
+  // Double-tap-and-hold cruise: accelerate, then release (same path as touch).
+  const box = await page.locator('.galaxy-stage canvas').boundingBox();
+  const hx = (box?.x ?? 0) + (box?.width ?? 1280) * 0.52;
+  const hy = (box?.y ?? 0) + (box?.height ?? 800) * 0.48;
+  const beforeCruise = await page.evaluate(() => window.__galaxyView?.currentRegion?.() ?? null);
+  await page.mouse.click(hx, hy);
+  await page.mouse.down();
+  await page.waitForTimeout(2800);
+  await page.mouse.move(hx + 70, hy);
+  await page.waitForTimeout(300);
+  await page.mouse.up();
+  await page.waitForTimeout(250);
+  const afterCruise = await page.evaluate(() => window.__galaxyView?.currentRegion?.() ?? null);
+  const cruiseD = beforeCruise && afterCruise
+    ? Math.hypot(afterCruise.x - beforeCruise.x, afterCruise.y - beforeCruise.y, afterCruise.z - beforeCruise.z)
+    : 0;
+  console.log('CRUISE', JSON.stringify({ before: beforeCruise, after: afterCruise, d: cruiseD }));
+  if (cruiseD < 0.0015) errors.push(`double-tap-and-hold did not slide the bubble (${cruiseD})`);
+
   // Set course is the dossier button — a star tap only selects.
   const goBack = await page.evaluate(() => {
     const v = window.__galaxyView;

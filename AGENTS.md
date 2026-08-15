@@ -213,9 +213,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `ZOOM_GESTURE_SPAN` (~2.6×); a ~0.6 s pause starts the next motion.
   After a pinch, the surviving finger is NOT a drag — rotation resumes
   only with a fresh single-finger touch. In **region** mode the camera
-  stays at the bubble centre: wheel/pinch and WASD slide the sphere
-  through the catalog, drag turns the look in place, and the
-  breadcrumb returns to the map.
+  stays at the bubble centre. Fly is a **double-tap and hold**
+  (one pointer path for mouse and touch): speed builds to a cap,
+  stays there while held, and brakes fast on release. Moving the
+  finger or mouse during the hold turns the look — that is the
+  heading. Drag without a hold only looks. Wheel/pinch do not fly.
+  A second finger cancels the hold. The canvas is `touch-action:
+  none`, so iOS/Android do not steal the double-tap as a page zoom.
+  WASD still slides. The breadcrumb returns to the map.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper

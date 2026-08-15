@@ -48,6 +48,15 @@ const MAP_R_HOME = 34;
 const MAG_SLIDE = 0.01;
 /** A jump bigger than this remints instead of walking the rim. */
 const MAG_REBUILD = 0.45;
+/** Double-tap window (ms) and slack (px). Mouse and touch share this. */
+const TAP_MS = 340;
+const TAP_SLACK = 42;
+/** Hold-to-cruise in the magnified frame (view kpc / s). */
+const THRUST_MAX = 0.12;
+const THRUST_ACCEL = 0.048;
+const THRUST_BRAKE = 0.42;
+/** Second tap must be held this long before cruise starts. */
+const THRUST_HOLD_MS = 140;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
@@ -272,8 +281,6 @@ export class GalaxyView {
   private readonly worldUp = new THREE.Vector3(0, 1, 0);
   private keys = new Set<string>();
   private panBtn = 0;
-  private pinchMidX = 0;
-  private pinchMidY = 0;
 
   private dragging = false;
   private lastX = 0;
@@ -283,6 +290,15 @@ export class GalaxyView {
   private pinch0 = 0;
   private gestureR = 0;
   private lastZoomAt = 0;
+  private lastTapAt = 0;
+  private lastTapX = 0;
+  private lastTapY = 0;
+  private pendingPick: { x: number; y: number; at: number } | null = null;
+  private pickTimer: ReturnType<typeof setTimeout> | null = null;
+  private thrustHeld = false;
+  private thrustArmed = false;
+  private thrustArmAt = 0;
+  private thrustSpeed = 0;
   private idle = 0;
   private lastT = performance.now();
 
@@ -327,7 +343,7 @@ export class GalaxyView {
     }, 60);
 
     canvas.style.touchAction = 'none';
-    canvas.addEventListener('pointerdown', this.onDown);
+    canvas.addEventListener('pointerdown', this.onDown, { passive: false });
     canvas.addEventListener('pointermove', this.onMove);
     canvas.addEventListener('pointerup', this.onUp);
     canvas.addEventListener('pointercancel', this.onUp);
@@ -477,6 +493,7 @@ export class GalaxyView {
     this.objects = [];
     this.buildArcStars();
     this.censusMemo = {};
+    this.resetThrust();
 
     this.arcPos.set(0, 0, 0);
     const glen = Math.hypot(x, z);
@@ -508,6 +525,7 @@ export class GalaxyView {
     this.focusHud = null;
     this.censusMemo = {};
     this.grownCount = 0;
+    this.resetThrust();
     this.sectors.group.visible = true;
     if (this.visitedMk) this.visitedMk.pts.visible = true;
     if (this.interestMk) this.interestMk.pts.visible = true;
@@ -834,6 +852,7 @@ export class GalaxyView {
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('pointerup', this.onUp);
     this.canvas.removeEventListener('pointercancel', this.onUp);
+    this.clearPendingPick();
     this.canvas.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -851,6 +870,21 @@ export class GalaxyView {
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
     this.renderer.dispose();
+  }
+
+  private resetThrust(): void {
+    this.thrustHeld = false;
+    this.thrustArmed = false;
+    this.thrustArmAt = 0;
+    this.thrustSpeed = 0;
+    this.lastTapAt = 0;
+    this.clearPendingPick();
+  }
+
+  private clearPendingPick(): void {
+    if (this.pickTimer != null) clearTimeout(this.pickTimer);
+    this.pickTimer = null;
+    this.pendingPick = null;
   }
 
   private select(obj: GalaxyObject | null): void {
@@ -997,20 +1031,12 @@ export class GalaxyView {
 
   /**
    * Map: scale the orbit radius toward what is already framed.
-   * Arc: dolly along the look — no lock point.
+   * Region: zoom does not fly — hold-to-cruise does.
    */
   private zoom(factor: number): void {
     const now = performance.now();
     this.idle = 0;
-    if (this.mode === 'region') {
-      this.orientArc();
-      const pace = this.arcPace();
-      const step = -Math.log(Math.max(1e-4, factor)) * pace * 2.2;
-      this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
-      this.applyCam();
-      this.lastZoomAt = now;
-      return;
-    }
+    if (this.mode === 'region') return;
     if (now - this.lastZoomAt > 600) this.gestureR = this.tgtRadius;
     this.lastZoomAt = now;
     const lo = Math.max(this.minR(), this.gestureR / ZOOM_GESTURE_SPAN);
@@ -1125,6 +1151,7 @@ export class GalaxyView {
   // ------------------------------------------------------------- input
 
   private onDown = (e: PointerEvent): void => {
+    e.preventDefault();
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
@@ -1140,12 +1167,25 @@ export class GalaxyView {
       this.lastY = e.clientY;
       this.moved = 0;
       this.idle = 0;
+      if (this.mode === 'region') {
+        const now = performance.now();
+        const dtap =
+          now - this.lastTapAt < TAP_MS &&
+          Math.hypot(e.clientX - this.lastTapX, e.clientY - this.lastTapY) < TAP_SLACK;
+        if (dtap) {
+          this.clearPendingPick();
+          this.thrustArmed = true;
+          this.thrustArmAt = now;
+          this.lastTapAt = 0;
+        }
+      }
     } else if (this.pointers.size === 2) {
+      this.thrustHeld = false;
+      this.thrustArmed = false;
+      this.clearPendingPick();
       this.dragging = false;
       const pts = [...this.pointers.values()];
       this.pinch0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      this.pinchMidX = (pts[0].x + pts[1].x) * 0.5;
-      this.pinchMidY = (pts[0].y + pts[1].y) * 0.5;
       this.gestureR = this.tgtRadius;
       this.lastZoomAt = performance.now();
     }
@@ -1157,18 +1197,11 @@ export class GalaxyView {
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      const mx = (pts[0].x + pts[1].x) * 0.5;
-      const my = (pts[0].y + pts[1].y) * 0.5;
-      if (this.pinch0 > 0) {
+      if (this.pinch0 > 0 && this.mode !== 'region') {
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
       }
-      if (this.mode === 'region') {
-        this.strafePixels(mx - this.pinchMidX, my - this.pinchMidY);
-      }
       this.pinch0 = d;
-      this.pinchMidX = mx;
-      this.pinchMidY = my;
       this.moved += 4;
       this.idle = 0;
       return;
@@ -1211,7 +1244,32 @@ export class GalaxyView {
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch0 = 0;
     if (this.pointers.size === 0) {
-      if (this.dragging && this.moved < 22) this.pick(e.clientX, e.clientY);
+      if (this.thrustHeld || this.thrustArmed) {
+        this.thrustHeld = false;
+        this.thrustArmed = false;
+        this.thrustArmAt = 0;
+      } else if (this.dragging && this.moved < 22) {
+        if (this.mode === 'region') {
+          const at = performance.now();
+          this.lastTapAt = at;
+          this.lastTapX = e.clientX;
+          this.lastTapY = e.clientY;
+          this.clearPendingPick();
+          this.pendingPick = { x: e.clientX, y: e.clientY, at };
+          this.pickTimer = setTimeout(() => {
+            const pending = this.pendingPick;
+            if (!pending || pending.at !== at) return;
+            if (this.thrustHeld || this.thrustArmed) return;
+            this.pendingPick = null;
+            this.pickTimer = null;
+            this.pick(pending.x, pending.y);
+          }, TAP_MS);
+        } else {
+          this.pick(e.clientX, e.clientY);
+        }
+      } else {
+        this.lastTapAt = 0;
+      }
       this.dragging = false;
     } else {
       // One pinch finger lifted: the survivor is NOT a drag. Rotation
@@ -1248,6 +1306,27 @@ export class GalaxyView {
   private onKeyUp = (e: KeyboardEvent): void => {
     this.keys.delete(e.code);
   };
+
+  /** Double-tap-and-hold cruise. Same path for mouse and touch. */
+  private cruise(dt: number): void {
+    if (this.mode !== 'region') {
+      this.thrustHeld = false;
+      this.thrustSpeed = 0;
+      return;
+    }
+    if (this.thrustArmed && !this.thrustHeld && performance.now() - this.thrustArmAt >= THRUST_HOLD_MS) {
+      this.thrustHeld = true;
+    }
+    if (this.thrustHeld) this.thrustSpeed = Math.min(THRUST_MAX, this.thrustSpeed + THRUST_ACCEL * dt);
+    else this.thrustSpeed = Math.max(0, this.thrustSpeed - THRUST_BRAKE * dt);
+    if (this.thrustSpeed <= 1e-5) {
+      this.thrustSpeed = 0;
+      return;
+    }
+    this.orientArc();
+    const step = this.thrustSpeed * dt;
+    this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
+  }
 
   private steerArc(dt: number): void {
     let mx = 0;
@@ -1419,6 +1498,7 @@ export class GalaxyView {
     this.lastT = now;
     this.idle += dt;
     if (this.mode === 'region') {
+      this.cruise(dt);
       this.steerArc(dt);
       this.applyCam();
       this.updateSight();
