@@ -165,7 +165,7 @@ if (await galaxyBtn.count()) {
     return o ? { id: o.id, phase: o.star.phase } : null;
   });
   console.log('APPROACH', JSON.stringify(approached));
-  await page.waitForTimeout(800);
+  await page.waitForSelector('.gx-plate', { timeout: 8000 });
   const close = await page.evaluate(() => {
     const v = window.__galaxyView;
     const id = v.selectedObject?.()?.id ?? v.focusedObject?.()?.id;
@@ -190,12 +190,14 @@ if (await galaxyBtn.count()) {
     v.flyAlong?.(0.01);
     v.syncArc?.();
     const a1 = v.pointApparent?.(id) ?? 0;
-    return { id, a0, a1, grown: v.grownStars?.() ?? 0, plate: Boolean(document.querySelector('.gx-plate')) };
+    return { id, a0, a1, grown: v.grownStars?.() ?? 0 };
   });
-  console.log('GROW', JSON.stringify(grow));
+  await page.waitForTimeout(200);
+  const plate = await page.locator('.gx-plate').count();
+  console.log('GROW', JSON.stringify({ ...grow, plate }));
   if (!grow || grow.a0 <= 0) errors.push('approached star has no growing point');
   if (grow && grow.a1 <= grow.a0 * 1.02) errors.push(`star did not grow on approach ${grow.a0} → ${grow.a1}`);
-  if (grow && !grow.plate) errors.push('no compact sight HUD after approaching a star');
+  if (!plate) errors.push('no compact sight HUD after approaching a star');
 
   // Back out to the map via the breadcrumb, then re-enter by tapping the saucer.
   await page.click('.gx-crumb');

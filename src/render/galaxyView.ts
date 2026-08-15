@@ -704,16 +704,37 @@ export class GalaxyView {
   }
 
   /**
-   * Jump next to a pinned star (selected, here, or home) inside its
-   * arc, close enough that the point grows. Smoke / tests.
+   * Jump next to a pinned star (selected, here, or home) inside the
+   * open region, close enough that the point grows. Smoke / tests.
+   * Does not remint — the cloud is frozen; we fly to the star in it.
    */
   approachNearest(): GalaxyObject | null {
     const best = this.selected ?? this.hereObj ?? this.home;
     if (!best) return null;
-    this.focus(best);
-    const c = this.viewCart(best);
-    this.arcPos.set(c.x + 0.028, c.y + 0.018, c.z + 0.012);
-    this.aimAt(c.x, c.y, c.z);
+    if (this.mode !== 'region') this.focus(best);
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    const cloud = this.cloud;
+    let found = false;
+    if (cloud) {
+      for (let i = 0; i < cloud.n; i++) {
+        if (cloud.ids[i] !== best.id) continue;
+        x = cloud.pos[i * 3];
+        y = cloud.pos[i * 3 + 1];
+        z = cloud.pos[i * 3 + 2];
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      const c = this.viewCart(best);
+      x = c.x;
+      y = c.y;
+      z = c.z;
+    }
+    this.arcPos.set(x + 0.028, y + 0.018, z + 0.012);
+    this.aimAt(x, y, z);
     this.applyCam();
     this.updateSight(true);
     return best;
