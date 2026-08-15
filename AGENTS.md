@@ -189,12 +189,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     deterministic systems of interest (`systemsOfInterest`). NO stars
     are drawn on the map; the tile speckle is chart fabric, not a sky.
   - **Arc**: tap a tile and its brightest ~`GALAXY_SECTOR_STARS` REAL
-    stars load ONCE (`sectorSample` — a magnitude-limited survey:
-    living turnoff band + a small massive tip, ranked by light).
-    Inside an arc, every surveyed star is drawn at all times; nothing
-    about visibility reads the camera (fixed-pixel points). Photosphere
-    discs (`galaxyStar.ts`) are the arc's brightest N, picked once on
-    entry. Tap a disc to set course. Zoom out (or the breadcrumb) to
+    unique stars load ONCE (`sectorSample` — a magnitude-limited survey
+    of the living K/G/F field plus a giant/hot tail and a massive tip,
+    ranked by light). Inside an arc, every surveyed star is drawn and
+    **tappable** at all times; nothing about visibility or picking
+    reads the camera (fixed-pixel points; screen-space nearest).
+    Photosphere discs (`galaxyStar.ts`) are a rounder LOD for the
+    brightest N, picked once on entry — they do not steal taps.
+    Set course is the dossier button. Zoom out (or the breadcrumb) to
     return to the map.
   Nothing queries or rebuilds per camera move in either mode — the
   free-flight explorer's blink / cluster / stutter / re-roll bug class

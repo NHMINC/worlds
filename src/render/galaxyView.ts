@@ -9,9 +9,10 @@
  * ARC mode is one tapped "thick arc": its brightest ~2,500 REAL catalog
  * stars load ONCE as a static point buffer (every dot an addressable
  * id). Every surveyed star stays drawn at a fixed pixel size — nothing
- * about visibility or point size reads the camera. Photosphere discs
- * are the survey's brightest N, picked once on entry (plus the
- * selected pin). Tap a star for the dossier and set course.
+ * about visibility or point size reads the camera — and every one is
+ * tappable (screen-space nearest; Set course is the dossier button).
+ * Photosphere discs are a rounder LOD for the brightest N, picked once
+ * on entry; they do not steal taps or set course by themselves.
  *
  * Nothing in either mode queries or rebuilds per camera move — the
  * blink / cluster / stutter / re-roll failure class of the free-flight
@@ -81,7 +82,7 @@ const STAR_VERT = /* glsl */ `
     float pulse = aPulse > 0.5 ? 0.55 + 0.45 * sin(uTime * 18.0 + position.x * 7.0) : 1.0;
     vPulse = pulse * aVis;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = clamp(aSize * uPixel, 2.0, 5.0);
+    gl_PointSize = clamp(aSize * uPixel, 3.0, 7.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -476,14 +477,8 @@ export class GalaxyView {
   setFilter(f: GalaxyFilter): void {
     this.filter = f;
     this.censusMemo = {};
-    if (this.starVis) {
-      const arr = this.starVis.array as Float32Array;
-      for (let i = 0; i < this.objects.length; i++) {
-        arr[i] = matchesFilter(this.objects[i], f) ? 1 : 0.12;
-      }
-      this.starVis.needsUpdate = true;
-    }
     if (this.mode === 'arc') this.pickDiscs();
+    else this.applyStarVis();
   }
 
   dismiss(): void {
@@ -523,6 +518,11 @@ export class GalaxyView {
 
   beaconCount(): number {
     return this.objects.length;
+  }
+
+  /** The arc's loaded survey — every row is a tappable catalog id. */
+  surveyStars(): GalaxyObject[] {
+    return this.objects;
   }
 
   /** Photospheres currently meshed — the stars that left the point LOD. */
@@ -743,15 +743,11 @@ export class GalaxyView {
       if (arc) this.enterArc(arc);
       return;
     }
-    // Arc mode: a photosphere disc sets course; a point star selects.
-    const disc = this.discs.pick(this.raycaster);
-    if (disc) {
-      this.select(disc);
-      this.callbacks.onGo?.(disc);
-      return;
-    }
+    // Arc mode: every surveyed star is the same object. Nearest on
+    // screen wins; the dossier's Set course is how you go. Photosphere
+    // discs are paint — they must not steal the tap or jump the ship.
     let best: GalaxyObject | null = null;
-    let bestD = 30;
+    let bestD = 28;
     for (const o of this.objects) {
       if (!matchesFilter(o, this.filter)) continue;
       const p = this.projectClient(o);
@@ -883,6 +879,19 @@ export class GalaxyView {
     this.discs.syncCamera(this.camera);
     this.discIds.clear();
     for (const o of near) this.discIds.add(o.id);
+    this.applyStarVis();
+  }
+
+  /** Points under a disc hide; filter-mismatched points dim. */
+  private applyStarVis(): void {
+    if (!this.starVis) return;
+    const arr = this.starVis.array as Float32Array;
+    for (let i = 0; i < this.objects.length; i++) {
+      const o = this.objects[i];
+      if (this.discIds.has(o.id)) arr[i] = 0;
+      else arr[i] = matchesFilter(o, this.filter) ? 1 : 0.12;
+    }
+    this.starVis.needsUpdate = true;
   }
 
   // --------------------------------------------------------------- frame

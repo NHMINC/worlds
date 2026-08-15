@@ -111,6 +111,16 @@ const check = (cond: boolean, msg: string) => {
   const pop = sectorPopulation(seed, id);
   check(pop > a.length, `population ${pop} smaller than sample`);
 
+  const full = sectorSample(seed, id, UNIVERSE.GALAXY_SECTOR_STARS);
+  check(full.length === UNIVERSE.GALAXY_SECTOR_STARS, `full survey ${full.length}`);
+  check(new Set(full.map((o) => o.id)).size === full.length, 'survey has duplicate ids');
+  const remnantPh = new Set(['white_dwarf', 'neutron_star', 'pulsar', 'black_hole']);
+  const corpses = full.filter((o) => remnantPh.has(o.star.phase) && o.star.nebula === 'none');
+  check(
+    corpses.length < full.length * 0.25,
+    `survey is a graveyard: ${corpses.length}/${full.length} bare remnants`,
+  );
+
   // Equal-mass rings: populations of arcs across rings stay comparable.
   const pops: number[] = [];
   for (let ring = 0; ring < UNIVERSE.GALAXY_SECTOR_RINGS; ring += 8) {
