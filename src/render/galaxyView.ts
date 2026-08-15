@@ -36,6 +36,8 @@ import {
   systemsOfInterest,
   buildRegionCloud,
   buildSilhouetteCloud,
+  installSilhouetteCloud,
+  silhouetteCloud,
   advanceRegionCloud,
   regionName,
   sketchMatches,
@@ -303,6 +305,7 @@ export class GalaxyView {
   private silPts: THREE.Points | null = null;
   private silGeo: THREE.BufferGeometry | null = null;
   private silMat: THREE.ShaderMaterial | null = null;
+  private silWorker: Worker | null = null;
   /** Catalog positions (the vertex shader applies the magnifier). */
   private cloud: StarCloud | null = null;
   private borderWorker: Worker | null = null;
@@ -397,11 +400,6 @@ export class GalaxyView {
       this.interestMk = this.makeMarkers(systemsOfInterest(this.seed, 100), [0.95, 0.85, 0.55], 9);
       this.scene.add(this.interestMk.pts);
     }, 60);
-    // Warm the disk silhouette so the first dive is not a hitch.
-    window.setTimeout(() => {
-      if (this.disposed) return;
-      buildSilhouetteCloud(this.seed);
-    }, 80);
 
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown, { passive: false });
@@ -413,6 +411,7 @@ export class GalaxyView {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     this.bootBorderWorker();
+    this.bootSilhouetteWorker();
 
     this.setPreset('face');
     this.theta = this.tgtTheta;
@@ -665,7 +664,8 @@ export class GalaxyView {
   }
 
   private buildSilhouetteStars(): void {
-    const cloud = buildSilhouetteCloud(this.seed);
+    const cloud = silhouetteCloud(this.seed);
+    if (!cloud) return;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
@@ -1022,6 +1022,8 @@ export class GalaxyView {
     window.removeEventListener('keyup', this.onKeyUp);
     this.borderWorker?.terminate();
     this.borderWorker = null;
+    this.silWorker?.terminate();
+    this.silWorker = null;
     this.disposeArcStars();
     for (const mk of [this.visitedMk, this.interestMk]) {
       if (!mk) continue;
@@ -1178,6 +1180,56 @@ export class GalaxyView {
     if (this.selected) {
       const c = this.viewCart(this.selected);
       this.pickRing.position.set(c.x, c.y, c.z);
+    }
+  }
+
+  private bootSilhouetteWorker(): void {
+    try {
+      this.silWorker = new Worker(new URL('../world/silhouette.worker.ts', import.meta.url), { type: 'module' });
+      this.silWorker.onmessage = (e: MessageEvent) => {
+        const m = e.data as {
+          type: string;
+          seed: string;
+          n: number;
+          ids: Float64Array;
+          pos: Float32Array;
+          col: Float32Array;
+          size: Float32Array;
+          pulse: Float32Array;
+          gain: Float32Array;
+          bits: Uint8Array;
+          mk: Uint8Array;
+          lum: Float32Array;
+          ms: number;
+        };
+        if (m.type !== 'ready' || m.seed !== this.seed) return;
+        installSilhouetteCloud(m.seed, {
+          n: m.n,
+          ids: m.ids,
+          pos: m.pos,
+          col: m.col,
+          size: m.size,
+          pulse: m.pulse,
+          gain: m.gain,
+          bits: m.bits,
+          mk: m.mk,
+          lum: m.lum,
+          ms: m.ms,
+        });
+        if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
+      };
+      this.silWorker.onerror = () => {
+        this.silWorker?.terminate();
+        this.silWorker = null;
+      };
+      this.silWorker.postMessage({ type: 'mint', seed: this.seed });
+    } catch {
+      this.silWorker = null;
+      window.setTimeout(() => {
+        if (this.disposed) return;
+        buildSilhouetteCloud(this.seed);
+        if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
+      }, 0);
     }
   }
 

@@ -22,6 +22,7 @@ import {
   cellsOverlappingAnnulus,
   cellsOverlappingBall,
   density,
+  densityParts,
   galToCart,
   isSlotAlive,
   slotBirthCart,
@@ -31,6 +32,7 @@ import {
   slotScatterKpc,
   slotBirthRaw,
   slotMsLum,
+  type SlotBirth,
   slotMsTeff,
   imfQuantile,
   slotRangeForMass,
@@ -38,7 +40,7 @@ import {
   type GalPos,
   type GalaxyObject,
 } from './galaxy';
-import { mkFromTeff, teffToRgb } from './stellar';
+import { mkFromTeff, msLifetime, teffToRgb } from './stellar';
 
 const TAU = Math.PI * 2;
 
@@ -277,10 +279,15 @@ function allocCloud(n: number): Omit<StarCloud, 'n' | 'ms'> {
   };
 }
 
-function writeBirth(seed: string, cell: number, slot: number, filled: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
-  const b = slotBirthRaw(seed, cell, slot, filled);
+function writeFromBirth(
+  cell: number,
+  slot: number,
+  i: number,
+  c: Omit<StarCloud, 'n' | 'ms'>,
+  b: SlotBirth,
+  alive: boolean,
+): void {
   const cart = galToCart(b.pos);
-  const alive = isSlotAlive(b.massZams, b.ageGyr);
   const L = alive ? slotMsLum(b.massZams) : 0.004;
   const teff = alive ? slotMsTeff(b.massZams) : 9000;
   const rgb = alive ? teffToRgb(teff) : ([0.62, 0.7, 0.88] as [number, number, number]);
@@ -304,6 +311,11 @@ function writeBirth(seed: string, cell: number, slot: number, filled: number, i:
   c.bits[i] = bit;
   c.mk[i] = alive ? (MK_IX[mkFromTeff(teff)] ?? 0) : 0;
   c.lum[i] = L;
+}
+
+function writeBirth(seed: string, cell: number, slot: number, filled: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
+  const b = slotBirthRaw(seed, cell, slot, filled);
+  writeFromBirth(cell, slot, i, c, b, isSlotAlive(b.massZams, b.ageGyr));
 }
 
 function finishCloud(c: Omit<StarCloud, 'n' | 'ms'>, n: number, t0: number): StarCloud {
@@ -402,23 +414,14 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
 }
 
 /**
- * Upper bound on cell-centre density (arm crest + bar if the ring
- * can touch it). Used to skip empty (ring, z) bands before asking
- * slotsInCell — the silhouette is the luminous tail, not every slot.
+ * Thin-disk density at arm crest. Living B stars are a thin-disk
+ * clock (ageWindow floor 0.02 Gyr); other pops are already too old.
  */
-function densityCeil(R: number, z: number): number {
+function thinDensityCeil(R: number, z: number): number {
   const U = UNIVERSE;
-  const r = Math.hypot(R, z);
   const e = Math.exp(z / U.GALAXY_ZD);
   const sech2z = (2 / (e + 1 / e)) ** 2;
-  const et = Math.exp(z / U.GALAXY_Z_THICK);
-  const sech2t = (2 / (et + 1 / et)) ** 2;
-  const thin = Math.exp(-R / U.GALAXY_RD) * sech2z * (1 + U.GALAXY_ARM_A);
-  const thick = 0.14 * Math.exp(-R / U.GALAXY_RD_THICK) * sech2t;
-  const bulge = 4.2 * Math.exp(-3.5 * (r / U.GALAXY_RE_BULGE));
-  const bar = R < U.GALAXY_BAR_A + 0.25 ? 3.4 : 0;
-  const halo = 0.03 / (1 + r / U.GALAXY_HALO_A) ** 3.2;
-  return thin + thick + bulge + bar + halo;
+  return Math.exp(-R / U.GALAXY_RD) * sech2z * (1 + U.GALAXY_ARM_A);
 }
 
 function catalogCellVolume(ir: number): number {
@@ -430,7 +433,30 @@ function catalogCellVolume(ir: number): number {
   return 0.5 * (R1 * R1 - R0 * R0) * (TAU / nth) * dz;
 }
 
+/** Hottest ZAMS that can still be on the MS at the thin-disk age floor. */
+function silhouetteMassHi(): number {
+  const ageLo = 0.02;
+  let lo = UNIVERSE.GALAXY_SILHOUETTE_M;
+  let hi = Math.min(40, UNIVERSE.IMF_MAX);
+  for (let i = 0; i < 28; i++) {
+    const mid = (lo + hi) * 0.5;
+    if (msLifetime(mid) > ageLo) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
 let silhouetteMemo: { seed: string; cloud: StarCloud } | null = null;
+
+/** Cached harvest, or null until the worker (or a sync mint) finishes. */
+export function silhouetteCloud(seed: string): StarCloud | null {
+  return silhouetteMemo?.seed === seed ? silhouetteMemo.cloud : null;
+}
+
+/** Install a harvest minted off-thread. Same cache `buildSilhouetteCloud` uses. */
+export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
+  silhouetteMemo = { seed, cloud };
+}
 
 /**
  * Magnitude-limited luminous tail of the whole disk. Living stars
@@ -445,8 +471,10 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const mLo = UNIVERSE.GALAXY_SILHOUETTE_M;
+  const mHi = silhouetteMassHi();
   const uCut = imfQuantile(mLo);
-  const sMin = 1 / Math.max(1e-6, 1 - uCut);
+  const uHi = imfQuantile(mHi);
+  const tailFrac = Math.max(1e-6, uHi - uCut);
   let c = allocCloud(160_000);
   let n = 0;
   for (let ir = 0; ir < nr; ir++) {
@@ -454,18 +482,21 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
     const R = ((ir + 0.5) / nr) * rMax;
     for (let iz = 0; iz < nz; iz++) {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
-      if (densityCeil(R, z) * vol * nK < sMin - 1) continue;
+      if (thinDensityCeil(R, z) * vol * nK * tailFrac < 0.25) continue;
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
+        const mid = cellCenter(cell);
+        const thin = densityParts(mid).thin;
+        if (thin * vol * nK * tailFrac < 0.25) continue;
         const filled = slotsInCell(seed, cell);
-        if (filled * (1 - uCut) < 1) continue;
-        const [a, b] = slotRangeForMass(filled, mLo, UNIVERSE.IMF_MAX);
-        const s0 = Math.max(a, Math.ceil(uCut * filled));
-        for (let slot = s0; slot < b; slot++) {
+        if (filled * tailFrac < 1) continue;
+        const s0 = Math.ceil(uCut * filled);
+        const s1 = Math.ceil(uHi * filled);
+        for (let slot = s0; slot < s1; slot++) {
           const birth = slotBirthRaw(seed, cell, slot, filled);
           if (!isSlotAlive(birth.massZams, birth.ageGyr)) continue;
           if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-          writeBirth(seed, cell, slot, filled, n++, c);
+          writeFromBirth(cell, slot, n++, c, birth, true);
         }
       }
     }
