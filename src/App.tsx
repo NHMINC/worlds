@@ -3,7 +3,7 @@ import { Engine, type BodyOverrides, type RigMode, type Tool, type ViewState } f
 import { AmbientMusic } from './audio/ambient';
 import { db, deleteSystem, touchSystem } from './store/db';
 import { exportSystem, importSystem } from './store/exportImport';
-import { CURRENT_GEN_VERSION, effectivePhysics, systemAt, type SystemSpec } from './world/systemgen';
+import { CURRENT_GEN_VERSION, systemAt, type SystemSpec } from './world/systemgen';
 import { objectAt, type GalaxyObject } from './world/galaxy';
 import { discoverHabitable } from './world/discover';
 import { PALETTE } from './world/palettes';
@@ -26,14 +26,6 @@ import { UNIVERSE } from './world/physics';
 import { METERS_PER_LEVEL } from './world/toygen';
 
 const LAST_SYSTEM_KEY = 'wb_last_system';
-
-// Climate dial bounds: the full physical range, not the comfortable middle.
-// 40 K freezes nitrogen; 600 K is past boil-off. The dial scale stays
-// (T - T_COLD) / (T_HOT - T_COLD), so saved values need no migration.
-const dialOfK = (k: number) => (k - UNIVERSE.T_COLD) / (UNIVERSE.T_HOT - UNIVERSE.T_COLD);
-const kOfDial = (t: number) => UNIVERSE.T_COLD + t * (UNIVERSE.T_HOT - UNIVERSE.T_COLD);
-const CLIMATE_MIN = Math.round(dialOfK(40) * 100) / 100;
-const CLIMATE_MAX = Math.round(dialOfK(600) * 100) / 100;
 
 /** Normalized zoom (0..1, log scale) above which editing tools appear. */
 const EDIT_ZOOM_NORM = 0.65;
@@ -76,7 +68,6 @@ export default function App() {
   const canEditRef = useRef(false);
   const modeRef = useRef<RigMode>('orbit');
   const bodyIdRef = useRef('');
-  const dialTimer = useRef<number | null>(null);
 
   const [systems, setSystems] = useState<SystemMeta[]>([]);
   const [system, setSystem] = useState<SystemMeta | null>(null);
@@ -141,14 +132,7 @@ export default function App() {
           const body = specRef.current?.bodies.find((b) => b.id === bodyId);
           if (!info || !body) return;
           const waterLevel = engine.waterLevelOf(bodyId);
-          // Geology reads the EFFECTIVE physics: terraforming lawfully
-          // shifts the crust partition (life organics, water subtraction).
-          const phys = effectivePhysics(
-            specRef.current!,
-            body,
-            overridesRef.current.get(bodyId)?.temp,
-          );
-          const geo = geologyFor(body.seed, phys, waterLevel);
+          const geo = geologyFor(body.seed, body.physics, waterLevel);
           setInspected({
             cell,
             level: info.level,
@@ -242,7 +226,7 @@ export default function App() {
     ]);
     // Player state as engine overrides: dials plus sparse absolute terrain.
     const overrides = new Map<string, BodyOverrides>();
-    for (const b of bs) overrides.set(b.bodyId, { temp: b.temp, seaLevel: b.seaLevel });
+    // Climate / sea dials are retired. Worlds show generated physics.
     for (const t of terr) {
       const o = overrides.get(t.bodyId) ?? {};
       const m = new Map<number, number>();
@@ -313,41 +297,7 @@ export default function App() {
     }
   }
 
-  // ------------------------------------------------------------ terraforming dials
-
   const currentBody = spec?.bodies.find((b) => b.id === currentBodyId) ?? null;
-  const currentState = bodyStates.get(currentBodyId);
-  const dialTemp = currentState?.temp ?? currentBody?.temp ?? 0.5;
-  const dialSea = currentState?.seaLevel ?? currentBody?.seaLevel ?? 0.5;
-  // Effective physics for the UI: the climate dial re-runs the pipeline, so
-  // the inspector's classification/ocean/life rows follow the terraforming.
-  const currentPhysics =
-    spec && currentBody ? effectivePhysics(spec, currentBody, currentState?.temp) : undefined;
-
-  function setDial(kind: 'temp' | 'seaLevel', value: number): void {
-    const s = system;
-    const bodyId = currentBodyId;
-    if (!s || !bodyId) return;
-    const rec: BodyStateRecord = {
-      ...(bodyStates.get(bodyId) ?? { systemId: s.id, bodyId }),
-      systemId: s.id,
-      bodyId,
-      [kind]: value,
-    };
-    setBodyStates((m) => new Map(m).set(bodyId, rec));
-    void db.bodyState.put(rec);
-    void touchSystem(s.id);
-    const o = overridesRef.current.get(bodyId) ?? {};
-    o[kind] = value;
-    overridesRef.current.set(bodyId, o);
-    // Debounce the rebuild: slider drags fire continuously, terrain builds
-    // are chunked but not free.
-    if (dialTimer.current !== null) window.clearTimeout(dialTimer.current);
-    dialTimer.current = window.setTimeout(() => {
-      dialTimer.current = null;
-      engineRef.current?.setOverrides(bodyId, overridesRef.current.get(bodyId)!);
-    }, 180);
-  }
 
   // ------------------------------------------------------------ labels & objects
 
@@ -541,34 +491,7 @@ export default function App() {
       )}
 
       {tool === 'inspect' && mode === 'orbit' && currentBody && (
-        <InspectorPanel body={currentBody} physics={currentPhysics} cell={inspected} onClose={() => setTool('pan')} />
-      )}
-
-      {!galaxyOpen && mode === 'orbit' && currentBody?.kind === 'rocky' && (
-        <div className="terraform" title="Terraforming dials for this world">
-          <label>
-            <span>sea</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={dialSea}
-              onChange={(e) => setDial('seaLevel', Number(e.target.value))}
-            />
-          </label>
-          <label>
-            <span>climate · {Math.round(kOfDial(dialTemp) - 273)}°C</span>
-            <input
-              type="range"
-              min={CLIMATE_MIN}
-              max={CLIMATE_MAX}
-              step={0.01}
-              value={dialTemp}
-              onChange={(e) => setDial('temp', Number(e.target.value))}
-            />
-          </label>
-        </div>
+        <InspectorPanel body={currentBody} physics={currentBody.physics} cell={inspected} onClose={() => setTool('pan')} />
       )}
 
       {managerOpen && (
