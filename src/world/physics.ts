@@ -434,9 +434,11 @@ export const UNIVERSE = {
   /**
    * Distant luminous backdrop (region dive). The flyable ball does
    * not change. Outside it, a magnitude-limited harvest of the rest
-   * of the disk — luminous living stars above SILHOUETTE_M (A and
-   * hotter, giants, WR) plus nebula hosts and dusty cell centres —
-   * is placed with the same magnifier. Distant discs are toy angular
+   * of the disk — living stars above SILHOUETTE_L (bright B, O,
+   * giants, WR; SILHOUETTE_M is only the IMF slot gate), the
+   * youngest / brightest nebula hosts (gain ≥ SILHOUETTE_NEB_GAIN),
+   * and dust envelopes larger than SILHOUETTE_DUST_R (wisps stay
+   * home) — is placed with the same magnifier. Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
    * so rings and filament crossings are geometry. Colour is a LINE
@@ -472,6 +474,15 @@ export const UNIVERSE = {
    * like AIR_LINE. Not pickable.
    */
   GALAXY_SILHOUETTE_M: 5,
+  /** Backdrop stars: present-day L / L☉. Brightness is this continuous
+   *  luminosity, not a magnitude bin. 1000 L☉ is a mid-B / bright giant. */
+  GALAXY_SILHOUETTE_L: 1000,
+  /** Backdrop nebulae: emissionLook surface-brightness gain. Young
+   *  events blaze (~1); faded shells ghost (~0.1). H II always kept. */
+  GALAXY_SILHOUETTE_NEB_GAIN: 0.65,
+  /** Backdrop dust: envelope radius (kpc). The wisp floor is 0.05;
+   *  this keeps only the larger fields. */
+  GALAXY_SILHOUETTE_DUST_R: 0.06,
   SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_DUST_PX: 4,

@@ -209,7 +209,7 @@ const check = (cond: boolean, msg: string) => {
   check(a === b5, 'silhouette must be cached per seed');
   check(a.n === b5.n && a.ids[0] === b5.ids[0], 'silhouette not deterministic');
   check(a.kind.length >= a.n, 'silhouette missing kind');
-  check(a.n > 20_000 && a.n < 400_000, `silhouette ${a.n} is not a luminous tail`);
+  check(a.n > 20_000 && a.n < 130_000, `silhouette ${a.n} is not a bright tail`);
   let stars = 0;
   let nebulae = 0;
   let dust = 0;
@@ -241,12 +241,12 @@ const check = (cond: boolean, msg: string) => {
   }
   check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
   check(inside < a.n, 'silhouette must reach past the sample ball');
-  check(stars > 10_000, `silhouette stars ${stars} too few`);
-  check(nebulae > 20, `silhouette has no nebulae (${nebulae})`);
-  check(dust > 5_000 && dust < 200_000, `dust count ${dust} is not a clump population`);
+  check(stars > 10_000 && stars < 50_000, `silhouette stars ${stars} is not the bright tail`);
+  check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
+  check(dust > 5_000 && dust < 80_000, `dust count ${dust} is not the large-field set`);
   check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
-  check(minStarL > 4, `silhouette star dim L=${minStarL}`);
-  check(stars + nebulae < 400_000, `silhouette is a dwarf cloud: ${stars + nebulae} star/nebula rows`);
+  check(minStarL >= UNIVERSE.GALAXY_SILHOUETTE_L, `silhouette star dim L=${minStarL}`);
+  check(stars + nebulae < 80_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');
