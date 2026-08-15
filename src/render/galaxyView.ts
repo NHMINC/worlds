@@ -103,6 +103,7 @@ const STAR_VERT = /* glsl */ `
   attribute float aKind;
   attribute float aSize;
   attribute float aSeed;
+  uniform float uPass;
   uniform vec3 uCenter;
   uniform float uScale;
   uniform float uPixel;
@@ -132,6 +133,17 @@ const STAR_VERT = /* glsl */ `
   varying vec3 vCenterCat;
   varying float vPx;
   void main() {
+    // Cull for the pass HERE: the shared fragment discards the wrong
+    // kinds anyway, but a discarded sprite still rasterizes its whole
+    // quad. Toward the core that tripled the overdraw for nothing.
+    if ((uPass < 0.5 && aKind > 0.5) ||
+        (uPass > 0.5 && uPass < 1.5 && (aKind < 0.5 || aKind > 3.5)) ||
+        (uPass > 1.5 && aKind < 3.5)) {
+      vVis = 0.0;
+      gl_PointSize = 0.0;
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      return;
+    }
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
     float d = max(length(mv.xyz), 0.001);
@@ -184,6 +196,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   attribute float aKind;
   attribute float aSize;
   attribute float aSeed;
+  uniform float uPass;
   uniform vec3 uCenter;
   uniform float uScale;
   uniform float uPixel;
@@ -216,7 +229,12 @@ const SILHOUETTE_VERT = /* glsl */ `
     vCenterCat = vec3(0.0);
     vPx = 0.0;
     float dCat = length(position - uCenter);
-    if (dCat < uRegionR) {
+    // Cull wrong-kind sprites for the pass here — a fragment discard
+    // still rasterizes the whole quad, tripling core overdraw.
+    if (dCat < uRegionR ||
+        (uPass < 0.5 && aKind > 0.5) ||
+        (uPass > 0.5 && uPass < 1.5 && (aKind < 0.5 || aKind > 3.5)) ||
+        (uPass > 1.5 && aKind < 3.5)) {
       vVis = 0.0;
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -258,6 +276,7 @@ const STAR_FRAG = /* glsl */ `
   uniform float uPass;
   uniform float uNebGain;
   uniform float uScale;
+  uniform float uPixel;
   uniform mat3 uCamRotInv;
   uniform float uDustSteps;
   uniform float uDustMinPx;
@@ -265,6 +284,7 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustTauK;
   uniform float uDustFreq;
   uniform float uDustRim;
+  uniform float uDustRimMinPx;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -299,7 +319,10 @@ const STAR_FRAG = /* glsl */ `
     }
     if (vKind > 3.5) {
       // Dust: a short march through the shared sub-grid ISM field.
-      if (vPx < uDustMinPx) {
+      // The gate is CSS pixels: on a 3× phone the 4-CSS-px floor is
+      // 12 device px, which used to cross a device-px gate and march
+      // every unresolvable mote in the core stack.
+      if (vPx < uDustMinPx * uPixel) {
         // Too small to resolve structure: a soft mote, weighted by density.
         float mask = smoothstep(1.0, 0.55, length(p));
         float a = uDustAlphaMax * mask * (0.15 + 0.7 * vVis);
@@ -339,7 +362,7 @@ const STAR_FRAG = /* glsl */ `
       float trans = exp(-tau);
       // Extinction: the thick core silhouettes; thin edges keep grain colour.
       vec3 col = vColor * (0.22 + 0.78 * clamp(trans * 1.5, 0.0, 1.0));
-      if (wSum > 1e-4) {
+      if (vPx > uDustRimMinPx * uPixel && wSum > 1e-4) {
         // Single-scatter rim: density falling toward the local OB light
         // means that face is bathed in nursery UV — the Pillars edge.
         vec3 mp = vCenterCat + meanRel / wSum;
@@ -358,7 +381,7 @@ const STAR_FRAG = /* glsl */ `
     // Emission nebulae: self-luminous shells. Brightness is emission
     // measure — rho² integrated along the ray — normalized to surface
     // brightness so rings and filaments come from geometry.
-    if (vPx < uDustMinPx) {
+    if (vPx < uDustMinPx * uPixel) {
       float mask = smoothstep(1.0, 0.5, length(p));
       // Same photograph knob as the marched path — unresolved
       // shells used to ignore it and stack the midplane to white.
@@ -958,6 +981,7 @@ export class GalaxyView {
       uDustTauK: { value: UNIVERSE.DUST_TAU },
       uDustFreq: { value: UNIVERSE.DUST_FREQ },
       uDustRim: { value: UNIVERSE.DUST_RIM },
+      uDustRimMinPx: { value: UNIVERSE.DUST_RIM_MINPX },
     };
   }
 
