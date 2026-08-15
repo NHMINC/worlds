@@ -487,11 +487,12 @@ export const UNIVERSE = {
    *  luminosity, not a magnitude bin. 1000 L☉ is a mid-B / bright giant. */
   GALAXY_SILHOUETTE_L: 1000,
   /** Backdrop nebulae: emissionLook surface-brightness gain. Young
-   *  events blaze (~1); faded shells ghost (~0.1). H II always kept. */
-  GALAXY_SILHOUETTE_NEB_GAIN: 0.65,
+   *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
+   *  0.78 is the population median — half the shells that 0.65 kept. */
+  GALAXY_SILHOUETTE_NEB_GAIN: 0.78,
   /** Backdrop dust: envelope radius (kpc). The wisp floor is 0.05;
-   *  this keeps only the larger fields. */
-  GALAXY_SILHOUETTE_DUST_R: 0.06,
+   *  0.068 is the median of the fields 0.06 kept — the bigger half. */
+  GALAXY_SILHOUETTE_DUST_R: 0.068,
   SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_DUST_PX: 4,
