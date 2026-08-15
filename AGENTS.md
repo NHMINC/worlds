@@ -463,13 +463,21 @@ are overlays. See **Player layer**.
    older files.
 5. **Do not commit secrets.** Do not drive-by refactors. Update this file
    when the contract changes.
-6. **Ship on `main`.** One person works on this universe, and they can
-   only test the live app when `main` changes (GitHub Pages builds from
-   `main` only). Always **commit, push, and merge onto `main`** in the
-   same session. Do not leave work sitting on a feature-branch PR. A
-   draft PR is an unpublished universe — that is how “the music didn’t
-   change” happened. After a Pages deploy, **hard-refresh once** so the
-   PWA picks up the new build.
+6. **Ship on `main`.** The live app (GitHub Pages) only builds from
+   `main`; that is the only way the owner can test. Always **commit,
+   push, and merge onto `main`** in the same session. Do not leave work
+   sitting on a feature-branch PR. A draft PR is an unpublished
+   universe — that is how “the music didn’t change” happened. After a
+   Pages deploy, **hard-refresh once** so the PWA picks up the new
+   build.
+   One owner, **many threads**: other agents and machines land on
+   `main` while you work. Expect commits you did not make. Before
+   merging, `git fetch origin main` and read `git log HEAD..origin/main`.
+   Merge (do not rebase away, do not force-push `main`) so those
+   commits stay in history. If the merge has conflicts, stop and
+   resolve them as incoming work, not as noise. When you merge, **name
+   the foreign commits** in the merge message and in the session
+   summary so the owner can see what else landed.
 
 Code map (start here):
 
