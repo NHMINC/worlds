@@ -401,7 +401,9 @@ export const UNIVERSE = {
    * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
    * you can fly. Count is still an outcome — the bulge is denser.
    * Flying slides that ball through the catalog (border in / out).
-   * Positions stay catalog-true.
+   * The same stars are drawn in a VIEW_R ball (offsets from the
+   * centre × VIEW_R/REGION_R) so the gaps are flyable. Star size
+   * is not scaled.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,

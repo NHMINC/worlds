@@ -45,10 +45,10 @@ import {
 const MAP_R_MIN = 9;
 const MAP_R_MAX = 46;
 const MAP_R_HOME = 34;
-/** Start near the tap, looking out through the ball. */
+/** Start near the tap, looking out through the magnified ball. */
 const REGION_START_IN = 0.09;
-const REGION_LOOK = 2.4;
-/** Slide the sphere after the camera has moved this far (kpc). */
+const REGION_LOOK = 16;
+/** Slide the catalog centre after the camera has moved this far (catalog kpc). */
 const MAG_SLIDE = 0.01;
 /** A jump bigger than this remints instead of walking the rim. */
 const MAG_REBUILD = 0.45;
@@ -237,6 +237,8 @@ export class GalaxyView {
   private starGeo: THREE.BufferGeometry | null = null;
   private starMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
+  /** Magnified positions (catalog cloud stays unstretched). */
+  private viewPos: Float32Array | null = null;
   private cloud: StarCloud | null = null;
 
   private visitedMk: MarkerSet | null = null;
@@ -420,9 +422,45 @@ export class GalaxyView {
 
   // ------------------------------------------------------------- region mode
 
-  /** Catalog cartesian — the sphere no longer stretches the field. */
+  /** VIEW_R / REGION_R — same stars, larger flight ball. */
+  private magScale(): number {
+    return UNIVERSE.GALAXY_REGION_VIEW_R / Math.max(1e-6, UNIVERSE.GALAXY_REGION_R);
+  }
+
+  /** Catalog cartesian → magnified flight space. */
+  private toView(x: number, y: number, z: number): { x: number; y: number; z: number } {
+    if (this.mode !== 'region') return { x, y, z };
+    const s = this.magScale();
+    const cx = this.arcCenter.x;
+    const cy = this.arcCenter.y;
+    const cz = this.arcCenter.z;
+    return {
+      x: cx + (x - cx) * s,
+      y: cy + (y - cy) * s,
+      z: cz + (z - cz) * s,
+    };
+  }
+
   private viewCart(obj: GalaxyObject): { x: number; y: number; z: number } {
-    return galToCart(obj.pos);
+    const c = galToCart(obj.pos);
+    return this.toView(c.x, c.y, c.z);
+  }
+
+  private fillViewPos(cloud: StarCloud): Float32Array {
+    const s = this.magScale();
+    const cx = this.arcCenter.x;
+    const cy = this.arcCenter.y;
+    const cz = this.arcCenter.z;
+    const src = cloud.pos;
+    const pos = new Float32Array(cloud.n * 3);
+    for (let i = 0; i < cloud.n; i++) {
+      const i3 = i * 3;
+      pos[i3] = cx + (src[i3] - cx) * s;
+      pos[i3 + 1] = cy + (src[i3 + 1] - cy) * s;
+      pos[i3 + 2] = cz + (src[i3 + 2] - cz) * s;
+    }
+    this.viewPos = pos;
+    return pos;
   }
 
   /**
@@ -433,20 +471,20 @@ export class GalaxyView {
   enterRegion(x: number, y: number, z: number, select: GalaxyObject | null = null): void {
     this.disposeArcStars();
     this.mode = 'region';
-    const glen = Math.hypot(x, z);
-    const ox = glen > 1e-4 ? x / glen : 1;
-    const oz = glen > 1e-4 ? z / glen : 0;
-    this.arcPos.set(x + ox * REGION_START_IN, y, z + oz * REGION_START_IN);
-    this.arcCenter.copy(this.arcPos);
-    const cloud = buildRegionCloud(this.seed, this.arcPos.x, this.arcPos.y, this.arcPos.z, UNIVERSE.GALAXY_REGION_R);
+    this.arcCenter.set(x, y, z);
+    const cloud = buildRegionCloud(this.seed, x, y, z, UNIVERSE.GALAXY_REGION_R);
     this.cloud = cloud;
     this.sectorPop = cloud.n;
-    this.regionLabel = regionName(this.arcPos.x, this.arcPos.y, this.arcPos.z);
+    this.regionLabel = regionName(x, y, z);
     this.lastEnterMs = cloud.ms;
     this.objects = [];
     this.buildArcStars();
     this.censusMemo = {};
 
+    const glen = Math.hypot(x, z);
+    const ox = glen > 1e-4 ? x / glen : 1;
+    const oz = glen > 1e-4 ? z / glen : 0;
+    this.arcPos.set(x + ox * REGION_START_IN, y, z + oz * REGION_START_IN);
     if (select) {
       const s = this.viewCart(select);
       this.aimAt(s.x + ox * REGION_LOOK, s.y, s.z + oz * REGION_LOOK);
@@ -509,7 +547,7 @@ export class GalaxyView {
   private buildArcStars(): void {
     const cloud = this.cloud;
     const n = Math.max(1, cloud?.n ?? 0);
-    const pos = cloud ? cloud.pos : new Float32Array(3);
+    const pos = cloud ? this.fillViewPos(cloud) : new Float32Array(3);
     const col = cloud ? cloud.col : new Float32Array(3);
     const vis = new Float32Array(n);
     if (cloud) {
@@ -684,11 +722,12 @@ export class GalaxyView {
     const cloud = this.cloud;
     let found = false;
     if (cloud) {
+      const pos = this.viewPos ?? cloud.pos;
       for (let i = 0; i < cloud.n; i++) {
         if (cloud.ids[i] !== best.id) continue;
-        x = cloud.pos[i * 3];
-        y = cloud.pos[i * 3 + 1];
-        z = cloud.pos[i * 3 + 2];
+        x = pos[i * 3];
+        y = pos[i * 3 + 1];
+        z = pos[i * 3 + 2];
         found = true;
         break;
       }
@@ -722,9 +761,10 @@ export class GalaxyView {
     if (!cloud) return 0;
     for (let i = 0; i < cloud.n; i++) {
       if (cloud.ids[i] !== id) continue;
-      const dx = cloud.pos[i * 3] - this.arcPos.x;
-      const dy = cloud.pos[i * 3 + 1] - this.arcPos.y;
-      const dz = cloud.pos[i * 3 + 2] - this.arcPos.z;
+      const pos = this.viewPos ?? cloud.pos;
+      const dx = pos[i * 3] - this.arcPos.x;
+      const dy = pos[i * 3 + 1] - this.arcPos.y;
+      const dz = pos[i * 3 + 2] - this.arcPos.z;
       const dist = Math.hypot(dx, dy, dz);
       const dim = (cloud.bits[i] & BIT_REMNANT) !== 0 || cloud.lum[i] < 0.05;
       return glowRadiusKpc(cloud.lum[i], dim) / Math.max(1e-5, dist);
@@ -749,9 +789,10 @@ export class GalaxyView {
     const step = Math.max(1, Math.floor(cloud.n / 4000));
     for (let i = 0; i < cloud.n; i += step) {
       if (!sketchMatches(cloud.bits[i], this.filter)) continue;
-      const x = cloud.pos[i * 3];
-      const y = cloud.pos[i * 3 + 1];
-      const z = cloud.pos[i * 3 + 2];
+      const pos = this.viewPos ?? cloud.pos;
+      const x = pos[i * 3];
+      const y = pos[i * 3 + 1];
+      const z = pos[i * 3 + 2];
       const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
       const my = e[1] * x + e[5] * y + e[9] * z + e[13];
       const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
@@ -917,7 +958,7 @@ export class GalaxyView {
     let minD = this.arcPos.distanceTo(this.arcCenter);
     if (cloud) {
       const step = Math.max(1, Math.floor(cloud.n / 6000));
-      const pos = cloud.pos;
+      const pos = this.viewPos ?? cloud.pos;
       for (let i = 0; i < cloud.n; i += step) {
         const d = Math.hypot(pos[i * 3] - cx, pos[i * 3 + 1] - cy, pos[i * 3 + 2] - cz);
         if (d < minD) minD = d;
@@ -931,27 +972,31 @@ export class GalaxyView {
   }
 
   /**
-   * The sphere follows the camera. Rim in / rim out. A large jump
-   * remints; a small step only walks the border.
+   * The sphere follows the camera in catalog space. Fly is in the
+   * magnified frame; the centre moves by dView / scale. Re-expand
+   * plus a camera correction of (1-s)·dC keeps the field from
+   * swimming — only the rim membership changes.
    */
   private slideSphere(force = false): void {
     if (this.mode !== 'region' || !this.cloud) return;
-    const dx = this.arcPos.x - this.arcCenter.x;
-    const dy = this.arcPos.y - this.arcCenter.y;
-    const dz = this.arcPos.z - this.arcCenter.z;
-    const d = Math.hypot(dx, dy, dz);
-    if (!force && d < MAG_SLIDE) return;
+    const s = this.magScale();
     const x0 = this.arcCenter.x;
     const y0 = this.arcCenter.y;
     const z0 = this.arcCenter.z;
-    const x1 = this.arcPos.x;
-    const y1 = this.arcPos.y;
-    const z1 = this.arcPos.z;
+    const x1 = x0 + (this.arcPos.x - x0) / s;
+    const y1 = y0 + (this.arcPos.y - y0) / s;
+    const z1 = z0 + (this.arcPos.z - z0) / s;
+    const d = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+    if (!force && d < MAG_SLIDE) return;
     const cloud =
       d > MAG_REBUILD
         ? buildRegionCloud(this.seed, x1, y1, z1)
         : advanceRegionCloud(this.seed, this.cloud, x0, y0, z0, x1, y1, z1);
     this.cloud = cloud;
+    const k = 1 - s;
+    this.arcPos.x += k * (x1 - x0);
+    this.arcPos.y += k * (y1 - y0);
+    this.arcPos.z += k * (z1 - z0);
     this.arcCenter.set(x1, y1, z1);
     this.sectorPop = cloud.n;
     this.regionLabel = regionName(x1, y1, z1);
@@ -1052,7 +1097,7 @@ export class GalaxyView {
     const e = this.camera.matrixWorldInverse.elements;
     const p = this.camera.projectionMatrix.elements;
     const rect = this.canvas.getBoundingClientRect();
-    const pos = cloud.pos;
+    const pos = this.viewPos ?? cloud.pos;
     const bits = cloud.bits;
     const ids = cloud.ids;
     const lum = cloud.lum;
@@ -1275,7 +1320,7 @@ export class GalaxyView {
     const cy = this.arcPos.y;
     const cz = this.arcPos.z;
     const cosCone = Math.cos(0.028);
-    const pos = cloud.pos;
+    const pos = this.viewPos ?? cloud.pos;
     const lum = cloud.lum;
     const bits = cloud.bits;
     const ids = cloud.ids;

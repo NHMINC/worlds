@@ -191,11 +191,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   - **Region**: a magnification sphere of radius `GALAXY_REGION_R`
     (~4 kpc) in catalog space. Near the centre (`GALAXY_REGION_FULL_R`)
     every occupied slot is a point. Farther cells keep only the
-    massive tail of their IMF. Flying **moves the sphere** — stars
-    that cross in are minted, stars that leave drop out. Positions
-    are catalog-true (no stretch). Cheap birth, no `evolve` until
-    you tap. Distant stars are **1px pinpricks**. Closer ones grow
-    from luminosity and distance. The breadcrumb returns to the map.
+    massive tail of their IMF.     Flying **moves the sphere** — stars
+    that cross in are minted, stars that leave drop out. The same
+    stars are drawn in a `GALAXY_REGION_VIEW_R` (40 kpc) ball
+    (offsets × VIEW_R/REGION_R); star size is not scaled. Cheap
+    birth, no `evolve` until you tap. Distant stars are **1px
+    pinpricks**. Closer ones grow from luminosity and distance.
+    The breadcrumb returns to the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
   re-roll bug class was structural, and it is retired along with the

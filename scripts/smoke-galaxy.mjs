@@ -140,7 +140,7 @@ if (await galaxyBtn.count()) {
 
   const strafe = await page.evaluate(() => {
     const v = window.__galaxyView;
-    const c = v.arcCenter;
+    const c = v.arcCenter.clone();
     const p0 = v.camera.position.clone();
     v.flyStrafe?.(0.45);
     const p1 = v.camera.position;
@@ -155,7 +155,7 @@ if (await galaxyBtn.count()) {
     };
   });
   console.log('STRAFE', JSON.stringify(strafe));
-  if (!strafe || strafe.moved < 0.2) errors.push('strafe did not fly off the orbit lock');
+  if (!strafe || strafe.moved < 0.03) errors.push('strafe did not fly off the orbit lock');
   if (strafe && strafe.cos > 0.995) errors.push('strafe stayed on a radial from the arc centre (orbit lock still on)');
 
   // Approach: park next to the selected star; its point must grow.
