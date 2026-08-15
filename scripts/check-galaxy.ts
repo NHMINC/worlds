@@ -259,6 +259,13 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(!aimLocks(1, 40), 'solar analog on the far wall is not yet a visit');
 }
 
+{
+  // Warp is catalog kpc/s. A photograph-frame cap crawls once the
+  // magnifier is 20×. 0.25 crosses a 2 kpc ball in ~8 s.
+  check(UNIVERSE.GALAXY_WARP >= 0.2, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
+  check(UNIVERSE.GALAXY_WARP_ACCEL > UNIVERSE.GALAXY_WARP, 'warp should reach cap in under a second');
+}
+
 // (The sampled "grain" starfield is gone: it drew tens of thousands of
 // non-addressable points — a painted starfield by the charter's own
 // words. The only stars the explorer draws are catalog rows.)
