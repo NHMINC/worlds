@@ -32,6 +32,7 @@ import {
   POINT_NEAR_BOOST,
   SHINE_FLUX_GAIN,
   SHINE_FLUX_K,
+  SHINE_TAIL,
   glowRadiusKpc,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
@@ -110,6 +111,7 @@ const STAR_VERT = /* glsl */ `
   uniform float uFluxEps;
   uniform float uShineFluxK;
   uniform float uShineFluxGain;
+  uniform float uGlowPx;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -144,9 +146,11 @@ const STAR_VERT = /* glsl */ `
       vCenterView = vec3(0.0);
       vRadiusView = 0.0;
       vCenterCat = vec3(0.0);
-      // One framebuffer pixel. Multiplying by DPR made a 2–3 px disc.
-      gl_PointSize = 1.0;
-      vPx = 1.0;
+      // Sprite holds the glare. Dim stars keep a small quad; bright
+      // ones get the full room. The core stays one pixel in the frag.
+      float room = uGlowPx * uPixel * mix(0.22, 1.0, smoothstep(0.12, 2.0, vVis));
+      gl_PointSize = max(1.0, room);
+      vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
   }
@@ -177,6 +181,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uFluxEps;
   uniform float uShineFluxK;
   uniform float uShineFluxGain;
+  uniform float uGlowPx;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -223,8 +228,9 @@ const SILHOUETTE_VERT = /* glsl */ `
       float L = max(aLum, 1e-4);
       float flux = L / (d * d + uFluxEps);
       vVis = min(aVis * uShineFluxGain * log(1.0 + uShineFluxK * flux) * uSuper, 8.0);
-      gl_PointSize = 1.0;
-      vPx = 1.0;
+      float room = uGlowPx * uPixel * mix(0.22, 1.0, smoothstep(0.12, 2.0, vVis));
+      gl_PointSize = max(1.0, room);
+      vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
   }
@@ -243,6 +249,7 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustTauK;
   uniform float uDustFreq;
   uniform float uDustRim;
+  uniform float uShineTail;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -257,11 +264,21 @@ const STAR_FRAG = /* glsl */ `
     if (uPass > 1.5 && vKind < 3.5) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
-      // One pixel of light. No circular mask — that was the disc.
+      // Pixel of light + serious glare. Core is ~1 px in pixel space.
+      // Tail is 1/r² from flux — same family as star.ts. Window dies
+      // at the quad edge so there is no rim, no filled disc.
+      float r = length(p);
+      if (r > 1.0) discard;
+      float rPx = r * max(vPx, 1.0) * 0.5;
       float flux = clamp(vVis, 0.0, 8.0);
-      if (flux < 0.002) discard;
-      vec3 col = mix(vColor, vec3(1.0), clamp(0.2 * flux, 0.0, 0.45));
-      gl_FragColor = vec4(col * flux, 1.0);
+      float core = exp(-rPx * rPx * 2.8);
+      float tail = (uShineTail * flux) / (0.05 + 0.18 * rPx * rPx);
+      float window = 1.0 - r * r;
+      window *= window;
+      float shine = (core * flux * 1.35 + tail) * window;
+      if (shine < 0.003) discard;
+      vec3 col = mix(vColor, vec3(1.0), clamp(0.28 * core * min(flux, 2.6), 0.0, 0.55));
+      gl_FragColor = vec4(col * shine, min(shine, 1.0));
       return;
     }
     if (vKind > 3.5) {
@@ -900,6 +917,8 @@ export class GalaxyView {
     return {
       uShineFluxK: { value: SHINE_FLUX_K },
       uShineFluxGain: { value: SHINE_FLUX_GAIN },
+      uShineTail: { value: SHINE_TAIL },
+      uGlowPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
       uFluxEps: { value: POINT_FLUX_EPS },
     };
   }
