@@ -11,8 +11,9 @@
  * ball. Look-drag slides the heading. Warp (↑ / Warp button) latches
  * acceleration; ↓ / Stop brakes at the same rate. The vertex shader
  * follows the centre; a worker mints and drops the rim. Space is
- * magnified (VIEW_R / REGION_R); star size is not. Distant stars
- * are 1px pinpricks; closer ones grow. Behind the ball a
+ * magnified (VIEW_R / REGION_R). Inside the ball a star is a
+ * photosphere — size r/d, flux L/d², teff colour — so it grows
+ * as we approach. Behind the ball a
  * magnitude-limited backdrop (stars, typed nebulae, dusty cell
  * centres) sketches the rest of the disk. Same shape law as the
  * local sample; magnifier places them. The breadcrumb returns to
@@ -30,6 +31,10 @@ import {
   POINT_FLUX_EPS,
   POINT_MAX_PX,
   POINT_NEAR_BOOST,
+  PHOTO_K,
+  PHOTO_MAX,
+  PHOTO_MIN,
+  PHOTO_P,
   SHINE_DIST_P,
   SHINE_DIST_REF,
   SHINE_L_GAIN,
@@ -111,6 +116,10 @@ const STAR_VERT = /* glsl */ `
   uniform float uMaxPx;
   uniform float uNearBoost;
   uniform float uFluxEps;
+  uniform float uPhotoK;
+  uniform float uPhotoP;
+  uniform float uPhotoMin;
+  uniform float uPhotoMax;
   uniform float uShineLGain;
   uniform float uShineLP;
   uniform float uShineDistRef;
@@ -142,19 +151,23 @@ const STAR_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Space is magnified (VIEW_R / REGION_R); star size is not.
-      // Apparent angle is r / d_cat — far pins stay one CSS pixel,
-      // a star grows only when the bubble has slid onto it.
+      // Magnifier photosphere: size r/d and flux L/d² in VIEW
+      // metres. Far pins stay a pixel; they grow and brighten as
+      // the bubble slides onto them. Colour is teff. The backdrop
+      // layer does not use this path.
       float L = max(aLum, 1e-4);
-      vVis = aVis * uShineLGain * pow(L, uShineLP) * pow(uShineDistRef / d, uShineDistP);
+      float r = max(L < 0.05 ? uGlowDim : uPhotoMin, uPhotoK * pow(L, uPhotoP));
+      r = min(r, uPhotoMax);
+      float ang = r / d;
+      gl_PointSize = clamp(max(uPixel, 2.0 * ang * uPxPerRad), 1.0, uMaxPx);
+      float flux = L / (d * d + uFluxEps);
+      float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
+      vVis = min(aVis * punch, 8.0);
       vCenterView = vec3(0.0);
       vRadiusView = 0.0;
       vCenterCat = vec3(0.0);
-      float rCat = max(uGlowK * pow(L, uGlowP), L < 0.05 ? uGlowDim : uGlowMin);
-      float ang = rCat * uScale / d;
-      gl_PointSize = clamp(2.0 * ang * uPxPerRad, max(1.0, uPixel), uMaxPx);
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -269,12 +282,19 @@ const STAR_FRAG = /* glsl */ `
     if (uPass > 1.5 && vKind < 3.5) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
-      // The sprite is one CSS pixel. No circle, no gaussian fill.
-      // Chromaticity from teff; brightness I/(1+I) so an O star
-      // is brighter than an A star and neither blows to white.
+      float I = max(vVis, 0.0);
       float peak = max(max(vColor.r, vColor.g), vColor.b);
       vec3 chroma = vColor / max(peak, 1e-4);
-      float I = max(vVis, 0.0);
+      if (vPx > 2.6) {
+        // Grown photosphere inside the magnifier: a limb-darkened
+        // disc of teff colour. The 1px path is the far pin / backdrop.
+        float r = length(p);
+        if (r > 1.0) discard;
+        float limb = 1.0 - 0.22 * r * r;
+        float bright = I / (1.0 + 0.22 * I);
+        gl_FragColor = vec4(chroma * limb * bright, 1.0);
+        return;
+      }
       float bright = I / (1.0 + I);
       if (bright < 0.008) discard;
       gl_FragColor = vec4(chroma * bright, 1.0);
@@ -905,6 +925,10 @@ export class GalaxyView {
       uMaxPx: { value: POINT_MAX_PX },
       uNearBoost: { value: POINT_NEAR_BOOST },
       uFluxEps: { value: POINT_FLUX_EPS },
+      uPhotoK: { value: PHOTO_K },
+      uPhotoP: { value: PHOTO_P },
+      uPhotoMin: { value: PHOTO_MIN },
+      uPhotoMax: { value: PHOTO_MAX },
       uPass: { value: 0 },
       ...this.shineUniforms(),
       ...this.dustUniforms(),

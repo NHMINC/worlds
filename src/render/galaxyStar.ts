@@ -1,10 +1,9 @@
 /**
- * Arc stars are points of light. A star has no on-screen diameter —
- * one CSS pixel of photosphere colour. Brightness is
- * 0.08 · L^0.62 · (40/d)^0.45, then I/(1+I) so an O star outshines
- * an A star without both clipping to white. Colour is teff, pushed
- * a little off white so a K giant stays amber. objectAt is still
- * O(1) on tap.
+ * Two layers, two laws. Inside the magnifier a star is a photosphere:
+ * size is r / d so it grows as the bubble slides onto it, brightness
+ * is L / d², colour is teff. Outside the bubble the luminous tail
+ * stays one CSS pixel — a magnitude-limited field, not a second
+ * set of growing bodies. objectAt is still O(1) on tap.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
@@ -20,6 +19,15 @@ export const GLOW_P = 0.16;
 export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
+/**
+ * Magnifier photosphere (kpc). Bigger than the picking pin so a
+ * star grows while there is still 40 kpc of approach left. The
+ * backdrop does not use this — it stays a pixel.
+ */
+export const PHOTO_K = 0.052;
+export const PHOTO_P = 0.18;
+export const PHOTO_MIN = 0.022;
+export const PHOTO_MAX = 0.16;
 /**
  * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
  * Steep in L so the luminous tail is not one white.
@@ -43,12 +51,24 @@ export function glowRadiusKpc(L: number, dim = false): number {
   return Math.max(dim ? GLOW_DIM : 0.0007, Math.min(0.012, r));
 }
 
+/** Paint radius inside the magnifier. Grows with L; picking stays on glowRadiusKpc. */
+export function photoRadiusKpc(L: number, dim = false): number {
+  const r = PHOTO_K * Math.pow(Math.max(L, 1e-4), PHOTO_P);
+  return Math.max(dim ? GLOW_DIM : PHOTO_MIN, Math.min(PHOTO_MAX, r));
+}
+
 export function apparentAngle(rWorld: number, dist: number): number {
   return rWorld / Math.max(1e-5, dist);
 }
 
 export function pointApparentPx(L: number, dist: number, pxPerRad: number, dim = false): number {
   const ang = apparentAngle(glowRadiusKpc(L, dim), dist);
+  return Math.min(POINT_MAX_PX, Math.max(1, 2 * ang * pxPerRad));
+}
+
+/** Magnifier paint size (px) at a view-space distance. */
+export function photoApparentPx(L: number, dist: number, pxPerRad: number, dim = false): number {
+  const ang = apparentAngle(photoRadiusKpc(L, dim), dist);
   return Math.min(POINT_MAX_PX, Math.max(1, 2 * ang * pxPerRad));
 }
 

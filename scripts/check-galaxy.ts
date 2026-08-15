@@ -12,7 +12,7 @@ import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar'
 import { systemAt } from '../src/world/systemgen';
 import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
-import { shineDisplay, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
+import { photoApparentPx, shineDisplay, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
 import type { GalaxyObject } from '../src/world/galaxy';
 import type { StellarState } from '../src/world/stellar';
 
@@ -239,6 +239,13 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const near = shineDisplay(20, 80);
   const far = shineDisplay(20, 240);
   check(near > far * 1.25, `same L at 80 kpc (${near.toFixed(2)}) must beat 240 kpc (${far.toFixed(2)})`);
+  const pxPer = 1288;
+  const rim = photoApparentPx(1, 40, pxPer);
+  const midPx = photoApparentPx(1, 8, pxPer);
+  const close = photoApparentPx(1, 2, pxPer);
+  check(rim <= 6, `rim photosphere ${rim.toFixed(1)}px is a disc, not a pin`);
+  check(midPx > rim * 2.5, `magnifier must grow on approach: rim ${rim.toFixed(1)} mid ${midPx.toFixed(1)}`);
+  check(close > midPx * 1.8, `close photosphere ${close.toFixed(1)} must beat mid ${midPx.toFixed(1)}`);
 }
 
 // (The sampled "grain" starfield is gone: it drew tens of thousands of
