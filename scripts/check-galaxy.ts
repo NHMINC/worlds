@@ -12,7 +12,7 @@ import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar'
 import { systemAt } from '../src/world/systemgen';
 import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
-import { SHINE_CORE_PX, SHINE_TAIL, shineFromFlux, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
+import { shineFromFlux, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
 import type { GalaxyObject } from '../src/world/galaxy';
 import type { StellarState } from '../src/world/stellar';
 
@@ -228,9 +228,7 @@ check(sunDisc > 0.03 && sunDisc < 0.16, `Sun analog disc ${sunDisc} is not a pho
 check(bhDisc > wdDisc, `BH visual ${bhDisc} should beat a WD pin`);
 check(starKind(asObj(bh)) === 5, `BH kind ${starKind(asObj(bh))}`);
 check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, got ${starKind(asObj(freshWd))}`);
-check(SHINE_CORE_PX < 0.8, `shine core ${SHINE_CORE_PX} is a disc, not a pin`);
-check(SHINE_TAIL > 0.05 && SHINE_TAIL < 0.4, `shine tail ${SHINE_TAIL} must bloom from flux, not paint a disc`);
-check(UNIVERSE.SILHOUETTE_STAR_PX <= 4, `STAR_PX ${UNIVERSE.SILHOUETTE_STAR_PX} is a disc sprite, not a point`);
+check(UNIVERSE.SILHOUETTE_STAR_PX <= 1, `STAR_PX ${UNIVERSE.SILHOUETTE_STAR_PX} is a disc, not a pixel`);
 {
   const d2 = 150 * 150;
   const dim = shineFromFlux(5 / d2);
