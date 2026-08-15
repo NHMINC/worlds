@@ -463,6 +463,9 @@ export const UNIVERSE = {
   SILHOUETTE_DUST_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,
   SILHOUETTE_ENVELOPE_ALPHA: 0.5,
+  /** SNR shells are numerous (toy-stretched SNR_GYR); keep them faint
+   * so the red haze does not bury the dust lanes. */
+  SILHOUETTE_SNR_ALPHA: 0.16,
   /** Largest dust complex radius (kpc); wisps start near 0.05. */
   GALAXY_DUST_R_MAX: 0.8,
   /** Raymarch steps through a clump (perf knob; 1 = cheap slice). */

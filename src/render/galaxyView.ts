@@ -223,6 +223,7 @@ const STAR_FRAG = /* glsl */ `
   ${SHAPE_GLSL}
   uniform float uEnvelope;
   uniform float uEnvelopeAlpha;
+  uniform float uSnrAlpha;
   uniform float uScale;
   uniform mat3 uCamRotInv;
   uniform float uDustSteps;
@@ -307,7 +308,9 @@ const STAR_FRAG = /* glsl */ `
     }
     float mask = skyMask(vKind, p, vSeed);
     if (mask < 0.02) discard;
-    gl_FragColor = vec4(vColor, uEnvelopeAlpha * mask);
+    // SNR (kind 3) is the numerous toy-stretched class: keep it faint.
+    float a = vKind > 2.5 ? uSnrAlpha : uEnvelopeAlpha;
+    gl_FragColor = vec4(vColor, a * mask);
   }
 `;
 
@@ -806,6 +809,7 @@ export class GalaxyView {
   private dustUniforms(): Record<string, THREE.IUniform> {
     return {
       uCamRotInv: { value: new THREE.Matrix3() },
+      uSnrAlpha: { value: UNIVERSE.SILHOUETTE_SNR_ALPHA },
       uDustSteps: { value: UNIVERSE.DUST_MARCH_STEPS },
       uDustMinPx: { value: UNIVERSE.DUST_MINPX },
       uDustAlphaMax: { value: UNIVERSE.DUST_ALPHA_MAX },
