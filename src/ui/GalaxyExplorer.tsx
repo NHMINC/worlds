@@ -260,7 +260,7 @@ export function GalaxyExplorer(props: Props) {
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
           {inRegion
-            ? ' · fly through · sight names the star · Set course to go'
+            ? ' · double-tap and hold to fly · drag to look · Set course to go'
             : ' · tap the galaxy to enter a volume · markers are worlds'}
         </div>
       </footer>
