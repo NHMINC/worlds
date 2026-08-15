@@ -193,16 +193,15 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   - **Arc**: tap a tile and **every occupied slot** is drawn once as a
     cheap point (`buildArcCloud` — birth position + IMF clock, no
     `evolve` until you tap). That is the arc's population, not a 2,500
-    survey. Distant stars are **1px pinpricks** (no growing sprite, no
-    halo). Once `glowRadius / dist` crosses `STAR_WRAP_ANG` we wrap a
-    real sphere around that point: solid in the star's colour, or an
-    outline for black holes and very dim remnants. The sphere's world
-    size is fixed — perspective grows and shrinks it. The centre
-    reticle against a wrapped sphere can set course at any time. A
-    compact plate names that star (class, planets, life). The camera
-    is **free flight** through that frozen cloud. Tap still mints the
-    catalog row (`objectAt`). Fly far out (or the breadcrumb) to
-    return to the map.
+    survey. Distant stars are **1px pinpricks**. Closer ones grow and
+    brighten from birth-clock luminosity and distance (`glowRadiusKpc`
+    / `d`, flux `L / d²`) — they pretend to be the photosphere. Tight
+    disc, no gaussian halo, no mesh roster, no star-count budget. A
+    pixel cap is hardware. The centre reticle on a grown point can
+    set course at any time. A compact plate names that star (class,
+    planets, life). The camera is **free flight** through that frozen
+    cloud. Tap still mints the catalog row (`objectAt`). Fly far out
+    (or the breadcrumb) to return to the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
   re-roll bug class was structural, and it is retired along with the
@@ -496,7 +495,7 @@ Code map (start here):
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector map (arc grid, equal-mass rings, surveys) | `src/world/sectors.ts` |
 | Galaxy explorer (saucer mesh + arc view) | `src/render/galaxySectors.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
-| Close-up photospheres (LOD from `evolve()`) | `src/render/galaxyStar.ts` |
+| Arc point size / brightness law | `src/render/galaxyStar.ts` |
 | First landing (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |

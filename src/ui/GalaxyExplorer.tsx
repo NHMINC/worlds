@@ -48,7 +48,7 @@ export function GalaxyExplorer(props: Props) {
     radius: 40,
     pickable: false,
     resolved: 0,
-    discs: 0,
+    grown: 0,
     sector: null,
     population: 0,
     focus: null,
@@ -74,7 +74,7 @@ export function GalaxyExplorer(props: Props) {
             Math.abs(prev.phi - f.phi) > 0.02 ||
             prev.pickable !== f.pickable ||
             prev.resolved !== f.resolved ||
-            prev.discs !== f.discs ||
+            prev.grown !== f.grown ||
             prev.sector !== f.sector ||
             prev.focus?.id !== f.focus?.id ||
             (f.focus != null &&

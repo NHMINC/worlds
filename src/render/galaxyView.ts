@@ -10,10 +10,11 @@
  * ARC mode is one tapped "thick arc": every occupied slot is a point
  * (cheap birth, no evolve — the id is still the star). The camera is
  * free flight through that frozen cloud: look, strafe, dolly. There is
- * no orbit lock on the sector centre or the selection. Photosphere
- * Distant stars are 1px pinpricks. Close ones wrap a sphere (colour,
- * or an outline if dim / black hole). The centre reticle on a wrapped
- * sphere can set course at any time. Tap still mints the catalog row.
+ * no orbit lock on the sector centre or the selection. Distant stars
+ * are 1px pinpricks. Closer ones grow and brighten from their
+ * luminosity and distance — they pretend to be the photosphere. No
+ * mesh roster, no star-count budget. The centre reticle on a grown
+ * point can set course at any time. Tap still mints the catalog row.
  *
  * Nothing in either mode queries or rebuilds the catalog per camera
  * move — the blink / cluster / stutter / re-roll failure class of the
@@ -24,11 +25,14 @@ import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import { createSectorMap, type SectorMap } from './galaxySectors';
 import {
-  createStarDiscs,
+  AIM_MIN_ANG,
+  GLOW_DIM,
+  GLOW_K,
+  GLOW_P,
+  POINT_FLUX_EPS,
+  POINT_MAX_PX,
+  POINT_NEAR_BOOST,
   glowRadiusKpc,
-  RESOLVE_MAX,
-  STAR_WRAP_ANG,
-  type StarDiscs,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
 import { systemAt } from '../world/systemgen';
@@ -81,14 +85,32 @@ export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
 const STAR_VERT = /* glsl */ `
   attribute vec3 aColor;
   attribute float aVis;
+  attribute float aLum;
   uniform float uPixel;
+  uniform float uPxPerRad;
+  uniform float uGlowK;
+  uniform float uGlowP;
+  uniform float uGlowMin;
+  uniform float uGlowDim;
+  uniform float uMaxPx;
+  uniform float uNearBoost;
+  uniform float uFluxEps;
   varying vec3 vColor;
   varying float vVis;
   void main() {
-    vColor = aColor;
-    vVis = aVis;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = max(1.0, uPixel);
+    float d = max(length(mv.xyz), 0.001);
+    float L = max(aLum, 1e-4);
+    float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
+    float r = max(rMin, uGlowK * pow(L, uGlowP));
+    r = min(r, 0.012);
+    float ang = r / d;
+    float px = 2.0 * ang * uPxPerRad;
+    gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
+    float flux = L / (d * d + uFluxEps);
+    float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
+    vColor = aColor;
+    vVis = min(aVis * punch, 8.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -99,8 +121,9 @@ const STAR_FRAG = /* glsl */ `
   void main() {
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
-    if (r2 > 0.55) discard;
-    gl_FragColor = vec4(vColor, vVis);
+    if (r2 > 0.85) discard;
+    float limb = 1.0 - 0.22 * r2;
+    gl_FragColor = vec4(vColor * limb, vVis);
   }
 `;
 
@@ -156,7 +179,8 @@ export interface GalaxyFrame {
   pickable: boolean;
   /** Loaded arc stars (0 on the map). */
   resolved: number;
-  discs: number;
+  /** Stars grown past the reticle lock angle — no cap. */
+  grown: number;
   /** Arc label, e.g. "S37·R12" — null on the map. */
   sector: string | null;
   /** Exact occupied-slot population of the open arc (0 on the map). */
@@ -173,7 +197,7 @@ export interface SectorSelection {
 
 interface Callbacks {
   onSelect: (obj: GalaxyObject | null) => void;
-  /** Tap a photosphere disc — set course to that star. */
+  /** Set course from the sight plate. */
   onGo?: (obj: GalaxyObject) => void;
   onFrame?: (f: GalaxyFrame) => void;
 }
@@ -204,11 +228,10 @@ export class GalaxyView {
   private sectorSel: SectorId | null = null;
   private sectorPop = 0;
   private sectors: SectorMap;
-  private discs: StarDiscs;
-  private discIds = new Set<number>();
   private lastSightAt = 0;
   private focusObj: GalaxyObject | null = null;
   private focusHud: GalaxyFocus | null = null;
+  private grownCount = 0;
   private briefMemo = new Map<number, { name: string; planets: number; moons: number; life: boolean }>();
 
   private starPts: THREE.Points | null = null;
@@ -281,10 +304,6 @@ export class GalaxyView {
 
     this.sectors = createSectorMap();
     this.scene.add(this.sectors.group);
-
-    this.discs = createStarDiscs();
-    this.discs.group.visible = false;
-    this.scene.add(this.discs.group);
 
     this.homeRing = this.makeRing(0x9ec4ff, 0.28);
     this.hereRing = this.makeRing(0x7fa88b, 0.22);
@@ -434,7 +453,6 @@ export class GalaxyView {
     this.idle = 0;
     this.camera.near = 0.001;
     this.camera.updateProjectionMatrix();
-    this.discs.group.visible = true;
     this.sectors.group.visible = false;
     if (this.visitedMk) this.visitedMk.pts.visible = false;
     if (this.interestMk) this.interestMk.pts.visible = false;
@@ -454,9 +472,7 @@ export class GalaxyView {
     this.focusObj = null;
     this.focusHud = null;
     this.censusMemo = {};
-    this.discs.setStars([], this.camera.position);
-    this.discs.group.visible = false;
-    this.discIds.clear();
+    this.grownCount = 0;
     this.sectors.group.visible = true;
     if (this.visitedMk) this.visitedMk.pts.visible = true;
     if (this.interestMk) this.interestMk.pts.visible = true;
@@ -499,11 +515,22 @@ export class GalaxyView {
     geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     const visAttr = new THREE.BufferAttribute(vis, 1);
     geo.setAttribute('aVis', visAttr);
+    if (cloud) geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
     if (!cloud || cloud.n === 0) geo.setDrawRange(0, 0);
     const mat = new THREE.ShaderMaterial({
       vertexShader: STAR_VERT,
       fragmentShader: STAR_FRAG,
-      uniforms: { uPixel: { value: this.renderer.getPixelRatio() } },
+      uniforms: {
+        uPixel: { value: this.renderer.getPixelRatio() },
+        uPxPerRad: { value: this.pxPerRad() },
+        uGlowK: { value: GLOW_K },
+        uGlowP: { value: GLOW_P },
+        uGlowMin: { value: 0.0007 },
+        uGlowDim: { value: GLOW_DIM },
+        uMaxPx: { value: POINT_MAX_PX },
+        uNearBoost: { value: POINT_NEAR_BOOST },
+        uFluxEps: { value: POINT_FLUX_EPS },
+      },
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -522,8 +549,8 @@ export class GalaxyView {
   setFilter(f: GalaxyFilter): void {
     this.filter = f;
     this.censusMemo = {};
+    this.applyStarVis();
     if (this.mode === 'arc') this.updateSight(true);
-    else this.applyStarVis();
   }
 
   dismiss(): void {
@@ -574,9 +601,9 @@ export class GalaxyView {
     return this.objects;
   }
 
-  /** Photospheres currently meshed — the stars that left the point LOD. */
-  resolvedStars(): GalaxyObject[] {
-    return this.discs.list();
+  /** Stars grown past the reticle lock — no cap. Smoke / HUD. */
+  grownStars(): number {
+    return this.grownCount;
   }
 
   setPreset(p: GalaxyPreset): void {
@@ -614,7 +641,7 @@ export class GalaxyView {
 
   /**
    * Jump next to a pinned star (selected, here, or home) inside its
-   * arc, close enough that its photosphere can mesh. Smoke / tests.
+   * arc, close enough that the point grows. Smoke / tests.
    */
   approachNearest(): GalaxyObject | null {
     const best = this.selected ?? this.hereObj ?? this.home;
@@ -632,25 +659,33 @@ export class GalaxyView {
     return this.focusObj;
   }
 
-  /** Resize meshed discs to the live camera — smoke / tests. */
+  /** Refresh sight uniforms — smoke / tests. */
   syncArc(): void {
-    if (this.mode === 'arc') this.discs.syncCamera(this.camera);
+    if (this.mode === 'arc') this.updateSight(true);
   }
 
-  /** Apparent angle (rad) of a meshed disc — smoke proves stars grow. */
-  discApparent(id: number): number {
-    const r = this.discs.radiusOf(id);
-    if (r <= 0) return 0;
+  /** Apparent angle (rad) of a cloud star — smoke proves points grow. */
+  pointApparent(id: number): number {
+    const cloud = this.cloud;
+    if (!cloud) return 0;
+    for (let i = 0; i < cloud.n; i++) {
+      if (cloud.ids[i] !== id) continue;
+      const dx = cloud.pos[i * 3] - this.arcPos.x;
+      const dy = cloud.pos[i * 3 + 1] - this.arcPos.y;
+      const dz = cloud.pos[i * 3 + 2] - this.arcPos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      const dim = (cloud.bits[i] & BIT_REMNANT) !== 0 || cloud.lum[i] < 0.05;
+      return glowRadiusKpc(cloud.lum[i], dim) / Math.max(1e-5, dist);
+    }
     const o = objectAt(this.seed, id);
     if (!o) return 0;
     const c = galToCart(o.pos);
     const dist = Math.hypot(c.x - this.arcPos.x, c.y - this.arcPos.y, c.z - this.arcPos.z);
-    return r / Math.max(1e-5, dist);
+    return glowRadiusKpc(o.star.luminosity, o.star.luminosity < 0.05) / Math.max(1e-5, dist);
   }
 
   /**
-   * An on-screen cloud star that is not a disc — smoke proves the
-   * full field is tappable, not just the brightest 28.
+   * An on-screen cloud star — smoke proves the full field is tappable.
    */
   probePointStar(): { id: number; x: number; y: number } | null {
     const cloud = this.cloud;
@@ -661,7 +696,6 @@ export class GalaxyView {
     const p = this.camera.projectionMatrix.elements;
     const step = Math.max(1, Math.floor(cloud.n / 4000));
     for (let i = 0; i < cloud.n; i += step) {
-      if (this.discIds.has(cloud.ids[i])) continue;
       if (!sketchMatches(cloud.bits[i], this.filter)) continue;
       const x = cloud.pos[i * 3];
       const y = cloud.pos[i * 3 + 1];
@@ -684,8 +718,7 @@ export class GalaxyView {
   }
 
   /**
-   * Rotate the look in place. Smoke uses this to prove overview discs
-   * do not appear just because the camera turned.
+   * Rotate the look in place. Smoke uses this to prove free look.
    */
   orbitBy(dTheta: number, dPhi = 0): void {
     if (this.mode === 'arc') {
@@ -741,7 +774,6 @@ export class GalaxyView {
       mk.mat.dispose();
     }
     this.sectors.dispose();
-    this.discs.dispose();
     this.homeRing.geometry.dispose();
     (this.homeRing.material as THREE.Material).dispose();
     this.hereRing.geometry.dispose();
@@ -781,6 +813,12 @@ export class GalaxyView {
     if (this.arcRight.lengthSq() < 1e-10) this.arcRight.set(1, 0, 0);
     else this.arcRight.normalize();
     this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+  }
+
+  private pxPerRad(): number {
+    const h = this.canvas.clientHeight || 800;
+    const fov = (this.camera.fov * Math.PI) / 180;
+    return (0.5 * h * this.renderer.getPixelRatio()) / Math.tan(fov * 0.5);
   }
 
   private applyCam(): void {
@@ -937,8 +975,10 @@ export class GalaxyView {
     const pos = cloud.pos;
     const bits = cloud.bits;
     const ids = cloud.ids;
+    const lum = cloud.lum;
+    const pxPer = this.pxPerRad() / Math.max(1, this.renderer.getPixelRatio());
     let bestI = -1;
-    let bestD = 22;
+    let bestD = Infinity;
     for (let i = 0; i < cloud.n; i++) {
       if (!sketchMatches(bits[i], this.filter)) continue;
       const x = pos[i * 3];
@@ -956,7 +996,10 @@ export class GalaxyView {
       const sx = rect.left + (nx * 0.5 + 0.5) * rect.width;
       const sy = rect.top + (-ny * 0.5 + 0.5) * rect.height;
       const d = Math.hypot(sx - cx, sy - cy);
-      if (d < bestD) {
+      const viewD = Math.max(1e-4, Math.hypot(mx, my, mz));
+      const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
+      const hitR = Math.max(22, 0.55 * 2 * glowRadiusKpc(lum[i], dim) * pxPer / viewD);
+      if (d <= hitR && d < bestD) {
         bestD = d;
         bestI = i;
       }
@@ -1115,106 +1158,93 @@ export class GalaxyView {
     this.idle = 0;
   }
 
-  // --------------------------------------------------------------- discs
+  // --------------------------------------------------------------- sight
 
   /**
-   * Wrap nearby points in spheres. The centre reticle then picks among
-   * those wraps — that hit is navigable.
+   * Filter the cloud and lock the centre reticle onto a grown point.
+   * Every star may grow; there is no mesh roster.
    */
   private updateSight(force = false): void {
     if (this.mode !== 'arc') return;
     const now = performance.now();
     if (!force && now - this.lastSightAt < 50) return;
     this.lastSightAt = now;
-    const cloud = this.cloud;
-    const near: GalaxyObject[] = [];
-    const seen = new Set<number>();
-    const take = (o: GalaxyObject | null): void => {
-      if (!o || seen.has(o.id) || near.length >= RESOLVE_MAX) return;
-      if (!matchesFilter(o, this.filter) && o !== this.selected && o !== this.focusObj) return;
-      seen.add(o.id);
-      near.push(o);
-    };
-
-    const cx = this.arcPos.x;
-    const cy = this.arcPos.y;
-    const cz = this.arcPos.z;
-    const wrapBest: Array<{ id: number; app: number }> = [];
-    const consider = (sid: number, app: number) => {
-      if (wrapBest.length < RESOLVE_MAX) {
-        wrapBest.push({ id: sid, app });
-        if (wrapBest.length === RESOLVE_MAX) wrapBest.sort((a, b) => a.app - b.app);
-        return;
-      }
-      if (app <= wrapBest[0].app) return;
-      wrapBest[0] = { id: sid, app };
-      wrapBest.sort((a, b) => a.app - b.app);
-    };
-
-    if (cloud) {
-      const pos = cloud.pos;
-      const lum = cloud.lum;
-      const bits = cloud.bits;
-      const ids = cloud.ids;
-      for (let i = 0; i < cloud.n; i++) {
-        if (!sketchMatches(bits[i], this.filter)) continue;
-        const dx = pos[i * 3] - cx;
-        const dy = pos[i * 3 + 1] - cy;
-        const dz = pos[i * 3 + 2] - cz;
-        const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 < 1e-12) continue;
-        const dist = Math.sqrt(d2);
-        const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
-        const ang = glowRadiusKpc(lum[i], dim) / dist;
-        if (ang >= STAR_WRAP_ANG) consider(ids[i], ang);
-      }
-    }
-    if (this.selected) {
-      const c = galToCart(this.selected.pos);
-      const dist = Math.hypot(c.x - cx, c.y - cy, c.z - cz);
-      const dim =
-        this.selected.star.phase === 'white_dwarf' ||
-        this.selected.star.phase === 'neutron_star' ||
-        this.selected.star.phase === 'pulsar' ||
-        this.selected.star.phase === 'black_hole' ||
-        this.selected.star.luminosity < 0.05;
-      if (glowRadiusKpc(this.selected.star.luminosity, dim) / Math.max(1e-4, dist) >= STAR_WRAP_ANG) {
-        take(this.selected);
-      }
-    }
-    wrapBest.sort((a, b) => b.app - a.app);
-    for (const b of wrapBest) {
-      if (near.length >= RESOLVE_MAX) break;
-      take(objectAt(this.seed, b.id));
-    }
-
-    this.objects = near;
-    this.discs.setStars(near, this.camera.position);
-    this.discIds.clear();
-    for (const o of near) this.discIds.add(o.id);
-    this.applyStarVis();
     this.aimReticle();
   }
 
-  /** Centre reticle vs wrapped spheres. A hit can be flown to now. */
+  /** Centre reticle vs grown cloud points. A hit can be flown to now. */
   private aimReticle(): void {
     if (this.mode !== 'arc') {
       this.focusObj = null;
       this.focusHud = null;
+      this.grownCount = 0;
       return;
     }
-    this.ndc.set(0, 0);
-    this.camera.updateMatrixWorld();
-    this.raycaster.setFromCamera(this.ndc, this.camera);
-    const hit = this.discs.pick(this.raycaster);
+    const cloud = this.cloud;
+    if (!cloud) {
+      this.focusObj = null;
+      this.focusHud = null;
+      this.grownCount = 0;
+      return;
+    }
+    this.orientArc();
+    const lx = this.arcFwd.x;
+    const ly = this.arcFwd.y;
+    const lz = this.arcFwd.z;
+    const cx = this.arcPos.x;
+    const cy = this.arcPos.y;
+    const cz = this.arcPos.z;
+    const cosCone = Math.cos(0.028);
+    const pos = cloud.pos;
+    const lum = cloud.lum;
+    const bits = cloud.bits;
+    const ids = cloud.ids;
+    let grown = 0;
+    let bestI = -1;
+    let bestOff = 1;
+    let bestDist = 0;
+    let bestDim = false;
+    for (let i = 0; i < cloud.n; i++) {
+      if (!sketchMatches(bits[i], this.filter)) continue;
+      const dx = pos[i * 3] - cx;
+      const dy = pos[i * 3 + 1] - cy;
+      const dz = pos[i * 3 + 2] - cz;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < 1e-12) continue;
+      const dist = Math.sqrt(d2);
+      const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
+      const ang = glowRadiusKpc(lum[i], dim) / dist;
+      if (ang >= AIM_MIN_ANG) grown++;
+      else continue;
+      const inv = 1 / dist;
+      const dot = dx * inv * lx + dy * inv * ly + dz * inv * lz;
+      if (dot < cosCone) continue;
+      const off = 1 - dot;
+      if (off < bestOff) {
+        bestOff = off;
+        bestI = i;
+        bestDist = dist;
+        bestDim = dim;
+      }
+    }
+    this.grownCount = grown;
+    if (bestI < 0) {
+      this.focusObj = null;
+      this.focusHud = null;
+      return;
+    }
+    if (this.focusObj?.id === ids[bestI] && this.focusHud) {
+      this.focusHud.dist = bestDist;
+      this.focusHud.dark = bestDim;
+      return;
+    }
+    const hit = objectAt(this.seed, ids[bestI]);
     if (!hit) {
       this.focusObj = null;
       this.focusHud = null;
       return;
     }
     this.focusObj = hit;
-    const c = galToCart(hit.pos);
-    const dist = Math.hypot(c.x - this.arcPos.x, c.y - this.arcPos.y, c.z - this.arcPos.z);
     const brief = this.briefFor(hit);
     const st = hit.star;
     this.focusHud = {
@@ -1225,10 +1255,10 @@ export class GalaxyView {
       planets: brief.planets,
       moons: brief.moons,
       life: brief.life,
-      dark: this.discs.isOutline(hit.id),
+      dark: bestDim,
       x: 0.5,
       y: 0.5,
-      dist,
+      dist: bestDist,
     };
   }
 
@@ -1256,14 +1286,13 @@ export class GalaxyView {
     }
   }
 
-  /** Solid wraps hide their point; outline wraps keep the pinprick inside. */
+  /** Filter dims non-matching points; every star stays a point. */
   private applyStarVis(): void {
     if (!this.starVis || !this.cloud) return;
     const arr = this.starVis.array as Float32Array;
-    const { ids, bits, gain, n } = this.cloud;
+    const { bits, gain, n } = this.cloud;
     for (let i = 0; i < n; i++) {
-      if (this.discIds.has(ids[i]) && !this.discs.isOutline(ids[i])) arr[i] = 0;
-      else arr[i] = sketchMatches(bits[i], this.filter) ? gain[i] : gain[i] * 0.08;
+      arr[i] = sketchMatches(bits[i], this.filter) ? gain[i] : gain[i] * 0.08;
     }
     this.starVis.needsUpdate = true;
   }
@@ -1294,8 +1323,8 @@ export class GalaxyView {
     const px = this.renderer.getPixelRatio();
     if (this.starMat) {
       this.starMat.uniforms.uPixel.value = px;
+      this.starMat.uniforms.uPxPerRad.value = this.pxPerRad();
     }
-    if (this.mode === 'arc') this.discs.syncCamera(this.camera);
 
     const cam = this.camera.position;
     const ringFor = (mesh: THREE.Mesh, lo: number, hi: number, k: number) => {
@@ -1324,7 +1353,7 @@ export class GalaxyView {
       radius: this.radius,
       pickable: this.mode === 'arc',
       resolved: this.cloud?.n ?? 0,
-      discs: this.discIds.size,
+      grown: this.grownCount,
       sector: this.sectorSel ? sectorName(this.sectorSel) : null,
       population: this.sectorPop,
       focus: this.mode === 'arc' ? this.focusHud : null,

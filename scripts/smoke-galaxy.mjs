@@ -103,14 +103,13 @@ if (await galaxyBtn.count()) {
       n: v.beaconCount?.() ?? 0,
       ms: v.lastEnterMs ?? null,
       point: v.probePointStar?.() ?? null,
-      discsAtOverview: v.resolvedStars?.()?.length ?? 0,
+      grownAtOverview: v.grownStars?.() ?? 0,
     };
   });
   console.log('CLOUD', JSON.stringify(survey));
   if (survey.n < 80_000) errors.push(`cloud ${survey.n} is not the full arc`);
-  if (survey.discsAtOverview > 0) errors.push(`overview meshed ${survey.discsAtOverview} highlight discs — brightness should be the IMF, not a sample`);
 
-  // A point star (not one of the 28 discs) must open the dossier, not set course.
+  // A point star must open the dossier, not set course.
   if (survey.point) {
     await page.mouse.click(survey.point.x, survey.point.y);
     await page.waitForTimeout(600);
@@ -122,22 +121,18 @@ if (await galaxyBtn.count()) {
     if (!pointTap.explorer) errors.push('tapping a survey star set course instead of selecting');
     if (pointTap.id !== survey.point.id) errors.push('tapping a survey star did not select it');
   } else {
-    errors.push('no on-screen survey star outside the disc roster');
+    errors.push('no on-screen survey star to tap');
   }
 
-  // Overview: turning in place must not mint highlight discs. The field
-  // is the IMF; photospheres appear when you fly close.
-  const roster0 = await page.evaluate(() =>
-    (window.__galaxyView?.resolvedStars?.() ?? []).map((o) => o.id).join(','),
-  );
+  // Overview: turning in place keeps the same frozen cloud.
   await page.evaluate(() => window.__galaxyView?.orbitBy?.(1.35, -0.4));
   await page.waitForTimeout(400);
-  const roster1 = await page.evaluate(() =>
-    (window.__galaxyView?.resolvedStars?.() ?? []).map((o) => o.id).join(','),
-  );
-  console.log('ROSTER', JSON.stringify({ before: roster0, after: roster1 }));
-  if (roster0 !== roster1) errors.push('overview photospheres appeared after looking around');
-  if (roster0) errors.push('overview still has highlight discs');
+  const afterLook = await page.evaluate(() => ({
+    n: window.__galaxyView?.beaconCount?.() ?? 0,
+    mode: window.__galaxyView?.currentMode?.() ?? null,
+  }));
+  console.log('LOOK', JSON.stringify(afterLook));
+  if (afterLook.n !== survey.n) errors.push('looking around rebuilt the cloud');
   await page.screenshot({ path: 'previews/galaxy-2b-orbit.png' });
 
   const strafe = await page.evaluate(() => {
@@ -160,7 +155,7 @@ if (await galaxyBtn.count()) {
   if (!strafe || strafe.moved < 0.2) errors.push('strafe did not fly off the orbit lock');
   if (strafe && strafe.cos > 0.995) errors.push('strafe stayed on a radial from the arc centre (orbit lock still on)');
 
-  // Approach: park next to the selected star; photospheres must mesh.
+  // Approach: park next to the selected star; its point must grow.
   const approached = await page.evaluate(() => {
     const v = window.__galaxyView;
     const o = v.approachNearest?.();
@@ -170,27 +165,32 @@ if (await galaxyBtn.count()) {
   await page.waitForTimeout(800);
   const close = await page.evaluate(() => {
     const v = window.__galaxyView;
-    const discs = v.resolvedStars?.() ?? [];
-    const target = discs.find((o) => o.id === v.selectedObject?.()?.id) ?? discs[0];
-    const first = target ? v.projectClient(target) : null;
-    return { n: discs.length, first, radius: v.radius ?? null };
+    const id = v.selectedObject?.()?.id ?? v.focusedObject?.()?.id;
+    const first = v.selectedObject?.() ? v.projectClient(v.selectedObject()) : null;
+    return {
+      grown: v.grownStars?.() ?? 0,
+      ang: id != null ? v.pointApparent?.(id) ?? 0 : 0,
+      first,
+      radius: v.radius ?? null,
+    };
   });
-  console.log('DISCS', JSON.stringify(close));
+  console.log('CLOSE', JSON.stringify(close));
   await page.screenshot({ path: 'previews/galaxy-3-discs.png' });
-  if (!close.n) errors.push('no photospheres inside the arc');
+  if (!close.ang) errors.push('approached star has no apparent size');
+  if (close.grown < 1) errors.push('no grown points after approaching a star');
 
   const grow = await page.evaluate(() => {
     const v = window.__galaxyView;
     const id = v.selectedObject?.()?.id ?? v.focusedObject?.()?.id;
     if (id == null) return null;
-    const a0 = v.discApparent?.(id) ?? 0;
+    const a0 = v.pointApparent?.(id) ?? 0;
     v.flyAlong?.(0.01);
     v.syncArc?.();
-    const a1 = v.discApparent?.(id) ?? 0;
-    return { id, a0, a1, plate: Boolean(document.querySelector('.gx-plate')) };
+    const a1 = v.pointApparent?.(id) ?? 0;
+    return { id, a0, a1, grown: v.grownStars?.() ?? 0, plate: Boolean(document.querySelector('.gx-plate')) };
   });
   console.log('GROW', JSON.stringify(grow));
-  if (!grow || grow.a0 <= 0) errors.push('approached star has no growing disc');
+  if (!grow || grow.a0 <= 0) errors.push('approached star has no growing point');
   if (grow && grow.a1 <= grow.a0 * 1.02) errors.push(`star did not grow on approach ${grow.a0} → ${grow.a1}`);
   if (grow && !grow.plate) errors.push('no compact sight HUD after approaching a star');
 
