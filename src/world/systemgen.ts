@@ -23,7 +23,7 @@ import { rgbToHex, teffToRgb, type StellarState } from './stellar';
  * keeping the old behavior available for systems pinned to it.
  */
 
-export const CURRENT_GEN_VERSION = 13;
+export const CURRENT_GEN_VERSION = 14;
 
 export type RGB = [number, number, number];
 

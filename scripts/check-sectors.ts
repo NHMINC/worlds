@@ -3,7 +3,7 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, galToCart, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { cellCount, cellCenter, galToCart, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
 import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
@@ -28,6 +28,7 @@ import {
   BIT_DUST,
   BIT_NEBULA,
   isDustId,
+  cellFromDustId,
 } from '../src/world/sectors';
 import { shapeAt, KIND_HII, KIND_PN, KIND_SNR } from '../src/world/skyShape';
 
@@ -212,7 +213,9 @@ const check = (cond: boolean, msg: string) => {
   let stars = 0;
   let nebulae = 0;
   let dust = 0;
+  let dustOffLattice = 0;
   let minStarL = Infinity;
+  const dustSeen = new Set<number>();
   const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
   const r = UNIVERSE.GALAXY_REGION_R;
   let inside = 0;
@@ -221,8 +224,15 @@ const check = (cond: boolean, msg: string) => {
     if (d < r) inside++;
     if (a.kind[i] === KIND_DUST || (a.bits[i] & BIT_DUST) !== 0) {
       dust++;
-      check(isDustId(a.ids[i]), `dust row ${a.ids[i]} is not a cell id`);
-      check(!objectAt(seed, a.ids[i]), `dust id ${a.ids[i]} claims to be a living star`);
+      const id = a.ids[i];
+      check(isDustId(id), `dust row ${id} is not an ISM id`);
+      check(!dustSeen.has(id), `dust id ${id} duplicated`);
+      dustSeen.add(id);
+      check(!objectAt(seed, id), `dust id ${id} claims to be a living star`);
+      // A population scatters; a lattice pins to cell centres.
+      const mid = galToCart(cellCenter(cellFromDustId(id)));
+      const off = Math.hypot(a.pos[i * 3] - mid.x, a.pos[i * 3 + 1] - mid.y, a.pos[i * 3 + 2] - mid.z);
+      if (off > 0.02) dustOffLattice++;
       continue;
     }
     if (a.bits[i] & BIT_NEBULA) nebulae++;
@@ -233,9 +243,10 @@ const check = (cond: boolean, msg: string) => {
   check(inside < a.n, 'silhouette must reach past the sample ball');
   check(stars > 10_000, `silhouette stars ${stars} too few`);
   check(nebulae > 20, `silhouette has no nebulae (${nebulae})`);
-  check(dust > 200 && dust < 150_000, `dust count ${dust} is not a lane field`);
+  check(dust > 5_000 && dust < 200_000, `dust count ${dust} is not a clump population`);
+  check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
   check(minStarL > 4, `silhouette star dim L=${minStarL}`);
-  check(stars + nebulae < 360_000, `silhouette is a dwarf cloud: ${stars + nebulae} star/nebula rows`);
+  check(stars + nebulae < 400_000, `silhouette is a dwarf cloud: ${stars + nebulae} star/nebula rows`);
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');
@@ -243,7 +254,8 @@ const check = (cond: boolean, msg: string) => {
   const snr = shapeAt(KIND_SNR, 1).rgb;
   const hii = shapeAt(KIND_HII, 1).rgb;
   check(pn[1] > 0.7 && pn[2] > 0.7 && pn[0] < pn[1], 'PN must be cyan');
-  check(snr[0] > 0.9 && snr[1] > 0.9 && hii[0] > 0.9, 'SNR / H II must be white');
+  check(snr[0] > 0.9 && snr[1] < 0.5 && snr[2] < 0.5, 'SNR must be red');
+  check(hii[0] > 0.9 && hii[1] > 0.9 && hii[2] > 0.9, 'H II must be white');
   let checked = 0;
   for (let i = 0; i < a.n && checked < 8; i++) {
     if (a.kind[i] === KIND_DUST) continue;
@@ -280,6 +292,39 @@ const check = (cond: boolean, msg: string) => {
     console.log(`  visit handshake: id ${id} kept in local ${local.n}`);
   }
   console.log(`  silhouette: ${a.n} (${stars} stars, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);
+}
+
+// --- nursery law: dense gas births young stars (causal, not painted) ---
+{
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
+  const izMid = Math.floor(nz / 2);
+  const ir = Math.floor((UNIVERSE.R_SUN / rMax) * nr);
+  type Row = { ism: number; young: number };
+  const rows: Row[] = [];
+  for (let it = 0; it < nth; it += 2) {
+    const cell = ir * nth * nz + it * nz + izMid;
+    const filled = slotsInCell(seed, cell);
+    if (filled < 12) continue;
+    const ism = ismNorm(seed, cell);
+    let young = 0;
+    const probe = 10;
+    for (let j = 0; j < probe; j++) {
+      const slot = Math.floor(((j + 0.5) / probe) * filled);
+      const b = slotBirthRaw(seed, cell, slot, filled);
+      if (b.pop === 'thin' && b.ageGyr < 1.5) young++;
+    }
+    rows.push({ ism, young: young / probe });
+  }
+  rows.sort((x, y) => x.ism - y.ism);
+  const tenth = Math.max(1, Math.floor(rows.length / 10));
+  const bot = rows.slice(0, tenth);
+  const top = rows.slice(rows.length - tenth);
+  const mean = (xs: Row[]) => xs.reduce((s, x) => s + x.young, 0) / Math.max(1, xs.length);
+  const botY = mean(bot);
+  const topY = mean(top);
+  check(rows.length > 60, `nursery probe too small (${rows.length} cells)`);
+  check(topY > botY * 1.5 + 0.01, `nursery law not causal: young frac top ${topY.toFixed(3)} vs bottom ${botY.toFixed(3)}`);
+  console.log(`  nursery: young frac ${botY.toFixed(3)} (thin gas) -> ${topY.toFixed(3)} (dense gas) over ${rows.length} cells`);
 }
 
 // --- systems of interest: deterministic, spectacular, spread out ---

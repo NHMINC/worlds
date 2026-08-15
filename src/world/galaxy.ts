@@ -99,22 +99,95 @@ export function density(p: GalPos): number {
   return d.thin + d.thick + d.bulge + d.bar + d.halo;
 }
 
+/** Lattice hash for the ISM noise, in [-1, 1]. Pure of the corner. */
+function ismCorner(seed: string, ix: number, iy: number, iz: number): number {
+  return 2 * u01(seed, 'ism', ix, iy, iz) - 1;
+}
+
+const smooth = (t: number) => t * t * (3 - 2 * t);
+
+/** Trilinearly interpolated value noise in [-1, 1] — coherent, not a per-cell coin. */
+function ismNoise(seed: string, x: number, y: number, z: number): number {
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const iz = Math.floor(z);
+  const fx = smooth(x - ix);
+  const fy = smooth(y - iy);
+  const fz = smooth(z - iz);
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+  const c00 = lerp(ismCorner(seed, ix, iy, iz), ismCorner(seed, ix + 1, iy, iz), fx);
+  const c10 = lerp(ismCorner(seed, ix, iy + 1, iz), ismCorner(seed, ix + 1, iy + 1, iz), fx);
+  const c01 = lerp(ismCorner(seed, ix, iy, iz + 1), ismCorner(seed, ix + 1, iy, iz + 1), fx);
+  const c11 = lerp(ismCorner(seed, ix, iy + 1, iz + 1), ismCorner(seed, ix + 1, iy + 1, iz + 1), fx);
+  return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
+}
+
+/** Gas disk is flatter than the stars: molecular gas hangs on past the stellar edge. */
+function gasBase(p: GalPos): number {
+  const U = UNIVERSE;
+  const armF = 1 + U.GALAXY_ARM_A * Math.cos(armPhase(p.R, p.theta));
+  return Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2(p.z / U.GALAXY_ZD) * armF;
+}
+
+let ismMemoSeed = '';
+const ismMemo = new Map<number, number>();
+
 /**
- * ISM column at a catalog cell: thin-disk density × log-normal
- * turbulence. Ancestor of the old importance-sampled `sampleDust`
- * points — the field is the law; GPU dust sprites sit on cells
- * whose column clears SILHOUETTE_DUST_FLOOR. Not a star.
+ * The molecular-cloud field, normalized to ~[0, 1]: gas disk × arm
+ * overdensity × log-normal of INTERPOLATED turbulence, so complexes
+ * are coherent over ~1/TURB_FREQ kpc — many catalog cells, no
+ * lattice. One field, three consumers: dust clump occupancy, the
+ * star-formation age law, and the H II (nursery) condition.
  */
-export function dustColumn(seed: string, cell: number): number {
+export function ismNorm(seed: string, cell: number): number {
+  if (seed !== ismMemoSeed) {
+    ismMemo.clear();
+    ismMemoSeed = seed;
+  }
+  const hit = ismMemo.get(cell);
+  if (hit !== undefined) return hit;
   const p = cellCenter(cell);
-  const thin = densityParts(p).thin;
-  if (thin < 1e-6) return 0;
-  const cart = galToCart(p);
-  const f = UNIVERSE.GALAXY_TURB_FREQ;
-  const spatial = 2 * u01(seed, 'turb', Math.floor(cart.x * f * 4), Math.floor(cart.y * f * 4), Math.floor(cart.z * f * 4)) - 1;
-  const local = 2 * u01(seed, 'dust', cell) - 1;
-  const s = 0.55 * spatial + 0.45 * local;
-  return thin * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s);
+  const base = gasBase(p);
+  let v = 0;
+  if (base > 1e-5) {
+    const c = galToCart(p);
+    const f = UNIVERSE.GALAXY_TURB_FREQ;
+    const s =
+      (ismNoise(seed, c.x * f, c.y * f, c.z * f) +
+        0.5 * ismNoise(seed, c.x * f * 2.3 + 31.7, c.y * f * 2.3, c.z * f * 2.3)) /
+      1.5;
+    const ceil = (1 + UNIVERSE.GALAXY_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
+    v = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s)) / ceil);
+  }
+  if (ismMemo.size > 400_000) ismMemo.clear();
+  ismMemo.set(cell, v);
+  return v;
+}
+
+/**
+ * Dust clumps are a POPULATION, not a per-cell overlay: expected
+ * count = field × volume × GALAXY_DUST_N_K, floor + coin — the same
+ * occupancy law as slotsInCell. Sparse gas mints nothing.
+ */
+export function dustClumpsInCell(seed: string, cell: number): number {
+  const v = ismNorm(seed, cell);
+  if (v <= 0) return 0;
+  const expect = v * cellVolume(cell) * UNIVERSE.GALAXY_DUST_N_K;
+  const whole = Math.floor(expect);
+  const extra = u01(seed, 'dustOcc', cell) < expect - whole ? 1 : 0;
+  return Math.min(UNIVERSE.GALAXY_DUST_MAX, whole + extra);
+}
+
+/** Clump position: the same isotropic scatter cube stars use. No lattice. */
+export function dustBirthCart(seed: string, cell: number, k: number): { x: number; y: number; z: number } {
+  const rng = rngFor(seed, 'dustPos', cell, k);
+  const mid = cellCenter(cell);
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
+  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
+  const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
+  const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
+  const z = mid.z + (rng() - 0.5) * dz;
+  return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
 }
 
 function pickPop(d: Record<Population, number>, u: number): Population {
@@ -352,7 +425,8 @@ function objectAtRaw(seed: string, id: number): GalaxyObject | null {
     ageGyr: b.ageGyr,
     feh,
     carbon,
-    inArm: b.inArm,
+    // The H II condition is the nursery (dense cloud), not the arm cosine.
+    inArm: b.inCloud,
   });
   return { id, pos: b.pos, pop: b.pop, inArm: b.inArm, star };
 }
@@ -367,6 +441,8 @@ export interface SlotBirth {
   pos: GalPos;
   pop: Population;
   inArm: boolean;
+  /** Inside a dense molecular cloud (the nursery / H II condition). */
+  inCloud: boolean;
   ageGyr: number;
   massZams: number;
   rng: () => number;
@@ -405,13 +481,17 @@ export function slotBirthRaw(seed: string, cell: number, slot: number, filled: n
   const pop = pickPop(parts, rng());
   const [ageLo, ageHi] = ageWindow(pop, pos.R);
   const arm = inSpiralArm(pos.R, pos.theta);
+  const ism = ismNorm(seed, cell);
+  // Schmidt–Kennicutt-lite: star formation follows the gas. The denser
+  // the cloud, the more recent the births — nurseries emerge instead of
+  // a binary "in arm" flag. Same rng draw count: ids never move.
   let uAge = rng();
-  if (pop === 'thin' && arm) uAge = Math.pow(uAge, 2.2);
+  if (pop === 'thin') uAge = Math.pow(uAge, 1 + UNIVERSE.GALAXY_SFR_GAIN * ism);
   const ageGyr = ageLo + uAge * Math.max(0.01, ageHi - ageLo);
   const jitter = u01(seed, 'imfJ', cell, slot);
   const uImf = Math.min(0.999999, (slot + jitter) / Math.max(1, filled));
   const massZams = imfMass(uImf);
-  return { pos, pop, inArm: arm, ageGyr, massZams, rng };
+  return { pos, pop, inArm: arm, inCloud: ism >= UNIVERSE.GALAXY_CLOUD_HII, ageGyr, massZams, rng };
 }
 
 export function isSlotAlive(massZams: number, ageGyr: number): boolean {

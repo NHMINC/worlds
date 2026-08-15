@@ -361,14 +361,27 @@ export const UNIVERSE = {
 
   /**
    * The interstellar medium is supersonically turbulent, so its
-   * density is log-normal: ρ = ρ̄ · exp(σ·s) with s a zero-mean fBm
-   * field. TURB_SIGMA is that σ (clumping strength); TURB_FREQ is
-   * cycles per kpc of the largest eddies. Dust reddens: extinction
-   * per unit optical depth is DUST_RGB — blue dies first, which is
-   * why lanes look brown against the yellow bulge.
+   * density is log-normal: ρ = ρ̄ · exp(σ·s) with s a zero-mean,
+   * spatially INTERPOLATED noise field (coherent complexes spanning
+   * ~1/TURB_FREQ kpc — many catalog cells, never a per-cell coin).
+   * TURB_SIGMA is that σ (clumping strength); TURB_FREQ is cycles
+   * per kpc of the largest eddies. The gas disk is flatter than the
+   * stars (RD_GAS × stellar Rd). One field, three consumers:
+   * dust clump occupancy (DUST_N_K clumps per unit field × volume,
+   * at most DUST_MAX per cell), the star-formation age law
+   * (SFR_GAIN — Schmidt–Kennicutt-lite: dense gas births young
+   * stars, i.e. nurseries), and the H II condition (CLOUD_HII —
+   * a young massive star lights its natal cloud). Dust reddens:
+   * extinction per unit optical depth is DUST_RGB — blue dies
+   * first, which is why lanes look brown against the yellow bulge.
    */
   GALAXY_TURB_SIGMA: 1.35,
   GALAXY_TURB_FREQ: 0.85,
+  GALAXY_RD_GAS: 1.6,
+  GALAXY_DUST_N_K: 6000,
+  GALAXY_DUST_MAX: 8,
+  GALAXY_SFR_GAIN: 10,
+  GALAXY_CLOUD_HII: 0.1,
   GALAXY_DUST_RGB: [1.65, 1.0, 0.55] as [number, number, number],
 
   /** Solar circle (kpc) — home-star search and the thin-disk yardstick. */
@@ -424,20 +437,24 @@ export const UNIVERSE = {
    * of the disk — luminous living stars above SILHOUETTE_M (A and
    * hotter, giants, WR) plus nebula hosts and dusty cell centres —
    * is placed with the same magnifier. Distant discs are toy angular
-   * sizes (STAR / NEBULA / DUST _PX). Envelopes are 50% transparent
-   * spheres on the source (ENVELOPE_ALPHA) — cyan PN, white SNR/H II,
-   * brown dust. They overlap as glass; they do not add energy.
+   * sizes. Envelopes are 50% transparent spheres on the source
+   * (ENVELOPE_ALPHA) — cyan PN, red SNR, white H II, brown dust.
+   * They overlap as glass; they do not add energy, and alpha never
+   * follows density (that is a later knob on the same field).
+   * Envelope size is ANGULAR in both layers — radiusKpc / distance —
+   * with NEBULA_PX / DUST_PX as pixel floors so far sources stay
+   * findable; STAR_PX stays the fixed ruler for photosphere points.
    * SUPER_GAIN stretches the bright end the clock already made.
-   * DUST_FLOOR is the ISM column that mints a dust centre.
    * Optical approximations, like AIR_LINE. Not pickable.
    */
   GALAXY_SILHOUETTE_M: 5,
   SILHOUETTE_STAR_PX: 2.4,
-  SILHOUETTE_NEBULA_PX: 7,
-  SILHOUETTE_DUST_PX: 10,
+  SILHOUETTE_NEBULA_PX: 4,
+  SILHOUETTE_DUST_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,
   SILHOUETTE_ENVELOPE_ALPHA: 0.5,
-  SILHOUETTE_DUST_FLOOR: 0.16,
+  /** Largest dust complex radius (kpc); wisps start near 0.05. */
+  GALAXY_DUST_R_MAX: 0.8,
 
   /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:

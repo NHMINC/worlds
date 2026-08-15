@@ -48,6 +48,7 @@ export function kindFromNebula(nebula: NebulaKind): SkyKind {
 
 const WHITE: [number, number, number] = [1, 1, 1];
 const CYAN: [number, number, number] = [0.35, 0.95, 0.95];
+const RED: [number, number, number] = [1, 0.26, 0.2];
 const BROWN: [number, number, number] = [0.48, 0.32, 0.18];
 
 /**
@@ -62,7 +63,10 @@ export function shapeAt(kind: SkyKind, id: number): SkyShape {
   if (kind === KIND_PN) {
     return { kind, radiusKpc: r, flatten: 0, axes: [1, 1], clump: 1, seed: h0, rgb: CYAN };
   }
-  if (kind === KIND_HII || kind === KIND_SNR) {
+  if (kind === KIND_SNR) {
+    return { kind, radiusKpc: r * 1.3, flatten: 0, axes: [1, 1], clump: 1, seed: h0, rgb: RED };
+  }
+  if (kind === KIND_HII) {
     return { kind, radiusKpc: r * 1.1, flatten: 0, axes: [1, 1], clump: 1, seed: h0, rgb: WHITE };
   }
   if (kind === KIND_DUST) {

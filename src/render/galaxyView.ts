@@ -117,9 +117,10 @@ const STAR_VERT = /* glsl */ `
     vSeed = aSeed;
     vColor = aColor;
     if (aKind > 0.5) {
-      float ang = max(aSize, 0.02) / d;
-      float cap = aKind < 3.5 ? 56.0 : 220.0;
-      gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, cap);
+      // aSize is the envelope radius in catalog kpc; the magnifier
+      // scales space, so true angle = aSize * uScale / view distance.
+      float ang = max(aSize, 0.005) * uScale / d;
+      gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, 512.0);
       vVis = aVis;
     } else {
       float L = max(aLum, 1e-4);
@@ -147,10 +148,12 @@ const SILHOUETTE_VERT = /* glsl */ `
   attribute vec3 aColor;
   attribute float aLum;
   attribute float aKind;
+  attribute float aSize;
   attribute float aSeed;
   uniform vec3 uCenter;
   uniform float uScale;
   uniform float uPixel;
+  uniform float uPxPerRad;
   uniform float uRegionR;
   uniform float uStarPx;
   uniform float uNebulaPx;
@@ -173,11 +176,18 @@ const SILHOUETTE_VERT = /* glsl */ `
     }
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
-    float px = uStarPx;
-    if (aKind > 0.5 && aKind < 3.5) px = uNebulaPx;
-    if (aKind > 3.5) px = uDustPx;
-    float boost = 1.0 + uSuper * smoothstep(8.0, 180.0, aLum);
-    gl_PointSize = px * uPixel * boost;
+    if (aKind > 0.5) {
+      // Same angular law as the local layer: radiusKpc / distance,
+      // with a pixel floor so far sources stay findable. No pop at
+      // the magnifier boundary.
+      float d = max(length(mv.xyz), 0.001);
+      float ang = max(aSize, 0.005) * uScale / d;
+      float floorPx = (aKind > 3.5 ? uDustPx : uNebulaPx) * uPixel;
+      gl_PointSize = clamp(2.0 * ang * uPxPerRad, floorPx, 512.0);
+    } else {
+      float boost = 1.0 + uSuper * smoothstep(8.0, 180.0, aLum);
+      gl_PointSize = uStarPx * uPixel * boost;
+    }
     vColor = aColor;
     vVis = 1.0;
     vKind = aKind;
@@ -749,6 +759,7 @@ export class GalaxyView {
       uCenter: { value: new THREE.Vector3() },
       uScale: { value: 1 },
       uPixel: { value: this.renderer.getPixelRatio() },
+      uPxPerRad: { value: this.pxPerRad() },
       uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
       uStarPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
@@ -769,6 +780,7 @@ export class GalaxyView {
     geo.setAttribute('aVis', new THREE.BufferAttribute(cloud.gain, 1));
     geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
     geo.setAttribute('aKind', new THREE.BufferAttribute(cloud.kind, 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
     geo.setDrawRange(0, cloud.n);
     const mat = new THREE.ShaderMaterial({
@@ -1947,8 +1959,17 @@ export class GalaxyView {
       this.starMat.uniforms.uPixel.value = px;
       this.starMat.uniforms.uPxPerRad.value = pxPer;
     }
+    if (this.starDustMat) {
+      this.starDustMat.uniforms.uPixel.value = px;
+      this.starDustMat.uniforms.uPxPerRad.value = pxPer;
+    }
     if (this.silMat) {
       this.silMat.uniforms.uPixel.value = px;
+      this.silMat.uniforms.uPxPerRad.value = pxPer;
+    }
+    if (this.silDustMat) {
+      this.silDustMat.uniforms.uPixel.value = px;
+      this.silDustMat.uniforms.uPxPerRad.value = pxPer;
     }
 
     const cam = this.camera.position;

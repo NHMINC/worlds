@@ -24,7 +24,9 @@ import {
   chemistry,
   density,
   densityParts,
-  dustColumn,
+  dustBirthCart,
+  dustClumpsInCell,
+  ismNorm,
   galToCart,
   isSlotAlive,
   slotBirthCart,
@@ -253,13 +255,13 @@ export const BIT_ARM = 32;
 export const BIT_NEBULA = 64;
 export const BIT_DUST = 128;
 
-/** Dust is a cell-keyed ISM centre, not a catalog slot. */
-export function dustId(cell: number): number {
-  return -(cell + 1);
+/** Dust clump (cell, k): an ISM address, not a catalog slot. */
+export function dustId(cell: number, k: number): number {
+  return -(cell * UNIVERSE.GALAXY_DUST_MAX + k + 1);
 }
 
 export function cellFromDustId(id: number): number {
-  return -id - 1;
+  return Math.floor((-id - 1) / UNIVERSE.GALAXY_DUST_MAX);
 }
 
 export function isDustId(id: number): boolean {
@@ -312,7 +314,7 @@ function maybeClockRow(b: SlotBirth): boolean {
   const m = b.massZams;
   const tMs = msLifetime(m);
   if (b.ageGyr < tMs) {
-    return m >= UNIVERSE.GALAXY_SILHOUETTE_M || (m >= 8 && b.ageGyr < UNIVERSE.HII_GYR && b.inArm);
+    return m >= UNIVERSE.GALAXY_SILHOUETTE_M || (m >= 8 && b.ageGyr < UNIVERSE.HII_GYR && b.inCloud);
   }
   const deadFor = b.ageGyr - tMs - giantWindow(m);
   return deadFor < Math.max(UNIVERSE.PN_GYR, UNIVERSE.SNR_GYR) + 1e-9;
@@ -368,7 +370,8 @@ function sketchEvolve(b: SlotBirth): ReturnType<typeof evolve> {
     ageGyr: b.ageGyr,
     feh: chem.feh,
     carbon: chem.carbon,
-    inArm: b.inArm,
+    // Same clock objectAt runs: H II lights in the natal cloud.
+    inArm: b.inCloud,
   });
 }
 
@@ -443,12 +446,21 @@ function writeFromBirth(
   });
 }
 
-function writeDust(seed: string, cell: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
-  const mid = cellCenter(cell);
-  const cart = galToCart(mid);
-  const id = dustId(cell);
+/**
+ * One dust clump: scattered position (no lattice), sphere of
+ * influence from the field — wisps ~0.05 kpc, complexes up to
+ * GALAXY_DUST_R_MAX. Alpha stays fixed; the field never sets opacity.
+ */
+function writeDust(seed: string, cell: number, k: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
+  const cart = dustBirthCart(seed, cell, k);
+  const id = dustId(cell, k);
   const shape = shapeAt(KIND_DUST, id);
-  const tau = Math.min(1, dustColumn(seed, cell) / Math.max(1e-6, UNIVERSE.SILHOUETTE_DUST_FLOOR));
+  const field = ismNorm(seed, cell);
+  const jitter = 0.7 + 0.6 * shape.seed;
+  const radius = Math.min(
+    UNIVERSE.GALAXY_DUST_R_MAX,
+    (0.05 + (UNIVERSE.GALAXY_DUST_R_MAX - 0.05) * Math.pow(field, 1.5)) * jitter,
+  );
   writeRow(id, cart.x, cart.y, cart.z, i, c, {
     rgb: shape.rgb,
     L: 0,
@@ -456,8 +468,8 @@ function writeDust(seed: string, cell: number, i: number, c: Omit<StarCloud, 'n'
     bits: BIT_DUST,
     mk: 0,
     pulse: shape.seed,
-    size: shape.radiusKpc,
-    gain: Math.min(1, 0.35 + 0.65 * tau),
+    size: radius,
+    gain: 1,
   });
 }
 
@@ -568,16 +580,15 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
       if (dx * dx + dy * dy + dz * dz > r2) continue;
       writeBirth(seed, cell, slot, filled, n++, c);
     }
-    if (dustColumn(seed, cell) >= UNIVERSE.SILHOUETTE_DUST_FLOOR) {
-      const mid = cellCenter(cell);
-      const cart = galToCart(mid);
+    const clumps = dustClumpsInCell(seed, cell);
+    for (let k = 0; k < clumps; k++) {
+      const cart = dustBirthCart(seed, cell, k);
       const dx = cart.x - x;
       const dy = cart.y - y;
       const dz = cart.z - z;
-      if (dx * dx + dy * dy + dz * dz <= r2) {
-        if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 1);
-        writeDust(seed, cell, n++, c);
-      }
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 1024);
+      writeDust(seed, cell, k, n++, c);
     }
   }
   return { n, ...c, ms: performance.now() - t0 };
@@ -616,11 +627,23 @@ export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
 }
 
 /**
+ * Upper bound of ismNorm at (R, z): arm crest and +1σ clump cancel
+ * against the field's own normalization, leaving the bare gas disk.
+ */
+function gasDensityCeil(R: number, z: number): number {
+  const U = UNIVERSE;
+  const e = Math.exp(z / U.GALAXY_ZD);
+  const sech2z = (2 / (e + 1 / e)) ** 2;
+  return Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2z;
+}
+
+/**
  * Magnitude-limited luminous tail of the whole disk. Living A-and-
  * hotter / giant / WR light plus nebula hosts (H II / PN / SNR) and
- * dusty cell centres. Sparse cells emit nothing. Minted once per
+ * dust clumps minted from the ISM field (a population, not a
+ * per-cell overlay). Sparse cells emit nothing. Minted once per
  * seed; the GPU keeps every point and the shader hides the sample
- * ball. Not pickable. Dust ids are cell-keyed, not catalog stars.
+ * ball. Not pickable. Dust ids are (cell, clump), never catalog stars.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
@@ -639,8 +662,8 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
     for (let iz = 0; iz < nz; iz++) {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
       const ceil = thinDensityCeil(R, z) * vol * nK;
-      const dustCeil = thinDensityCeil(R, z) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
-      if (ceil * liveFrac < 0.2 && dustCeil < UNIVERSE.SILHOUETTE_DUST_FLOOR) continue;
+      const dustCeil = gasDensityCeil(R, z) * vol * UNIVERSE.GALAXY_DUST_N_K;
+      if (ceil * liveFrac < 0.2 && dustCeil < 0.05) continue;
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
         const mid = cellCenter(cell);
@@ -660,9 +683,12 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
             }
           }
         }
-        if (thin * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA) >= UNIVERSE.SILHOUETTE_DUST_FLOOR && dustColumn(seed, cell) >= UNIVERSE.SILHOUETTE_DUST_FLOOR) {
-          if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-          writeDust(seed, cell, n++, c);
+        if (dustCeil >= 0.05) {
+          const clumps = dustClumpsInCell(seed, cell);
+          for (let k = 0; k < clumps; k++) {
+            if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+            writeDust(seed, cell, k, n++, c);
+          }
         }
       }
     }
@@ -788,37 +814,41 @@ export function advanceRegionCloud(
     const nearRamp = d1 <= ramp;
     if (wellInsideOld && !nearRamp) continue;
     const filled = slotsInCell(seed, cell);
-    if (filled <= 0) continue;
-    const s1 = Math.floor(regionImfFloor(d1) * filled);
-    const s0 = Math.floor(regionImfFloor(d0) * filled);
-    if (wellInsideOld && s1 >= s0) continue;
-    const from = s1;
-    const to = wellInsideOld ? s0 : filled;
-    for (let slot = from; slot < to; slot++) {
-      const id = packId(cell, slot);
-      if (rim.has(id)) continue;
-      const p = slotBirthCart(seed, cell, slot);
-      const dx = p.x - x1;
-      const dy = p.y - y1;
-      const dz = p.z - z1;
-      if (dx * dx + dy * dy + dz * dz > r2) continue;
-      buf = ensureCloudCap(buf, n, n + 1);
-      writeBirth(seed, cell, slot, filled, n, buf);
-      n++;
+    if (filled > 0) {
+      const s1 = Math.floor(regionImfFloor(d1) * filled);
+      const s0 = Math.floor(regionImfFloor(d0) * filled);
+      if (!wellInsideOld || s1 < s0) {
+        const from = s1;
+        const to = wellInsideOld ? s0 : filled;
+        for (let slot = from; slot < to; slot++) {
+          const id = packId(cell, slot);
+          if (rim.has(id)) continue;
+          const p = slotBirthCart(seed, cell, slot);
+          const dx = p.x - x1;
+          const dy = p.y - y1;
+          const dz = p.z - z1;
+          if (dx * dx + dy * dy + dz * dz > r2) continue;
+          buf = ensureCloudCap(buf, n, n + 1);
+          writeBirth(seed, cell, slot, filled, n, buf);
+          n++;
+        }
+      }
     }
-    if (dustColumn(seed, cell) >= UNIVERSE.SILHOUETTE_DUST_FLOOR) {
-      const did = dustId(cell);
-      if (!rim.has(did) && !dustHave.has(did)) {
-        const mid = cellCenter(cell);
-        const cart = galToCart(mid);
+    // Dust keepers of well-inside cells are already members; only
+    // entering cells mint their clumps.
+    if (!wellInsideOld) {
+      const clumps = dustClumpsInCell(seed, cell);
+      for (let k = 0; k < clumps; k++) {
+        const did = dustId(cell, k);
+        if (rim.has(did) || dustHave.has(did)) continue;
+        const cart = dustBirthCart(seed, cell, k);
         const dx = cart.x - x1;
         const dy = cart.y - y1;
         const dz = cart.z - z1;
-        if (dx * dx + dy * dy + dz * dz <= r2) {
-          buf = ensureCloudCap(buf, n, n + 1);
-          writeDust(seed, cell, n, buf);
-          n++;
-        }
+        if (dx * dx + dy * dy + dz * dz > r2) continue;
+        buf = ensureCloudCap(buf, n, n + 1);
+        writeDust(seed, cell, k, n, buf);
+        n++;
       }
     }
   }
