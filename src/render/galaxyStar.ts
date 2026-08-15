@@ -9,18 +9,18 @@ import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
 
 /**
- * Toy core radius (kpc). Real R☉ is metres against kiloparsecs —
- * unusable. Apparent size is r / distance, same as a real body.
- * Used for aiming / picking, not for painting a disc on the sky.
+ * Toy paint-pin radius (view kpc). Real R☉ is metres against
+ * kiloparsecs — unusable. Size is max(1px, 2 r/d). This is the
+ * photograph, not the visit lock — see AIM_R_K.
  */
 export const GLOW_K = 0.0024;
 export const GLOW_P = 0.16;
-/** Dim / remnant floor — a black hole still has a body you can aim at. */
+/** Dim / remnant floor for the paint pin. */
 export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
 /**
- * Magnifier paint radius — same as the picking pin (GLOW_K).
+ * Magnifier paint radius — same as the glow pin (GLOW_K).
  * A 10× PHOTO_K made stars that mint on the IMF ramp (0.12–0.3 kpc
  * catalog) pop in as discs. The 2 kpc sample ball is unchanged.
  */
@@ -28,6 +28,17 @@ export const PHOTO_K = GLOW_K;
 export const PHOTO_P = GLOW_P;
 export const PHOTO_MIN = 0.0007;
 export const PHOTO_MAX = 0.012;
+/**
+ * Visit-lock body (view kpc). Independent of the 1px paint pin.
+ * A local catalog star locks when aimR / d ≥ AIM_MIN_ANG — close
+ * enough to set course, not "grown into a disc". Silhouette
+ * backdrop rows are not in the cloud and never lock. Dust is
+ * an ISM address, not a star.
+ */
+export const AIM_R_K = 0.052;
+export const AIM_R_P = GLOW_P;
+export const AIM_R_MIN = 0.012;
+export const AIM_R_MAX = 0.22;
 /**
  * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
  * Steep in L so the luminous tail is not one white.
@@ -43,7 +54,7 @@ export const SHINE_SAT = 1.55;
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). */
 export const POINT_NEAR_BOOST = 0.55;
-/** Reticle locks a star once it subtends this — grown, not a 1px speck. */
+/** Reticle locks once the visit body subtends this. Not the paint pin. */
 export const AIM_MIN_ANG = 0.0022;
 
 export function glowRadiusKpc(L: number, dim = false): number {
@@ -54,6 +65,17 @@ export function glowRadiusKpc(L: number, dim = false): number {
 /** Magnifier paint radius. Same body as glowRadiusKpc — one pin. */
 export function photoRadiusKpc(L: number, dim = false): number {
   return glowRadiusKpc(L, dim);
+}
+
+/** Visit presence for the centre reticle. Larger than the paint pin. */
+export function aimRadiusKpc(L: number, _dim = false): number {
+  const r = AIM_R_K * Math.pow(Math.max(L, 1e-4), AIM_R_P);
+  return Math.max(AIM_R_MIN, Math.min(AIM_R_MAX, r));
+}
+
+/** True when a local catalog star is close enough to lock the reticle. */
+export function aimLocks(L: number, dist: number, dim = false): boolean {
+  return aimRadiusKpc(L, dim) / Math.max(1e-5, dist) >= AIM_MIN_ANG;
 }
 
 export function apparentAngle(rWorld: number, dist: number): number {

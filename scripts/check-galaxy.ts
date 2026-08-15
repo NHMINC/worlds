@@ -12,7 +12,13 @@ import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar'
 import { systemAt } from '../src/world/systemgen';
 import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
-import { photoApparentPx, shineDisplay, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
+import {
+  aimLocks,
+  photoApparentPx,
+  shineDisplay,
+  starKind,
+  visualRadiusKpc,
+} from '../src/render/galaxyStar';
 import type { GalaxyObject } from '../src/world/galaxy';
 import type { StellarState } from '../src/world/stellar';
 
@@ -246,6 +252,11 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(rim <= 1.5, `rim must be a pin, got ${rim.toFixed(1)}px`);
   check(midPx <= 2.2, `mid-ball must still be a pin, got ${midPx.toFixed(1)}px`);
   check(close > 6, `close photosphere ${close.toFixed(1)} must grow off the pin`);
+  // Visit lock is not the paint pin: a fly-by in the magnifier is real.
+  check(aimLocks(1, 20), 'solar analog at 20 view-kpc must lock the reticle');
+  check(aimLocks(0.01, 8), 'faint M dwarf flying past (8 view-kpc) must lock');
+  check(!aimLocks(0.01, 40), 'faint M on the far wall must stay a backdrop speck');
+  check(!aimLocks(1, 40), 'solar analog on the far wall is not yet a visit');
 }
 
 // (The sampled "grain" starfield is gone: it drew tens of thousands of
