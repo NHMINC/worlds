@@ -30,7 +30,7 @@ import {
   isDustId,
   cellFromDustId,
 } from '../src/world/sectors';
-import { shapeAt, KIND_HII, KIND_PN, KIND_SNR } from '../src/world/skyShape';
+import { emissionLook, shapeAt, KIND_HII, KIND_PN, KIND_SNR } from '../src/world/skyShape';
 
 const seed = UNIVERSE.CANONICAL_SEED;
 let fail = 0;
@@ -292,6 +292,27 @@ const check = (cond: boolean, msg: string) => {
     console.log(`  visit handshake: id ${id} kept in local ${local.n}`);
   }
   console.log(`  silhouette: ${a.n} (${stars} stars, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);
+}
+
+// --- emission event laws: expansion, fading, hue from the clock ---
+{
+  const base = { ageGyr: 0.001, luminosity: 100, carbon: 1.0, feh: 0 };
+  const pnY = emissionLook(KIND_PN, 7, { ...base, deadFor: 0.002 });
+  const pnY2 = emissionLook(KIND_PN, 7, { ...base, deadFor: 0.002 });
+  check(pnY.radiusKpc === pnY2.radiusKpc && pnY.gain === pnY2.gain, 'emissionLook not deterministic');
+  const pnO = emissionLook(KIND_PN, 7, { ...base, deadFor: UNIVERSE.PN_GYR * 0.95 });
+  check(pnO.radiusKpc > pnY.radiusKpc * 1.5, 'PN shell must expand with age');
+  check(pnY.gain > pnO.gain * 1.5, 'young PN must outshine old');
+  const snY = emissionLook(KIND_SNR, 7, { ...base, deadFor: UNIVERSE.SNR_GYR * 0.05 });
+  const snO = emissionLook(KIND_SNR, 7, { ...base, deadFor: UNIVERSE.SNR_GYR * 0.95 });
+  check(snO.radiusKpc > snY.radiusKpc * 1.5, 'SNR blast must expand (Sedov)');
+  check(snY.gain > snO.gain * 1.5, 'young SNR must blaze, old must ghost');
+  const hiiDim = emissionLook(KIND_HII, 7, { ...base, deadFor: 0, luminosity: 300 });
+  const hiiBright = emissionLook(KIND_HII, 7, { ...base, deadFor: 0, luminosity: 200000 });
+  check(hiiBright.radiusKpc > hiiDim.radiusKpc, 'H II bubble must grow with host luminosity');
+  const pnC = emissionLook(KIND_PN, 7, { ...base, deadFor: 0.002, carbon: 2.1 });
+  check(pnC.rgb[0] > pnY.rgb[0] + 0.05, 'carbon-rich PN must warm away from teal');
+  console.log(`  emission laws: PN r ${pnY.radiusKpc.toFixed(3)} -> ${pnO.radiusKpc.toFixed(3)}, SNR gain ${snY.gain.toFixed(2)} -> ${snO.gain.toFixed(2)}`);
 }
 
 // --- dust composition: chemistry and temperature, not one brown ---

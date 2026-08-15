@@ -45,7 +45,7 @@ import {
   type GalaxyObject,
 } from './galaxy';
 import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
-import { KIND_DUST, KIND_STAR, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
+import { KIND_DUST, KIND_STAR, emissionLook, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
 
 export { KIND_STAR, KIND_HII, KIND_PN, KIND_SNR, KIND_DUST } from './skyShape';
 
@@ -386,7 +386,18 @@ function writeEvolved(
   const cart = galToCart(b.pos);
   const kind = kindFromNebula(ev.nebula);
   const shape = shapeAt(kind, packId(cell, slot));
-  const rgb = kind === KIND_STAR ? teffToRgb(ev.teff) : shape.rgb;
+  // The event law: expansion, fading, and hue from the clock row.
+  const look =
+    kind === KIND_STAR
+      ? null
+      : emissionLook(kind, packId(cell, slot), {
+          deadFor: Math.max(0, ev.postGyr - giantWindow(ev.massZams)),
+          ageGyr: ev.ageGyr,
+          luminosity: ev.luminosity,
+          carbon: ev.carbon,
+          feh: ev.feh,
+        });
+  const rgb = look ? look.rgb : teffToRgb(ev.teff);
   const L = Math.max(ev.luminosity, kind === KIND_STAR ? 0 : 0.2);
   let bit = 0;
   if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
@@ -404,10 +415,8 @@ function writeEvolved(
     bits: bit,
     mk: ev.mk ? (MK_IX[ev.mk] ?? 0) : 0,
     pulse: shape.seed,
-    size: kind === KIND_STAR ? (L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0)) : shape.radiusKpc,
-    gain: kind === KIND_STAR
-      ? 0.22 + 0.78 * (L / (L + 0.25))
-      : 0.16 + 0.28 * (L / (L + 0.8)),
+    size: look ? look.radiusKpc : L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0),
+    gain: look ? look.gain : 0.22 + 0.78 * (L / (L + 0.25)),
   });
 }
 

@@ -221,9 +221,9 @@ const SILHOUETTE_VERT = /* glsl */ `
 
 const STAR_FRAG = /* glsl */ `
   ${SHAPE_GLSL}
-  uniform float uEnvelope;
-  uniform float uEnvelopeAlpha;
-  uniform float uSnrAlpha;
+  // 0 = photosphere stars, 1 = emission nebulae (additive), 2 = dust (obscures).
+  uniform float uPass;
+  uniform float uNebGain;
   uniform float uScale;
   uniform mat3 uCamRotInv;
   uniform float uDustSteps;
@@ -241,8 +241,9 @@ const STAR_FRAG = /* glsl */ `
   varying vec3 vCenterCat;
   varying float vPx;
   void main() {
-    if (uEnvelope < 0.5 && vKind > 0.5) discard;
-    if (uEnvelope > 0.5 && vKind < 0.5) discard;
+    if (uPass < 0.5 && vKind > 0.5) discard;
+    if (uPass > 0.5 && uPass < 1.5 && (vKind < 0.5 || vKind > 3.5)) discard;
+    if (uPass > 1.5 && vKind < 3.5) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
     if (vKind < 0.5) {
@@ -306,11 +307,41 @@ const STAR_FRAG = /* glsl */ `
       gl_FragColor = vec4(col, min(uDustAlphaMax, 1.0 - trans));
       return;
     }
-    float mask = skyMask(vKind, p, vSeed);
-    if (mask < 0.02) discard;
-    // SNR (kind 3) is the numerous toy-stretched class: keep it faint.
-    float a = vKind > 2.5 ? uSnrAlpha : uEnvelopeAlpha;
-    gl_FragColor = vec4(vColor, a * mask);
+    // Emission nebulae: self-luminous shells. Brightness is emission
+    // measure — rho² integrated along the ray — normalized to surface
+    // brightness so rings and filaments come from geometry.
+    if (vPx < uDustMinPx) {
+      float mask = smoothstep(1.0, 0.5, length(p));
+      float a = vVis * 0.4 * mask;
+      if (a < 0.01) discard;
+      gl_FragColor = vec4(vColor, a);
+      return;
+    }
+    vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
+    vec3 rd = normalize(fragView);
+    float b = dot(rd, vCenterView);
+    float cc = dot(vCenterView, vCenterView) - vRadiusView * vRadiusView;
+    float h = b * b - cc;
+    if (h <= 0.0) discard;
+    h = sqrt(h);
+    float t0 = max(b - h, 0.001);
+    float t1 = b + h;
+    if (t1 <= t0) discard;
+    float radiusCat = vRadiusView / uScale;
+    float em = 0.0;
+    for (int i = 0; i < 16; i++) {
+      if (float(i) >= uDustSteps - 0.5) break;
+      float t = mix(t0, t1, (float(i) + 0.5) / uDustSteps);
+      vec3 relCat = (uCamRotInv * (rd * t - vCenterView)) / uScale;
+      float rho = nebRho(vKind, vCenterCat + relCat, relCat, radiusCat, vVis, uDustFreq, vSeed);
+      em += rho * rho;
+    }
+    float segCat = (t1 - t0) / uScale;
+    em *= uNebGain * vVis * segCat / (uDustSteps * max(radiusCat, 1e-4));
+    if (em < 0.012) discard;
+    // Line saturation: the hottest rims bleach toward white.
+    vec3 col = mix(vColor, vec3(1.0), min(0.45, 0.22 * em));
+    gl_FragColor = vec4(col, min(em, 1.0));
   }
 `;
 
@@ -430,12 +461,16 @@ export class GalaxyView {
   private starPts: THREE.Points | null = null;
   private starGeo: THREE.BufferGeometry | null = null;
   private starMat: THREE.ShaderMaterial | null = null;
+  private starEmisPts: THREE.Points | null = null;
+  private starEmisMat: THREE.ShaderMaterial | null = null;
   private starDustPts: THREE.Points | null = null;
   private starDustMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
   private silPts: THREE.Points | null = null;
   private silGeo: THREE.BufferGeometry | null = null;
   private silMat: THREE.ShaderMaterial | null = null;
+  private silEmisPts: THREE.Points | null = null;
+  private silEmisMat: THREE.ShaderMaterial | null = null;
   private silDustPts: THREE.Points | null = null;
   private silDustMat: THREE.ShaderMaterial | null = null;
   private silWorker: Worker | null = null;
@@ -735,6 +770,12 @@ export class GalaxyView {
       this.starDustPts = null;
       this.starDustMat = null;
     }
+    if (this.starEmisPts) {
+      this.scene.remove(this.starEmisPts);
+      this.starEmisMat?.dispose();
+      this.starEmisPts = null;
+      this.starEmisMat = null;
+    }
     if (this.starPts) {
       this.scene.remove(this.starPts);
       this.starGeo?.dispose();
@@ -752,6 +793,12 @@ export class GalaxyView {
       this.silDustMat?.dispose();
       this.silDustPts = null;
       this.silDustMat = null;
+    }
+    if (this.silEmisPts) {
+      this.scene.remove(this.silEmisPts);
+      this.silEmisMat?.dispose();
+      this.silEmisPts = null;
+      this.silEmisMat = null;
     }
     if (this.silPts) {
       this.scene.remove(this.silPts);
@@ -799,8 +846,7 @@ export class GalaxyView {
       uMaxPx: { value: POINT_MAX_PX },
       uNearBoost: { value: POINT_NEAR_BOOST },
       uFluxEps: { value: POINT_FLUX_EPS },
-      uEnvelope: { value: 0 },
-      uEnvelopeAlpha: { value: UNIVERSE.SILHOUETTE_ENVELOPE_ALPHA },
+      uPass: { value: 0 },
       ...this.dustUniforms(),
     };
   }
@@ -809,7 +855,7 @@ export class GalaxyView {
   private dustUniforms(): Record<string, THREE.IUniform> {
     return {
       uCamRotInv: { value: new THREE.Matrix3() },
-      uSnrAlpha: { value: UNIVERSE.SILHOUETTE_SNR_ALPHA },
+      uNebGain: { value: UNIVERSE.NEB_EMISSION },
       uDustSteps: { value: UNIVERSE.DUST_MARCH_STEPS },
       uDustMinPx: { value: UNIVERSE.DUST_MINPX },
       uDustAlphaMax: { value: UNIVERSE.DUST_ALPHA_MAX },
@@ -817,6 +863,28 @@ export class GalaxyView {
       uDustFreq: { value: UNIVERSE.DUST_FREQ },
       uDustRim: { value: UNIVERSE.DUST_RIM },
     };
+  }
+
+  /**
+   * Three passes per layer, one shared fragment: stars add light,
+   * emission nebulae add light, dust (drawn LAST) obscures both.
+   */
+  private makeCloudMaterial(
+    vertexShader: string,
+    uniforms: Record<string, THREE.IUniform>,
+    pass: number,
+  ): THREE.ShaderMaterial {
+    uniforms.uPass = { value: pass };
+    return new THREE.ShaderMaterial({
+      vertexShader,
+      fragmentShader: STAR_FRAG,
+      uniforms,
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: pass === 2 ? THREE.NormalBlending : THREE.AdditiveBlending,
+      toneMapped: false,
+    });
   }
 
   private buildArcStars(): void {
@@ -827,14 +895,7 @@ export class GalaxyView {
     }
     const geo = new THREE.BufferGeometry();
     const visAttr = this.bindCloudAttrs(geo, cloud, vis);
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: STAR_VERT,
-      fragmentShader: STAR_FRAG,
-      uniforms: this.localGlowUniforms(),
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
+    const mat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 0);
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     pts.renderOrder = 0;
@@ -843,16 +904,14 @@ export class GalaxyView {
     this.starGeo = geo;
     this.starMat = mat;
     this.starVis = visAttr;
-    const dustMat = new THREE.ShaderMaterial({
-      vertexShader: STAR_VERT,
-      fragmentShader: STAR_FRAG,
-      uniforms: { ...this.localGlowUniforms(), uEnvelope: { value: 1 } },
-      transparent: true,
-      depthWrite: false,
-      depthTest: false,
-      blending: THREE.NormalBlending,
-      toneMapped: false,
-    });
+    const emisMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 1);
+    const emisPts = new THREE.Points(geo, emisMat);
+    emisPts.frustumCulled = false;
+    emisPts.renderOrder = 1;
+    this.scene.add(emisPts);
+    this.starEmisPts = emisPts;
+    this.starEmisMat = emisMat;
+    const dustMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 2);
     const dustPts = new THREE.Points(geo, dustMat);
     dustPts.frustumCulled = false;
     dustPts.renderOrder = 3;
@@ -863,7 +922,7 @@ export class GalaxyView {
     this.applyStarVis();
   }
 
-  private silUniforms(envelope: number): Record<string, THREE.IUniform> {
+  private silUniforms(): Record<string, THREE.IUniform> {
     return {
       uCenter: { value: new THREE.Vector3() },
       uScale: { value: 1 },
@@ -874,8 +933,6 @@ export class GalaxyView {
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
       uDustPx: { value: UNIVERSE.SILHOUETTE_DUST_PX },
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
-      uEnvelope: { value: envelope },
-      uEnvelopeAlpha: { value: UNIVERSE.SILHOUETTE_ENVELOPE_ALPHA },
       ...this.dustUniforms(),
     };
   }
@@ -893,16 +950,7 @@ export class GalaxyView {
     geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
     geo.setDrawRange(0, cloud.n);
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: SILHOUETTE_VERT,
-      fragmentShader: STAR_FRAG,
-      uniforms: this.silUniforms(0),
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      toneMapped: false,
-    });
+    const mat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 0);
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     pts.renderOrder = -2;
@@ -910,16 +958,14 @@ export class GalaxyView {
     this.silPts = pts;
     this.silGeo = geo;
     this.silMat = mat;
-    const dustMat = new THREE.ShaderMaterial({
-      vertexShader: SILHOUETTE_VERT,
-      fragmentShader: STAR_FRAG,
-      uniforms: this.silUniforms(1),
-      transparent: true,
-      depthTest: false,
-      depthWrite: false,
-      blending: THREE.NormalBlending,
-      toneMapped: false,
-    });
+    const emisMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 1);
+    const emisPts = new THREE.Points(geo, emisMat);
+    emisPts.frustumCulled = false;
+    emisPts.renderOrder = -1;
+    this.scene.add(emisPts);
+    this.silEmisPts = emisPts;
+    this.silEmisMat = emisMat;
+    const dustMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 2);
     const dustPts = new THREE.Points(geo, dustMat);
     dustPts.frustumCulled = false;
     dustPts.renderOrder = 2;
@@ -929,27 +975,23 @@ export class GalaxyView {
     this.pushMagUniforms();
   }
 
+  private cloudMats(): THREE.ShaderMaterial[] {
+    const out: THREE.ShaderMaterial[] = [];
+    for (const m of [this.starMat, this.starEmisMat, this.starDustMat, this.silMat, this.silEmisMat, this.silDustMat]) {
+      if (m) out.push(m);
+    }
+    return out;
+  }
+
   /** Catalog positions stay on the GPU; only the magnifier uniforms move. */
   private pushMagUniforms(): void {
     const cx = this.arcCenter.x;
     const cy = this.arcCenter.y;
     const cz = this.arcCenter.z;
     const s = this.magScale();
-    if (this.starMat) {
-      this.starMat.uniforms.uCenter.value.set(cx, cy, cz);
-      this.starMat.uniforms.uScale.value = s;
-    }
-    if (this.silMat) {
-      this.silMat.uniforms.uCenter.value.set(cx, cy, cz);
-      this.silMat.uniforms.uScale.value = s;
-    }
-    if (this.starDustMat) {
-      this.starDustMat.uniforms.uCenter.value.set(cx, cy, cz);
-      this.starDustMat.uniforms.uScale.value = s;
-    }
-    if (this.silDustMat) {
-      this.silDustMat.uniforms.uCenter.value.set(cx, cy, cz);
-      this.silDustMat.uniforms.uScale.value = s;
+    for (const mat of this.cloudMats()) {
+      mat.uniforms.uCenter.value.set(cx, cy, cz);
+      mat.uniforms.uScale.value = s;
     }
   }
 
@@ -2068,8 +2110,7 @@ export class GalaxyView {
     // View→catalog rotation so the cloud march samples a camera-stable field.
     this.camera.updateMatrixWorld();
     this.camRot3.setFromMatrix4(this.camera.matrixWorld);
-    for (const mat of [this.starMat, this.starDustMat, this.silMat, this.silDustMat]) {
-      if (!mat) continue;
+    for (const mat of this.cloudMats()) {
       mat.uniforms.uPixel.value = px;
       mat.uniforms.uPxPerRad.value = pxPer;
       (mat.uniforms.uCamRotInv.value as THREE.Matrix3).copy(this.camRot3);

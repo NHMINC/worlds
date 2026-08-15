@@ -437,9 +437,14 @@ export const UNIVERSE = {
    * of the disk — luminous living stars above SILHOUETTE_M (A and
    * hotter, giants, WR) plus nebula hosts and dusty cell centres —
    * is placed with the same magnifier. Distant discs are toy angular
-   * sizes. Nebula envelopes are 50% transparent spheres on the host
-   * (ENVELOPE_ALPHA) — cyan PN, red SNR, white H II. DUST is a
-   * raymarched fractal cloud: a short march through one absolute
+   * sizes. Emission nebulae are self-luminous raymarched shells on
+   * the host — brightness is emission measure (rho² along the ray),
+   * so rings and filament crossings are geometry. The event law
+   * (emissionLook) expands and fades them: PN grows over PN_GYR,
+   * SNR Sedov-ish (t^0.4) to SNR_R_MAX, H II is Strömgren-ish
+   * (HII_R_K · L^⅓); NEB_EMISSION is the photograph stretch. They
+   * draw additive (they glow); dust draws after and obscures.
+   * DUST is a raymarched fractal cloud: a short march through one absolute
    * sub-grid ISM field (domain-warped fBm, flattened to the disk so
    * filaments lie in the plane; neighbouring clumps are windows onto
    * the SAME field and join into complexes). Optical depth is
@@ -462,10 +467,14 @@ export const UNIVERSE = {
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_DUST_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,
-  SILHOUETTE_ENVELOPE_ALPHA: 0.5,
-  /** SNR shells are numerous (toy-stretched SNR_GYR); keep them faint
-   * so the red haze does not bury the dust lanes. */
-  SILHOUETTE_SNR_ALPHA: 0.16,
+  /** Emission-nebula glow gain (photograph stretch, not new energy). */
+  NEB_EMISSION: 1.4,
+  /** Full-grown planetary-nebula shell radius (kpc, toy). */
+  PN_R_MAX: 0.08,
+  /** Full-grown supernova-remnant shell radius (kpc, toy). */
+  SNR_R_MAX: 0.15,
+  /** Strömgren scale: H II radius = HII_R_K · L^(1/3), clamped. */
+  HII_R_K: 0.004,
   /** Largest dust complex radius (kpc); wisps start near 0.05. */
   GALAXY_DUST_R_MAX: 0.8,
   /** Raymarch steps through a clump (perf knob; 1 = cheap slice). */
