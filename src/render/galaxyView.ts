@@ -32,6 +32,7 @@ import {
   POINT_NEAR_BOOST,
   SHINE_FLUX_GAIN,
   SHINE_FLUX_K,
+  SHINE_FLUX_P,
   SHINE_HALO_PX,
   SHINE_TAIL,
   glowRadiusKpc,
@@ -112,6 +113,7 @@ const STAR_VERT = /* glsl */ `
   uniform float uFluxEps;
   uniform float uShineFluxK;
   uniform float uShineFluxGain;
+  uniform float uShineFluxP;
   uniform float uGlowPx;
   varying vec3 vColor;
   varying float vVis;
@@ -143,14 +145,14 @@ const STAR_VERT = /* glsl */ `
       // the photograph stretch. aVis is a filter, not a flattened L.
       float L = max(aLum, 1e-4);
       float flux = L / (d * d + uFluxEps);
-      vVis = min(aVis * uShineFluxGain * log(1.0 + uShineFluxK * flux), 8.0);
+      vVis = min(aVis * uShineFluxGain * pow(uShineFluxK * flux, uShineFluxP), 8.0);
       vCenterView = vec3(0.0);
       vRadiusView = 0.0;
       vCenterCat = vec3(0.0);
-      // Sprite holds the glare. Dim stars keep a small quad; bright
-      // ones get the full room. The core stays one pixel in the frag.
-      float room = uGlowPx * uPixel * mix(0.22, 1.0, smoothstep(0.12, 2.0, vVis));
-      gl_PointSize = max(1.0, room);
+      // Glow room follows L, not flattened vVis×DPR. A mid-A stays a
+      // pin; only the luminous tail gets a spherical halo.
+      float glow = smoothstep(4.0, 120.0, L);
+      gl_PointSize = max(uPixel, (3.2 + uGlowPx * glow) * uPixel);
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -182,6 +184,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uFluxEps;
   uniform float uShineFluxK;
   uniform float uShineFluxGain;
+  uniform float uShineFluxP;
   uniform float uGlowPx;
   varying vec3 vColor;
   varying float vVis;
@@ -228,9 +231,9 @@ const SILHOUETTE_VERT = /* glsl */ `
       float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
       float flux = L / (d * d + uFluxEps);
-      vVis = min(aVis * uShineFluxGain * log(1.0 + uShineFluxK * flux) * uSuper, 8.0);
-      float room = uGlowPx * uPixel * mix(0.22, 1.0, smoothstep(0.12, 2.0, vVis));
-      gl_PointSize = max(1.0, room);
+      vVis = min(aVis * uShineFluxGain * pow(uShineFluxK * flux, uShineFluxP) * uSuper, 8.0);
+      float glow = smoothstep(4.0, 120.0, L);
+      gl_PointSize = max(uPixel, (3.2 + uGlowPx * glow) * uPixel);
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -278,7 +281,7 @@ const STAR_FRAG = /* glsl */ `
       float halo = exp(-rPx * rPx / (haloW * haloW));
       float window = 1.0 - r * r;
       window *= window;
-      float shine = (core * flux * 1.4 + halo * uShineTail * flux) * window;
+      float shine = (core * flux * 1.6 + halo * uShineTail * flux) * window;
       if (shine < 0.003) discard;
       vec3 col = mix(vColor, vec3(1.0), clamp(0.28 * core * min(flux, 2.6), 0.0, 0.55));
       gl_FragColor = vec4(col * shine, min(shine, 1.0));
@@ -920,6 +923,7 @@ export class GalaxyView {
     return {
       uShineFluxK: { value: SHINE_FLUX_K },
       uShineFluxGain: { value: SHINE_FLUX_GAIN },
+      uShineFluxP: { value: SHINE_FLUX_P },
       uShineTail: { value: SHINE_TAIL },
       uShineHalo: { value: SHINE_HALO_PX },
       uGlowPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },

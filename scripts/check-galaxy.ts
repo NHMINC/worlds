@@ -228,9 +228,9 @@ check(sunDisc > 0.03 && sunDisc < 0.16, `Sun analog disc ${sunDisc} is not a pho
 check(bhDisc > wdDisc, `BH visual ${bhDisc} should beat a WD pin`);
 check(starKind(asObj(bh)) === 5, `BH kind ${starKind(asObj(bh))}`);
 check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, got ${starKind(asObj(freshWd))}`);
-check(UNIVERSE.SILHOUETTE_STAR_PX >= 16, `STAR_PX ${UNIVERSE.SILHOUETTE_STAR_PX} cannot hold a glare`);
-check(SHINE_TAIL >= 0.8, `shine tail ${SHINE_TAIL} is not a serious glow`);
-check(SHINE_HALO_PX >= 4, `halo ${SHINE_HALO_PX} is a sparkle, not a sphere`);
+check(UNIVERSE.SILHOUETTE_STAR_PX >= 10 && UNIVERSE.SILHOUETTE_STAR_PX <= 18, `STAR_PX ${UNIVERSE.SILHOUETTE_STAR_PX} is a white disc, not glow room`);
+check(SHINE_TAIL > 0.25 && SHINE_TAIL < 0.7, `shine tail ${SHINE_TAIL} fills the sprite to white`);
+check(SHINE_HALO_PX >= 2 && SHINE_HALO_PX <= 4.5, `halo ${SHINE_HALO_PX} is a disc, not a pin-glow`);
 {
   const d2 = 150 * 150;
   const dim = shineFromFlux(5 / d2);
