@@ -31,8 +31,8 @@ import {
   POINT_MAX_PX,
   POINT_NEAR_BOOST,
   SHINE_CORE_PX,
-  SHINE_HALO_PX,
-  SHINE_PAD_PX,
+  SHINE_FLUX_GAIN,
+  SHINE_FLUX_K,
   SHINE_TAIL,
   glowRadiusKpc,
 } from './galaxyStar';
@@ -50,6 +50,7 @@ import {
   MK_LETTER,
   BIT_REMNANT,
   BIT_DUST,
+  BIT_NEBULA,
   KIND_DUST,
   type StarCloud,
 } from '../world/sectors';
@@ -109,7 +110,9 @@ const STAR_VERT = /* glsl */ `
   uniform float uMaxPx;
   uniform float uNearBoost;
   uniform float uFluxEps;
-  uniform float uShinePad;
+  uniform float uPointPx;
+  uniform float uShineFluxK;
+  uniform float uShineFluxGain;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -118,7 +121,6 @@ const STAR_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
-  varying float vCorePx;
   void main() {
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
@@ -126,7 +128,6 @@ const STAR_VERT = /* glsl */ `
     vKind = aKind;
     vSeed = aSeed;
     vColor = aColor;
-    vCorePx = 1.0;
     if (aKind > 0.5) {
       // aSize is the envelope radius in catalog kpc; the magnifier
       // scales space, so true angle = aSize * uScale / view distance.
@@ -138,24 +139,15 @@ const STAR_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
+      // Point source: no diameter. Intensity is F = L / d² through
+      // the photograph stretch. aVis is a filter, not a flattened L.
       float L = max(aLum, 1e-4);
-      float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
-      float r = max(rMin, uGlowK * pow(L, uGlowP));
-      r = min(r, 0.012);
-      float ang = r / d;
-      float px = 2.0 * ang * uPxPerRad;
-      float corePx = clamp(max(uPixel, px), 1.0, uMaxPx);
       float flux = L / (d * d + uFluxEps);
-      float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
-      vVis = min(aVis * punch, 8.0);
+      vVis = min(aVis * uShineFluxGain * log(1.0 + uShineFluxK * flux), 8.0);
       vCenterView = vec3(0.0);
       vRadiusView = 0.0;
       vCenterCat = vec3(0.0);
-      // Pad the sprite so the 1/r² tail can die before the quad edge.
-      // The core angle is unchanged — picking still uses glowRadiusKpc.
-      float pad = uShinePad * uPixel;
-      gl_PointSize = clamp(corePx + pad, 1.0, uMaxPx + pad);
-      vCorePx = corePx;
+      gl_PointSize = uPointPx * uPixel;
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -184,6 +176,9 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uNebulaPx;
   uniform float uDustPx;
   uniform float uSuper;
+  uniform float uFluxEps;
+  uniform float uShineFluxK;
+  uniform float uShineFluxGain;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -192,7 +187,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
-  varying float vCorePx;
   void main() {
     vColor = aColor;
     vKind = aKind;
@@ -201,7 +195,6 @@ const SILHOUETTE_VERT = /* glsl */ `
     vRadiusView = 0.0;
     vCenterCat = vec3(0.0);
     vPx = 0.0;
-    vCorePx = 1.0;
     float dCat = length(position - uCenter);
     if (dCat < uRegionR) {
       vVis = 0.0;
@@ -225,16 +218,14 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Magnitude-limited harvest: every row is already bright, so a
-      // flat pixel disc painted them all as the same white circle.
-      // Shine from L — a mid-A is a pin, a supergiant is a flare.
+      // Point source at this distance — no diameter. Same flux law
+      // as the local layer: F = L / d², photograph stretch, rank
+      // kept. Sprite is a pin; intensity is the variable.
+      float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
-      // Steeper than a log so a mid-A stays a pin and a supergiant flares.
-      float flux = pow(L / (L + 28.0), 0.7);
-      float boost = 1.0 + uSuper * smoothstep(8.0, 220.0, L);
-      vCorePx = max(uPixel, uPixel * (0.8 + 2.2 * flux));
-      gl_PointSize = vCorePx + uStarPx * uPixel * (0.4 + 1.35 * flux) * boost;
-      vVis = aVis * (0.2 + 2.1 * flux) * boost;
+      float flux = L / (d * d + uFluxEps);
+      vVis = min(aVis * uShineFluxGain * log(1.0 + uShineFluxK * flux) * uSuper, 8.0);
+      gl_PointSize = uStarPx * uPixel;
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -255,7 +246,6 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustFreq;
   uniform float uDustRim;
   uniform float uShineCore;
-  uniform float uShineHalo;
   uniform float uShineTail;
   varying vec3 vColor;
   varying float vVis;
@@ -265,7 +255,6 @@ const STAR_FRAG = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
-  varying float vCorePx;
   void main() {
     if (uPass < 0.5 && vKind > 0.5) discard;
     if (uPass > 0.5 && uPass < 1.5 && (vKind < 0.5 || vKind > 3.5)) discard;
@@ -273,28 +262,21 @@ const STAR_FRAG = /* glsl */ `
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
     if (vKind < 0.5) {
-      // Shine, not a disc. The pin tracks the photosphere (vCorePx);
-      // a wider gaussian bloom + 1/r² tail is the eye's glare — same
-      // family as star.ts. Window dies at the quad edge so there is
-      // no circle.
+      // Point source. Energy lives in a sub-pixel pin. A bright
+      // star blooms because it is bright, not because we gave it
+      // a diameter. Window dies at the quad edge.
       float r = sqrt(r2);
       if (r > 1.0) discard;
       float rPx = r * max(vPx, 1.0) * 0.5;
-      float coreW = max(uShineCore, 0.38 * vCorePx);
-      float haloW = max(uShineHalo, coreW * 3.1 + 2.0);
+      float coreW = max(uShineCore, 0.28);
       float core = exp(-rPx * rPx / (coreW * coreW));
-      float halo = exp(-rPx * rPx / (haloW * haloW));
-      float tail = uShineTail / (0.22 + rPx * rPx);
+      float flux = clamp(vVis, 0.0, 8.0);
+      float tail = uShineTail * flux / (0.05 + rPx * rPx);
       float window = 1.0 - r * r;
       window *= window;
-      float flux = clamp(vVis, 0.0, 8.0);
-      float shine = (
-        core * (0.9 + 0.7 * min(flux, 2.2)) +
-        halo * 0.62 * min(flux, 2.6) +
-        tail * min(flux, 3.2)
-      ) * window;
-      if (shine < 0.003) discard;
-      vec3 col = mix(vColor, vec3(1.0), clamp(0.42 * core, 0.0, 0.58));
+      float shine = (core * flux + tail) * window;
+      if (shine < 0.002) discard;
+      vec3 col = mix(vColor, vec3(1.0), clamp(0.3 * core * min(flux, 2.4), 0.0, 0.5));
       gl_FragColor = vec4(col * shine, min(shine, 1.0));
       return;
     }
@@ -929,13 +911,15 @@ export class GalaxyView {
     };
   }
 
-  /** Photosphere glare — core pin + 1/r² tail. Shared by both layers. */
+  /** Point-source shine — flux stretch + pin. Shared by both layers. */
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
+      uPointPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
       uShineCore: { value: SHINE_CORE_PX },
-      uShineHalo: { value: SHINE_HALO_PX },
       uShineTail: { value: SHINE_TAIL },
-      uShinePad: { value: SHINE_PAD_PX },
+      uShineFluxK: { value: SHINE_FLUX_K },
+      uShineFluxGain: { value: SHINE_FLUX_GAIN },
+      uFluxEps: { value: POINT_FLUX_EPS },
     };
   }
 
@@ -2161,11 +2145,12 @@ export class GalaxyView {
     const { bits, gain, n } = this.cloud;
     const lim = Math.min(n, arr.length);
     for (let i = 0; i < lim; i++) {
-      if ((bits[i] & BIT_DUST) !== 0) {
+      if ((bits[i] & BIT_DUST) !== 0 || (bits[i] & BIT_NEBULA) !== 0) {
         arr[i] = gain[i];
         continue;
       }
-      arr[i] = sketchMatches(bits[i], this.filter) ? gain[i] : gain[i] * 0.08;
+      // Stars: aVis is a filter. Intensity is L / d² in the shader.
+      arr[i] = sketchMatches(bits[i], this.filter) ? 1 : 0.08;
     }
     this.starVis.needsUpdate = true;
   }

@@ -12,7 +12,7 @@ import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar'
 import { systemAt } from '../src/world/systemgen';
 import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
-import { SHINE_CORE_PX, SHINE_HALO_PX, SHINE_PAD_PX, SHINE_TAIL, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
+import { SHINE_CORE_PX, SHINE_TAIL, shineFromFlux, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
 import type { GalaxyObject } from '../src/world/galaxy';
 import type { StellarState } from '../src/world/stellar';
 
@@ -228,11 +228,20 @@ check(sunDisc > 0.03 && sunDisc < 0.16, `Sun analog disc ${sunDisc} is not a pho
 check(bhDisc > wdDisc, `BH visual ${bhDisc} should beat a WD pin`);
 check(starKind(asObj(bh)) === 5, `BH kind ${starKind(asObj(bh))}`);
 check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, got ${starKind(asObj(freshWd))}`);
-check(SHINE_CORE_PX < 2.2, `shine core ${SHINE_CORE_PX} is a disc, not a pin`);
-check(SHINE_HALO_PX > SHINE_CORE_PX * 2, `shine halo ${SHINE_HALO_PX} does not outspan the pin`);
-check(SHINE_PAD_PX >= SHINE_HALO_PX * 2, `shine pad ${SHINE_PAD_PX} cannot hold a glow`);
-check(SHINE_TAIL > 0.2 && SHINE_TAIL < 1.5, `shine tail ${SHINE_TAIL}`);
-check(UNIVERSE.SILHOUETTE_STAR_PX >= 8, `STAR_PX ${UNIVERSE.SILHOUETTE_STAR_PX} is a filled-dot ruler`);
+check(SHINE_CORE_PX < 0.8, `shine core ${SHINE_CORE_PX} is a disc, not a pin`);
+check(SHINE_TAIL > 0.05 && SHINE_TAIL < 0.4, `shine tail ${SHINE_TAIL} must bloom from flux, not paint a disc`);
+check(UNIVERSE.SILHOUETTE_STAR_PX <= 4, `STAR_PX ${UNIVERSE.SILHOUETTE_STAR_PX} is a disc sprite, not a point`);
+{
+  const d2 = 150 * 150;
+  const dim = shineFromFlux(5 / d2);
+  const mid = shineFromFlux(80 / d2);
+  const hot = shineFromFlux(400 / d2);
+  check(hot > dim * 3, `400 Lsun (${hot.toFixed(2)}) must outshine 5 Lsun (${dim.toFixed(2)})`);
+  check(mid > dim * 1.8 && hot > mid * 1.2, `flux rank collapsed: 5=${dim.toFixed(2)} 80=${mid.toFixed(2)} 400=${hot.toFixed(2)}`);
+  const near = shineFromFlux(20 / (80 * 80));
+  const far = shineFromFlux(20 / (240 * 240));
+  check(near > far * 1.4, `same L at 80 kpc (${near.toFixed(2)}) must beat 240 kpc (${far.toFixed(2)})`);
+}
 
 // (The sampled "grain" starfield is gone: it drew tens of thousands of
 // non-addressable points — a painted starfield by the charter's own
