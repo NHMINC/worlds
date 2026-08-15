@@ -1,9 +1,9 @@
 /**
  * Close-up stars: photospheres from evolve(), not bigger point sprites.
- * GL_POINTS become squares on a phone once gl_PointSize grows. We keep
- * distant beacons tiny and only mesh a star when the camera is in its
- * neighbourhood. Type, radius, and phase are free — objectAt is O(1) —
- * we just do not spend the draw until you arrive.
+ * GL_POINTS become squares on a phone once gl_PointSize grows. The arc
+ * view picks the survey's brightest N once on entry and meshes those
+ * discs; the camera never joins or drops members. Type, radius, and
+ * phase come from evolve() — objectAt is O(1).
  */
 import * as THREE from 'three';
 import { galToCart, type GalaxyObject } from '../world/galaxy';
@@ -229,9 +229,11 @@ export function createStarDiscs(): StarDiscs {
       const c = galToCart(o.pos);
       const p = new THREE.Vector3(c.x, c.y, c.z);
       worlds.push(p);
-      // Photographic bloom: apparent radius goes with received flux,
-      // ang ∝ (L/d²)^¼ — a supergiant blooms, a G dwarf stays a bead,
-      // a white dwarf a pin. Angular clamp so nothing walls the frame.
+      // One-shot world-space size from the camera passed in (the arc's
+      // framing camera). Photographic bloom: apparent radius goes with
+      // received flux, ang ∝ (L/d²)^¼ — a supergiant blooms, a G dwarf
+      // stays a bead, a white dwarf a pin. Angular clamp so nothing
+      // walls the frame at that distance; later orbits do not resize.
       const dist = p.distanceTo(cam);
       const L = Math.max(o.star.luminosity, 1e-4);
       let ang = 0.011 * Math.pow(L / Math.max(dist * dist, 1e-4), 0.25);

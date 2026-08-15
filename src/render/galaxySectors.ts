@@ -16,9 +16,17 @@ import { ringRadii, sectorOfPos, spokeBounds, type SectorId } from '../world/sec
 
 const TAU = Math.PI * 2;
 
-/** Saucer half-thickness (kpc): disk slab plus the bulge dome. */
+/**
+ * Saucer half-thickness (kpc): disk slab plus the bulge dome.
+ *
+ * The bulge term MUST be Gaussian in R. An exponential `exp(-R/h)` has
+ * a non-zero slope at R=0, so the tiles meet in a cone (a golden spike
+ * when the map is seen edge-on). `exp(-R²/σ²)` has zero derivative at
+ * the origin — a smooth lens, the same shape a self-gravitating bulge
+ * actually has.
+ */
 export function saucerHeight(R: number): number {
-  return 2.2 * UNIVERSE.GALAXY_ZD + 1.9 * Math.exp(-R / 1.05);
+  return 2.2 * UNIVERSE.GALAXY_ZD + 1.9 * Math.exp(-(R * R) / (1.3 * 1.3));
 }
 
 const VERT = /* glsl */ `
@@ -99,10 +107,11 @@ export function createSectorMap(): SectorMap {
   const { GALAXY_SECTORS: S, GALAXY_SECTOR_RINGS: RINGS, GALAXY_NTH: nth } = UNIVERSE;
   const radii = ringRadii();
 
-  // Two sheets (top / bottom) of RINGS × S tiles; each tile is a small
-  // grid so arm colour bends smoothly across wide outer arcs.
+  // Two sheets (top / bottom) of RINGS × S tiles. Radial subdivisions
+  // exist so the Gaussian bulge is a dome, not one cone-facet per ring
+  // (R_SEG=1 made even a zero-slope law look like a witch's hat).
   const AZ_SEG = 2;
-  const R_SEG = 1;
+  const R_SEG = 4;
   const vertsPerTile = (AZ_SEG + 1) * (R_SEG + 1);
   const trisPerTile = AZ_SEG * R_SEG * 2;
   const tiles = RINGS * S;

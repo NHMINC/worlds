@@ -8,8 +8,10 @@
  *
  * ARC mode is one tapped "thick arc": its brightest ~2,500 REAL catalog
  * stars load ONCE as a static point buffer (every dot an addressable
- * id), with photosphere discs for the nearest few. Tap a star for the
- * dossier and set course.
+ * id). Every surveyed star stays drawn at a fixed pixel size — nothing
+ * about visibility or point size reads the camera. Photosphere discs
+ * are the survey's brightest N, picked once on entry (plus the
+ * selected pin). Tap a star for the dossier and set course.
  *
  * Nothing in either mode queries or rebuilds per camera move — the
  * blink / cluster / stutter / re-roll failure class of the free-flight
@@ -79,8 +81,7 @@ const STAR_VERT = /* glsl */ `
     float pulse = aPulse > 0.5 ? 0.55 + 0.45 * sin(uTime * 18.0 + position.x * 7.0) : 1.0;
     vPulse = pulse * aVis;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    float dist = max(0.02, -mv.z);
-    gl_PointSize = min(4.0, aSize * pulse * uPixel * (2.2 / dist));
+    gl_PointSize = clamp(aSize * uPixel, 2.0, 5.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -184,6 +185,8 @@ export class GalaxyView {
   private sectors: SectorMap;
   private discs: StarDiscs;
   private discIds = new Set<number>();
+  /** Framing camera frozen at arc entry — sizes discs, never membership. */
+  private discCam = new THREE.Vector3();
 
   private starPts: THREE.Points | null = null;
   private starGeo: THREE.BufferGeometry | null = null;
@@ -383,7 +386,8 @@ export class GalaxyView {
     if (this.visitedMk) this.visitedMk.pts.visible = false;
     if (this.interestMk) this.interestMk.pts.visible = false;
     this.select(select);
-    this.updateDiscs();
+    this.captureDiscCam();
+    this.pickDiscs();
   }
 
   /** Back to the saucer. The arc's stars are dropped; the map is static. */
@@ -479,6 +483,7 @@ export class GalaxyView {
       }
       this.starVis.needsUpdate = true;
     }
+    if (this.mode === 'arc') this.pickDiscs();
   }
 
   dismiss(): void {
@@ -561,7 +566,8 @@ export class GalaxyView {
   /**
    * Jump straight next to the nearest pinned star (selected, here, or
    * home) inside its arc, close enough that its photosphere is a disc.
-   * Smoke / tests.
+   * Smoke / tests. Does not re-pick the disc roster — that is frozen
+   * at arc entry.
    */
   approachNearest(): GalaxyObject | null {
     const best = this.selected ?? this.hereObj ?? this.home;
@@ -574,8 +580,17 @@ export class GalaxyView {
     this.tgtRadius = Math.max(span * ARC_R_IN, 0.25);
     this.radius = this.tgtRadius;
     this.applyCam();
-    this.updateDiscs();
     return best;
+  }
+
+  /**
+   * Rotate the orbit in place. Smoke uses this to prove disc membership
+   * does not follow the camera. The look point stays put.
+   */
+  orbitBy(dTheta: number, dPhi = 0): void {
+    this.tgtTheta += dTheta;
+    this.tgtPhi = THREE.MathUtils.clamp(this.tgtPhi + dPhi, 0.08, 1.45);
+    this.idle = 0;
   }
 
   resize(w: number, h: number): void {
@@ -827,34 +842,44 @@ export class GalaxyView {
 
   // --------------------------------------------------------------- discs
 
-  private updateDiscs(): void {
+  /**
+   * Freeze the disc-sizing camera to the intended arc framing (sector
+   * centre, ARC_R_FRAME). A dive from the map, a re-entry from another
+   * arc, and a later orbit all mint the same bloom radii. The live
+   * camera only billboards.
+   */
+  private captureDiscCam(): void {
+    const r = this.tgtRadius;
+    const phi = this.tgtPhi;
+    // Canonical azimuth: bloom radii belong to the arc, not to the
+    // heading you arrived on.
+    this.discCam.set(
+      this.tgtLook.x + r * Math.sin(phi),
+      this.tgtLook.y + r * Math.cos(phi),
+      this.tgtLook.z,
+    );
+  }
+
+  /**
+   * Survey's brightest RESOLVE_MAX, plus the selected pin. Rank is the
+   * sample order (already starGlow). Camera position is not an input.
+   */
+  private pickDiscs(): void {
     if (this.mode !== 'arc') return;
-    const cam = this.camera.position;
-    const scored: Array<{ o: GalaxyObject; d: number }> = [];
+    const near: GalaxyObject[] = [];
+    const seen = new Set<number>();
+    const take = (o: GalaxyObject | null): void => {
+      if (!o || seen.has(o.id) || near.length >= RESOLVE_MAX) return;
+      seen.add(o.id);
+      near.push(o);
+    };
+    take(this.selected);
     for (const o of this.objects) {
-      if (!matchesFilter(o, this.filter) && o !== this.selected) continue;
-      const c = galToCart(o.pos);
-      const d = Math.hypot(c.x - cam.x, c.y - cam.y, c.z - cam.z);
-      if (d < 0.005) continue;
-      scored.push({ o, d });
+      if (!matchesFilter(o, this.filter)) continue;
+      take(o);
+      if (near.length >= RESOLVE_MAX) break;
     }
-    // Half the slots to whatever is physically nearest, half to the
-    // brightest by received flux. Sticky: an already-meshed star keeps
-    // its disc unless clearly beaten, so the roster does not churn.
-    scored.sort((a, b) => a.d - b.d);
-    const nearest = scored.slice(0, RESOLVE_MAX / 2);
-    const rest = scored.slice(RESOLVE_MAX / 2);
-    const flux = (s: { o: GalaxyObject; d: number }) =>
-      (Math.max(s.o.star.luminosity, 1e-4) / Math.max(s.d * s.d, 1e-4)) *
-      (this.discIds.has(s.o.id) ? 1.3 : 1);
-    rest.sort((a, b) => flux(b) - flux(a));
-    const near = [...nearest, ...rest.slice(0, RESOLVE_MAX - nearest.length)].map((s) => s.o);
-    for (const pin of [this.selected]) {
-      if (!pin || near.some((o) => o.id === pin.id)) continue;
-      near.unshift(pin);
-      if (near.length > RESOLVE_MAX) near.pop();
-    }
-    this.discs.setStars(near, cam);
+    this.discs.setStars(near, this.discCam);
     this.discs.syncCamera(this.camera);
     this.discIds.clear();
     for (const o of near) this.discIds.add(o.id);
@@ -881,7 +906,7 @@ export class GalaxyView {
       this.starMat.uniforms.uTime.value = t;
       this.starMat.uniforms.uPixel.value = px;
     }
-    if (this.mode === 'arc') this.updateDiscs();
+    if (this.mode === 'arc') this.discs.syncCamera(this.camera);
 
     const ringS = Math.max(0.02, this.radius * 0.03);
     this.pickRing.scale.setScalar(ringS * (this.mode === 'arc' ? 0.5 : 1));

@@ -66,6 +66,13 @@ if (await galaxyBtn.count()) {
 
   await page.waitForFunction(() => Boolean(window.__galaxyView?.home), { timeout: 8000 });
 
+  // Oblique (~79°) — the bulge must be a dome, not a golden cone.
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('edge'));
+  await page.waitForTimeout(1800);
+  await page.screenshot({ path: 'previews/galaxy-1b-oblique.png' });
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('face'));
+  await page.waitForTimeout(800);
+
   // Tap the home marker: enters home's arc with the star selected.
   const ring = await page.evaluate(() => {
     const v = window.__galaxyView;
@@ -88,6 +95,19 @@ if (await galaxyBtn.count()) {
   if (arc.mode !== 'arc') errors.push('tapping home marker did not enter its arc');
   if (!arc.stars || arc.stars < 100) errors.push(`arc loaded only ${arc.stars} stars`);
   if (!arc.dossier) errors.push('home marker tap did not open a dossier');
+
+  // Disc roster is frozen at entry: orbiting must not join or drop members.
+  const roster0 = await page.evaluate(() =>
+    (window.__galaxyView?.resolvedStars?.() ?? []).map((o) => o.id).join(','),
+  );
+  await page.evaluate(() => window.__galaxyView?.orbitBy?.(1.35, -0.4));
+  await page.waitForTimeout(1600);
+  const roster1 = await page.evaluate(() =>
+    (window.__galaxyView?.resolvedStars?.() ?? []).map((o) => o.id).join(','),
+  );
+  console.log('ROSTER', JSON.stringify({ before: roster0, after: roster1 }));
+  if (roster0 !== roster1) errors.push('photosphere roster changed after orbiting the camera');
+  await page.screenshot({ path: 'previews/galaxy-2b-orbit.png' });
 
   // Approach: park next to the selected star; photospheres must mesh.
   const approached = await page.evaluate(() => {
@@ -165,8 +185,9 @@ if (await galaxyBtn.count()) {
 
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await phone.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+await phone.waitForSelector('button[title="Galaxy — the shared catalog"]');
 await phone.waitForTimeout(2500);
-await phone.click('button[title="Galaxy — the shared catalog"]');
+await phone.locator('button[title="Galaxy — the shared catalog"]').click({ force: true });
 await phone.waitForTimeout(1500);
 const phoneUi = await phone.evaluate(() => ({
   homeChip: Boolean([...document.querySelectorAll('button.gx-chip')].find((b) => b.textContent === 'Home')),
