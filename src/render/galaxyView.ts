@@ -777,6 +777,9 @@ export class GalaxyView {
       cat.z - this.arcFwd.z * off,
     );
     this.mintAt.copy(this.arcCenter);
+    this.borderGen++;
+    this.borderBusy = false;
+    this.syncWorkerCloud();
     this.pushMagUniforms();
     if (this.selected) {
       const c = this.viewCart(this.selected);
