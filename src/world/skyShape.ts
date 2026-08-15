@@ -92,13 +92,63 @@ export function shapeAt(kind: SkyKind, id: number): SkyShape {
 }
 
 /**
- * Fragment mask. Stars and envelopes are the same cheap sphere:
- * a filled disc with a soft limb. Kind only picks the colour
- * on the CPU.
+ * Fragment laws. Nebulae stay the cheap sphere (filled disc, soft
+ * limb). Dust is a short raymarch through ONE absolute sub-grid ISM
+ * field — domain-warped fBm flattened toward the disk plane, so
+ * filaments lie in the plane and neighbouring clumps are windows
+ * onto the same cloudscape (complexes join up instead of reading as
+ * private bubbles). Density integrates to Beer-Lambert opacity:
+ * wisps barely tint, cores obscure. Star-forming clumps get a warm
+ * lit rim where density falls toward the (hashed) local OB light —
+ * the Pillars look, from the nursery law, not a painted glow.
  */
 export const SHAPE_GLSL = /* glsl */ `
 float skyMask(float kind, vec2 uv, float seed) {
   float r = length(uv);
   return smoothstep(1.0, 0.72, r + 0.0 * (kind + seed));
+}
+
+float dustHash(vec3 p) {
+  return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+}
+
+float dustVnoise(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  vec3 u = f * f * (3.0 - 2.0 * f);
+  float n000 = dustHash(i);
+  float n100 = dustHash(i + vec3(1.0, 0.0, 0.0));
+  float n010 = dustHash(i + vec3(0.0, 1.0, 0.0));
+  float n110 = dustHash(i + vec3(1.0, 1.0, 0.0));
+  float n001 = dustHash(i + vec3(0.0, 0.0, 1.0));
+  float n101 = dustHash(i + vec3(1.0, 0.0, 1.0));
+  float n011 = dustHash(i + vec3(0.0, 1.0, 1.0));
+  float n111 = dustHash(i + vec3(1.0, 1.0, 1.0));
+  return mix(
+    mix(mix(n000, n100, u.x), mix(n010, n110, u.x), u.y),
+    mix(mix(n001, n101, u.x), mix(n011, n111, u.x), u.y),
+    u.z) * 2.0 - 1.0;
+}
+
+/** Absolute sub-grid ISM field in [-1,1] at a catalog point (kpc). */
+float dustField(vec3 qCat, float freq) {
+  // Filaments lie in the disk: compress the vertical axis.
+  vec3 s = vec3(qCat.x, qCat.y * 2.4, qCat.z);
+  // Domain warp makes wisps and pillars instead of blobs.
+  float wx = dustVnoise(s * freq * 0.37 + 19.1);
+  float wz = dustVnoise(s * freq * 0.37 + 71.7);
+  s += vec3(wx, 0.0, wz) * (2.6 / freq);
+  float a = dustVnoise(s * freq);
+  a += 0.5 * dustVnoise(s * freq * 2.17 + 39.7);
+  return a / 1.5;
+}
+
+/** Local cloud density: the shared field windowed by the clump envelope. */
+float dustRho(vec3 qCat, vec3 relCat, float radiusCat, float meanD, float freq) {
+  float r = length(relCat) / max(radiusCat, 1e-5);
+  float env = max(0.0, 1.0 - r * r);
+  // Dense clumps keep more of the log-normal field above threshold.
+  float cut = 0.62 - 0.72 * meanD;
+  return max(0.0, dustField(qCat, freq) - cut) * env;
 }
 `;

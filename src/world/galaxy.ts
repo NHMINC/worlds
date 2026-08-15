@@ -178,6 +178,38 @@ export function dustClumpsInCell(seed: string, cell: number): number {
   return Math.min(UNIVERSE.GALAXY_DUST_MAX, whole + extra);
 }
 
+export interface DustPhysics {
+  /** Normalized ISM field 0..1 — mean density of the clump. */
+  field: number;
+  feh: number;
+  carbon: number;
+  /** Fraction of grains wearing ice mantles (cold + dense + shielded). */
+  iceFrac: number;
+  /** Fraction of carbonaceous (sooty) grains: C/O-rich gas condenses carbon. */
+  carbonFrac: number;
+}
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+
+/**
+ * What a dust clump is MADE of — a pure function of the address, no
+ * storage. Density from the ISM field; metallicity and C/O from the
+ * same chemistry law stars drink; temperature falls with radius and
+ * dense cores are shielded, so cold outer clumps grow ice mantles
+ * while C/O-rich inner gas condenses sooty carbon.
+ */
+export function dustPhysics(seed: string, cell: number): DustPhysics {
+  const field = ismNorm(seed, cell);
+  const p = cellCenter(cell);
+  const scatter = u01(seed, 'dustChem', cell);
+  const { feh, carbon } = chemistry('thin', p.R, 0.5, scatter);
+  // Radiation temperature proxy: hot inner disk, cooled by shielding.
+  const warm = Math.exp(-p.R / (UNIVERSE.GALAXY_RD * 2)) * (1 - 0.55 * field);
+  const iceFrac = clamp01(1.4 * (UNIVERSE.DUST_ICE_WARM - warm));
+  const carbonFrac = clamp01((carbon - 1.2) * 0.9);
+  return { field, feh, carbon, iceFrac, carbonFrac };
+}
+
 /** Clump position: the same isotropic scatter cube stars use. No lattice. */
 export function dustBirthCart(seed: string, cell: number, k: number): { x: number; y: number; z: number } {
   const rng = rngFor(seed, 'dustPos', cell, k);

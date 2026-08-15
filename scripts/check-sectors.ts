@@ -3,7 +3,7 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, cellCenter, galToCart, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { cellCount, cellCenter, dustPhysics, galToCart, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
 import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
@@ -292,6 +292,46 @@ const check = (cond: boolean, msg: string) => {
     console.log(`  visit handshake: id ${id} kept in local ${local.n}`);
   }
   console.log(`  silhouette: ${a.n} (${stars} stars, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);
+}
+
+// --- dust composition: chemistry and temperature, not one brown ---
+{
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
+  const izMid = Math.floor(nz / 2);
+  const ringAt = (R: number) => Math.max(0, Math.min(nr - 1, Math.floor((R / rMax) * nr)));
+  const meanIce = (R: number) => {
+    let s = 0;
+    let n = 0;
+    const ir = ringAt(R);
+    for (let it = 0; it < nth; it += 6) {
+      const cell = ir * nth * nz + it * nz + izMid;
+      const ph = dustPhysics(seed, cell);
+      s += ph.iceFrac;
+      n++;
+    }
+    return s / Math.max(1, n);
+  };
+  const cellIn = ringAt(3) * nth * nz + 11 * nz + izMid;
+  const a1 = dustPhysics(seed, cellIn);
+  const a2 = dustPhysics(seed, cellIn);
+  check(a1.field === a2.field && a1.iceFrac === a2.iceFrac && a1.carbonFrac === a2.carbonFrac, 'dustPhysics not deterministic');
+  check(a1.carbonFrac >= 0 && a1.carbonFrac <= 1 && a1.iceFrac >= 0 && a1.iceFrac <= 1, 'dust fractions out of range');
+  const iceIn = meanIce(3);
+  const iceOut = meanIce(13);
+  check(iceOut > iceIn + 0.05, `ice must grow with cold radius: inner ${iceIn.toFixed(2)} vs outer ${iceOut.toFixed(2)}`);
+  // Grain colours vary across the disk — no single painted brown.
+  const cloud = buildSilhouetteCloud(seed);
+  const tints = new Set<string>();
+  for (let i = 0; i < cloud.n; i++) {
+    if (cloud.kind[i] !== KIND_DUST) continue;
+    tints.add(
+      `${Math.round(cloud.col[i * 3] * 24)}:${Math.round(cloud.col[i * 3 + 1] * 24)}:${Math.round(cloud.col[i * 3 + 2] * 24)}`,
+    );
+    if (tints.size > 40) break;
+  }
+  check(tints.size >= 8, `dust wears ${tints.size} tints — composition is not reaching the grains`);
+  check(UNIVERSE.DUST_ALPHA_MAX > 0.5 && UNIVERSE.DUST_ALPHA_MAX < 1, 'dense cores must obscure but never be a solid wall');
+  console.log(`  dust chemistry: ice ${iceIn.toFixed(2)} -> ${iceOut.toFixed(2)} with radius; ${tints.size}+ grain tints`);
 }
 
 // --- nursery law: dense gas births young stars (causal, not painted) ---

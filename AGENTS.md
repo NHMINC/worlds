@@ -206,16 +206,25 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     Behind the ball a **magnitude-limited backdrop**
     (`buildSilhouetteCloud`) draws the rest of the disk from the
     same clock: luminous living stars (A and hotter, giants, WR),
-    typed nebulae on their host ids (H II / PN / SNR), and dusty
-    **cell centres** from the ISM column — not fake stars, not
-    landings. Cached per seed. Distant discs are toy angular
-    sizes (`SILHOUETTE_*_PX`); `shapeAt` is the shared envelope
-    law — a 50% transparent sphere on the source (cyan PN, white
-    SNR/H II, brown dust). They overlap as glass, not additive
-    stacks. The magnifier is unchanged: backdrop dots are
-    not pickable; a star is visitable only when the 2 kpc ball
-    has resolved that id. The sphere itself is untouched; the map
-    saucer stays hidden. The breadcrumb returns to the map.
+    typed nebulae on their host ids (H II / PN / SNR), and **dust
+    clumps** minted from the coherent ISM field (`ismNorm`) — a
+    population with scattered positions, not fake stars, not
+    landings. The same field drives star formation (dense gas
+    births young stars — nurseries) and the H II condition.
+    Cached per seed. Envelope size is angular in both layers.
+    Nebulae are 50% transparent spheres on the host (cyan PN,
+    red SNR, white H II) — glass, not additive stacks. **Dust is
+    a raymarched fractal cloud** (`SHAPE_GLSL`): one absolute
+    sub-grid ISM field shared by every clump, Beer–Lambert
+    obscuration (wisps tint, dense cores genuinely hide what is
+    behind them, capped at `DUST_ALPHA_MAX`), warm lit rims on
+    star-forming clumps (`DUST_RIM` — the Pillars edge), and
+    grain colour from `dustPhysics` chemistry (silicate / sooty
+    carbon / ice mantles). The magnifier is unchanged: backdrop
+    dots are not pickable; a star is visitable only when the
+    2 kpc ball has resolved that id. The sphere itself is
+    untouched; the map saucer stays hidden. The breadcrumb
+    returns to the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
   re-roll bug class was structural, and it is retired along with the

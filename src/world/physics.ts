@@ -437,13 +437,23 @@ export const UNIVERSE = {
    * of the disk — luminous living stars above SILHOUETTE_M (A and
    * hotter, giants, WR) plus nebula hosts and dusty cell centres —
    * is placed with the same magnifier. Distant discs are toy angular
-   * sizes. Envelopes are 50% transparent spheres on the source
-   * (ENVELOPE_ALPHA) — cyan PN, red SNR, white H II, brown dust.
-   * They overlap as glass; they do not add energy, and alpha never
-   * follows density (that is a later knob on the same field).
+   * sizes. Nebula envelopes are 50% transparent spheres on the host
+   * (ENVELOPE_ALPHA) — cyan PN, red SNR, white H II. DUST is a
+   * raymarched fractal cloud: a short march through one absolute
+   * sub-grid ISM field (domain-warped fBm, flattened to the disk so
+   * filaments lie in the plane; neighbouring clumps are windows onto
+   * the SAME field and join into complexes). Optical depth is
+   * Beer-Lambert — thin wisps barely tint, dense cores genuinely
+   * obscure up to DUST_ALPHA_MAX — and star-forming clumps get a
+   * warm lit rim (DUST_RIM, the Pillars look: nursery UV grazing
+   * the cloud edge). Composition (dustPhysics) colours the grains:
+   * silicate brown, sooty carbon where C/O is high, pale ice
+   * mantles on cold shielded outer clumps (DUST_ICE_WARM is the
+   * condensation threshold on the radiation-temperature proxy).
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX / DUST_PX as pixel floors so far sources stay
-   * findable; STAR_PX stays the fixed ruler for photosphere points.
+   * findable; sprites under DUST_MINPX skip the march (a disc).
+   * STAR_PX stays the fixed ruler for photosphere points.
    * SUPER_GAIN stretches the bright end the clock already made.
    * Optical approximations, like AIR_LINE. Not pickable.
    */
@@ -455,6 +465,20 @@ export const UNIVERSE = {
   SILHOUETTE_ENVELOPE_ALPHA: 0.5,
   /** Largest dust complex radius (kpc); wisps start near 0.05. */
   GALAXY_DUST_R_MAX: 0.8,
+  /** Raymarch steps through a clump (perf knob; 1 = cheap slice). */
+  DUST_MARCH_STEPS: 10,
+  /** Sprites smaller than this (px) skip the march. */
+  DUST_MINPX: 12,
+  /** Densest cores obscure this hard; never a solid wall. */
+  DUST_ALPHA_MAX: 0.92,
+  /** Optical-depth scale per kpc of dense cloud. */
+  DUST_TAU: 7.0,
+  /** Sub-grid ISM turbulence frequency (cycles / kpc). */
+  DUST_FREQ: 11,
+  /** Lit-rim gain (nursery UV grazing the cloud edge). */
+  DUST_RIM: 2.2,
+  /** Ice mantles condense when the temperature proxy falls below this. */
+  DUST_ICE_WARM: 0.34,
 
   /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:

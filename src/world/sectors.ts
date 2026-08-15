@@ -26,7 +26,7 @@ import {
   densityParts,
   dustBirthCart,
   dustClumpsInCell,
-  ismNorm,
+  dustPhysics,
   galToCart,
   isSlotAlive,
   slotBirthCart,
@@ -446,30 +446,44 @@ function writeFromBirth(
   });
 }
 
+const DUST_SILICATE: [number, number, number] = [0.44, 0.31, 0.21];
+const DUST_SOOT: [number, number, number] = [0.27, 0.15, 0.1];
+const DUST_ICE: [number, number, number] = [0.7, 0.78, 0.9];
+
+function mix3(a: [number, number, number], b: [number, number, number], t: number): [number, number, number] {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
 /**
  * One dust clump: scattered position (no lattice), sphere of
  * influence from the field — wisps ~0.05 kpc, complexes up to
- * GALAXY_DUST_R_MAX. Alpha stays fixed; the field never sets opacity.
+ * GALAXY_DUST_R_MAX. Grain colour is chemistry (silicate / sooty
+ * carbon / ice mantles); `gain` carries the mean density the cloud
+ * shader integrates — obscuration and lit rims derive from it.
  */
 function writeDust(seed: string, cell: number, k: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
   const cart = dustBirthCart(seed, cell, k);
   const id = dustId(cell, k);
   const shape = shapeAt(KIND_DUST, id);
-  const field = ismNorm(seed, cell);
+  const phys = dustPhysics(seed, cell);
   const jitter = 0.7 + 0.6 * shape.seed;
   const radius = Math.min(
     UNIVERSE.GALAXY_DUST_R_MAX,
-    (0.05 + (UNIVERSE.GALAXY_DUST_R_MAX - 0.05) * Math.pow(field, 1.5)) * jitter,
+    (0.05 + (UNIVERSE.GALAXY_DUST_R_MAX - 0.05) * Math.pow(phys.field, 1.5)) * jitter,
   );
+  let rgb = mix3(DUST_SILICATE, DUST_SOOT, phys.carbonFrac);
+  rgb = mix3(rgb, DUST_ICE, phys.iceFrac * 0.7);
+  // Metallicity is the dust-to-gas ratio: metal-poor gas makes thin dust.
+  const d2g = Math.min(1.6, Math.pow(10, 0.5 * phys.feh));
   writeRow(id, cart.x, cart.y, cart.z, i, c, {
-    rgb: shape.rgb,
+    rgb,
     L: 0,
     kind: KIND_DUST,
     bits: BIT_DUST,
     mk: 0,
     pulse: shape.seed,
     size: radius,
-    gain: 1,
+    gain: Math.min(1, phys.field * d2g),
   });
 }
 

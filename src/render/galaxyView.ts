@@ -109,6 +109,10 @@ const STAR_VERT = /* glsl */ `
   varying float vVis;
   varying float vKind;
   varying float vSeed;
+  varying vec3 vCenterView;
+  varying float vRadiusView;
+  varying vec3 vCenterCat;
+  varying float vPx;
   void main() {
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
@@ -122,6 +126,10 @@ const STAR_VERT = /* glsl */ `
       float ang = max(aSize, 0.005) * uScale / d;
       gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, 512.0);
       vVis = aVis;
+      vCenterView = mv.xyz;
+      vRadiusView = max(aSize, 0.005) * uScale;
+      vCenterCat = position;
+      vPx = gl_PointSize;
     } else {
       float L = max(aLum, 1e-4);
       float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
@@ -133,6 +141,10 @@ const STAR_VERT = /* glsl */ `
       float flux = L / (d * d + uFluxEps);
       float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
       vVis = min(aVis * punch, 8.0);
+      vCenterView = vec3(0.0);
+      vRadiusView = 0.0;
+      vCenterCat = vec3(0.0);
+      vPx = 0.0;
     }
     gl_Position = projectionMatrix * mv;
   }
@@ -146,6 +158,7 @@ function regionCamFar(): number {
 
 const SILHOUETTE_VERT = /* glsl */ `
   attribute vec3 aColor;
+  attribute float aVis;
   attribute float aLum;
   attribute float aKind;
   attribute float aSize;
@@ -163,13 +176,21 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying float vVis;
   varying float vKind;
   varying float vSeed;
+  varying vec3 vCenterView;
+  varying float vRadiusView;
+  varying vec3 vCenterCat;
+  varying float vPx;
   void main() {
+    vColor = aColor;
+    vKind = aKind;
+    vSeed = aSeed;
+    vCenterView = vec3(0.0);
+    vRadiusView = 0.0;
+    vCenterCat = vec3(0.0);
+    vPx = 0.0;
     float dCat = length(position - uCenter);
     if (dCat < uRegionR) {
-      vColor = aColor;
       vVis = 0.0;
-      vKind = aKind;
-      vSeed = aSeed;
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
@@ -184,14 +205,16 @@ const SILHOUETTE_VERT = /* glsl */ `
       float ang = max(aSize, 0.005) * uScale / d;
       float floorPx = (aKind > 3.5 ? uDustPx : uNebulaPx) * uPixel;
       gl_PointSize = clamp(2.0 * ang * uPxPerRad, floorPx, 512.0);
+      vVis = aVis;
+      vCenterView = mv.xyz;
+      vRadiusView = max(aSize, 0.005) * uScale;
+      vCenterCat = position;
+      vPx = gl_PointSize;
     } else {
       float boost = 1.0 + uSuper * smoothstep(8.0, 180.0, aLum);
       gl_PointSize = uStarPx * uPixel * boost;
+      vVis = 1.0;
     }
-    vColor = aColor;
-    vVis = 1.0;
-    vKind = aKind;
-    vSeed = aSeed;
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -200,10 +223,22 @@ const STAR_FRAG = /* glsl */ `
   ${SHAPE_GLSL}
   uniform float uEnvelope;
   uniform float uEnvelopeAlpha;
+  uniform float uScale;
+  uniform mat3 uCamRotInv;
+  uniform float uDustSteps;
+  uniform float uDustMinPx;
+  uniform float uDustAlphaMax;
+  uniform float uDustTauK;
+  uniform float uDustFreq;
+  uniform float uDustRim;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
   varying float vSeed;
+  varying vec3 vCenterView;
+  varying float vRadiusView;
+  varying vec3 vCenterCat;
+  varying float vPx;
   void main() {
     if (uEnvelope < 0.5 && vKind > 0.5) discard;
     if (uEnvelope > 0.5 && vKind < 0.5) discard;
@@ -213,6 +248,61 @@ const STAR_FRAG = /* glsl */ `
       if (r2 > 0.85 && r2 < 1.95) discard;
       float limb = 1.0 - 0.22 * min(r2, 1.0);
       gl_FragColor = vec4(vColor * limb, vVis);
+      return;
+    }
+    if (vKind > 3.5) {
+      // Dust: a short march through the shared sub-grid ISM field.
+      if (vPx < uDustMinPx) {
+        // Too small to resolve structure: a soft mote, weighted by density.
+        float mask = smoothstep(1.0, 0.55, length(p));
+        float a = uDustAlphaMax * mask * (0.15 + 0.7 * vVis);
+        if (a < 0.012) discard;
+        gl_FragColor = vec4(vColor, a);
+        return;
+      }
+      vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
+      vec3 rd = normalize(fragView);
+      float b = dot(rd, vCenterView);
+      float cc = dot(vCenterView, vCenterView) - vRadiusView * vRadiusView;
+      float h = b * b - cc;
+      if (h <= 0.0) discard;
+      h = sqrt(h);
+      float t0 = max(b - h, 0.001);
+      float t1 = b + h;
+      if (t1 <= t0) discard;
+      float radiusCat = vRadiusView / uScale;
+      float tau = 0.0;
+      vec3 meanRel = vec3(0.0);
+      float wSum = 0.0;
+      for (int i = 0; i < 16; i++) {
+        if (float(i) >= uDustSteps - 0.5) break;
+        float t = mix(t0, t1, (float(i) + 0.5) / uDustSteps);
+        vec3 relCat = (uCamRotInv * (rd * t - vCenterView)) / uScale;
+        float rho = dustRho(vCenterCat + relCat, relCat, radiusCat, vVis, uDustFreq);
+        tau += rho;
+        meanRel += relCat * rho;
+        wSum += rho;
+      }
+      float segCat = (t1 - t0) / uScale;
+      tau *= uDustTauK * segCat / uDustSteps;
+      if (tau < 0.012) discard;
+      float trans = exp(-tau);
+      // Extinction: the thick core silhouettes; thin edges keep grain colour.
+      vec3 col = vColor * (0.22 + 0.78 * clamp(trans * 1.5, 0.0, 1.0));
+      if (wSum > 1e-4) {
+        // Single-scatter rim: density falling toward the local OB light
+        // means that face is bathed in nursery UV — the Pillars edge.
+        vec3 mp = vCenterCat + meanRel / wSum;
+        vec3 L = normalize(vec3(
+          dustHash(vec3(vSeed * 91.3, 7.0, 1.0)) - 0.5,
+          0.35 * (dustHash(vec3(vSeed * 13.7, 2.0, 5.0)) - 0.5),
+          dustHash(vec3(vSeed * 29.1, 3.0, 9.0)) - 0.5) + 1e-4);
+        float here = dustField(mp, uDustFreq);
+        float lit = dustField(mp + L * 0.4 * radiusCat, uDustFreq);
+        float rim = clamp((here - lit) * uDustRim * vVis, 0.0, 1.0);
+        col += vec3(1.0, 0.93, 0.8) * rim * (1.0 - trans) * 0.85;
+      }
+      gl_FragColor = vec4(col, min(uDustAlphaMax, 1.0 - trans));
       return;
     }
     float mask = skyMask(vKind, p, vSeed);
@@ -354,6 +444,7 @@ export class GalaxyView {
 
   private visitedMk: MarkerSet | null = null;
   private interestMk: MarkerSet | null = null;
+  private camRot3 = new THREE.Matrix3();
 
   private homeRing: THREE.Mesh;
   private hereRing: THREE.Mesh;
@@ -707,6 +798,20 @@ export class GalaxyView {
       uFluxEps: { value: POINT_FLUX_EPS },
       uEnvelope: { value: 0 },
       uEnvelopeAlpha: { value: UNIVERSE.SILHOUETTE_ENVELOPE_ALPHA },
+      ...this.dustUniforms(),
+    };
+  }
+
+  /** The cloud-march knobs, shared by every material that compiles STAR_FRAG. */
+  private dustUniforms(): Record<string, THREE.IUniform> {
+    return {
+      uCamRotInv: { value: new THREE.Matrix3() },
+      uDustSteps: { value: UNIVERSE.DUST_MARCH_STEPS },
+      uDustMinPx: { value: UNIVERSE.DUST_MINPX },
+      uDustAlphaMax: { value: UNIVERSE.DUST_ALPHA_MAX },
+      uDustTauK: { value: UNIVERSE.DUST_TAU },
+      uDustFreq: { value: UNIVERSE.DUST_FREQ },
+      uDustRim: { value: UNIVERSE.DUST_RIM },
     };
   }
 
@@ -767,6 +872,7 @@ export class GalaxyView {
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
       uEnvelope: { value: envelope },
       uEnvelopeAlpha: { value: UNIVERSE.SILHOUETTE_ENVELOPE_ALPHA },
+      ...this.dustUniforms(),
     };
   }
 
@@ -1955,21 +2061,14 @@ export class GalaxyView {
     const t = now * 0.001;
     const px = this.renderer.getPixelRatio();
     const pxPer = this.pxPerRad();
-    if (this.starMat) {
-      this.starMat.uniforms.uPixel.value = px;
-      this.starMat.uniforms.uPxPerRad.value = pxPer;
-    }
-    if (this.starDustMat) {
-      this.starDustMat.uniforms.uPixel.value = px;
-      this.starDustMat.uniforms.uPxPerRad.value = pxPer;
-    }
-    if (this.silMat) {
-      this.silMat.uniforms.uPixel.value = px;
-      this.silMat.uniforms.uPxPerRad.value = pxPer;
-    }
-    if (this.silDustMat) {
-      this.silDustMat.uniforms.uPixel.value = px;
-      this.silDustMat.uniforms.uPxPerRad.value = pxPer;
+    // View→catalog rotation so the cloud march samples a camera-stable field.
+    this.camera.updateMatrixWorld();
+    this.camRot3.setFromMatrix4(this.camera.matrixWorld);
+    for (const mat of [this.starMat, this.starDustMat, this.silMat, this.silDustMat]) {
+      if (!mat) continue;
+      mat.uniforms.uPixel.value = px;
+      mat.uniforms.uPxPerRad.value = pxPer;
+      (mat.uniforms.uCamRotInv.value as THREE.Matrix3).copy(this.camRot3);
     }
 
     const cam = this.camera.position;
