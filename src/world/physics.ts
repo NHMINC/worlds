@@ -527,6 +527,26 @@ export const UNIVERSE = {
   DUST_ICE_WARM: 0.34,
 
   /**
+   * The distant backdrop is ONE integral (galaxyField.ts): a full-screen
+   * march of densityParts + the gas/turbulence law, fixed cost per pixel
+   * no matter where the camera points. Envelope sprites (nebula shells,
+   * dust clumps) resolve as individual objects only within
+   * NEAR_ENVELOPES catalog-kpc of the bubble centre; beyond that the
+   * integral IS their aggregate. Backdrop stars stay points everywhere.
+   * FIELD_RES renders the march at a fraction of the canvas and
+   * upsamples — the glow is low-frequency, the stars stay crisp on top.
+   */
+  GALAXY_FIELD_STEPS: 30,
+  GALAXY_FIELD_RES: 0.4,
+  /** Photograph exposure on the integrated light (knee keeps hue). */
+  GALAXY_FIELD_EXPOSURE: 1.4,
+  /** Dust optical depth per kpc of dense cloud in the field integral. */
+  GALAXY_FIELD_TAU: 5.0,
+  /** Nebula / dust sprites resolve inside this catalog radius (kpc) —
+   *  twice the mint ball; ~16 s of approach at GALAXY_WARP. */
+  GALAXY_NEAR_ENVELOPES: 4,
+
+  /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:
    * ξ ∝ M^α on [IMF_BD, IMF_MIN] (brown dwarfs), [IMF_MIN, IMF_BRK],
    * then [IMF_BRK, IMF_MAX]. Remnant thresholds in Msun: below WD a dead
