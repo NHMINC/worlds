@@ -188,14 +188,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     plus markers for home, here, visited systems, and ~100
     deterministic systems of interest (`systemsOfInterest`). NO stars
     are drawn on the map; the tile speckle is chart fabric, not a sky.
-  - **Arc**: tap a tile and its brightest ~`GALAXY_SECTOR_STARS` REAL
-    unique stars load ONCE (`sectorSample` — a magnitude-limited survey
-    of the living K/G/F field plus a giant/hot tail and a massive tip,
-    ranked by light). Inside an arc, every surveyed star is drawn and
-    **tappable** at all times; nothing about visibility or picking
-    reads the camera (fixed-pixel points; screen-space nearest).
-    Photosphere discs (`galaxyStar.ts`) are a rounder LOD for the
-    brightest N, picked once on entry — they do not steal taps.
+  - **Arc**: tap a tile and **every occupied slot** is drawn once as a
+    cheap point (`buildArcCloud` — birth position + IMF clock, no
+    `evolve` until you tap). That is the arc's population, not a 2,500
+    survey. Photosphere discs are the brightest handful, evolved on
+    entry. Tap mints the full catalog row (`objectAt`). Select eases
+    the look point onto that star; zoom in to fly among neighbours.
     Set course is the dossier button. Zoom out (or the breadcrumb) to
     return to the map.
   Nothing queries or rebuilds per camera move in either mode — the

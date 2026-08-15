@@ -3,7 +3,7 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, objectAt, splitId } from '../src/world/galaxy';
+import { cellCount, objectAt, splitId, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
 import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
@@ -18,6 +18,7 @@ import {
   sectorSample,
   spokeBounds,
   systemsOfInterest,
+  buildArcCloud,
 } from '../src/world/sectors';
 
 const seed = UNIVERSE.CANONICAL_SEED;
@@ -110,6 +111,21 @@ const check = (cond: boolean, msg: string) => {
   }
   const pop = sectorPopulation(seed, id);
   check(pop > a.length, `population ${pop} smaller than sample`);
+
+  const cloud = buildArcCloud(seed, id);
+  check(cloud.n === pop, `cloud ${cloud.n} != population ${pop}`);
+  check(cloud.n > 50_000, `arc cloud too small ${cloud.n}`);
+  console.log(`  home-like arc cloud: ${cloud.n} slots in ${cloud.ms.toFixed(0)} ms`);
+
+  // Birth pose must be the same row objectAt evolves.
+  {
+    const o = objectAt(seed, a[0].id);
+    const { cell, slot } = splitId(a[0].id);
+    const filled = slotsInCell(seed, cell);
+    const b = slotBirthRaw(seed, cell, slot, filled);
+    check(!!o && o.pos.R === b.pos.R && o.pos.theta === b.pos.theta && o.pos.z === b.pos.z, 'slotBirth pose != objectAt pose');
+    check(!!o && o.star.massZams === b.massZams, 'slotBirth mass != objectAt mass');
+  }
 
   const full = sectorSample(seed, id, UNIVERSE.GALAXY_SECTOR_STARS);
   check(full.length === UNIVERSE.GALAXY_SECTOR_STARS, `full survey ${full.length}`);

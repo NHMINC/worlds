@@ -149,7 +149,7 @@ export function GalaxyExplorer(props: Props) {
           </div>
           <div className="galaxy-sub">
             {inArc
-              ? `${frame.population.toLocaleString()} systems in this arc · brightest ${frame.resolved.toLocaleString()} shown`
+              ? `${frame.population.toLocaleString()} systems in this arc · all drawn`
               : `SBbc · ${UNIVERSE.GALAXY_POPULATION.toExponential(0)} addressable systems · tap an arc`}
           </div>
         </div>
@@ -231,7 +231,7 @@ export function GalaxyExplorer(props: Props) {
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
           {inArc
-            ? ' · tap a star · Set course to go · zoom out for the map'
+            ? ' · tap a star · zoom in to fly among them · Set course to go'
             : ' · tap an arc to enter · markers are worlds'}
         </div>
       </footer>

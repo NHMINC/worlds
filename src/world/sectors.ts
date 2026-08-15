@@ -20,13 +20,19 @@ import { UNIVERSE } from './physics';
 import {
   cellCenter,
   density,
+  galToCart,
+  isSlotAlive,
   objectAt,
   packId,
+  slotBirthRaw,
+  slotMsLum,
+  slotMsTeff,
   slotRangeForMass,
   slotsInCell,
   type GalPos,
   type GalaxyObject,
 } from './galaxy';
+import { mkFromTeff, teffToRgb } from './stellar';
 
 const TAU = Math.PI * 2;
 
@@ -194,6 +200,143 @@ export function sectorPopulation(seed: string, id: SectorId): number {
   let n = 0;
   for (const cell of sectorCells(id)) n += slotsInCell(seed, cell);
   return n;
+}
+
+/** GPU point cloud of every occupied slot in an arc. No evolve(). */
+export interface ArcCloud {
+  n: number;
+  ids: Uint32Array;
+  pos: Float32Array;
+  col: Float32Array;
+  size: Float32Array;
+  pulse: Float32Array;
+  /** Inherent brightness 0..1 (faint M dwarfs stay pinpricks). */
+  gain: Float32Array;
+  /** Filter bits: remnant, hot, sunlike, cool, halo, arm. */
+  bits: Uint8Array;
+  /** MK letter index 0=WD/other, 1=O .. 8=M, 9=L, 10=T. */
+  mk: Uint8Array;
+  /** Brightest ids by cheap MS light — disc / dossier candidates. */
+  brightIds: number[];
+  ms: number;
+}
+
+const MK_IX: Record<string, number> = { O: 1, B: 2, A: 3, F: 4, G: 5, K: 6, M: 7, L: 8, T: 9 };
+
+export const MK_LETTER = ['WD', 'O', 'B', 'A', 'F', 'G', 'K', 'M', 'L', 'T'] as const;
+
+export const BIT_REMNANT = 1;
+export const BIT_HOT = 2;
+export const BIT_SUNLIKE = 4;
+export const BIT_COOL = 8;
+export const BIT_HALO = 16;
+export const BIT_ARM = 32;
+
+export type GalaxyFilterName =
+  | 'all'
+  | 'hot'
+  | 'sunlike'
+  | 'cool'
+  | 'remnant'
+  | 'nebula'
+  | 'halo'
+  | 'arm';
+
+export function sketchMatches(bits: number, f: GalaxyFilterName): boolean {
+  if (f === 'all') return true;
+  if (f === 'hot') return (bits & BIT_HOT) !== 0;
+  if (f === 'sunlike') return (bits & BIT_SUNLIKE) !== 0;
+  if (f === 'cool') return (bits & BIT_COOL) !== 0;
+  if (f === 'remnant') return (bits & BIT_REMNANT) !== 0;
+  if (f === 'nebula') return false;
+  if (f === 'halo') return (bits & BIT_HALO) !== 0;
+  return (bits & BIT_ARM) !== 0;
+}
+
+/**
+ * One point per occupied slot. Positions match `objectAt`. Colour and
+ * size are the main-sequence clock (alive) or a dim remnant pin (dead)
+ * — `evolve` runs when you tap. Timed so we can see the cost.
+ */
+export function buildArcCloud(seed: string, id: SectorId): ArcCloud {
+  const t0 = performance.now();
+  const cells = sectorCells(id);
+  let n = 0;
+  const filledOf = new Int32Array(cells.length);
+  for (let i = 0; i < cells.length; i++) {
+    const f = slotsInCell(seed, cells[i]);
+    filledOf[i] = f;
+    n += f;
+  }
+  const ids = new Uint32Array(n);
+  const pos = new Float32Array(n * 3);
+  const col = new Float32Array(n * 3);
+  const size = new Float32Array(n);
+  const pulse = new Float32Array(n);
+  const gain = new Float32Array(n);
+  const bits = new Uint8Array(n);
+  const mk = new Uint8Array(n);
+  const best: Array<{ id: number; L: number }> = [];
+  const consider = (sid: number, L: number) => {
+    if (best.length < 40) {
+      best.push({ id: sid, L });
+      if (best.length === 40) best.sort((a, b) => a.L - b.L);
+      return;
+    }
+    if (L <= best[0].L) return;
+    best[0] = { id: sid, L };
+    best.sort((a, b) => a.L - b.L);
+  };
+
+  let i = 0;
+  for (let ci = 0; ci < cells.length; ci++) {
+    const cell = cells[ci];
+    const filled = filledOf[ci];
+    for (let slot = 0; slot < filled; slot++) {
+      const b = slotBirthRaw(seed, cell, slot, filled);
+      const sid = packId(cell, slot);
+      const c = galToCart(b.pos);
+      const alive = isSlotAlive(b.massZams, b.ageGyr);
+      const L = alive ? slotMsLum(b.massZams) : 0.004;
+      const teff = alive ? slotMsTeff(b.massZams) : 9000;
+      const rgb = alive ? teffToRgb(teff) : ([0.62, 0.7, 0.88] as [number, number, number]);
+      ids[i] = sid;
+      pos[i * 3] = c.x;
+      pos[i * 3 + 1] = c.y;
+      pos[i * 3 + 2] = c.z;
+      col[i * 3] = rgb[0];
+      col[i * 3 + 1] = rgb[1];
+      col[i * 3 + 2] = rgb[2];
+      size[i] = L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0);
+      gain[i] = 0.22 + 0.78 * (L / (L + 0.25));
+      pulse[i] = 0;
+      let bit = 0;
+      if (!alive) bit |= BIT_REMNANT;
+      else if (b.massZams > 1.4) bit |= BIT_HOT;
+      else if (b.massZams >= 0.7 && b.massZams <= 1.15) bit |= BIT_SUNLIKE;
+      else bit |= BIT_COOL;
+      if (b.pop === 'halo') bit |= BIT_HALO;
+      if (b.inArm) bit |= BIT_ARM;
+      bits[i] = bit;
+      mk[i] = alive ? (MK_IX[mkFromTeff(teff)] ?? 0) : 0;
+      consider(sid, L);
+      i++;
+    }
+  }
+  best.sort((a, b) => b.L - a.L);
+  return {
+    n,
+    ids,
+    pos,
+    col,
+    size,
+    pulse,
+    gain,
+    bits,
+    mk,
+    brightIds: best.map((b) => b.id),
+    ms: performance.now() - t0,
+  };
 }
 
 /**
