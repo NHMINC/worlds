@@ -293,14 +293,6 @@ const STAR_FRAG = /* glsl */ `
         halo * 0.62 * min(flux, 2.6) +
         tail * min(flux, 3.2)
       ) * window;
-      // Bright stars throw a faint diffraction cross (the aperture of
-      // the eye). Dim pins stay round.
-      float ax = abs(p.x);
-      float ay = abs(p.y);
-      float spike = max(
-        exp(-ax * 22.0) * exp(-ay * ay * 12.0),
-        exp(-ay * 22.0) * exp(-ax * ax * 12.0));
-      shine += spike * 0.34 * smoothstep(0.55, 1.8, flux) * window;
       if (shine < 0.003) discard;
       vec3 col = mix(vColor, vec3(1.0), clamp(0.42 * core, 0.0, 0.58));
       gl_FragColor = vec4(col * shine, min(shine, 1.0));
