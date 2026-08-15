@@ -439,11 +439,17 @@ export const UNIVERSE = {
    * is placed with the same magnifier. Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
-   * so rings and filament crossings are geometry. The event law
-   * (emissionLook) expands and fades them: PN grows over PN_GYR,
-   * SNR Sedov-ish (t^0.4) to SNR_R_MAX, H II is Strömgren-ish
-   * (HII_R_K · L^⅓); NEB_EMISSION is the photograph stretch. They
-   * draw additive (they glow); dust draws after and obscures.
+   * so rings and filament crossings are geometry. Colour is a LINE
+   * SPECTRUM placed by ionization stratification: [O III] teal near
+   * the hot source and in young hard-spectrum events, H-alpha pink
+   * through the body, [S II] deep red at cool edges; SNR strands
+   * interleave red and teal (shock-speed lacework). One nebula wears
+   * the whole mix; age slides the balance and host chemistry leans
+   * the blend. The event law (emissionLook) expands and fades them:
+   * PN grows over PN_GYR, SNR Sedov-ish (t^0.4) to SNR_R_MAX, H II
+   * is Strömgren-ish (HII_R_K · L^⅓); NEB_EMISSION is the
+   * photograph stretch. They draw additive (they glow); dust draws
+   * after and obscures.
    * DUST is a raymarched fractal cloud: a short march through one absolute
    * sub-grid ISM field (domain-warped fBm, flattened to the disk so
    * filaments lie in the plane; neighbouring clumps are windows onto

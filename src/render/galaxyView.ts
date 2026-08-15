@@ -333,18 +333,44 @@ const STAR_FRAG = /* glsl */ `
     float radiusCat = vRadiusView / uScale;
     float steps = clamp(floor(vPx / 24.0) + 2.0, 2.0, uDustSteps);
     float em = 0.0;
+    vec3 meanRel = vec3(0.0);
+    float wSum = 0.0;
     for (int i = 0; i < 16; i++) {
       if (float(i) >= steps - 0.5) break;
       float t = mix(t0, t1, (float(i) + 0.5) / steps);
       vec3 relCat = (uCamRotInv * (rd * t - vCenterView)) / uScale;
       float rho = nebRho(vKind, vCenterCat + relCat, relCat, radiusCat, vVis, uDustFreq, vSeed);
-      em += rho * rho;
+      float w = rho * rho;
+      em += w;
+      meanRel += relCat * w;
+      wSum += w;
     }
     float segCat = (t1 - t0) / uScale;
     em *= uNebGain * vVis * segCat / (steps * max(radiusCat, 1e-4));
-    if (em < 0.012) discard;
+    if (em < 0.012 || wSum < 1e-5) discard;
+    // The palette is a line spectrum, placed by IONIZATION
+    // STRATIFICATION: excitation is highest near the hot source and
+    // in young (hard-spectrum) events, falling outward — [O III]
+    // teal cores, H-alpha pink bodies, [S II] deep-red cool edges.
+    // One nebula wears the whole mix; age slides the balance.
+    vec3 mrel = meanRel / wSum;
+    float rMean = length(mrel) / max(radiusCat, 1e-4);
+    float hard = clamp(vVis, 0.0, 1.0);
+    float e = hard * (1.2 - rMean);
+    if (vKind > 2.5) {
+      // Shock strands: neighbouring filaments ride different shock
+      // speeds — the Veil's interleaved red and teal lacework.
+      e += 0.55 * nebField(vCenterCat + mrel * 2.6 + 91.0, uDustFreq * 1.6);
+    }
+    vec3 lineSII = vec3(0.9, 0.18, 0.12);
+    vec3 lineHa = vec3(1.0, 0.4, 0.36);
+    vec3 lineOIII = vec3(0.3, 0.95, 0.8);
+    vec3 line = mix(lineSII, lineHa, smoothstep(0.1, 0.5, e));
+    line = mix(line, lineOIII, smoothstep(0.55, 0.95, e));
+    // Chemistry keeps a voice: the host tint leans the line blend.
+    vec3 col = mix(line, vColor, 0.25);
     // Line saturation: the hottest rims bleach toward white.
-    vec3 col = mix(vColor, vec3(1.0), min(0.45, 0.22 * em));
+    col = mix(col, vec3(1.0), min(0.4, 0.18 * em));
     gl_FragColor = vec4(col, min(em, 1.0));
   }
 `;
