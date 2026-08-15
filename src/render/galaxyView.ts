@@ -1066,6 +1066,11 @@ export class GalaxyView {
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
       ...this.shineUniforms(),
       ...this.dustUniforms(),
+      // Fewer, fuller: the backdrop keeps only showpieces, so its
+      // shells get more exposure and its clouds more optical depth
+      // than the local layer. Same laws, backdrop-only values.
+      uNebGain: { value: UNIVERSE.NEB_EMISSION * UNIVERSE.SILHOUETTE_NEB_BOOST },
+      uDustTauK: { value: UNIVERSE.DUST_TAU * UNIVERSE.SILHOUETTE_DUST_BOOST },
     };
   }
 
