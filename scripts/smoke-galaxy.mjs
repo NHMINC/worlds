@@ -225,7 +225,7 @@ if (await galaxyBtn.count()) {
   const beforeCruise = await page.evaluate(() => window.__galaxyView?.currentRegion?.() ?? null);
   await page.mouse.click(hx, hy);
   await page.mouse.down();
-  await page.waitForTimeout(2200);
+  await page.waitForTimeout(2800);
   await page.mouse.move(hx + 70, hy);
   await page.waitForTimeout(300);
   await page.mouse.up();
