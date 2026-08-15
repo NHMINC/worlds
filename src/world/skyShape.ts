@@ -132,8 +132,8 @@ float skyMask(float kind, vec2 uv, float seed) {
     float n = skyHash(dot(uv, vec2(3.1, 5.7)) + seed * 17.0);
     float rad = 0.62 + 0.38 * n;
     float clump = smoothstep(rad, rad * 0.28, r);
-    float flat = 1.0 - 0.5 * uv.y * uv.y;
-    return clump * flat;
+    float flatten = 1.0 - 0.5 * uv.y * uv.y;
+    return clump * flatten;
   }
   if (kind < 2.5) {
     float bipolar = step(0.5, seed);
