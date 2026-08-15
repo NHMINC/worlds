@@ -11,8 +11,8 @@
  * ball. Look-drag slides the heading. Warp (↑ / Warp button) latches
  * acceleration; ↓ / Stop brakes at the same rate. The vertex shader
  * follows the centre; a worker mints and drops the rim. Space is
- * magnified (VIEW_R / REGION_R); star size is not — every star
- * is one CSS pixel. Intensity and colour carry the rank. Behind the ball a
+ * magnified (VIEW_R / REGION_R); star size is not. Distant stars
+ * are 1px pinpricks; closer ones grow. Behind the ball a
  * magnitude-limited backdrop (stars, typed nebulae, dusty cell
  * centres) sketches the rest of the disk. Same shape law as the
  * local sample; magnifier places them. The breadcrumb returns to
@@ -142,8 +142,9 @@ const STAR_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // A point of light: one CSS pixel, no diameter. Intensity
-      // is L^P · (D/d)^q; colour is teff pushed off white.
+      // Space is magnified (VIEW_R / REGION_R); star size is not.
+      // Apparent angle is r / d_cat — far pins stay one CSS pixel,
+      // a star grows only when the bubble has slid onto it.
       float L = max(aLum, 1e-4);
       vVis = aVis * uShineLGain * pow(L, uShineLP) * pow(uShineDistRef / d, uShineDistP);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
@@ -151,7 +152,9 @@ const STAR_VERT = /* glsl */ `
       vCenterView = vec3(0.0);
       vRadiusView = 0.0;
       vCenterCat = vec3(0.0);
-      gl_PointSize = max(1.0, uPixel);
+      float rCat = max(uGlowK * pow(L, uGlowP), L < 0.05 ? uGlowDim : uGlowMin);
+      float ang = rCat * uScale / d;
+      gl_PointSize = clamp(2.0 * ang * uPxPerRad, max(1.0, uPixel), uMaxPx);
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -1713,12 +1716,20 @@ export class GalaxyView {
 
   /**
    * Map: scale the orbit radius toward what is already framed.
-   * Region: zoom does not fly — latched warp does.
+   * Region: pinch / wheel slides the 40 kpc ball along the look
+   * (the camera stays at the centre; the magnifier moves).
    */
   private zoom(factor: number): void {
     const now = performance.now();
     this.idle = 0;
-    if (this.mode === 'region') return;
+    if (this.mode === 'region') {
+      this.orientArc();
+      const dir = factor < 1 ? 1 : -1;
+      const step = this.arcPace() * 14 * Math.abs(Math.log(Math.max(1e-3, factor))) * dir;
+      this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
+      this.applyCam();
+      return;
+    }
     if (now - this.lastZoomAt > 600) this.gestureR = this.tgtRadius;
     this.lastZoomAt = now;
     const lo = Math.max(this.minR(), this.gestureR / ZOOM_GESTURE_SPAN);
@@ -1870,7 +1881,7 @@ export class GalaxyView {
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      if (this.pinch0 > 0 && this.mode !== 'region') {
+      if (this.pinch0 > 0) {
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
       }
@@ -2211,7 +2222,7 @@ export class GalaxyView {
       mode: this.mode,
       theta: this.theta,
       phi: this.phi,
-      radius: this.radius,
+      radius: this.mode === 'region' ? UNIVERSE.GALAXY_REGION_VIEW_R : this.radius,
       pickable: this.mode === 'region',
       resolved: this.cloud?.n ?? 0,
       grown: this.grownCount,
