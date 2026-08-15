@@ -33,7 +33,7 @@ export const PHOTO_MAX = 0.16;
  * Steep in L so the luminous tail is not one white.
  * Display brightness is I/(1+I) — hue survives.
  */
-export const SHINE_L_GAIN = 0.08;
+export const SHINE_L_GAIN = 0.14;
 export const SHINE_L_P = 0.62;
 export const SHINE_DIST_REF = 40;
 export const SHINE_DIST_P = 0.45;

@@ -367,7 +367,9 @@ const STAR_FRAG = /* glsl */ `
       // shells used to ignore it and stack the midplane to white.
       float a = vVis * uNebGain * 0.12 * mask;
       if (a < 0.01) discard;
-      gl_FragColor = vec4(vColor, a);
+      // Premultiplied for the screen blend — dest + src·(1-dest).
+      // Stacks saturate; they do not add to a white bar.
+      gl_FragColor = vec4(vColor * a, 1.0);
       return;
     }
     vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
@@ -420,7 +422,8 @@ const STAR_FRAG = /* glsl */ `
     line = mix(line, lineOIII, smoothstep(0.55, 0.95, e));
     // Chemistry keeps a voice: the host tint leans the line blend.
     vec3 col = mix(line, vColor, 0.25);
-    gl_FragColor = vec4(col, min(em, 1.0));
+    float glow = em / (1.0 + em);
+    gl_FragColor = vec4(col * glow, 1.0);
   }
 `;
 
@@ -963,7 +966,8 @@ export class GalaxyView {
 
   /**
    * Three passes per layer, one shared fragment: stars add light,
-   * emission nebulae add light, dust (drawn LAST) obscures both.
+   * emission nebulae SCREEN (dest + src·(1-dest) — they glow but
+   * cannot stack to a white bar), dust (drawn LAST) obscures both.
    */
   private makeCloudMaterial(
     vertexShader: string,
@@ -971,6 +975,7 @@ export class GalaxyView {
     pass: number,
   ): THREE.ShaderMaterial {
     uniforms.uPass = { value: pass };
+    const nebula = pass === 1;
     return new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader: STAR_FRAG,
@@ -978,7 +983,9 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: pass === 2 ? THREE.NormalBlending : THREE.AdditiveBlending,
+      blending: pass === 2 ? THREE.NormalBlending : nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
+      blendSrc: nebula ? THREE.OneMinusDstColorFactor : THREE.SrcAlphaFactor,
+      blendDst: THREE.OneFactor,
       toneMapped: false,
     });
   }
