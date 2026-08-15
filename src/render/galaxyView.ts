@@ -31,6 +31,7 @@ import {
   POINT_MAX_PX,
   POINT_NEAR_BOOST,
   SHINE_CORE_PX,
+  SHINE_HALO_PX,
   SHINE_PAD_PX,
   SHINE_TAIL,
   glowRadiusKpc,
@@ -117,6 +118,7 @@ const STAR_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
+  varying float vCorePx;
   void main() {
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
@@ -124,6 +126,7 @@ const STAR_VERT = /* glsl */ `
     vKind = aKind;
     vSeed = aSeed;
     vColor = aColor;
+    vCorePx = 1.0;
     if (aKind > 0.5) {
       // aSize is the envelope radius in catalog kpc; the magnifier
       // scales space, so true angle = aSize * uScale / view distance.
@@ -141,7 +144,7 @@ const STAR_VERT = /* glsl */ `
       r = min(r, 0.012);
       float ang = r / d;
       float px = 2.0 * ang * uPxPerRad;
-      gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
+      float corePx = clamp(max(uPixel, px), 1.0, uMaxPx);
       float flux = L / (d * d + uFluxEps);
       float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
       vVis = min(aVis * punch, 8.0);
@@ -151,7 +154,8 @@ const STAR_VERT = /* glsl */ `
       // Pad the sprite so the 1/r² tail can die before the quad edge.
       // The core angle is unchanged — picking still uses glowRadiusKpc.
       float pad = uShinePad * uPixel;
-      gl_PointSize = clamp(gl_PointSize + pad, 1.0, uMaxPx + pad);
+      gl_PointSize = clamp(corePx + pad, 1.0, uMaxPx + pad);
+      vCorePx = corePx;
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -188,6 +192,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
+  varying float vCorePx;
   void main() {
     vColor = aColor;
     vKind = aKind;
@@ -196,6 +201,7 @@ const SILHOUETTE_VERT = /* glsl */ `
     vRadiusView = 0.0;
     vCenterCat = vec3(0.0);
     vPx = 0.0;
+    vCorePx = 1.0;
     float dCat = length(position - uCenter);
     if (dCat < uRegionR) {
       vVis = 0.0;
@@ -223,10 +229,12 @@ const SILHOUETTE_VERT = /* glsl */ `
       // flat pixel disc painted them all as the same white circle.
       // Shine from L — a mid-A is a pin, a supergiant is a flare.
       float L = max(aLum, 1e-4);
-      float flux = pow(L / (L + 12.0), 0.55);
+      // Steeper than a log so a mid-A stays a pin and a supergiant flares.
+      float flux = pow(L / (L + 28.0), 0.7);
       float boost = 1.0 + uSuper * smoothstep(8.0, 220.0, L);
-      gl_PointSize = uStarPx * uPixel * (0.62 + 1.15 * flux) * boost;
-      vVis = aVis * (0.4 + 1.35 * flux) * boost;
+      vCorePx = max(uPixel, uPixel * (0.8 + 2.2 * flux));
+      gl_PointSize = vCorePx + uStarPx * uPixel * (0.4 + 1.35 * flux) * boost;
+      vVis = aVis * (0.2 + 2.1 * flux) * boost;
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -247,6 +255,7 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustFreq;
   uniform float uDustRim;
   uniform float uShineCore;
+  uniform float uShineHalo;
   uniform float uShineTail;
   varying vec3 vColor;
   varying float vVis;
@@ -256,6 +265,7 @@ const STAR_FRAG = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
+  varying float vCorePx;
   void main() {
     if (uPass < 0.5 && vKind > 0.5) discard;
     if (uPass > 0.5 && uPass < 1.5 && (vKind < 0.5 || vKind > 3.5)) discard;
@@ -263,29 +273,36 @@ const STAR_FRAG = /* glsl */ `
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
     if (vKind < 0.5) {
-      // Shine, not a disc. Pixel-space core so a 40 px sprite is still
-      // a pin with a glow, not a filled circle. Tail is 1/r² — the
-      // same glare family as star.ts. Window dies at the quad edge.
+      // Shine, not a disc. The pin tracks the photosphere (vCorePx);
+      // a wider gaussian bloom + 1/r² tail is the eye's glare — same
+      // family as star.ts. Window dies at the quad edge so there is
+      // no circle.
       float r = sqrt(r2);
       if (r > 1.0) discard;
       float rPx = r * max(vPx, 1.0) * 0.5;
-      float coreW = max(uShineCore, 0.2);
+      float coreW = max(uShineCore, 0.38 * vCorePx);
+      float haloW = max(uShineHalo, coreW * 3.1 + 2.0);
       float core = exp(-rPx * rPx / (coreW * coreW));
-      float tail = uShineTail / (0.14 + rPx * rPx);
+      float halo = exp(-rPx * rPx / (haloW * haloW));
+      float tail = uShineTail / (0.22 + rPx * rPx);
       float window = 1.0 - r * r;
       window *= window;
       float flux = clamp(vVis, 0.0, 8.0);
-      float shine = (core * (0.72 + 0.9 * min(flux, 2.4)) + tail * min(flux, 3.2)) * window;
+      float shine = (
+        core * (0.9 + 0.7 * min(flux, 2.2)) +
+        halo * 0.62 * min(flux, 2.6) +
+        tail * min(flux, 3.2)
+      ) * window;
       // Bright stars throw a faint diffraction cross (the aperture of
       // the eye). Dim pins stay round.
       float ax = abs(p.x);
       float ay = abs(p.y);
       float spike = max(
-        exp(-ax * 26.0) * exp(-ay * ay * 16.0),
-        exp(-ay * 26.0) * exp(-ax * ax * 16.0));
-      shine += spike * 0.26 * smoothstep(0.75, 2.1, flux) * window;
-      if (shine < 0.004) discard;
-      vec3 col = mix(vColor, vec3(1.0), clamp(0.48 * core, 0.0, 0.62));
+        exp(-ax * 22.0) * exp(-ay * ay * 12.0),
+        exp(-ay * 22.0) * exp(-ax * ax * 12.0));
+      shine += spike * 0.34 * smoothstep(0.55, 1.8, flux) * window;
+      if (shine < 0.003) discard;
+      vec3 col = mix(vColor, vec3(1.0), clamp(0.42 * core, 0.0, 0.58));
       gl_FragColor = vec4(col * shine, min(shine, 1.0));
       return;
     }
@@ -924,6 +941,7 @@ export class GalaxyView {
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
       uShineCore: { value: SHINE_CORE_PX },
+      uShineHalo: { value: SHINE_HALO_PX },
       uShineTail: { value: SHINE_TAIL },
       uShinePad: { value: SHINE_PAD_PX },
     };

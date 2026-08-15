@@ -21,11 +21,13 @@ export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px) for the core; the glow pad sits on top. */
 export const POINT_MAX_PX = 56;
 /** Photosphere pin width (px). The shine lives around this, not as a disc. */
-export const SHINE_CORE_PX = 0.65;
+export const SHINE_CORE_PX = 1.15;
+/** Soft bloom width (px) around the pin — what makes a star shine. */
+export const SHINE_HALO_PX = 4.2;
 /** Additive 1/r² tail strength — the eye's response to flux. */
-export const SHINE_TAIL = 0.32;
+export const SHINE_TAIL = 0.72;
 /** Extra sprite pixels so the glow can die before the quad edge. */
-export const SHINE_PAD_PX = 8;
+export const SHINE_PAD_PX = 14;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). */
