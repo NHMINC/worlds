@@ -53,6 +53,7 @@ export function GalaxyExplorer(props: Props) {
     population: 0,
     focus: null,
     warp: false,
+    backdrop: 0,
   });
 
   useEffect(() => {
@@ -78,6 +79,7 @@ export function GalaxyExplorer(props: Props) {
             prev.grown !== f.grown ||
             prev.sector !== f.sector ||
             prev.warp !== f.warp ||
+            prev.backdrop !== f.backdrop ||
             prev.focus?.id !== f.focus?.id ||
             (f.focus != null &&
               (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
@@ -189,7 +191,7 @@ export function GalaxyExplorer(props: Props) {
           </div>
           <div className="galaxy-sub">
             {inRegion
-              ? `${frame.population.toLocaleString()} systems in this volume · all drawn`
+              ? `${frame.population.toLocaleString()} in this volume · ${frame.backdrop.toLocaleString()} behind`
               : `SBbc · ${UNIVERSE.GALAXY_POPULATION.toExponential(0)} addressable systems · tap the galaxy`}
           </div>
         </div>

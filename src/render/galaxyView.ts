@@ -119,30 +119,18 @@ const STAR_VERT = /* glsl */ `
   }
 `;
 
-/** Catalog diameter × magnifier — far-disk stars must stay in the frustum. */
+/** Catalog diameter × magnifier, with slack — far-disk stars must stay in the frustum. */
 function regionCamFar(): number {
   const mag = UNIVERSE.GALAXY_REGION_VIEW_R / Math.max(1e-6, UNIVERSE.GALAXY_REGION_R);
-  return UNIVERSE.GALAXY_R_MAX * 2 * mag + 40;
+  return UNIVERSE.GALAXY_R_MAX * 2 * mag * 4;
 }
 
 const SILHOUETTE_VERT = /* glsl */ `
   attribute vec3 aColor;
-  attribute float aVis;
-  attribute float aLum;
   uniform vec3 uCenter;
   uniform float uScale;
   uniform float uPixel;
-  uniform float uPxPerRad;
-  uniform float uGlowK;
-  uniform float uGlowP;
-  uniform float uGlowMin;
-  uniform float uGlowDim;
-  uniform float uMaxPx;
-  uniform float uNearBoost;
-  uniform float uFluxEps;
   uniform float uRegionR;
-  uniform float uGain;
-  uniform float uSize;
   varying vec3 vColor;
   varying float vVis;
   void main() {
@@ -156,19 +144,10 @@ const SILHOUETTE_VERT = /* glsl */ `
     }
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
-    // Birth crank, then magnified distance reduces light (1/d²) and size (r/d).
-    float d = max(length(mv.xyz), 0.001);
-    float L = max(aLum, 1e-4) * uGain;
-    float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
-    float r = max(rMin, uGlowK * pow(max(aLum, 1e-4), uGlowP));
-    r = min(r, 0.012) * uSize;
-    float ang = r / d;
-    float px = 2.0 * ang * uPxPerRad;
-    gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
-    float flux = L / (d * d + uFluxEps);
-    float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
-    vColor = aColor * punch;
-    vVis = min(aVis * punch, uGain);
+    // Fixed pixels, no 1/d² — if these do not show, the mesh is not on camera.
+    gl_PointSize = 6.0 * uPixel;
+    vColor = aColor;
+    vVis = 1.0;
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -249,6 +228,8 @@ export interface GalaxyFrame {
   focus: GalaxyFocus | null;
   /** True while warp is latched on (Stop). */
   warp: boolean;
+  /** Luminous-tail backdrop points currently on the GPU (0 if not minted). */
+  backdrop: number;
 }
 
 export interface RegionSelection {
@@ -679,19 +660,10 @@ export class GalaxyView {
         uCenter: { value: new THREE.Vector3() },
         uScale: { value: 1 },
         uPixel: { value: this.renderer.getPixelRatio() },
-        uPxPerRad: { value: this.pxPerRad() },
-        uGlowK: { value: GLOW_K },
-        uGlowP: { value: GLOW_P },
-        uGlowMin: { value: 0.0007 },
-        uGlowDim: { value: GLOW_DIM },
-        uMaxPx: { value: 1024 },
-        uNearBoost: { value: POINT_NEAR_BOOST },
-        uFluxEps: { value: POINT_FLUX_EPS },
         uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
-        uGain: { value: UNIVERSE.GALAXY_SILHOUETTE_GAIN },
-        uSize: { value: UNIVERSE.GALAXY_SILHOUETTE_SIZE },
       },
       transparent: true,
+      depthTest: false,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
       toneMapped: false,
@@ -1829,7 +1801,6 @@ export class GalaxyView {
     }
     if (this.silMat) {
       this.silMat.uniforms.uPixel.value = px;
-      this.silMat.uniforms.uPxPerRad.value = pxPer;
     }
 
     const cam = this.camera.position;
@@ -1864,6 +1835,7 @@ export class GalaxyView {
       population: this.sectorPop,
       focus: this.mode === 'region' ? this.focusHud : null,
       warp: this.mode === 'region' && this.thrustOn,
+      backdrop: this.mode === 'region' ? (this.silPts ? (silhouetteCloud(this.seed)?.n ?? 0) : 0) : 0,
     });
     this.raf = requestAnimationFrame(this.frame);
   };
