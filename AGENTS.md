@@ -204,14 +204,18 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     birth, no `evolve` until you tap. Distant stars are **1px
     pinpricks**. Closer ones grow from luminosity and distance.
     Behind the ball a **magnitude-limited backdrop**
-    (`buildSilhouetteCloud`) draws the luminous tail of the rest
-    of the disk — living B-and-hotter stars, cached per seed —
-    with the same magnifier. Birth light and disc are
-    `SILHOUETTE_GAIN` / `SIZE`; magnified distance then reduces
-    both. The galactic plane reads as a band in the midplane
-    and as a face above it. The sphere itself is untouched;
-    the map saucer stays hidden. The breadcrumb returns to
-    the map.
+    (`buildSilhouetteCloud`) draws the rest of the disk from the
+    same clock: luminous living stars (A and hotter, giants, WR),
+    typed nebulae on their host ids (H II / PN / SNR), and dusty
+    **cell centres** from the ISM column — not fake stars, not
+    landings. Cached per seed. Distant discs are toy angular
+    sizes (`SILHOUETTE_*_PX`); `shapeAt` is the shared envelope
+    law so a nebula or dust clump you see far away is the one
+    you fly into. The magnifier is unchanged: backdrop dots are
+    not pickable; a star is visitable only when the 2 kpc ball
+    has resolved that id. Dust draws after additive glow so
+    lanes obscure. The sphere itself is untouched; the map
+    saucer stays hidden. The breadcrumb returns to the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
   re-roll bug class was structural, and it is retired along with the
@@ -506,6 +510,7 @@ Code map (start here):
 | Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
+| Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
 | Galaxy explorer (saucer + region dive) | `src/render/galaxySectors.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First landing (habitable search) | `src/world/discover.ts` |

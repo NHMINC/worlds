@@ -23,7 +23,13 @@ import {
   buildSilhouetteCloud,
   advanceRegionCloud,
   regionImfFloor,
+  KIND_DUST,
+  KIND_STAR,
+  BIT_DUST,
+  BIT_NEBULA,
+  isDustId,
 } from '../src/world/sectors';
+import { shapeAt, KIND_HII, KIND_PN, KIND_SNR } from '../src/world/skyShape';
 
 const seed = UNIVERSE.CANONICAL_SEED;
 let fail = 0;
@@ -195,37 +201,81 @@ const check = (cond: boolean, msg: string) => {
   console.log(`  slide ${slid.ms.toFixed(1)} ms vs remint ${fresh.ms.toFixed(0)} ms`);
 }
 
-// --- luminous backdrop: whole-disk tail, real ids, not a dwarf cloud ---
+// --- luminous backdrop: clock + dust, real ids, not a dwarf cloud ---
 {
   const a = buildSilhouetteCloud(seed);
   const b5 = buildSilhouetteCloud(seed);
   check(a === b5, 'silhouette must be cached per seed');
   check(a.n === b5.n && a.ids[0] === b5.ids[0], 'silhouette not deterministic');
+  check(a.kind.length >= a.n, 'silhouette missing kind');
   check(a.n > 20_000 && a.n < 400_000, `silhouette ${a.n} is not a luminous tail`);
+  let stars = 0;
+  let nebulae = 0;
+  let dust = 0;
+  let minStarL = Infinity;
   const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
   const r = UNIVERSE.GALAXY_REGION_R;
   let inside = 0;
-  let minL = Infinity;
   for (let i = 0; i < a.n; i++) {
     const d = Math.hypot(a.pos[i * 3] - homeC.x, a.pos[i * 3 + 1] - homeC.y, a.pos[i * 3 + 2] - homeC.z);
     if (d < r) inside++;
-    if (a.lum[i] < minL) minL = a.lum[i];
+    if (a.kind[i] === KIND_DUST || (a.bits[i] & BIT_DUST) !== 0) {
+      dust++;
+      check(isDustId(a.ids[i]), `dust row ${a.ids[i]} is not a cell id`);
+      check(!objectAt(seed, a.ids[i]), `dust id ${a.ids[i]} claims to be a living star`);
+      continue;
+    }
+    if (a.bits[i] & BIT_NEBULA) nebulae++;
+    else stars++;
+    if (a.kind[i] === KIND_STAR && a.lum[i] < minStarL) minStarL = a.lum[i];
   }
   check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
   check(inside < a.n, 'silhouette must reach past the sample ball');
-  check(minL > 8, `silhouette includes a dim star L=${minL}`);
-  for (const i of [0, 17, Math.floor(a.n / 2), a.n - 1]) {
+  check(stars > 10_000, `silhouette stars ${stars} too few`);
+  check(nebulae > 20, `silhouette has no nebulae (${nebulae})`);
+  check(dust > 200 && dust < 150_000, `dust count ${dust} is not a lane field`);
+  check(minStarL > 4, `silhouette star dim L=${minStarL}`);
+  check(stars + nebulae < 360_000, `silhouette is a dwarf cloud: ${stars + nebulae} star/nebula rows`);
+  const s0 = shapeAt(KIND_HII, 99);
+  const s1 = shapeAt(KIND_HII, 99);
+  check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');
+  check(shapeAt(KIND_PN, 1).rgb[1] > 0.7 && shapeAt(KIND_SNR, 1).rgb[0] > 0.7, 'nebula tints');
+  let checked = 0;
+  for (let i = 0; i < a.n && checked < 8; i++) {
+    if (a.kind[i] === KIND_DUST) continue;
     const id = a.ids[i];
     const o = objectAt(seed, id);
     check(!!o && o.id === id, `silhouette id ${id} is not a catalog row`);
     const { cell, slot } = splitId(id);
     const filled = slotsInCell(seed, cell);
-    const birth = slotBirthRaw(seed, cell, slot, filled);
-    check(birth.massZams + 1e-6 >= UNIVERSE.GALAXY_SILHOUETTE_M, `silhouette mass ${birth.massZams} below floor`);
     const cart = slotBirthCart(seed, cell, slot);
     check(Math.abs(cart.x - a.pos[i * 3]) < 1e-5 && Math.abs(cart.y - a.pos[i * 3 + 1]) < 1e-5, 'silhouette pose != slotBirthCart');
+    if (a.bits[i] & BIT_NEBULA) check(!!o && o.star.nebula !== 'none', `nebula bit on ${id} but objectAt nebula is none`);
+    checked++;
   }
-  console.log(`  silhouette: ${a.n} living tail in ${a.ms.toFixed(0)} ms`);
+  // Visit handshake: a backdrop star must be a local keeper when the ball sits on it.
+  let host = -1;
+  for (let i = 0; i < a.n; i++) {
+    if (a.kind[i] === KIND_STAR && a.lum[i] >= 8) {
+      host = i;
+      break;
+    }
+  }
+  check(host >= 0, 'no luminous backdrop star for the visit handshake');
+  if (host >= 0) {
+    const id = a.ids[host];
+    const local = buildRegionCloud(seed, a.pos[host * 3], a.pos[host * 3 + 1], a.pos[host * 3 + 2], r);
+    let found = false;
+    for (let i = 0; i < local.n; i++) {
+      if (local.ids[i] === id) {
+        found = true;
+        break;
+      }
+    }
+    check(found, `backdrop star ${id} vanished when the 2 kpc ball reached it`);
+    console.log(`  visit handshake: id ${id} kept in local ${local.n}`);
+  }
+  console.log(`  silhouette: ${a.n} (${stars} stars, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);
 }
 
 // --- systems of interest: deterministic, spectacular, spread out ---

@@ -21,8 +21,10 @@ import {
   cellCenter,
   cellsOverlappingAnnulus,
   cellsOverlappingBall,
+  chemistry,
   density,
   densityParts,
+  dustColumn,
   galToCart,
   isSlotAlive,
   slotBirthCart,
@@ -40,7 +42,10 @@ import {
   type GalPos,
   type GalaxyObject,
 } from './galaxy';
-import { mkFromTeff, msLifetime, teffToRgb } from './stellar';
+import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
+import { KIND_DUST, KIND_STAR, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
+
+export { KIND_STAR, KIND_HII, KIND_PN, KIND_SNR, KIND_DUST } from './skyShape';
 
 const TAU = Math.PI * 2;
 
@@ -225,8 +230,10 @@ export interface StarCloud {
   bits: Uint8Array;
   /** MK letter index 0=WD/other, 1=O .. 8=M, 9=L, 10=T. */
   mk: Uint8Array;
-  /** Cheap MS luminosity (alive) or a dim remnant pin. Apparent mag uses this. */
+  /** Present-day luminosity (evolve sketch) or a dim remnant pin. */
   lum: Float32Array;
+  /** Sky kind: star / hii / pn / snr / dust. */
+  kind: Uint8Array;
   ms: number;
 }
 
@@ -243,6 +250,21 @@ export const BIT_SUNLIKE = 4;
 export const BIT_COOL = 8;
 export const BIT_HALO = 16;
 export const BIT_ARM = 32;
+export const BIT_NEBULA = 64;
+export const BIT_DUST = 128;
+
+/** Dust is a cell-keyed ISM centre, not a catalog slot. */
+export function dustId(cell: number): number {
+  return -(cell + 1);
+}
+
+export function cellFromDustId(id: number): number {
+  return -id - 1;
+}
+
+export function isDustId(id: number): boolean {
+  return id < 0;
+}
 
 export type GalaxyFilterName =
   | 'all'
@@ -260,7 +282,7 @@ export function sketchMatches(bits: number, f: GalaxyFilterName): boolean {
   if (f === 'sunlike') return (bits & BIT_SUNLIKE) !== 0;
   if (f === 'cool') return (bits & BIT_COOL) !== 0;
   if (f === 'remnant') return (bits & BIT_REMNANT) !== 0;
-  if (f === 'nebula') return false;
+  if (f === 'nebula') return (bits & BIT_NEBULA) !== 0;
   if (f === 'halo') return (bits & BIT_HALO) !== 0;
   return (bits & BIT_ARM) !== 0;
 }
@@ -276,7 +298,112 @@ function allocCloud(n: number): Omit<StarCloud, 'n' | 'ms'> {
     bits: new Uint8Array(n),
     mk: new Uint8Array(n),
     lum: new Float32Array(n),
+    kind: new Uint8Array(n),
   };
+}
+
+function giantWindow(massZams: number): number {
+  const tMs = msLifetime(massZams);
+  return Math.min(0.8, tMs * (massZams <= 2 ? 0.15 : massZams < 8 ? 0.08 : UNIVERSE.WR_TAIL));
+}
+
+/** Cheap clock gate: evolve only slots that can be luminous or nebular. */
+function maybeClockRow(b: SlotBirth): boolean {
+  const m = b.massZams;
+  const tMs = msLifetime(m);
+  if (b.ageGyr < tMs) {
+    return m >= UNIVERSE.GALAXY_SILHOUETTE_M || (m >= 8 && b.ageGyr < UNIVERSE.HII_GYR && b.inArm);
+  }
+  const deadFor = b.ageGyr - tMs - giantWindow(m);
+  return deadFor < Math.max(UNIVERSE.PN_GYR, UNIVERSE.SNR_GYR) + 1e-9;
+}
+
+function isLuminousPhase(phase: string, mk: string | null, L: number): boolean {
+  if (phase === 'wolf_rayet' || phase === 'carbon_star' || phase === 'giant' || phase === 'supergiant') {
+    return true;
+  }
+  if (mk === 'O' || mk === 'B') return true;
+  if (mk === 'A' && L >= 20) return true;
+  return L >= 25;
+}
+
+function writeRow(
+  id: number,
+  x: number,
+  y: number,
+  z: number,
+  i: number,
+  c: Omit<StarCloud, 'n' | 'ms'>,
+  opts: {
+    rgb: [number, number, number];
+    L: number;
+    kind: SkyKind;
+    bits: number;
+    mk: number;
+    pulse: number;
+    size: number;
+    gain: number;
+  },
+): void {
+  c.ids[i] = id;
+  c.pos[i * 3] = x;
+  c.pos[i * 3 + 1] = y;
+  c.pos[i * 3 + 2] = z;
+  c.col[i * 3] = opts.rgb[0];
+  c.col[i * 3 + 1] = opts.rgb[1];
+  c.col[i * 3 + 2] = opts.rgb[2];
+  c.size[i] = opts.size;
+  c.gain[i] = opts.gain;
+  c.pulse[i] = opts.pulse;
+  c.bits[i] = opts.bits;
+  c.mk[i] = opts.mk;
+  c.lum[i] = opts.L;
+  c.kind[i] = opts.kind;
+}
+
+function sketchEvolve(b: SlotBirth): ReturnType<typeof evolve> {
+  const chem = chemistry(b.pop, b.pos.R, b.ageGyr, b.rng());
+  return evolve({
+    massZams: b.massZams,
+    ageGyr: b.ageGyr,
+    feh: chem.feh,
+    carbon: chem.carbon,
+    inArm: b.inArm,
+  });
+}
+
+function writeEvolved(
+  cell: number,
+  slot: number,
+  i: number,
+  c: Omit<StarCloud, 'n' | 'ms'>,
+  b: SlotBirth,
+  ev: ReturnType<typeof evolve>,
+): void {
+  const cart = galToCart(b.pos);
+  const kind = kindFromNebula(ev.nebula);
+  const shape = shapeAt(kind, packId(cell, slot));
+  const rgb = kind === KIND_STAR ? teffToRgb(ev.teff) : shape.rgb;
+  const L = Math.max(ev.luminosity, kind === KIND_STAR ? 0 : 0.2);
+  let bit = 0;
+  if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
+    bit |= BIT_REMNANT;
+  } else if (ev.mk === 'O' || ev.mk === 'B' || ev.mk === 'A' || ev.phase === 'wolf_rayet') bit |= BIT_HOT;
+  else if (ev.mk === 'F' || ev.mk === 'G' || ev.mk === 'K') bit |= BIT_SUNLIKE;
+  else bit |= BIT_COOL;
+  if (b.pop === 'halo') bit |= BIT_HALO;
+  if (b.inArm) bit |= BIT_ARM;
+  if (ev.nebula !== 'none') bit |= BIT_NEBULA;
+  writeRow(packId(cell, slot), cart.x, cart.y, cart.z, i, c, {
+    rgb,
+    L,
+    kind,
+    bits: bit,
+    mk: ev.mk ? (MK_IX[ev.mk] ?? 0) : 0,
+    pulse: shape.seed,
+    size: kind === KIND_STAR ? (L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0)) : shape.radiusKpc,
+    gain: 0.22 + 0.78 * (L / (L + 0.25)),
+  });
 }
 
 function writeFromBirth(
@@ -287,20 +414,14 @@ function writeFromBirth(
   b: SlotBirth,
   alive: boolean,
 ): void {
+  if (maybeClockRow(b)) {
+    writeEvolved(cell, slot, i, c, b, sketchEvolve(b));
+    return;
+  }
   const cart = galToCart(b.pos);
   const L = alive ? slotMsLum(b.massZams) : 0.004;
   const teff = alive ? slotMsTeff(b.massZams) : 9000;
   const rgb = alive ? teffToRgb(teff) : ([0.62, 0.7, 0.88] as [number, number, number]);
-  c.ids[i] = packId(cell, slot);
-  c.pos[i * 3] = cart.x;
-  c.pos[i * 3 + 1] = cart.y;
-  c.pos[i * 3 + 2] = cart.z;
-  c.col[i * 3] = rgb[0];
-  c.col[i * 3 + 1] = rgb[1];
-  c.col[i * 3 + 2] = rgb[2];
-  c.size[i] = L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0);
-  c.gain[i] = 0.22 + 0.78 * (L / (L + 0.25));
-  c.pulse[i] = 0;
   let bit = 0;
   if (!alive) bit |= BIT_REMNANT;
   else if (b.massZams > 1.4) bit |= BIT_HOT;
@@ -308,9 +429,34 @@ function writeFromBirth(
   else bit |= BIT_COOL;
   if (b.pop === 'halo') bit |= BIT_HALO;
   if (b.inArm) bit |= BIT_ARM;
-  c.bits[i] = bit;
-  c.mk[i] = alive ? (MK_IX[mkFromTeff(teff)] ?? 0) : 0;
-  c.lum[i] = L;
+  writeRow(packId(cell, slot), cart.x, cart.y, cart.z, i, c, {
+    rgb,
+    L,
+    kind: KIND_STAR,
+    bits: bit,
+    mk: alive ? (MK_IX[mkFromTeff(teff)] ?? 0) : 0,
+    pulse: 0,
+    size: L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0),
+    gain: 0.22 + 0.78 * (L / (L + 0.25)),
+  });
+}
+
+function writeDust(seed: string, cell: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
+  const mid = cellCenter(cell);
+  const cart = galToCart(mid);
+  const id = dustId(cell);
+  const shape = shapeAt(KIND_DUST, id);
+  const tau = Math.min(1, dustColumn(seed, cell) / Math.max(1e-6, UNIVERSE.SILHOUETTE_DUST_FLOOR));
+  writeRow(id, cart.x, cart.y, cart.z, i, c, {
+    rgb: shape.rgb,
+    L: 0,
+    kind: KIND_DUST,
+    bits: BIT_DUST,
+    mk: 0,
+    pulse: shape.seed,
+    size: shape.radiusKpc,
+    gain: Math.min(1, 0.35 + 0.65 * tau),
+  });
 }
 
 function writeBirth(seed: string, cell: number, slot: number, filled: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
@@ -331,8 +477,17 @@ function finishCloud(c: Omit<StarCloud, 'n' | 'ms'>, n: number, t0: number): Sta
     bits: c.bits.slice(0, n),
     mk: c.mk.slice(0, n),
     lum: c.lum.slice(0, n),
+    kind: c.kind.slice(0, n),
     ms: performance.now() - t0,
   };
+}
+
+function keepSilhouettePhase(ev: ReturnType<typeof evolve>): boolean {
+  if (ev.nebula !== 'none') return true;
+  if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
+    return false;
+  }
+  return isLuminousPhase(ev.phase, ev.mk, ev.luminosity);
 }
 
 /**
@@ -378,7 +533,9 @@ export function regionImfFloor(d: number): number {
  * Occupied slots inside a Cartesian ball. Near the tap the IMF is
  * complete. Farther cells keep only their massive tail — the same
  * zoom law as the catalog — so a multi-kpc volume has gaps you can
- * fly instead of a glowing marble. Cheap birth, no evolve.
+ * fly instead of a glowing marble. Cheap birth for dwarfs; the
+ * clock sketch runs on luminous / nebula hosts so the Nebulae
+ * filter and the backdrop handshake share one sky.
  */
 export function buildRegionCloud(seed: string, x: number, y: number, z: number, r = UNIVERSE.GALAXY_REGION_R): StarCloud {
   const t0 = performance.now();
@@ -395,7 +552,7 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     slot0[i] = s0;
     cap += f - s0;
   }
-  const c = allocCloud(cap + 8192);
+  let c = allocCloud(cap + 8192);
   const r2 = r * r;
   let n = 0;
   for (let ci = 0; ci < cells.length; ci++) {
@@ -408,6 +565,17 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
       const dz = p.z - z;
       if (dx * dx + dy * dy + dz * dz > r2) continue;
       writeBirth(seed, cell, slot, filled, n++, c);
+    }
+    if (dustColumn(seed, cell) >= UNIVERSE.SILHOUETTE_DUST_FLOOR) {
+      const mid = cellCenter(cell);
+      const cart = galToCart(mid);
+      const dx = cart.x - x;
+      const dy = cart.y - y;
+      const dz = cart.z - z;
+      if (dx * dx + dy * dy + dz * dz <= r2) {
+        if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 1);
+        writeDust(seed, cell, n++, c);
+      }
     }
   }
   return { n, ...c, ms: performance.now() - t0 };
@@ -433,19 +601,6 @@ function catalogCellVolume(ir: number): number {
   return 0.5 * (R1 * R1 - R0 * R0) * (TAU / nth) * dz;
 }
 
-/** Hottest ZAMS that can still be on the MS at the thin-disk age floor. */
-function silhouetteMassHi(): number {
-  const ageLo = 0.02;
-  let lo = UNIVERSE.GALAXY_SILHOUETTE_M;
-  let hi = Math.min(40, UNIVERSE.IMF_MAX);
-  for (let i = 0; i < 28; i++) {
-    const mid = (lo + hi) * 0.5;
-    if (msLifetime(mid) > ageLo) lo = mid;
-    else hi = mid;
-  }
-  return lo;
-}
-
 let silhouetteMemo: { seed: string; cloud: StarCloud } | null = null;
 
 /** Cached harvest, or null until the worker (or a sync mint) finishes. */
@@ -459,10 +614,11 @@ export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
 }
 
 /**
- * Magnitude-limited luminous tail of the whole disk. Living stars
- * above GALAXY_SILHOUETTE_M only — sparse cells do not emit an M
- * dwarf. Minted once per seed; the GPU keeps every point and the
- * shader hides the sample ball. Not pickable.
+ * Magnitude-limited luminous tail of the whole disk. Living A-and-
+ * hotter / giant / WR light plus nebula hosts (H II / PN / SNR) and
+ * dusty cell centres. Sparse cells emit nothing. Minted once per
+ * seed; the GPU keeps every point and the shader hides the sample
+ * ball. Not pickable. Dust ids are cell-keyed, not catalog stars.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
@@ -471,32 +627,40 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const mLo = UNIVERSE.GALAXY_SILHOUETTE_M;
-  const mHi = silhouetteMassHi();
-  const uCut = imfQuantile(mLo);
-  const uHi = imfQuantile(mHi);
-  const tailFrac = Math.max(1e-6, uHi - uCut);
-  let c = allocCloud(160_000);
+  const uLive = imfQuantile(mLo);
+  const liveFrac = Math.max(1e-6, 1 - uLive);
+  let c = allocCloud(180_000);
   let n = 0;
   for (let ir = 0; ir < nr; ir++) {
     const vol = catalogCellVolume(ir);
     const R = ((ir + 0.5) / nr) * rMax;
     for (let iz = 0; iz < nz; iz++) {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
-      if (thinDensityCeil(R, z) * vol * nK * tailFrac < 0.25) continue;
+      const ceil = thinDensityCeil(R, z) * vol * nK;
+      const dustCeil = thinDensityCeil(R, z) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
+      if (ceil * liveFrac < 0.2 && dustCeil < UNIVERSE.SILHOUETTE_DUST_FLOOR) continue;
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
         const mid = cellCenter(cell);
         const thin = densityParts(mid).thin;
-        if (thin * vol * nK * tailFrac < 0.25) continue;
-        const filled = slotsInCell(seed, cell);
-        if (filled * tailFrac < 1) continue;
-        const s0 = Math.ceil(uCut * filled);
-        const s1 = Math.ceil(uHi * filled);
-        for (let slot = s0; slot < s1; slot++) {
-          const birth = slotBirthRaw(seed, cell, slot, filled);
-          if (!isSlotAlive(birth.massZams, birth.ageGyr)) continue;
+        const expect = thin * vol * nK;
+        if (expect * liveFrac >= 0.2) {
+          const filled = slotsInCell(seed, cell);
+          if (filled > 0) {
+            const sLive = Math.floor(uLive * filled);
+            for (let slot = sLive; slot < filled; slot++) {
+              const birth = slotBirthRaw(seed, cell, slot, filled);
+              if (!maybeClockRow(birth)) continue;
+              const ev = sketchEvolve(birth);
+              if (!keepSilhouettePhase(ev)) continue;
+              if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+              writeEvolved(cell, slot, n++, c, birth, ev);
+            }
+          }
+        }
+        if (thin * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA) >= UNIVERSE.SILHOUETTE_DUST_FLOOR && dustColumn(seed, cell) >= UNIVERSE.SILHOUETTE_DUST_FLOOR) {
           if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-          writeFromBirth(cell, slot, n++, c, birth, true);
+          writeDust(seed, cell, n++, c);
         }
       }
     }
@@ -529,6 +693,7 @@ function copyStar(src: Omit<StarCloud, 'n' | 'ms'> | StarCloud, i: number, dst: 
   dst.bits[j] = src.bits[i];
   dst.mk[j] = src.mk[i];
   dst.lum[j] = src.lum[i];
+  dst.kind[j] = src.kind[i];
 }
 
 function ensureCloudCap(c: Omit<StarCloud, 'n' | 'ms'>, n: number, need: number): Omit<StarCloud, 'n' | 'ms'> {
@@ -576,6 +741,7 @@ export function advanceRegionCloud(
   const pos = cloud.pos;
   const ids = cloud.ids;
   const rim = new Set<number>();
+  const dustHave = new Set<number>();
   let n = cloud.n;
   for (let i = 0; i < n; ) {
     const i3 = i * 3;
@@ -587,17 +753,22 @@ export function advanceRegionCloud(
       n = dropStar(cloud, i, n);
       continue;
     }
+    const id = ids[i];
+    if (isDustId(id) || (cloud.bits[i] & BIT_DUST) !== 0) dustHave.add(id);
     const nearRim = d2 >= inner2;
     const nearRamp = d2 <= ramp2;
     if (nearRim || nearRamp) {
-      const id = ids[i];
-      const { cell, slot } = splitId(id);
-      const filled = slotsInCell(seed, cell);
-      if (slot < Math.floor(regionImfFloor(cellDist(cell, x1, y1, z1)) * filled)) {
-        n = dropStar(cloud, i, n);
-        continue;
+      if (isDustId(id) || (cloud.bits[i] & BIT_DUST) !== 0) {
+        if (nearRim) rim.add(id);
+      } else {
+        const { cell, slot } = splitId(id);
+        const filled = slotsInCell(seed, cell);
+        if (slot < Math.floor(regionImfFloor(cellDist(cell, x1, y1, z1)) * filled)) {
+          n = dropStar(cloud, i, n);
+          continue;
+        }
+        if (nearRim) rim.add(id);
       }
-      if (nearRim) rim.add(id);
     }
     i++;
   }
@@ -632,6 +803,21 @@ export function advanceRegionCloud(
       buf = ensureCloudCap(buf, n, n + 1);
       writeBirth(seed, cell, slot, filled, n, buf);
       n++;
+    }
+    if (dustColumn(seed, cell) >= UNIVERSE.SILHOUETTE_DUST_FLOOR) {
+      const did = dustId(cell);
+      if (!rim.has(did) && !dustHave.has(did)) {
+        const mid = cellCenter(cell);
+        const cart = galToCart(mid);
+        const dx = cart.x - x1;
+        const dy = cart.y - y1;
+        const dz = cart.z - z1;
+        if (dx * dx + dy * dy + dz * dz <= r2) {
+          buf = ensureCloudCap(buf, n, n + 1);
+          writeDust(seed, cell, n, buf);
+          n++;
+        }
+      }
     }
   }
   return { ...buf, n, ms: performance.now() - t0 };

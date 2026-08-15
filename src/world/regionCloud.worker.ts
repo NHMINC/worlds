@@ -18,6 +18,7 @@ type SetMsg = {
   bits: Uint8Array;
   mk: Uint8Array;
   lum: Float32Array;
+  kind: Uint8Array;
 };
 
 type AdvanceMsg = {
@@ -59,6 +60,7 @@ self.onmessage = (e: MessageEvent<InMsg>): void => {
       bits: m.bits,
       mk: m.mk,
       lum: m.lum,
+      kind: m.kind,
       ms: 0,
     };
     return;
@@ -76,6 +78,7 @@ self.onmessage = (e: MessageEvent<InMsg>): void => {
   const bits = next.bits.slice(0, n);
   const mk = next.mk.slice(0, n);
   const lum = next.lum.slice(0, n);
+  const kind = next.kind.slice(0, n);
   post.postMessage(
     {
       type: 'cloud',
@@ -90,10 +93,11 @@ self.onmessage = (e: MessageEvent<InMsg>): void => {
       bits,
       mk,
       lum,
+      kind,
       x: m.x1,
       y: m.y1,
       z: m.z1,
     },
-    [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer],
+    [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer, kind.buffer],
   );
 };

@@ -21,6 +21,7 @@ self.onmessage = (e: MessageEvent<{ type: 'mint'; seed: string }>): void => {
   const bits = cloud.bits.slice(0, n);
   const mk = cloud.mk.slice(0, n);
   const lum = cloud.lum.slice(0, n);
+  const kind = cloud.kind.slice(0, n);
   post.postMessage(
     {
       type: 'ready',
@@ -35,8 +36,9 @@ self.onmessage = (e: MessageEvent<{ type: 'mint'; seed: string }>): void => {
       bits,
       mk,
       lum,
+      kind,
       ms: cloud.ms,
     },
-    [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer],
+    [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer, kind.buffer],
   );
 };

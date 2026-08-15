@@ -99,6 +99,24 @@ export function density(p: GalPos): number {
   return d.thin + d.thick + d.bulge + d.bar + d.halo;
 }
 
+/**
+ * ISM column at a catalog cell: thin-disk density × log-normal
+ * turbulence. Ancestor of the old importance-sampled `sampleDust`
+ * points — the field is the law; GPU dust sprites sit on cells
+ * whose column clears SILHOUETTE_DUST_FLOOR. Not a star.
+ */
+export function dustColumn(seed: string, cell: number): number {
+  const p = cellCenter(cell);
+  const thin = densityParts(p).thin;
+  if (thin < 1e-6) return 0;
+  const cart = galToCart(p);
+  const f = UNIVERSE.GALAXY_TURB_FREQ;
+  const spatial = 2 * u01(seed, 'turb', Math.floor(cart.x * f * 4), Math.floor(cart.y * f * 4), Math.floor(cart.z * f * 4)) - 1;
+  const local = 2 * u01(seed, 'dust', cell) - 1;
+  const s = 0.55 * spatial + 0.45 * local;
+  return thin * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s);
+}
+
 function pickPop(d: Record<Population, number>, u: number): Population {
   const keys: Population[] = ['thin', 'thick', 'bulge', 'bar', 'halo'];
   let t = 0;

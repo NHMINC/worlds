@@ -13,9 +13,10 @@
  * follows the centre; a worker mints and drops the rim. Space is
  * magnified (VIEW_R / REGION_R); star size is not. Distant stars
  * are 1px pinpricks; closer ones grow. Behind the ball a
- * magnitude-limited backdrop sketches the rest of the disk
- * (magnifier places them; inverse-square does not use the stretch).
- * The breadcrumb returns to the map.
+ * magnitude-limited backdrop (stars, typed nebulae, dusty cell
+ * centres) sketches the rest of the disk. Same shape law as the
+ * local sample; magnifier places them. The breadcrumb returns to
+ * the map.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -44,8 +45,11 @@ import {
   sketchMatches,
   MK_LETTER,
   BIT_REMNANT,
+  BIT_DUST,
+  KIND_DUST,
   type StarCloud,
 } from '../world/sectors';
+import { SHAPE_GLSL } from '../world/skyShape';
 
 /** Map-orbit radius range (kpc). */
 const MAP_R_MIN = 9;
@@ -87,6 +91,9 @@ const STAR_VERT = /* glsl */ `
   attribute vec3 aColor;
   attribute float aVis;
   attribute float aLum;
+  attribute float aKind;
+  attribute float aSize;
+  attribute float aSeed;
   uniform vec3 uCenter;
   uniform float uScale;
   uniform float uPixel;
@@ -100,21 +107,31 @@ const STAR_VERT = /* glsl */ `
   uniform float uFluxEps;
   varying vec3 vColor;
   varying float vVis;
+  varying float vKind;
+  varying float vSeed;
   void main() {
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
     float d = max(length(mv.xyz), 0.001);
-    float L = max(aLum, 1e-4);
-    float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
-    float r = max(rMin, uGlowK * pow(L, uGlowP));
-    r = min(r, 0.012);
-    float ang = r / d;
-    float px = 2.0 * ang * uPxPerRad;
-    gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
-    float flux = L / (d * d + uFluxEps);
-    float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
+    vKind = aKind;
+    vSeed = aSeed;
     vColor = aColor;
-    vVis = min(aVis * punch, 8.0);
+    if (aKind > 0.5) {
+      float ang = max(aSize, 0.02) / d;
+      gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, 220.0);
+      vVis = aVis;
+    } else {
+      float L = max(aLum, 1e-4);
+      float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
+      float r = max(rMin, uGlowK * pow(L, uGlowP));
+      r = min(r, 0.012);
+      float ang = r / d;
+      float px = 2.0 * ang * uPxPerRad;
+      gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
+      float flux = L / (d * d + uFluxEps);
+      float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
+      vVis = min(aVis * punch, 8.0);
+    }
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -127,42 +144,73 @@ function regionCamFar(): number {
 
 const SILHOUETTE_VERT = /* glsl */ `
   attribute vec3 aColor;
+  attribute float aLum;
+  attribute float aKind;
+  attribute float aSeed;
   uniform vec3 uCenter;
   uniform float uScale;
   uniform float uPixel;
   uniform float uRegionR;
+  uniform float uStarPx;
+  uniform float uNebulaPx;
+  uniform float uDustPx;
+  uniform float uSuper;
   varying vec3 vColor;
   varying float vVis;
+  varying float vKind;
+  varying float vSeed;
   void main() {
     float dCat = length(position - uCenter);
     if (dCat < uRegionR) {
       vColor = aColor;
       vVis = 0.0;
+      vKind = aKind;
+      vSeed = aSeed;
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
     }
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
-    // Fixed pixels, no 1/d² — if these do not show, the mesh is not on camera.
-    gl_PointSize = 6.0 * uPixel;
+    float px = uStarPx;
+    if (aKind > 0.5 && aKind < 3.5) px = uNebulaPx;
+    if (aKind > 3.5) px = uDustPx;
+    float super = 1.0 + uSuper * smoothstep(8.0, 180.0, aLum);
+    gl_PointSize = px * uPixel * super;
     vColor = aColor;
     vVis = 1.0;
+    vKind = aKind;
+    vSeed = aSeed;
     gl_Position = projectionMatrix * mv;
   }
 `;
 
 const STAR_FRAG = /* glsl */ `
+  ${SHAPE_GLSL}
+  uniform float uDustPass;
+  uniform float uDustTau;
   varying vec3 vColor;
   varying float vVis;
+  varying float vKind;
+  varying float vSeed;
   void main() {
+    if (uDustPass < 0.5 && vKind > 3.5) discard;
+    if (uDustPass > 0.5 && vKind < 3.5) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
-    // A real sprite disc is r2 ≤ 1. Broken GL_POINTS report (0,0) for
-    // every fragment (r2 = 2) — discard would wipe the whole cloud.
-    if (r2 > 0.85 && r2 < 1.95) discard;
-    float limb = 1.0 - 0.22 * min(r2, 1.0);
-    gl_FragColor = vec4(vColor * limb, vVis);
+    if (vKind < 0.5) {
+      if (r2 > 0.85 && r2 < 1.95) discard;
+      float limb = 1.0 - 0.22 * min(r2, 1.0);
+      gl_FragColor = vec4(vColor * limb, vVis);
+      return;
+    }
+    float mask = skyMask(vKind, p, vSeed);
+    if (mask < 0.02) discard;
+    if (uDustPass > 0.5) {
+      gl_FragColor = vec4(vColor, uDustTau * mask * vVis);
+      return;
+    }
+    gl_FragColor = vec4(vColor, vVis * mask);
   }
 `;
 
@@ -282,10 +330,14 @@ export class GalaxyView {
   private starPts: THREE.Points | null = null;
   private starGeo: THREE.BufferGeometry | null = null;
   private starMat: THREE.ShaderMaterial | null = null;
+  private starDustPts: THREE.Points | null = null;
+  private starDustMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
   private silPts: THREE.Points | null = null;
   private silGeo: THREE.BufferGeometry | null = null;
   private silMat: THREE.ShaderMaterial | null = null;
+  private silDustPts: THREE.Points | null = null;
+  private silDustMat: THREE.ShaderMaterial | null = null;
   private silWorker: Worker | null = null;
   /** Catalog positions (the vertex shader applies the magnifier). */
   private cloud: StarCloud | null = null;
@@ -575,7 +627,13 @@ export class GalaxyView {
     // The saucer is a chart again; the last dive is not a tile.
   }
 
-  private disposeArcStars(): void {
+  private disposeLocalStars(): void {
+    if (this.starDustPts) {
+      this.scene.remove(this.starDustPts);
+      this.starDustMat?.dispose();
+      this.starDustPts = null;
+      this.starDustMat = null;
+    }
     if (this.starPts) {
       this.scene.remove(this.starPts);
       this.starGeo?.dispose();
@@ -584,6 +642,15 @@ export class GalaxyView {
       this.starGeo = null;
       this.starMat = null;
       this.starVis = null;
+    }
+  }
+
+  private disposeSilhouette(): void {
+    if (this.silDustPts) {
+      this.scene.remove(this.silDustPts);
+      this.silDustMat?.dispose();
+      this.silDustPts = null;
+      this.silDustMat = null;
     }
     if (this.silPts) {
       this.scene.remove(this.silPts);
@@ -595,15 +662,14 @@ export class GalaxyView {
     }
   }
 
-  private buildArcStars(): void {
-    const cloud = this.cloud;
+  private disposeArcStars(): void {
+    this.disposeLocalStars();
+    this.disposeSilhouette();
+  }
+
+  private bindCloudAttrs(geo: THREE.BufferGeometry, cloud: StarCloud | null, vis: Float32Array): THREE.BufferAttribute {
     const pos = cloud ? cloud.pos : new Float32Array(3);
     const col = cloud ? cloud.col : new Float32Array(3);
-    const vis = new Float32Array(cloud ? cloud.gain.length : 1);
-    if (cloud) {
-      for (let i = 0; i < cloud.n; i++) vis[i] = cloud.gain[i];
-    }
-    const geo = new THREE.BufferGeometry();
     const posAttr = new THREE.BufferAttribute(pos, 3);
     posAttr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('position', posAttr);
@@ -611,57 +677,109 @@ export class GalaxyView {
     const visAttr = new THREE.BufferAttribute(vis, 1);
     visAttr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('aVis', visAttr);
-    if (cloud) geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
+    geo.setAttribute('aLum', new THREE.BufferAttribute(cloud ? cloud.lum : new Float32Array(1), 1));
+    geo.setAttribute('aKind', new THREE.BufferAttribute(cloud ? cloud.kind : new Uint8Array(1), 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(cloud ? cloud.size : new Float32Array(1), 1));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud ? cloud.pulse : new Float32Array(1), 1));
     geo.setDrawRange(0, cloud?.n ?? 0);
+    return visAttr;
+  }
+
+  private localGlowUniforms(): Record<string, THREE.IUniform> {
+    return {
+      uCenter: { value: new THREE.Vector3() },
+      uScale: { value: 1 },
+      uPixel: { value: this.renderer.getPixelRatio() },
+      uPxPerRad: { value: this.pxPerRad() },
+      uGlowK: { value: GLOW_K },
+      uGlowP: { value: GLOW_P },
+      uGlowMin: { value: 0.0007 },
+      uGlowDim: { value: GLOW_DIM },
+      uMaxPx: { value: POINT_MAX_PX },
+      uNearBoost: { value: POINT_NEAR_BOOST },
+      uFluxEps: { value: POINT_FLUX_EPS },
+      uDustPass: { value: 0 },
+      uDustTau: { value: UNIVERSE.SILHOUETTE_DUST_TAU },
+    };
+  }
+
+  private buildArcStars(): void {
+    const cloud = this.cloud;
+    const vis = new Float32Array(cloud ? cloud.gain.length : 1);
+    if (cloud) {
+      for (let i = 0; i < cloud.n; i++) vis[i] = cloud.gain[i];
+    }
+    const geo = new THREE.BufferGeometry();
+    const visAttr = this.bindCloudAttrs(geo, cloud, vis);
     const mat = new THREE.ShaderMaterial({
       vertexShader: STAR_VERT,
       fragmentShader: STAR_FRAG,
-      uniforms: {
-        uCenter: { value: new THREE.Vector3() },
-        uScale: { value: 1 },
-        uPixel: { value: this.renderer.getPixelRatio() },
-        uPxPerRad: { value: this.pxPerRad() },
-        uGlowK: { value: GLOW_K },
-        uGlowP: { value: GLOW_P },
-        uGlowMin: { value: 0.0007 },
-        uGlowDim: { value: GLOW_DIM },
-        uMaxPx: { value: POINT_MAX_PX },
-        uNearBoost: { value: POINT_NEAR_BOOST },
-        uFluxEps: { value: POINT_FLUX_EPS },
-      },
+      uniforms: this.localGlowUniforms(),
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
+    pts.renderOrder = 0;
     this.scene.add(pts);
     this.starPts = pts;
     this.starGeo = geo;
     this.starMat = mat;
     this.starVis = visAttr;
+    const dustMat = new THREE.ShaderMaterial({
+      vertexShader: STAR_VERT,
+      fragmentShader: STAR_FRAG,
+      uniforms: { ...this.localGlowUniforms(), uDustPass: { value: 1 } },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.ZeroFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      toneMapped: false,
+    });
+    const dustPts = new THREE.Points(geo, dustMat);
+    dustPts.frustumCulled = false;
+    dustPts.renderOrder = 3;
+    this.scene.add(dustPts);
+    this.starDustPts = dustPts;
+    this.starDustMat = dustMat;
     this.pushMagUniforms();
     this.applyStarVis();
+  }
+
+  private silUniforms(dustPass: number): Record<string, THREE.IUniform> {
+    return {
+      uCenter: { value: new THREE.Vector3() },
+      uScale: { value: 1 },
+      uPixel: { value: this.renderer.getPixelRatio() },
+      uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
+      uStarPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
+      uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
+      uDustPx: { value: UNIVERSE.SILHOUETTE_DUST_PX },
+      uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
+      uDustPass: { value: dustPass },
+      uDustTau: { value: UNIVERSE.SILHOUETTE_DUST_TAU },
+    };
   }
 
   private buildSilhouetteStars(): void {
     const cloud = silhouetteCloud(this.seed) ?? buildSilhouetteCloud(this.seed);
     if (!cloud || cloud.n <= 0) return;
+    this.disposeSilhouette();
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
     geo.setAttribute('aVis', new THREE.BufferAttribute(cloud.gain, 1));
     geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
+    geo.setAttribute('aKind', new THREE.BufferAttribute(cloud.kind, 1));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
     geo.setDrawRange(0, cloud.n);
     const mat = new THREE.ShaderMaterial({
       vertexShader: SILHOUETTE_VERT,
       fragmentShader: STAR_FRAG,
-      uniforms: {
-        uCenter: { value: new THREE.Vector3() },
-        uScale: { value: 1 },
-        uPixel: { value: this.renderer.getPixelRatio() },
-        uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
-      },
+      uniforms: this.silUniforms(0),
       transparent: true,
       depthTest: false,
       depthWrite: false,
@@ -670,11 +788,29 @@ export class GalaxyView {
     });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
-    pts.renderOrder = -1;
+    pts.renderOrder = -2;
     this.scene.add(pts);
     this.silPts = pts;
     this.silGeo = geo;
     this.silMat = mat;
+    const dustMat = new THREE.ShaderMaterial({
+      vertexShader: SILHOUETTE_VERT,
+      fragmentShader: STAR_FRAG,
+      uniforms: this.silUniforms(1),
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.ZeroFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+      toneMapped: false,
+    });
+    const dustPts = new THREE.Points(geo, dustMat);
+    dustPts.frustumCulled = false;
+    dustPts.renderOrder = 2;
+    this.scene.add(dustPts);
+    this.silDustPts = dustPts;
+    this.silDustMat = dustMat;
     this.pushMagUniforms();
   }
 
@@ -692,6 +828,14 @@ export class GalaxyView {
       this.silMat.uniforms.uCenter.value.set(cx, cy, cz);
       this.silMat.uniforms.uScale.value = s;
     }
+    if (this.starDustMat) {
+      this.starDustMat.uniforms.uCenter.value.set(cx, cy, cz);
+      this.starDustMat.uniforms.uScale.value = s;
+    }
+    if (this.silDustMat) {
+      this.silDustMat.uniforms.uCenter.value.set(cx, cy, cz);
+      this.silDustMat.uniforms.uScale.value = s;
+    }
   }
 
   /**
@@ -702,27 +846,25 @@ export class GalaxyView {
     const cloud = this.cloud;
     if (!cloud) return;
     if (!this.starGeo || !this.starMat || !this.starVis) {
-      this.disposeArcStars();
+      this.disposeLocalStars();
       this.buildArcStars();
       return;
     }
     const posAttr = this.starGeo.getAttribute('position') as THREE.BufferAttribute;
     if (posAttr.array !== cloud.pos) {
-      const next = new THREE.BufferAttribute(cloud.pos, 3);
-      next.setUsage(THREE.DynamicDrawUsage);
-      this.starGeo.setAttribute('position', next);
-      this.starGeo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
-      this.starGeo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
       const vis = new Float32Array(cloud.gain.length);
-      const visAttr = new THREE.BufferAttribute(vis, 1);
-      visAttr.setUsage(THREE.DynamicDrawUsage);
-      this.starGeo.setAttribute('aVis', visAttr);
-      this.starVis = visAttr;
+      this.starVis = this.bindCloudAttrs(this.starGeo, cloud, vis);
     } else {
       posAttr.needsUpdate = true;
       (this.starGeo.getAttribute('aColor') as THREE.BufferAttribute).needsUpdate = true;
       const lum = this.starGeo.getAttribute('aLum') as THREE.BufferAttribute | undefined;
       if (lum) lum.needsUpdate = true;
+      const kind = this.starGeo.getAttribute('aKind') as THREE.BufferAttribute | undefined;
+      if (kind) kind.needsUpdate = true;
+      const size = this.starGeo.getAttribute('aSize') as THREE.BufferAttribute | undefined;
+      if (size) size.needsUpdate = true;
+      const seed = this.starGeo.getAttribute('aSeed') as THREE.BufferAttribute | undefined;
+      if (seed) seed.needsUpdate = true;
     }
     this.starGeo.setDrawRange(0, cloud.n);
     this.applyStarVis();
@@ -774,6 +916,7 @@ export class GalaxyView {
       return c;
     }
     for (let i = 0; i < cloud.n; i++) {
+      if ((cloud.bits[i] & BIT_DUST) !== 0 || cloud.kind[i] === KIND_DUST) continue;
       if (!sketchMatches(cloud.bits[i], this.filter)) continue;
       const letter = MK_LETTER[cloud.mk[i]] ?? 'WD';
       c[letter] = (c[letter] ?? 0) + 1;
@@ -924,6 +1067,7 @@ export class GalaxyView {
     const cz = this.arcCenter.z;
     const cat = cloud.pos;
     for (let i = 0; i < cloud.n; i += step) {
+      if ((cloud.bits[i] & BIT_DUST) !== 0 || cloud.kind[i] === KIND_DUST) continue;
       if (!sketchMatches(cloud.bits[i], this.filter)) continue;
       const i3 = i * 3;
       const x = (cat[i3] - cx) * s;
@@ -1174,6 +1318,7 @@ export class GalaxyView {
           bits: Uint8Array;
           mk: Uint8Array;
           lum: Float32Array;
+          kind: Uint8Array;
           ms: number;
         };
         if (m.type !== 'ready' || m.seed !== this.seed) return;
@@ -1188,6 +1333,7 @@ export class GalaxyView {
           bits: m.bits,
           mk: m.mk,
           lum: m.lum,
+          kind: m.kind,
           ms: m.ms,
         });
         if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
@@ -1237,9 +1383,10 @@ export class GalaxyView {
     const bits = c.bits.slice(0, c.n);
     const mk = c.mk.slice(0, c.n);
     const lum = c.lum.slice(0, c.n);
+    const kind = c.kind.slice(0, c.n);
     w.postMessage(
-      { type: 'set', seed: this.seed, n: c.n, ids, pos, col, size, pulse, gain, bits, mk, lum },
-      [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer],
+      { type: 'set', seed: this.seed, n: c.n, ids, pos, col, size, pulse, gain, bits, mk, lum, kind },
+      [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer, kind.buffer],
     );
   }
 
@@ -1290,6 +1437,7 @@ export class GalaxyView {
       bits: Uint8Array;
       mk: Uint8Array;
       lum: Float32Array;
+      kind: Uint8Array;
       x: number;
       y: number;
       z: number;
@@ -1308,6 +1456,7 @@ export class GalaxyView {
         bits: m.bits,
         mk: m.mk,
         lum: m.lum,
+        kind: m.kind,
         ms: 0,
       },
       false,
@@ -1328,7 +1477,7 @@ export class GalaxyView {
     this.regionLabel = regionName(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
     this.censusMemo = {};
     if (remesh) {
-      this.disposeArcStars();
+      this.disposeLocalStars();
       this.buildArcStars();
     } else {
       this.syncArcStars();
@@ -1430,6 +1579,7 @@ export class GalaxyView {
     let bestI = -1;
     let bestD = Infinity;
     for (let i = 0; i < cloud.n; i++) {
+      if ((bits[i] & BIT_DUST) !== 0) continue;
       if (!sketchMatches(bits[i], this.filter)) continue;
       const i3 = i * 3;
       const x = (cat[i3] - ox) * s;
@@ -1675,6 +1825,7 @@ export class GalaxyView {
     let bestDist = 0;
     let bestDim = false;
     for (let i = 0; i < cloud.n; i++) {
+      if ((bits[i] & BIT_DUST) !== 0) continue;
       if (!sketchMatches(bits[i], this.filter)) continue;
       const i3 = i * 3;
       const dx = (cat[i3] - ox) * s - cx;
@@ -1764,6 +1915,10 @@ export class GalaxyView {
     const { bits, gain, n } = this.cloud;
     const lim = Math.min(n, arr.length);
     for (let i = 0; i < lim; i++) {
+      if ((bits[i] & BIT_DUST) !== 0) {
+        arr[i] = gain[i];
+        continue;
+      }
       arr[i] = sketchMatches(bits[i], this.filter) ? gain[i] : gain[i] * 0.08;
     }
     this.starVis.needsUpdate = true;
