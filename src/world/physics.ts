@@ -464,14 +464,13 @@ export const UNIVERSE = {
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX / DUST_PX as pixel floors so far sources stay
    * findable; sprites under DUST_MINPX skip the march (a disc).
-   * STAR_PX is the glow sprite for a typical backdrop photosphere
-   * (a pin core plus a 1/r² tail, not a filled disc). Luminosity
-   * stretches both size and brightness; SUPER_GAIN is the bright
-   * end the clock already made. Optical approximations, like
-   * AIR_LINE. Not pickable.
+   * STAR_PX is the point-source sprite (a pin, no diameter).
+   * Intensity is inverse-square flux through a photograph stretch
+   * — luminosity and distance, not a shared white. SUPER_GAIN is
+   * exposure. Optical approximations, like AIR_LINE. Not pickable.
    */
   GALAXY_SILHOUETTE_M: 5,
-  SILHOUETTE_STAR_PX: 13,
+  SILHOUETTE_STAR_PX: 2.6,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_DUST_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,

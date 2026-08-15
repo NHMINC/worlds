@@ -1,11 +1,11 @@
 /**
  * Arc stars are GL_POINTS that pretend to be the photosphere.
- * Size and brightness follow the birth-clock luminosity and
- * distance — every occupied slot, no mesh roster, no star-count
- * budget. Distant: a pin. Nearer / more luminous: a brighter
- * shine. The sprite is a glare (core + 1/r² tail), not a filled
- * disc — same family as the in-system glare in star.ts. A pixel
- * cap is hardware, not a census. objectAt is still O(1) on tap.
+ * At explorer distance a star is a point source — no diameter.
+ * Brightness is inverse-square flux (L / d²) through a photograph
+ * stretch that keeps rank: a 200 L☉ star outshines a 5 L☉ star
+ * at the same distance. The sprite is a pin; any glare is the
+ * eye answering flux, not a disc we sized. A pixel cap is
+ * hardware, not a census. objectAt is still O(1) on tap.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
@@ -13,21 +13,25 @@ import type { GalaxyObject } from '../world/galaxy';
 /**
  * Toy core radius (kpc). Real R☉ is metres against kiloparsecs —
  * unusable. Apparent size is r / distance, same as a real body.
+ * Used for aiming / picking, not for painting a disc on the sky.
  */
 export const GLOW_K = 0.0024;
 export const GLOW_P = 0.16;
 /** Dim / remnant floor — a black hole still has a body you can aim at. */
 export const GLOW_DIM = 0.0016;
-/** Hardware sprite cap (px) for the core; the glow pad sits on top. */
+/** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
-/** Photosphere pin width (px). The shine lives around this, not as a disc. */
-export const SHINE_CORE_PX = 1.15;
-/** Soft bloom width (px) around the pin — what makes a star shine. */
-export const SHINE_HALO_PX = 4.2;
-/** Additive 1/r² tail strength — the eye's response to flux. */
-export const SHINE_TAIL = 0.72;
-/** Extra sprite pixels so the glow can die before the quad edge. */
-export const SHINE_PAD_PX = 14;
+/** Photosphere pin width (px). Sub-pixel — there is no disc. */
+export const SHINE_CORE_PX = 0.45;
+/** Additive 1/r² tail — only a bright point blooms. */
+export const SHINE_TAIL = 0.14;
+/**
+ * Photograph stretch of inverse-square flux: gain · ln(1 + k F).
+ * k sets how soon the bright end compresses; gain is exposure.
+ * Rank is the law — do not flatten L into a shared white.
+ */
+export const SHINE_FLUX_K = 2800;
+export const SHINE_FLUX_GAIN = 0.48;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). */
@@ -47,6 +51,11 @@ export function apparentAngle(rWorld: number, dist: number): number {
 export function pointApparentPx(L: number, dist: number, pxPerRad: number, dim = false): number {
   const ang = apparentAngle(glowRadiusKpc(L, dim), dist);
   return Math.min(POINT_MAX_PX, Math.max(1, 2 * ang * pxPerRad));
+}
+
+/** LDR intensity from F = L / d². Same formula the star vertex uses. */
+export function shineFromFlux(flux: number): number {
+  return SHINE_FLUX_GAIN * Math.log(1 + SHINE_FLUX_K * Math.max(0, flux));
 }
 
 const KIND = {
