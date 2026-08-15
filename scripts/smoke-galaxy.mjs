@@ -226,7 +226,7 @@ if (await galaxyBtn.count()) {
   } else {
     await page.evaluate(() => window.__galaxyView?.setWarp?.(true));
   }
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(2000);
   const afterCruise = await page.evaluate(() => {
     window.__galaxyView?.setWarp?.(false);
     return window.__galaxyView?.currentRegion?.() ?? null;
