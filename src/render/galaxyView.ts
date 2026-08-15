@@ -24,7 +24,7 @@ import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import { createSectorMap, type SectorMap } from './galaxySectors';
 import {
-  AIM_MIN_ANG,
+  aimLocks,
   GLOW_DIM,
   GLOW_K,
   GLOW_P,
@@ -478,7 +478,7 @@ export interface GalaxyFrame {
   pickable: boolean;
   /** Loaded region stars (0 on the map). */
   resolved: number;
-  /** Stars grown past the reticle lock angle — no cap. */
+  /** Local catalog stars close enough to lock the reticle — no cap. */
   grown: number;
   /** Region label, e.g. "8.2 kpc · 57°" — null on the map. */
   sector: string | null;
@@ -1194,7 +1194,7 @@ export class GalaxyView {
     return this.objects;
   }
 
-  /** Stars grown past the reticle lock — no cap. Smoke / HUD. */
+  /** Local catalog stars close enough to lock the reticle. Smoke / HUD. */
   grownStars(): number {
     return this.grownCount;
   }
@@ -2045,8 +2045,8 @@ export class GalaxyView {
   // --------------------------------------------------------------- sight
 
   /**
-   * Filter the cloud and lock the centre reticle onto a grown point.
-   * Every star may grow; there is no mesh roster.
+   * Filter the local catalog cloud and lock the centre reticle onto
+   * a visitable star. Silhouette backdrop rows are not in this cloud.
    */
   private updateSight(force = false): void {
     if (this.mode !== 'region') return;
@@ -2056,7 +2056,12 @@ export class GalaxyView {
     this.aimReticle();
   }
 
-  /** Centre reticle vs grown cloud points. A hit can be flown to now. */
+  /**
+   * Centre reticle vs local catalog points. Lock uses the visit body
+   * (aimRadiusKpc), not the 1px paint pin — a star that flies through
+   * the pip is real and set-course-able even while it is still a point.
+   * Dust is an ISM address; the magnitude-limited backdrop is not here.
+   */
   private aimReticle(): void {
     if (this.mode !== 'region') {
       this.focusObj = null;
@@ -2103,9 +2108,8 @@ export class GalaxyView {
       if (d2 < 1e-12) continue;
       const dist = Math.sqrt(d2);
       const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
-      const ang = glowRadiusKpc(lum[i], dim) / dist;
-      if (ang >= AIM_MIN_ANG) grown++;
-      else continue;
+      if (!aimLocks(lum[i], dist, dim)) continue;
+      grown++;
       const inv = 1 / dist;
       const dot = dx * inv * lx + dy * inv * ly + dz * inv * lz;
       if (dot < cosCone) continue;
