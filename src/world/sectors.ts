@@ -331,7 +331,7 @@ export function buildArcCloud(seed: string, id: SectorId): StarCloud {
 }
 
 /** Human label for a region centre: "14.2 kpc · 46°". */
-export function regionName(x: number, y: number, z: number): string {
+export function regionName(x: number, _y: number, z: number): string {
   const R = Math.hypot(x, z);
   const deg = (((Math.atan2(z, x) * 180) / Math.PI) + 360) % 360;
   return `${R.toFixed(1)} kpc · ${deg.toFixed(0)}°`;

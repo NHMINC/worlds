@@ -26,15 +26,12 @@ export function saucerHeight(R: number): number {
 
 const VERT = /* glsl */ `
   attribute vec3 aColor;
-  attribute float aTile;
   attribute vec2 aUv;
   varying vec3 vColor;
   varying vec2 vUv;
-  varying float vTile;
   void main() {
     vColor = aColor;
     vUv = aUv;
-    vTile = aTile;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
@@ -43,7 +40,6 @@ const FRAG = /* glsl */ `
   precision mediump float;
   varying vec3 vColor;
   varying vec2 vUv;
-  varying float vTile;
 
   float hash21(vec2 p) {
     p = fract(p * vec2(123.34, 345.45));
@@ -53,8 +49,8 @@ const FRAG = /* glsl */ `
 
   void main() {
     vec3 c = vColor;
-    // Map speckle: static grain in the chart fabric, not a painted sky.
-    float g = hash21(floor(vUv * 26.0) + vTile);
+    // World-space grain — not per-tile, or the old pizza grid comes back.
+    float g = hash21(floor(vUv * vec2(48.0, 96.0)));
     c *= 0.92 + 0.16 * g * smoothstep(0.02, 0.3, dot(vColor, vec3(0.33)));
     gl_FragColor = vec4(c, 1.0);
   }
@@ -104,7 +100,6 @@ export function createSectorMap(): SectorMap {
   const positions = new Float32Array(tiles * vertsPerTile * sheets * 3);
   const colors = new Float32Array(tiles * vertsPerTile * sheets * 3);
   const uvs = new Float32Array(tiles * vertsPerTile * sheets * 2);
-  const tileIdx = new Float32Array(tiles * vertsPerTile * sheets);
   const index = new Uint32Array(tiles * trisPerTile * sheets * 3);
 
   let vi = 0;
@@ -116,7 +111,6 @@ export function createSectorMap(): SectorMap {
       const [it0, it1] = spokeBounds(sector);
       const th0 = (it0 / nth) * TAU;
       const th1 = (it1 / nth) * TAU;
-      const tile = ring * S + sector;
       for (let sheet = 0; sheet < sheets; sheet++) {
         const sign = sheet === 0 ? 1 : -1;
         const base = vi;
@@ -132,9 +126,8 @@ export function createSectorMap(): SectorMap {
             colors[vi * 3] = cr;
             colors[vi * 3 + 1] = cg;
             colors[vi * 3 + 2] = cb;
-            uvs[vi * 2] = ai / AZ_SEG;
-            uvs[vi * 2 + 1] = ri / R_SEG;
-            tileIdx[vi] = tile;
+            uvs[vi * 2] = R / UNIVERSE.GALAXY_R_MAX;
+            uvs[vi * 2 + 1] = ((th % TAU) + TAU) % TAU / TAU;
             vi++;
           }
         }
@@ -160,7 +153,6 @@ export function createSectorMap(): SectorMap {
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('aColor', new THREE.BufferAttribute(colors, 3));
   geo.setAttribute('aUv', new THREE.BufferAttribute(uvs, 2));
-  geo.setAttribute('aTile', new THREE.BufferAttribute(tileIdx, 1));
   geo.setIndex(new THREE.BufferAttribute(index, 1));
   geo.computeBoundingSphere();
 
