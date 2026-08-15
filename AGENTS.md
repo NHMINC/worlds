@@ -195,8 +195,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     law. Those same stars are flown in a ball of
     `GALAXY_REGION_VIEW_R` (40 kpc): offsets from the tap are scaled,
     we do not mint more. Cheap birth, no `evolve` until you tap. The
-    camera starts **inside** the ball, looking out. Distant stars
-    are **1px pinpricks**. Closer ones grow and brighten from
+    camera starts **inside** the ball, looking out. Zoom does not
+    speed up to eat the extra gaps — you dolly farther to reach a
+    star. Distant stars are **1px pinpricks** (size is not scaled
+    with the ball). Closer ones grow and brighten from
     birth-clock luminosity and distance (`glowRadiusKpc` / `d`, flux
     `L / d²`). Tight disc, no gaussian halo, no mesh roster. A pixel
     cap is hardware. The centre reticle on a grown point can set

@@ -936,7 +936,12 @@ export class GalaxyView {
     return MAP_R_MAX;
   }
 
-  /** Cruise speed from nearest sampled star (and the arc centre). */
+  /**
+   * Cruise speed. Cap is small and fixed so extra space between
+   * stars is felt as more zoom, not a faster ship. Slow further
+   * only when a star is already close (examine, don't overshoot).
+   * Star size is not scaled with the viewing ball.
+   */
   private arcPace(): number {
     const cloud = this.cloud;
     const cx = this.arcPos.x;
@@ -955,7 +960,7 @@ export class GalaxyView {
       const c = this.viewCart(this.selected);
       minD = Math.min(minD, Math.hypot(c.x - cx, c.y - cy, c.z - cz));
     }
-    return THREE.MathUtils.clamp(0.42 * minD, 0.005, 0.65);
+    return THREE.MathUtils.clamp(0.42 * minD, 0.004, 0.025);
   }
 
   private maybeExitArc(): void {
