@@ -190,9 +190,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     are drawn on the map; the tile speckle is chart fabric, not a sky.
   - **Arc**: tap a tile and its brightest ~`GALAXY_SECTOR_STARS` REAL
     stars load ONCE (`sectorSample` — a magnitude-limited survey:
-    living turnoff band + a small massive tip, ranked by light), with
-    photospheres from `evolve()` (`galaxyStar.ts`) for the nearest
-    few. Tap a disc to set course. Zoom out (or the breadcrumb) to
+    living turnoff band + a small massive tip, ranked by light).
+    Inside an arc, every surveyed star is drawn at all times; nothing
+    about visibility reads the camera (fixed-pixel points). Photosphere
+    discs (`galaxyStar.ts`) are the arc's brightest N, picked once on
+    entry. Tap a disc to set course. Zoom out (or the breadcrumb) to
     return to the map.
   Nothing queries or rebuilds per camera move in either mode — the
   free-flight explorer's blink / cluster / stutter / re-roll bug class
