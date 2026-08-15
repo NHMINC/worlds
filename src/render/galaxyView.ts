@@ -151,9 +151,9 @@ const STAR_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Magnifier: start as one CSS pixel. Size is max(1px, 2 r/d)
-      // so a star is a point until the bubble has slid onto it,
-      // then it grows. Flux L/d², colour teff. Backdrop stays 1px.
+      // Magnifier: original glow pin (GLOW_K). max(1px, 2 r/d) —
+      // a point at the rim and on the IMF ramp; a disc only when
+      // the bubble is on top of it. Flux L/d², colour teff.
       float L = max(aLum, 1e-4);
       float r = max(L < 0.05 ? uGlowDim : uPhotoMin, uPhotoK * pow(L, uPhotoP));
       r = min(r, uPhotoMax);

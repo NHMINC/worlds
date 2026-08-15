@@ -1,9 +1,9 @@
 /**
  * Two layers, two laws. Inside the magnifier a star starts as one
- * CSS pixel. Size is max(1px, 2 r/d) so it stays a point until the
- * bubble slides onto it, then it grows; brightness is L / d²,
- * colour is teff. Outside the bubble the luminous tail stays one
- * pixel. objectAt is still O(1) on tap.
+ * CSS pixel. Paint radius is the original glow pin (GLOW_K) — the
+ * PHOTO_K we tried today opened IMF-ramp newcomers as discs.
+ * Size is max(1px, 2 r/d); it grows only when the bubble is on
+ * top of it. Brightness L/d², colour teff. Backdrop stays 1px.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
@@ -20,15 +20,14 @@ export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
 /**
- * Magnifier photosphere (kpc). At the 40 kpc rim, r/d is under one
- * CSS pixel — a point of light. It only beats that floor as the
- * bubble slides in. PHOTO_MIN used to be 0.022 and every star
- * opened as a disc. The backdrop does not use this.
+ * Magnifier paint radius — same as the picking pin (GLOW_K).
+ * A 10× PHOTO_K made stars that mint on the IMF ramp (0.12–0.3 kpc
+ * catalog) pop in as discs. The 2 kpc sample ball is unchanged.
  */
-export const PHOTO_K = 0.024;
-export const PHOTO_P = 0.18;
-export const PHOTO_MIN = 0.006;
-export const PHOTO_MAX = 0.16;
+export const PHOTO_K = GLOW_K;
+export const PHOTO_P = GLOW_P;
+export const PHOTO_MIN = 0.0007;
+export const PHOTO_MAX = 0.012;
 /**
  * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
  * Steep in L so the luminous tail is not one white.
@@ -52,10 +51,9 @@ export function glowRadiusKpc(L: number, dim = false): number {
   return Math.max(dim ? GLOW_DIM : 0.0007, Math.min(0.012, r));
 }
 
-/** Paint radius inside the magnifier. Grows with L; picking stays on glowRadiusKpc. */
+/** Magnifier paint radius. Same body as glowRadiusKpc — one pin. */
 export function photoRadiusKpc(L: number, dim = false): number {
-  const r = PHOTO_K * Math.pow(Math.max(L, 1e-4), PHOTO_P);
-  return Math.max(dim ? GLOW_DIM : PHOTO_MIN, Math.min(PHOTO_MAX, r));
+  return glowRadiusKpc(L, dim);
 }
 
 export function apparentAngle(rWorld: number, dist: number): number {
