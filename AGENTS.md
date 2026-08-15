@@ -193,18 +193,16 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   - **Arc**: tap a tile and **every occupied slot** is drawn once as a
     cheap point (`buildArcCloud` — birth position + IMF clock, no
     `evolve` until you tap). That is the arc's population, not a 2,500
-    survey. Point brightness is luminosity (alive MS clock, dim remnant
-    pin), not a sampled highlight. Apparent size is `glowRadius / dist`,
-    clamped to `STAR_ANG_MAX` (~6°) so you fly up to a star without it
-    eating the field. Photosphere discs mesh when that angle crosses
-    `STAR_DISC_ANG` — drawing LOD, not a sample. A compact sight HUD
-    names the most-centred star (class, planets, life); dark remnants
-    get a reticle. The camera is **free flight** through that frozen
-    cloud: drag looks, wheel/pinch dollies, WASD flies, Shift/right-drag
-    strafes. There is no orbit lock on the sector centre or the
-    selection. Tap mints the full catalog row (`objectAt`). Set course
-    is the dossier button. Fly far out (or the breadcrumb) to return
-    to the map.
+    survey. Distant stars are **1px pinpricks** (no growing sprite, no
+    halo). Once `glowRadius / dist` crosses `STAR_WRAP_ANG` we wrap a
+    real sphere around that point: solid in the star's colour, or an
+    outline for black holes and very dim remnants. The sphere's world
+    size is fixed — perspective grows and shrinks it. The centre
+    reticle against a wrapped sphere can set course at any time. A
+    compact plate names that star (class, planets, life). The camera
+    is **free flight** through that frozen cloud. Tap still mints the
+    catalog row (`objectAt`). Fly far out (or the breadcrumb) to
+    return to the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
   re-roll bug class was structural, and it is retired along with the

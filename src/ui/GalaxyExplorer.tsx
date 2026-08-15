@@ -137,13 +137,6 @@ export function GalaxyExplorer(props: Props) {
         {!ready && <div className="galaxy-loading">Charting the sectors…</div>}
         {inArc && <div className="gx-pip" aria-hidden />}
         {inArc && frame.focus && (
-          <div
-            className={`gx-reticle${frame.focus.dark ? ' dark' : ''}`}
-            style={{ left: frame.focus.x, top: frame.focus.y }}
-            aria-hidden
-          />
-        )}
-        {inArc && frame.focus && (
           <div className="gx-plate">
             <b>{frame.focus.name}</b>
             <em>

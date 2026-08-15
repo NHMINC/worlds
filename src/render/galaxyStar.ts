@@ -1,9 +1,10 @@
 /**
- * Close-up stars: photospheres from evolve(), not bigger point sprites.
- * GL_POINTS become squares on a phone once gl_PointSize grows. The arc
- * view meshes a disc when you are close enough that a point would lie;
- * membership is distance × luminosity, not a brightest-N sample. Type,
- * radius, and phase come from evolve() — objectAt is O(1).
+ * Close-up stars: a real sphere wrapped around a sharp point.
+ * Distant catalog rows stay 1px pinpricks. Once the toy glow radius
+ * subtends STAR_WRAP_ANG we mesh a sphere whose world size is fixed —
+ * perspective grows and shrinks it. Bright stars are a solid of their
+ * photosphere colour; black holes and very dim remnants are an outline
+ * so the point (or the void) stays readable. objectAt is O(1).
  */
 import * as THREE from 'three';
 import { galToCart, type GalaxyObject } from '../world/galaxy';
@@ -16,30 +17,38 @@ export const RESOLVE_MAX = 28;
 export const RESOLVE_DIST = 21.6;
 
 /**
- * Toy glow radius (kpc). Real R☉ is metres against kiloparsecs —
- * unusable. Apparent angle is r / distance, clamped to STAR_ANG_MAX
- * so you can fly up to a star without it eating the field.
+ * Toy sphere radius (kpc). Real R☉ is metres against kiloparsecs —
+ * unusable. The sphere is a wrap around the point, not a sprite.
+ * Apparent size is just perspective: r / distance.
  */
-export const GLOW_K = 0.0028;
+export const GLOW_K = 0.0024;
 export const GLOW_P = 0.16;
-/** Dim / remnant floor — they still grow, then a reticle finds them. */
-export const GLOW_DIM = 0.0015;
-/** ~6° — the star fills a sight, not the sky. */
+/** Dim / remnant floor — the outline still has a body the reticle can hit. */
+export const GLOW_DIM = 0.0016;
+/** Wrap the point in a sphere once it would be a few pixels across. */
+export const STAR_WRAP_ANG = 0.0034;
+/** @deprecated use STAR_WRAP_ANG */
+export const STAR_DISC_ANG = STAR_WRAP_ANG;
 export const STAR_ANG_MAX = 0.10;
-/** Hand off GL_POINTS → disc once the bead would exceed ~this angle. */
-export const STAR_DISC_ANG = 0.0065;
 
 export function glowRadiusKpc(L: number, dim = false): number {
   const r = GLOW_K * Math.pow(Math.max(L, 1e-4), GLOW_P);
-  return Math.max(dim ? GLOW_DIM : 0.00075, Math.min(0.016, r));
+  return Math.max(dim ? GLOW_DIM : 0.0007, Math.min(0.012, r));
 }
 
 export function apparentAngle(rWorld: number, dist: number): number {
   return rWorld / Math.max(1e-5, dist);
 }
 
-export function clampedGlow(rWorld: number, dist: number): number {
-  return Math.min(rWorld, STAR_ANG_MAX * Math.max(1e-5, dist));
+export function starIsOutline(o: GalaxyObject): boolean {
+  const s = o.star;
+  return (
+    s.phase === 'black_hole' ||
+    s.phase === 'white_dwarf' ||
+    s.phase === 'neutron_star' ||
+    s.phase === 'pulsar' ||
+    s.luminosity < 0.05
+  );
 }
 
 const KIND = {
@@ -109,84 +118,33 @@ function starRgb(o: GalaxyObject): THREE.Color {
   return new THREE.Color(r, g, b);
 }
 
-const VERT = /* glsl */ `
-  varying vec2 vUv;
-  varying vec3 vCol;
-  varying float vKind;
-  attribute vec3 iCol;
-  attribute float iKind;
+const RIM_VERT = /* glsl */ `
+  varying vec3 vN;
+  varying vec3 vV;
   void main() {
-    vUv = uv;
-    vCol = iCol;
-    vKind = iKind;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    vec4 w = modelMatrix * vec4(position, 1.0);
+    vN = normalize(mat3(modelMatrix) * normal);
+    vV = cameraPosition - w.xyz;
+    gl_Position = projectionMatrix * viewMatrix * w;
   }
 `;
 
-const FRAG = /* glsl */ `
-  precision highp float;
-  varying vec2 vUv;
-  varying vec3 vCol;
-  varying float vKind;
+const RIM_FRAG = /* glsl */ `
+  uniform vec3 uCol;
+  varying vec3 vN;
+  varying vec3 vV;
   void main() {
-    vec2 p = vUv * 2.0 - 1.0;
-    float r = length(p);
-    if (r > 1.0) discard;
-
-    float kind = vKind;
-    vec3 col = vCol;
-    float a = 1.0;
-
-    if (kind > 5.5 && kind < 6.5) {
-      float ring = smoothstep(0.18, 0.36, r) * (1.0 - smoothstep(0.68, 1.0, r));
-      float core = (1.0 - smoothstep(0.0, 0.3, r)) * 0.45;
-      a = ring * 0.85 + core;
-      col = mix(col, vec3(1.0), core);
-    } else if (kind > 4.5 && kind < 5.5) {
-      float hole = 1.0 - smoothstep(0.16, 0.32, r);
-      float disk = smoothstep(0.3, 0.4, r) * (1.0 - smoothstep(0.52, 0.95, r));
-      a = max(disk * 0.95, 0.0);
-      col = mix(vec3(1.0, 0.82, 0.55), col, 0.4);
-      if (hole > 0.55) discard;
-    } else if (kind > 3.5 && kind < 4.5) {
-      float core = 1.0 - smoothstep(0.0, 0.2, r);
-      float beam = exp(-pow(abs(p.x) * 8.0, 2.0)) * (1.0 - smoothstep(0.12, 1.0, abs(p.y)));
-      a = max(core, beam * 0.9);
-      col = mix(col, vec3(0.85, 0.92, 1.0), beam);
-    } else if (kind > 2.5 && kind < 3.5) {
-      float core = 1.0 - smoothstep(0.0, 0.24, r);
-      float halo = (1.0 - smoothstep(0.18, 1.0, r)) * 0.4;
-      a = max(core, halo);
-      col = mix(col, vec3(1.0), core * 0.55);
-    } else if (kind > 1.5 && kind < 2.5) {
-      float limb = pow(max(0.0, 1.0 - r * r), 0.4);
-      float glow = (1.0 - smoothstep(0.5, 1.0, r)) * 0.5;
-      a = max(limb, glow);
-      col = mix(col, vec3(0.85, 0.9, 1.0), 0.3);
-    } else {
-      // A photographed star: white-hot core, tinted halo falling as a
-      // gaussian, faint diffraction spikes. Colour lives in the halo.
-      float core = exp(-r * r * 26.0);
-      float halo = exp(-r * r * 3.4) * 0.5;
-      float spike = (exp(-abs(p.x) * 16.0) + exp(-abs(p.y) * 16.0)) * exp(-r * 1.8) * 0.22;
-      a = core + halo + spike;
-      col = mix(col, vec3(1.0), core * 0.75);
-      if (kind > 0.5) {
-        // Giants: cooler, wider envelope — the halo carries more flux.
-        a = core * 0.8 + halo * 1.5 + spike;
-      }
-    }
-
-    if (a < 0.02) discard;
-    gl_FragColor = vec4(col, a);
+    float fres = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);
+    if (fres < 0.06) discard;
+    gl_FragColor = vec4(uCol, fres);
   }
 `;
 
 type Slot = {
-  mesh: THREE.Mesh;
-  geo: THREE.BufferGeometry;
-  col: THREE.BufferAttribute;
-  kind: THREE.BufferAttribute;
+  fill: THREE.Mesh;
+  rim: THREE.Mesh;
+  fillMat: THREE.MeshBasicMaterial;
+  rimMat: THREE.ShaderMaterial;
 };
 
 export type StarDiscs = {
@@ -195,101 +153,79 @@ export type StarDiscs = {
   syncCamera: (camera: THREE.Camera) => void;
   pick: (raycaster: THREE.Raycaster) => GalaxyObject | null;
   list: () => GalaxyObject[];
-  /** Live world radius of a meshed disc, or 0. */
+  /** World radius of a wrapped sphere, or 0. */
   radiusOf: (id: number) => number;
+  isOutline: (id: number) => boolean;
   dispose: () => void;
 };
 
 export function createStarDiscs(): StarDiscs {
   const group = new THREE.Group();
   group.renderOrder = 3;
+  const ball = new THREE.SphereGeometry(1, 24, 16);
   const slots: Slot[] = [];
 
   for (let i = 0; i < RESOLVE_MAX; i++) {
-    const plane = new THREE.PlaneGeometry(2, 2);
-    const n = plane.attributes.position.count;
-    const colArr = new Float32Array(n * 3);
-    const kindArr = new Float32Array(n);
-    const col = new THREE.BufferAttribute(colArr, 3);
-    const kind = new THREE.BufferAttribute(kindArr, 1);
-    plane.setAttribute('iCol', col);
-    plane.setAttribute('iKind', kind);
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: VERT,
-      fragmentShader: FRAG,
+    const fillMat = new THREE.MeshBasicMaterial({ depthWrite: true });
+    const fill = new THREE.Mesh(ball, fillMat);
+    fill.visible = false;
+    fill.renderOrder = 3;
+    const rimMat = new THREE.ShaderMaterial({
+      vertexShader: RIM_VERT,
+      fragmentShader: RIM_FRAG,
+      uniforms: { uCol: { value: new THREE.Color(1, 1, 1) } },
       transparent: true,
       depthWrite: false,
       side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
     });
-    const mesh = new THREE.Mesh(plane, mat);
-    mesh.frustumCulled = false;
-    mesh.visible = false;
-    mesh.renderOrder = 3;
-    group.add(mesh);
-    slots.push({ mesh, geo: plane, col, kind });
+    const rim = new THREE.Mesh(ball, rimMat);
+    rim.visible = false;
+    rim.renderOrder = 4;
+    group.add(fill, rim);
+    slots.push({ fill, rim, fillMat, rimMat });
   }
 
   let current: GalaxyObject[] = [];
   const worlds: THREE.Vector3[] = [];
   const radii: number[] = [];
-  const rWorlds: number[] = [];
+  const outlines: boolean[] = [];
 
-  function paint(slot: Slot, rgb: THREE.Color, k: number) {
-    const n = slot.col.count;
-    for (let i = 0; i < n; i++) {
-      slot.col.setXYZ(i, rgb.r, rgb.g, rgb.b);
-      slot.kind.setX(i, k);
-    }
-    slot.col.needsUpdate = true;
-    slot.kind.needsUpdate = true;
-  }
-
-  function setStars(stars: GalaxyObject[], cam: THREE.Vector3) {
+  function setStars(stars: GalaxyObject[], _cam: THREE.Vector3) {
+    void _cam;
     current = stars.slice(0, RESOLVE_MAX);
     worlds.length = 0;
     radii.length = 0;
-    rWorlds.length = 0;
+    outlines.length = 0;
     for (let i = 0; i < RESOLVE_MAX; i++) {
       const slot = slots[i];
       if (i >= current.length) {
-        slot.mesh.visible = false;
+        slot.fill.visible = false;
+        slot.rim.visible = false;
         continue;
       }
       const o = current[i];
       const c = galToCart(o.pos);
       const p = new THREE.Vector3(c.x, c.y, c.z);
       worlds.push(p);
-      const dim =
-        o.star.phase === 'white_dwarf' ||
-        o.star.phase === 'neutron_star' ||
-        o.star.phase === 'pulsar' ||
-        o.star.phase === 'black_hole' ||
-        o.star.luminosity < 0.05;
-      let rWorld = glowRadiusKpc(Math.max(o.star.luminosity, 1e-4), dim);
-      if (o.star.nebula !== 'none') rWorld *= 2.1;
-      rWorlds.push(rWorld);
-      const dist = Math.max(1e-4, p.distanceTo(cam));
-      const rad = clampedGlow(rWorld, dist);
-      radii.push(rad);
-      slot.mesh.position.copy(p);
-      slot.mesh.scale.setScalar(rad);
-      slot.mesh.visible = true;
-      paint(slot, starRgb(o), starKind(o));
+      const outline = starIsOutline(o);
+      let rWorld = glowRadiusKpc(Math.max(o.star.luminosity, 1e-4), outline);
+      if (o.star.nebula !== 'none') rWorld *= 2.0;
+      radii.push(rWorld);
+      outlines.push(outline);
+      const rgb = starRgb(o);
+      slot.fill.position.copy(p);
+      slot.rim.position.copy(p);
+      slot.fill.scale.setScalar(rWorld);
+      slot.rim.scale.setScalar(rWorld * 1.04);
+      slot.fillMat.color.copy(rgb);
+      (slot.rimMat.uniforms.uCol.value as THREE.Color).copy(rgb);
+      slot.fill.visible = !outline;
+      slot.rim.visible = outline || o.star.nebula !== 'none';
     }
   }
 
-  function syncCamera(camera: THREE.Camera) {
-    const cam = camera.position;
-    for (let i = 0; i < current.length; i++) {
-      const slot = slots[i];
-      if (!slot.mesh.visible) continue;
-      const dist = Math.max(1e-4, cam.distanceTo(worlds[i]));
-      const rad = clampedGlow(rWorlds[i], dist);
-      radii[i] = rad;
-      slot.mesh.scale.setScalar(rad);
-      slot.mesh.lookAt(cam);
-    }
+  function syncCamera(_camera: THREE.Camera) {
+    void _camera;
   }
 
   const hit = new THREE.Vector3();
@@ -299,7 +235,7 @@ export function createStarDiscs(): StarDiscs {
     let bestD = Infinity;
     for (let i = 0; i < current.length; i++) {
       sphere.center.copy(worlds[i]);
-      sphere.radius = radii[i] * 0.75;
+      sphere.radius = radii[i];
       if (raycaster.ray.intersectSphere(sphere, hit)) {
         const d = hit.distanceTo(raycaster.ray.origin);
         if (d < bestD) {
@@ -321,10 +257,15 @@ export function createStarDiscs(): StarDiscs {
       const i = current.findIndex((o) => o.id === id);
       return i >= 0 ? radii[i] ?? 0 : 0;
     },
+    isOutline(id: number) {
+      const i = current.findIndex((o) => o.id === id);
+      return i >= 0 ? Boolean(outlines[i]) : false;
+    },
     dispose() {
+      ball.dispose();
       for (const s of slots) {
-        s.geo.dispose();
-        (s.mesh.material as THREE.Material).dispose();
+        s.fillMat.dispose();
+        s.rimMat.dispose();
       }
     },
   };
