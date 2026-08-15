@@ -206,8 +206,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     Behind the ball a **magnitude-limited backdrop**
     (`buildSilhouetteCloud`) draws the luminous tail of the rest
     of the disk — living B-and-hotter stars, minted off-thread
-    and cached per seed — with the same magnifier. Boost grows with catalog distance
-    from the bubble so the galactic plane reads as a band in the
+    and cached per seed —     with the same magnifier so they sit outside the ball. The
+    stretch is a flight ruler, not a photometric one: inverse-
+    square uses `SILHOUETTE_D` + `FADE` × extra catalog kpc, so
+    crossing the disk does not dump them down the magnified
+    1/d² hole. The galactic plane reads as a band in the
     midplane and as a face above it. The sphere itself is
     untouched; the map saucer stays hidden. The breadcrumb
     returns to the map.

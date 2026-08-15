@@ -422,13 +422,16 @@ export const UNIVERSE = {
    * Distant luminous backdrop (region dive). The flyable ball does
    * not change. Outside it, a magnitude-limited harvest of the rest
    * of the disk — living stars above SILHOUETTE_M (B and hotter) —
-   * is drawn with the same magnifier. Boost grows with catalog
-   * distance from the bubble (smoothstep REGION_R → R_MAX): pinpricks
-   * just outside the rim, more light farther out, so the SBbc reads
-   * behind you. Optical approximation, like AIR_LINE — we add light
-   * with distance instead of fading it. Not pickable. Cached per seed.
+   * is placed with the same magnifier so they sit outside the view
+   * ball. That stretch is a flight ruler, not a photometric one:
+   * inverse-square uses SILHOUETTE_D + FADE × (dCatalog − REGION_R)
+   * instead of the magnified view metres. FADE = 0 keeps a star as
+   * bright at the far rim as it is just outside the bubble; 20 would
+   * be the old “apply the magnifier to light” law that swallowed
+   * them. Optical approximation, like AIR_LINE. Not pickable.
    */
-  GALAXY_SILHOUETTE: 6,
+  GALAXY_SILHOUETTE_D: 6,
+  GALAXY_SILHOUETTE_FADE: 0.12,
   GALAXY_SILHOUETTE_M: 5,
 
   /**

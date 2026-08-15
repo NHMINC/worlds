@@ -13,7 +13,8 @@
  * follows the centre; a worker mints and drops the rim. Space is
  * magnified (VIEW_R / REGION_R); star size is not. Distant stars
  * are 1px pinpricks; closer ones grow. Behind the ball a
- * magnitude-limited backdrop sketches the rest of the disk.
+ * magnitude-limited backdrop sketches the rest of the disk
+ * (magnifier places them; inverse-square does not use the stretch).
  * The breadcrumb returns to the map.
  */
 import * as THREE from 'three';
@@ -139,9 +140,9 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uMaxPx;
   uniform float uNearBoost;
   uniform float uFluxEps;
-  uniform float uSilhouette;
   uniform float uRegionR;
-  uniform float uRMax;
+  uniform float uPhotD;
+  uniform float uFade;
   varying vec3 vColor;
   varying float vVis;
   void main() {
@@ -155,20 +156,20 @@ const SILHOUETTE_VERT = /* glsl */ `
     }
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
-    float d = max(length(mv.xyz), 0.001);
+    // Magnifier places the star; it does not stretch the inverse-square
+    // ruler. Extra catalog kpc beyond the rim count as FADE, not ×scale.
+    float d = max(uPhotD + uFade * (dCat - uRegionR), 0.001);
     float L = max(aLum, 1e-4);
     float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
     float r = max(rMin, uGlowK * pow(L, uGlowP));
     r = min(r, 0.012);
     float ang = r / d;
     float px = 2.0 * ang * uPxPerRad;
-    float fL = smoothstep(8.0, 80.0, L);
-    float boost = uSilhouette * fL * smoothstep(uRegionR, uRMax, dCat);
-    gl_PointSize = clamp(max(uPixel, px) * (1.0 + 0.35 * boost), 1.0, uMaxPx);
+    gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
     float flux = L / (d * d + uFluxEps);
     float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
     vColor = aColor;
-    vVis = min(aVis * punch * (1.0 + boost), 8.0);
+    vVis = min(aVis * punch, 8.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -687,9 +688,9 @@ export class GalaxyView {
         uMaxPx: { value: POINT_MAX_PX },
         uNearBoost: { value: POINT_NEAR_BOOST },
         uFluxEps: { value: POINT_FLUX_EPS },
-        uSilhouette: { value: UNIVERSE.GALAXY_SILHOUETTE },
         uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
-        uRMax: { value: UNIVERSE.GALAXY_R_MAX },
+        uPhotD: { value: UNIVERSE.GALAXY_SILHOUETTE_D },
+        uFade: { value: UNIVERSE.GALAXY_SILHOUETTE_FADE },
       },
       transparent: true,
       depthWrite: false,
