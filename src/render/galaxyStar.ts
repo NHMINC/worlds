@@ -21,16 +21,17 @@ export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
 /**
- * Photograph stretch of inverse-square flux: gain · ln(1 + k F).
- * k sets how soon the bright end compresses; gain is exposure.
+ * Photograph stretch of inverse-square flux: gain · (k F)^p.
  * Rank is the law — do not flatten L into a shared white.
  */
-export const SHINE_FLUX_K = 2800;
-export const SHINE_FLUX_GAIN = 0.48;
-/** Spherical halo gain. Dim pins stay pins; bright ones throw a ball of light. */
-export const SHINE_TAIL = 1.2;
-/** Halo width (px). Radial gaussian — a sphere, not a spike. */
-export const SHINE_HALO_PX = 6.8;
+export const SHINE_FLUX_K = 500;
+export const SHINE_FLUX_GAIN = 2.6;
+/** Photograph power: higher keeps rank, lower flattens to one white. */
+export const SHINE_FLUX_P = 0.4;
+/** Spherical halo gain. Soft ball — must not fill the sprite to white. */
+export const SHINE_TAIL = 0.42;
+/** Halo width (framebuffer px). A few pixels around the pin, not a disc. */
+export const SHINE_HALO_PX = 3.2;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). */
@@ -54,7 +55,7 @@ export function pointApparentPx(L: number, dist: number, pxPerRad: number, dim =
 
 /** LDR intensity from F = L / d². Same formula the star vertex uses. */
 export function shineFromFlux(flux: number): number {
-  return SHINE_FLUX_GAIN * Math.log(1 + SHINE_FLUX_K * Math.max(0, flux));
+  return SHINE_FLUX_GAIN * Math.pow(SHINE_FLUX_K * Math.max(0, flux), SHINE_FLUX_P);
 }
 
 const KIND = {
