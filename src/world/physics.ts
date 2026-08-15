@@ -430,13 +430,14 @@ export const UNIVERSE = {
    * be the old “apply the magnifier to light” law that swallowed
    * them. GAIN is extra light at the far rim of the disk
    * (smoothstep REGION_R → R_MAX): 1 at the bubble, GAIN at
-   * R_MAX, so the most remote are brighter and nearer ones
-   * work backwards. Optical approximation, like AIR_LINE.
-   * Not pickable.
+   * R_MAX. A 1px splat on the LDR canvas clamps at white, so
+   * the crank also grows the disc as √GAIN — otherwise 10×
+   * and 1000× look the same. Optical approximation, like
+   * AIR_LINE. Not pickable.
    */
   GALAXY_SILHOUETTE_D: 6,
   GALAXY_SILHOUETTE_FADE: 0.12,
-  GALAXY_SILHOUETTE_GAIN: 10,
+  GALAXY_SILHOUETTE_GAIN: 1000,
   GALAXY_SILHOUETTE_M: 5,
 
   /**

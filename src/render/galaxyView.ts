@@ -167,13 +167,14 @@ const SILHOUETTE_VERT = /* glsl */ `
     r = min(r, 0.012);
     float ang = r / d;
     float px = 2.0 * ang * uPxPerRad;
-    gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
     float flux = L / (d * d + uFluxEps);
     float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
     // Most remote = GAIN; just outside the bubble = 1. Work backwards.
+    // LDR canvas clamps a 1px splat, so the disc grows as √GAIN.
     float far = mix(1.0, uGain, smoothstep(uRegionR, uRMax, dCat));
     vColor = aColor * far;
-    vVis = min(aVis * punch, 8.0);
+    vVis = min(aVis * punch * far, uGain);
+    gl_PointSize = clamp(max(uPixel, px) * sqrt(far), 1.0, uMaxPx);
     gl_Position = projectionMatrix * mv;
   }
 `;

@@ -211,7 +211,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     square uses `SILHOUETTE_D` + `FADE` × extra catalog kpc, so
     crossing the disk does not dump them down the magnified
     1/d² hole. `SILHOUETTE_GAIN` then lifts the most remote
-    (×10 at `R_MAX`, 1× at the bubble, smoothstep in between).
+    (×1000 at `R_MAX`, 1× at the bubble, smoothstep in between;
+    disc size follows √GAIN so the crank reads on an LDR canvas).
     The galactic plane reads as a band in the
     midplane and as a face above it. The sphere itself is
     untouched; the map saucer stays hidden. The breadcrumb
