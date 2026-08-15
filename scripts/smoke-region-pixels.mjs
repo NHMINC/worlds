@@ -106,6 +106,8 @@ async function sample(label, path) {
 }
 
 await page.evaluate(() => window.__galaxyView?.setPreset?.('home'));
+await page.waitForFunction(() => (window.__galaxyView?.currentMode?.() === 'region') && (window.__galaxyView?.beaconCount?.() ?? 0) > 1_000, { timeout: 25000 });
+await page.waitForTimeout(400);
 const home = await sample('HOME', 'previews/region-pixels-home.png');
 if (home.mode !== 'region') errors.push(`home mode ${home.mode}`);
 if (!home.n || home.n < 1000) errors.push(`home n ${home.n}`);
@@ -114,6 +116,7 @@ if (home.lit < 400) errors.push(`home only ${home.lit} lit pixels (maxL=${home.m
 await page.click('.gx-crumb');
 await page.waitForTimeout(800);
 await page.mouse.click(560, 330);
+await page.waitForFunction(() => (window.__galaxyView?.currentMode?.() === 'region') && (window.__galaxyView?.beaconCount?.() ?? 0) > 500, { timeout: 30000 });
 const tap = await sample('TAP', 'previews/region-pixels-tap.png');
 if (tap.mode !== 'region') errors.push(`tap mode ${tap.mode}`);
 if (!tap.n || tap.n < 500) errors.push(`tap n ${tap.n}`);

@@ -395,15 +395,23 @@ export const UNIVERSE = {
    * The saucer mesh is still cut into SECTORS × SECTOR_RINGS tiles
    * (equal-mass rings) so the dome tessellates cleanly. That grid is
    * chart fabric, not a play verb. A tap is a coordinate; the region
-   * is a ball of radius GALAXY_REGION_R around that point. The radius
-   * is sized so a midplane ball at the outer disk holds ~10⁴ occupied
-   * slots. Count is an outcome: the bulge is crowded because it is.
+   * is a ball of radius GALAXY_REGION_R around that point — a real
+   * neighbourhood, not a marble. Every occupied slot is kept near the
+   * tap (FULL_R). Farther cells keep only the massive tail of their
+   * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
+   * you can fly. Count is still an outcome — the bulge is denser.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,
   GALAXY_SECTOR_STARS: 2500,
   /** Fixed region radius (kpc). One length; density fills it. */
-  GALAXY_REGION_R: 0.22,
+  GALAXY_REGION_R: 4.0,
+  /** Within this of the tap, every occupied slot is drawn. */
+  GALAXY_REGION_FULL_R: 0.12,
+  /** Distance over which the IMF cut ramps to U_FAR. */
+  GALAXY_REGION_U_RAMP: 0.15,
+  /** Far cells: keep only this upper quantile of the IMF. */
+  GALAXY_REGION_U_FAR: 0.9985,
 
   /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:

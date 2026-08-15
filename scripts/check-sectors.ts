@@ -20,6 +20,7 @@ import {
   systemsOfInterest,
   buildArcCloud,
   buildRegionCloud,
+  regionImfFloor,
 } from '../src/world/sectors';
 
 const seed = UNIVERSE.CANONICAL_SEED;
@@ -151,12 +152,15 @@ const check = (cond: boolean, msg: string) => {
 // --- region ball: fixed R, every occupant, pose matches objectAt ---
 {
   const r = UNIVERSE.GALAXY_REGION_R;
+  check(regionImfFloor(0) === 0, 'tap neighbourhood must keep every slot');
+  check(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R) === 0, 'full-R edge must still be complete');
+  check(Math.abs(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R + UNIVERSE.GALAXY_REGION_U_RAMP) - UNIVERSE.GALAXY_REGION_U_FAR) < 1e-9, 'ramp must reach U_FAR');
   const rim = galToCart({ R: 14, theta: 0.4, z: 0 });
   const a = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
   const b4 = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
   check(a.n === b4.n && a.n > 0, `region cloud not deterministic ${a.n} vs ${b4.n}`);
   check(a.ids[0] === b4.ids[0], 'region first id drifted');
-  check(a.n > 4_000 && a.n < 25_000, `outer-disk region ${a.n} should be ~10k`);
+  check(a.n > 20_000 && a.n < 800_000, `outer-disk region ${a.n} is not a flyable sky`);
   check(a.pos.length === a.n * 3 && a.lum.length === a.n && a.gain.length === a.n, `region buffers not trimmed to n=${a.n}`);
   let maxD = 0;
   for (let i = 0; i < a.n; i++) {

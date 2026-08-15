@@ -81,7 +81,8 @@ if (await galaxyBtn.count()) {
   console.log('HOME MARKER', JSON.stringify(ring));
   if (ring) {
     await page.mouse.click(ring.x, ring.y);
-    await page.waitForTimeout(2500);
+    await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
+    await page.waitForTimeout(400);
   }
   const arc = await page.evaluate(() => ({
     mode: window.__galaxyView?.currentMode?.() ?? null,
@@ -204,7 +205,8 @@ if (await galaxyBtn.count()) {
   if (backOut !== 'map') errors.push('breadcrumb did not return to the map');
   await page.waitForTimeout(1800);
   await page.mouse.click(560, 330);
-  await page.waitForTimeout(2000);
+  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 1_000, { timeout: 30000 });
+  await page.waitForTimeout(400);
   const arc2 = await page.evaluate(() => ({
     mode: window.__galaxyView?.currentMode?.() ?? null,
     region: window.__galaxyView?.currentRegion?.()?.name ?? null,
@@ -224,7 +226,7 @@ if (await galaxyBtn.count()) {
     return true;
   });
   console.log('HOME PRESET', goBack);
-  await page.waitForTimeout(1500);
+  await page.waitForFunction(() => (window.__galaxyView?.currentMode?.() === 'region') && (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
   await page.evaluate(() => window.__galaxyView?.approachNearest?.());
   await page.waitForTimeout(800);
   const goBtn = page.locator('button.gd-go');

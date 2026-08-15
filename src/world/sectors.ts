@@ -350,20 +350,39 @@ export function regionName(x: number, _y: number, z: number): string {
   return `${R.toFixed(1)} kpc · ${deg.toFixed(0)}°`;
 }
 
+/** IMF floor for a cell at distance d from the tap. 0 = every slot. */
+export function regionImfFloor(d: number): number {
+  const full = UNIVERSE.GALAXY_REGION_FULL_R;
+  const ramp = UNIVERSE.GALAXY_REGION_U_RAMP;
+  const t = Math.max(0, Math.min(1, (d - full) / Math.max(1e-4, ramp)));
+  return t * UNIVERSE.GALAXY_REGION_U_FAR;
+}
+
 /**
- * Every occupied slot whose birth position falls inside a Cartesian
- * ball. Cheap birth, no evolve. The radius is a law (`GALAXY_REGION_R`);
- * the count is whatever density puts there.
+ * Occupied slots inside a Cartesian ball. Near the tap the IMF is
+ * complete. Farther cells keep only their massive tail — the same
+ * zoom law as the catalog — so a multi-kpc volume has gaps you can
+ * fly instead of a glowing marble. Cheap birth, no evolve.
  */
 export function buildRegionCloud(seed: string, x: number, y: number, z: number, r = UNIVERSE.GALAXY_REGION_R): StarCloud {
   const t0 = performance.now();
   const cells = cellsOverlappingBall(x, y, z, r);
   const filledOf = new Int32Array(cells.length);
+  const slot0 = new Int32Array(cells.length);
   let cap = 0;
   for (let i = 0; i < cells.length; i++) {
     const f = slotsInCell(seed, cells[i]);
     filledOf[i] = f;
-    cap += f;
+    if (f <= 0) continue;
+    const mid = cellCenter(cells[i]);
+    const d = Math.hypot(
+      mid.R * Math.cos(mid.theta) - x,
+      mid.z - y,
+      mid.R * Math.sin(mid.theta) - z,
+    );
+    const s0 = Math.floor(regionImfFloor(d) * f);
+    slot0[i] = s0;
+    cap += f - s0;
   }
   const c = allocCloud(cap);
   const r2 = r * r;
@@ -371,7 +390,7 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
   for (let ci = 0; ci < cells.length; ci++) {
     const cell = cells[ci];
     const filled = filledOf[ci];
-    for (let slot = 0; slot < filled; slot++) {
+    for (let slot = slot0[ci]; slot < filled; slot++) {
       const p = slotBirthCart(seed, cell, slot);
       const dx = p.x - x;
       const dy = p.y - y;

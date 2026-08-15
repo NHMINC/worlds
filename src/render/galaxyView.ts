@@ -49,9 +49,11 @@ import {
 const MAP_R_MIN = 9;
 const MAP_R_MAX = 46;
 const MAP_R_HOME = 34;
-/** Region camera: frame the ball, leave when you have left it. */
-const REGION_R_FRAME = 2.4;
-const REGION_R_EXIT = 7;
+/** Start inside the ball, a little past the tap, looking out through it. */
+const REGION_START_IN = 0.09;
+const REGION_LOOK = 2.4;
+/** Leave once you have flown out of the ball. */
+const REGION_R_EXIT = 1.18;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
@@ -438,19 +440,20 @@ export class GalaxyView {
     this.censusMemo = {};
 
     this.arcCenter.set(x, y, z);
-    const r = UNIVERSE.GALAXY_REGION_R * REGION_R_FRAME;
-    const phi = 0.9;
-    const th = this.tgtTheta;
-    this.arcPos.set(
-      x + r * Math.sin(phi) * Math.cos(th),
-      y + r * Math.cos(phi),
-      z + r * Math.sin(phi) * Math.sin(th),
-    );
-    const aim = select ? galToCart(select.pos) : { x, y, z };
-    this.aimAt(aim.x, aim.y, aim.z);
+    const glen = Math.hypot(x, z);
+    const ox = glen > 1e-4 ? x / glen : 1;
+    const oz = glen > 1e-4 ? z / glen : 0;
+    this.arcPos.set(x + ox * REGION_START_IN, y, z + oz * REGION_START_IN);
+    if (select) {
+      const s = galToCart(select.pos);
+      this.aimAt(s.x + ox * REGION_LOOK, s.y, s.z + oz * REGION_LOOK);
+    } else {
+      this.aimAt(x + ox * REGION_LOOK, y, z + oz * REGION_LOOK);
+    }
     this.enteredAt = performance.now();
     this.idle = 0;
     this.camera.near = 0.001;
+    this.camera.far = 400;
     this.camera.updateProjectionMatrix();
     this.sectors.group.visible = false;
     if (this.visitedMk) this.visitedMk.pts.visible = false;
