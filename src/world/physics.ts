@@ -488,11 +488,12 @@ export const UNIVERSE = {
   GALAXY_SILHOUETTE_L: 1000,
   /** Backdrop nebulae: emissionLook surface-brightness gain. Young
    *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
-   *  0.78 is the population median — half the shells that 0.65 kept. */
-  GALAXY_SILHOUETTE_NEB_GAIN: 0.78,
+   *  Two median halvings from 0.65: only the blazing quarter remains —
+   *  closer to a naked-eye sky than a long-exposure photograph. */
+  GALAXY_SILHOUETTE_NEB_GAIN: 0.878,
   /** Backdrop dust: envelope radius (kpc). The wisp floor is 0.05;
-   *  0.068 is the median of the fields 0.06 kept — the bigger half. */
-  GALAXY_SILHOUETTE_DUST_R: 0.068,
+   *  two median halvings from 0.06 — only the great complexes. */
+  GALAXY_SILHOUETTE_DUST_R: 0.079,
   SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_DUST_PX: 4,
