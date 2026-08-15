@@ -1,10 +1,9 @@
 /**
  * Arc stars are GL_POINTS that pretend to be the photosphere.
- * At explorer distance a star is a point source — no diameter.
- * Brightness is inverse-square flux (L / d²) through a photograph
- * stretch that keeps rank: a 200 L☉ star outshines a 5 L☉ star
- * at the same distance. The sprite is a pin; any glare is the
- * eye answering flux, not a disc we sized. A pixel cap is
+ * At explorer distance a star is a point source — one pixel of
+ * light, no diameter, no disc. Brightness is inverse-square flux
+ * (L / d²) through a photograph stretch that keeps rank: a 200 L☉
+ * star outshines a 5 L☉ star at the same distance. A pixel cap is
  * hardware, not a census. objectAt is still O(1) on tap.
  */
 import * as THREE from 'three';
@@ -21,10 +20,6 @@ export const GLOW_P = 0.16;
 export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
-/** Photosphere pin width (px). Sub-pixel — there is no disc. */
-export const SHINE_CORE_PX = 0.45;
-/** Additive 1/r² tail — only a bright point blooms. */
-export const SHINE_TAIL = 0.14;
 /**
  * Photograph stretch of inverse-square flux: gain · ln(1 + k F).
  * k sets how soon the bright end compresses; gain is exposure.
