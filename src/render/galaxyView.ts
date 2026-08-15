@@ -141,10 +141,8 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uNearBoost;
   uniform float uFluxEps;
   uniform float uRegionR;
-  uniform float uRMax;
-  uniform float uPhotD;
-  uniform float uFade;
   uniform float uGain;
+  uniform float uSize;
   varying vec3 vColor;
   varying float vVis;
   void main() {
@@ -158,23 +156,19 @@ const SILHOUETTE_VERT = /* glsl */ `
     }
     vec3 view = (position - uCenter) * uScale;
     vec4 mv = modelViewMatrix * vec4(view, 1.0);
-    // Magnifier places the star; it does not stretch the inverse-square
-    // ruler. Extra catalog kpc beyond the rim count as FADE, not ×scale.
-    float d = max(uPhotD + uFade * (dCat - uRegionR), 0.001);
-    float L = max(aLum, 1e-4);
+    // Birth crank, then magnified distance reduces light (1/d²) and size (r/d).
+    float d = max(length(mv.xyz), 0.001);
+    float L = max(aLum, 1e-4) * uGain;
     float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
-    float r = max(rMin, uGlowK * pow(L, uGlowP));
-    r = min(r, 0.012);
+    float r = max(rMin, uGlowK * pow(max(aLum, 1e-4), uGlowP));
+    r = min(r, 0.012) * uSize;
     float ang = r / d;
     float px = 2.0 * ang * uPxPerRad;
+    gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
     float flux = L / (d * d + uFluxEps);
     float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
-    // Most remote = GAIN; just outside the bubble = 1. Work backwards.
-    // LDR canvas clamps a 1px splat, so the disc grows as √GAIN.
-    float far = mix(1.0, uGain, smoothstep(uRegionR, uRMax, dCat));
-    vColor = aColor * far;
-    vVis = min(aVis * punch * far, uGain);
-    gl_PointSize = clamp(max(uPixel, px) * sqrt(far), 1.0, uMaxPx);
+    vColor = aColor * punch;
+    vVis = min(aVis * punch, uGain);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -670,8 +664,8 @@ export class GalaxyView {
   }
 
   private buildSilhouetteStars(): void {
-    const cloud = silhouetteCloud(this.seed);
-    if (!cloud) return;
+    const cloud = silhouetteCloud(this.seed) ?? buildSilhouetteCloud(this.seed);
+    if (!cloud || cloud.n <= 0) return;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
@@ -690,21 +684,21 @@ export class GalaxyView {
         uGlowP: { value: GLOW_P },
         uGlowMin: { value: 0.0007 },
         uGlowDim: { value: GLOW_DIM },
-        uMaxPx: { value: POINT_MAX_PX },
+        uMaxPx: { value: 1024 },
         uNearBoost: { value: POINT_NEAR_BOOST },
         uFluxEps: { value: POINT_FLUX_EPS },
         uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
-        uRMax: { value: UNIVERSE.GALAXY_R_MAX },
-        uPhotD: { value: UNIVERSE.GALAXY_SILHOUETTE_D },
-        uFade: { value: UNIVERSE.GALAXY_SILHOUETTE_FADE },
         uGain: { value: UNIVERSE.GALAXY_SILHOUETTE_GAIN },
+        uSize: { value: UNIVERSE.GALAXY_SILHOUETTE_SIZE },
       },
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      toneMapped: false,
     });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
+    pts.renderOrder = -1;
     this.scene.add(pts);
     this.silPts = pts;
     this.silGeo = geo;
@@ -1229,6 +1223,9 @@ export class GalaxyView {
       this.silWorker.onerror = () => {
         this.silWorker?.terminate();
         this.silWorker = null;
+        if (this.disposed) return;
+        buildSilhouetteCloud(this.seed);
+        if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
       };
       this.silWorker.postMessage({ type: 'mint', seed: this.seed });
     } catch {

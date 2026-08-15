@@ -205,18 +205,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     pinpricks**. Closer ones grow from luminosity and distance.
     Behind the ball a **magnitude-limited backdrop**
     (`buildSilhouetteCloud`) draws the luminous tail of the rest
-    of the disk — living B-and-hotter stars, minted off-thread
-    and cached per seed —     with the same magnifier so they sit outside the ball. The
-    stretch is a flight ruler, not a photometric one: inverse-
-    square uses `SILHOUETTE_D` + `FADE` × extra catalog kpc, so
-    crossing the disk does not dump them down the magnified
-    1/d² hole. `SILHOUETTE_GAIN` then lifts the most remote
-    (×1000 at `R_MAX`, 1× at the bubble, smoothstep in between;
-    disc size follows √GAIN so the crank reads on an LDR canvas).
-    The galactic plane reads as a band in the
-    midplane and as a face above it. The sphere itself is
-    untouched; the map saucer stays hidden. The breadcrumb
-    returns to the map.
+    of the disk — living B-and-hotter stars, cached per seed —
+    with the same magnifier. Birth light and disc are
+    `SILHOUETTE_GAIN` / `SIZE`; magnified distance then reduces
+    both. The galactic plane reads as a band in the midplane
+    and as a face above it. The sphere itself is untouched;
+    the map saucer stays hidden. The breadcrumb returns to
+    the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
   re-roll bug class was structural, and it is retired along with the

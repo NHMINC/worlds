@@ -422,22 +422,13 @@ export const UNIVERSE = {
    * Distant luminous backdrop (region dive). The flyable ball does
    * not change. Outside it, a magnitude-limited harvest of the rest
    * of the disk — living stars above SILHOUETTE_M (B and hotter) —
-   * is placed with the same magnifier so they sit outside the view
-   * ball. That stretch is a flight ruler, not a photometric one:
-   * inverse-square uses SILHOUETTE_D + FADE × (dCatalog − REGION_R)
-   * instead of the magnified view metres. FADE = 0 keeps a star as
-   * bright at the far rim as it is just outside the bubble; 20 would
-   * be the old “apply the magnifier to light” law that swallowed
-   * them. GAIN is extra light at the far rim of the disk
-   * (smoothstep REGION_R → R_MAX): 1 at the bubble, GAIN at
-   * R_MAX. A 1px splat on the LDR canvas clamps at white, so
-   * the crank also grows the disc as √GAIN — otherwise 10×
-   * and 1000× look the same. Optical approximation, like
-   * AIR_LINE. Not pickable.
+   * is placed with the same magnifier. Birth light and disc are
+   * GAIN / SIZE (diagnostic cranks); magnified view distance then
+   * reduces both (inverse-square and r/d). Optical approximation,
+   * like AIR_LINE. Not pickable.
    */
-  GALAXY_SILHOUETTE_D: 6,
-  GALAXY_SILHOUETTE_FADE: 0.12,
-  GALAXY_SILHOUETTE_GAIN: 1000,
+  GALAXY_SILHOUETTE_GAIN: 100_000,
+  GALAXY_SILHOUETTE_SIZE: 100_000,
   GALAXY_SILHOUETTE_M: 5,
 
   /**
