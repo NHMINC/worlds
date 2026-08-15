@@ -11,8 +11,8 @@
  * ball. Look-drag slides the heading. Warp (↑ / Warp button) latches
  * acceleration; ↓ / Stop brakes at the same rate. The vertex shader
  * follows the centre; a worker mints and drops the rim. Space is
- * magnified (VIEW_R / REGION_R); star size is not. Distant stars
- * are 1px pinpricks; closer ones grow. Behind the ball a
+ * magnified (VIEW_R / REGION_R); star size is not — every star
+ * is one CSS pixel. Intensity and colour carry the rank. Behind the ball a
  * magnitude-limited backdrop (stars, typed nebulae, dusty cell
  * centres) sketches the rest of the disk. Same shape law as the
  * local sample; magnifier places them. The breadcrumb returns to
@@ -30,11 +30,11 @@ import {
   POINT_FLUX_EPS,
   POINT_MAX_PX,
   POINT_NEAR_BOOST,
-  SHINE_FLUX_GAIN,
-  SHINE_FLUX_K,
-  SHINE_FLUX_P,
-  SHINE_HALO_PX,
-  SHINE_TAIL,
+  SHINE_DIST_P,
+  SHINE_DIST_REF,
+  SHINE_L_GAIN,
+  SHINE_L_P,
+  SHINE_SAT,
   glowRadiusKpc,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
@@ -111,10 +111,11 @@ const STAR_VERT = /* glsl */ `
   uniform float uMaxPx;
   uniform float uNearBoost;
   uniform float uFluxEps;
-  uniform float uShineFluxK;
-  uniform float uShineFluxGain;
-  uniform float uShineFluxP;
-  uniform float uGlowPx;
+  uniform float uShineLGain;
+  uniform float uShineLP;
+  uniform float uShineDistRef;
+  uniform float uShineDistP;
+  uniform float uShineSat;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -141,18 +142,16 @@ const STAR_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Point source: no diameter. Intensity is F = L / d² through
-      // the photograph stretch. aVis is a filter, not a flattened L.
+      // A point of light: one CSS pixel, no diameter. Intensity
+      // is L^P · (D/d)^q; colour is teff pushed off white.
       float L = max(aLum, 1e-4);
-      float flux = L / (d * d + uFluxEps);
-      vVis = min(aVis * uShineFluxGain * pow(uShineFluxK * flux, uShineFluxP), 8.0);
+      vVis = aVis * uShineLGain * pow(L, uShineLP) * pow(uShineDistRef / d, uShineDistP);
+      float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
+      vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
       vCenterView = vec3(0.0);
       vRadiusView = 0.0;
       vCenterCat = vec3(0.0);
-      // Glow room follows L, not flattened vVis×DPR. A mid-A stays a
-      // pin; only the luminous tail gets a spherical halo.
-      float glow = smoothstep(4.0, 120.0, L);
-      gl_PointSize = max(uPixel, (3.2 + uGlowPx * glow) * uPixel);
+      gl_PointSize = max(1.0, uPixel);
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -182,10 +181,11 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uDustPx;
   uniform float uSuper;
   uniform float uFluxEps;
-  uniform float uShineFluxK;
-  uniform float uShineFluxGain;
-  uniform float uShineFluxP;
-  uniform float uGlowPx;
+  uniform float uShineLGain;
+  uniform float uShineLP;
+  uniform float uShineDistRef;
+  uniform float uShineDistP;
+  uniform float uShineSat;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -225,15 +225,14 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Point source at this distance — no diameter. Same flux law
-      // as the local layer: F = L / d², photograph stretch, rank
-      // kept. Sprite is a pin; intensity is the variable.
+      // Same point law as the local layer: one CSS pixel, L^P
+      // intensity, teff colour. No glow sprite.
       float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
-      float flux = L / (d * d + uFluxEps);
-      vVis = min(aVis * uShineFluxGain * pow(uShineFluxK * flux, uShineFluxP) * uSuper, 8.0);
-      float glow = smoothstep(4.0, 120.0, L);
-      gl_PointSize = max(uPixel, (3.2 + uGlowPx * glow) * uPixel);
+      vVis = aVis * uShineLGain * pow(L, uShineLP) * pow(uShineDistRef / d, uShineDistP);
+      float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
+      vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
+      gl_PointSize = max(1.0, uPixel);
       vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
@@ -253,8 +252,6 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustTauK;
   uniform float uDustFreq;
   uniform float uDustRim;
-  uniform float uShineTail;
-  uniform float uShineHalo;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -269,22 +266,15 @@ const STAR_FRAG = /* glsl */ `
     if (uPass > 1.5 && vKind < 3.5) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
-      // Pixel of light + spherical glow. Core is ~1 px. Halo is a
-      // radial gaussian — a ball of light, not a 1/r² sparkle and
-      // not a diffraction cross. Window dies at the edge; no rim.
-      float r = length(p);
-      if (r > 1.0) discard;
-      float rPx = r * max(vPx, 1.0) * 0.5;
-      float flux = clamp(vVis, 0.0, 8.0);
-      float core = exp(-rPx * rPx * 2.8);
-      float haloW = max(uShineHalo, 3.0);
-      float halo = exp(-rPx * rPx / (haloW * haloW));
-      float window = 1.0 - r * r;
-      window *= window;
-      float shine = (core * flux * 1.6 + halo * uShineTail * flux) * window;
-      if (shine < 0.003) discard;
-      vec3 col = mix(vColor, vec3(1.0), clamp(0.28 * core * min(flux, 2.6), 0.0, 0.55));
-      gl_FragColor = vec4(col * shine, min(shine, 1.0));
+      // The sprite is one CSS pixel. No circle, no gaussian fill.
+      // Chromaticity from teff; brightness I/(1+I) so an O star
+      // is brighter than an A star and neither blows to white.
+      float peak = max(max(vColor.r, vColor.g), vColor.b);
+      vec3 chroma = vColor / max(peak, 1e-4);
+      float I = max(vVis, 0.0);
+      float bright = I / (1.0 + I);
+      if (bright < 0.008) discard;
+      gl_FragColor = vec4(chroma * bright, 1.0);
       return;
     }
     if (vKind > 3.5) {
@@ -918,15 +908,14 @@ export class GalaxyView {
     };
   }
 
-  /** Point-source shine — flux stretch. Shared by both layers. */
+  /** Point-source shine — L and distance. Shared by both layers. */
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
-      uShineFluxK: { value: SHINE_FLUX_K },
-      uShineFluxGain: { value: SHINE_FLUX_GAIN },
-      uShineFluxP: { value: SHINE_FLUX_P },
-      uShineTail: { value: SHINE_TAIL },
-      uShineHalo: { value: SHINE_HALO_PX },
-      uGlowPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
+      uShineLGain: { value: SHINE_L_GAIN },
+      uShineLP: { value: SHINE_L_P },
+      uShineDistRef: { value: SHINE_DIST_REF },
+      uShineDistP: { value: SHINE_DIST_P },
+      uShineSat: { value: SHINE_SAT },
       uFluxEps: { value: POINT_FLUX_EPS },
     };
   }

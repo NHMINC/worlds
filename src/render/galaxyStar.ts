@@ -1,10 +1,10 @@
 /**
- * Arc stars are GL_POINTS that pretend to be the photosphere.
- * At explorer distance a star is a point source — one pixel of
- * light — with a spherical glow. The core is a pin; the halo is
- * a radial gaussian from flux. No cross, no spangle, no filled
- * disc. Brightness is L / d² through a photograph stretch that
- * keeps rank. objectAt is still O(1) on tap.
+ * Arc stars are points of light. A star has no on-screen diameter —
+ * one CSS pixel of photosphere colour. Brightness is
+ * 0.08 · L^0.62 · (40/d)^0.45, then I/(1+I) so an O star outshines
+ * an A star without both clipping to white. Colour is teff, pushed
+ * a little off white so a K giant stays amber. objectAt is still
+ * O(1) on tap.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
@@ -21,17 +21,16 @@ export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
 /**
- * Photograph stretch of inverse-square flux: gain · (k F)^p.
- * Rank is the law — do not flatten L into a shared white.
+ * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
+ * Steep in L so the luminous tail is not one white.
+ * Display brightness is I/(1+I) — hue survives.
  */
-export const SHINE_FLUX_K = 500;
-export const SHINE_FLUX_GAIN = 2.6;
-/** Photograph power: higher keeps rank, lower flattens to one white. */
-export const SHINE_FLUX_P = 0.4;
-/** Spherical halo gain. Soft ball — must not fill the sprite to white. */
-export const SHINE_TAIL = 0.42;
-/** Halo width (framebuffer px). A few pixels around the pin, not a disc. */
-export const SHINE_HALO_PX = 3.2;
+export const SHINE_L_GAIN = 0.08;
+export const SHINE_L_P = 0.62;
+export const SHINE_DIST_REF = 40;
+export const SHINE_DIST_P = 0.45;
+/** Photograph saturation: how far teff RGB is pushed off white. */
+export const SHINE_SAT = 1.55;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). */
@@ -53,9 +52,19 @@ export function pointApparentPx(L: number, dist: number, pxPerRad: number, dim =
   return Math.min(POINT_MAX_PX, Math.max(1, 2 * ang * pxPerRad));
 }
 
-/** LDR intensity from F = L / d². Same formula the star vertex uses. */
-export function shineFromFlux(flux: number): number {
-  return SHINE_FLUX_GAIN * Math.pow(SHINE_FLUX_K * Math.max(0, flux), SHINE_FLUX_P);
+/** Linear intensity from L and view distance. Same formula the star vertex uses. */
+export function shineFromLumDist(L: number, d: number): number {
+  return (
+    SHINE_L_GAIN *
+    Math.pow(Math.max(L, 1e-4), SHINE_L_P) *
+    Math.pow(SHINE_DIST_REF / Math.max(d, 1), SHINE_DIST_P)
+  );
+}
+
+/** What the fragment actually paints: I / (1 + I). */
+export function shineDisplay(L: number, d: number): number {
+  const I = shineFromLumDist(L, d);
+  return I / (1 + I);
 }
 
 const KIND = {
