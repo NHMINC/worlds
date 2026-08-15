@@ -448,8 +448,8 @@ export const UNIVERSE = {
    * the blend. The event law (emissionLook) expands and fades them:
    * PN grows over PN_GYR, SNR Sedov-ish (t^0.4) to SNR_R_MAX, H II
    * is Strömgren-ish (HII_R_K · L^⅓); NEB_EMISSION is the
-   * photograph stretch. They draw additive (they glow); dust draws
-   * after and obscures.
+   * photograph stretch. They screen-blend (they glow, they do not
+   * add to a white bar); dust draws after and obscures.
    * DUST is a raymarched fractal cloud: a short march through one absolute
    * sub-grid ISM field (domain-warped fBm, flattened to the disk so
    * filaments lie in the plane; neighbouring clumps are windows onto
