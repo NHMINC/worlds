@@ -303,7 +303,20 @@ function writeBirth(seed: string, cell: number, slot: number, filled: number, i:
 }
 
 function finishCloud(c: Omit<StarCloud, 'n' | 'ms'>, n: number, t0: number): StarCloud {
-  return { n, ...c, ms: performance.now() - t0 };
+  if (n === c.ids.length) return { n, ...c, ms: performance.now() - t0 };
+  return {
+    n,
+    ids: c.ids.slice(0, n),
+    pos: c.pos.slice(0, n * 3),
+    col: c.col.slice(0, n * 3),
+    size: c.size.slice(0, n),
+    pulse: c.pulse.slice(0, n),
+    gain: c.gain.slice(0, n),
+    bits: c.bits.slice(0, n),
+    mk: c.mk.slice(0, n),
+    lum: c.lum.slice(0, n),
+    ms: performance.now() - t0,
+  };
 }
 
 /**

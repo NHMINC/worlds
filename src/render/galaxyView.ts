@@ -116,8 +116,10 @@ const STAR_FRAG = /* glsl */ `
   void main() {
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
-    if (r2 > 0.85) discard;
-    float limb = 1.0 - 0.22 * r2;
+    // A real sprite disc is r2 ≤ 1. Broken GL_POINTS report (0,0) for
+    // every fragment (r2 = 2) — discard would wipe the whole cloud.
+    if (r2 > 0.85 && r2 < 1.95) discard;
+    float limb = 1.0 - 0.22 * min(r2, 1.0);
     gl_FragColor = vec4(vColor * limb, vVis);
   }
 `;
@@ -514,7 +516,7 @@ export class GalaxyView {
     const visAttr = new THREE.BufferAttribute(vis, 1);
     geo.setAttribute('aVis', visAttr);
     if (cloud) geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
-    if (!cloud || cloud.n === 0) geo.setDrawRange(0, 0);
+    geo.setDrawRange(0, cloud?.n ?? 0);
     const mat = new THREE.ShaderMaterial({
       vertexShader: STAR_VERT,
       fragmentShader: STAR_FRAG,

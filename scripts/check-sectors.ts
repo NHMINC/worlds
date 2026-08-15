@@ -157,6 +157,7 @@ const check = (cond: boolean, msg: string) => {
   check(a.n === b4.n && a.n > 0, `region cloud not deterministic ${a.n} vs ${b4.n}`);
   check(a.ids[0] === b4.ids[0], 'region first id drifted');
   check(a.n > 4_000 && a.n < 25_000, `outer-disk region ${a.n} should be ~10k`);
+  check(a.pos.length === a.n * 3 && a.lum.length === a.n && a.gain.length === a.n, `region buffers not trimmed to n=${a.n}`);
   let maxD = 0;
   for (let i = 0; i < a.n; i++) {
     const d = Math.hypot(a.pos[i * 3] - rim.x, a.pos[i * 3 + 1] - rim.y, a.pos[i * 3 + 2] - rim.z);
