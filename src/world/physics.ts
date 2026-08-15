@@ -510,7 +510,7 @@ export const UNIVERSE = {
   GALAXY_DUST_R_MAX: 0.8,
   /** Raymarch steps through a clump (perf knob; 1 = cheap slice). */
   DUST_MARCH_STEPS: 10,
-  /** Sprites smaller than this (px) skip the march. */
+  /** Sprites smaller than this (CSS px) skip the march. */
   DUST_MINPX: 12,
   /** Densest cores obscure this hard; never a solid wall. */
   DUST_ALPHA_MAX: 0.92,
@@ -520,6 +520,9 @@ export const UNIVERSE = {
   DUST_FREQ: 11,
   /** Lit-rim gain (nursery UV grazing the cloud edge). */
   DUST_RIM: 2.2,
+  /** Rim lighting needs this many CSS px to be readable; below it the
+   *  two extra field taps per fragment buy nothing. */
+  DUST_RIM_MINPX: 36,
   /** Ice mantles condense when the temperature proxy falls below this. */
   DUST_ICE_WARM: 0.34,
 
