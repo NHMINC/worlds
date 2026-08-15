@@ -463,6 +463,17 @@ function mix3(a: [number, number, number], b: [number, number, number], t: numbe
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
+/** Envelope radius (kpc) from the ISM field. Wisps sit near 0.05. */
+function dustRadiusKpc(seed: string, cell: number, k: number): number {
+  const shape = shapeAt(KIND_DUST, dustId(cell, k));
+  const phys = dustPhysics(seed, cell);
+  const jitter = 0.7 + 0.6 * shape.seed;
+  return Math.min(
+    UNIVERSE.GALAXY_DUST_R_MAX,
+    (0.05 + (UNIVERSE.GALAXY_DUST_R_MAX - 0.05) * Math.pow(phys.field, 1.5)) * jitter,
+  );
+}
+
 /**
  * One dust clump: scattered position (no lattice), sphere of
  * influence from the field — wisps ~0.05 kpc, complexes up to
@@ -475,11 +486,7 @@ function writeDust(seed: string, cell: number, k: number, i: number, c: Omit<Sta
   const id = dustId(cell, k);
   const shape = shapeAt(KIND_DUST, id);
   const phys = dustPhysics(seed, cell);
-  const jitter = 0.7 + 0.6 * shape.seed;
-  const radius = Math.min(
-    UNIVERSE.GALAXY_DUST_R_MAX,
-    (0.05 + (UNIVERSE.GALAXY_DUST_R_MAX - 0.05) * Math.pow(phys.field, 1.5)) * jitter,
-  );
+  const radius = dustRadiusKpc(seed, cell, k);
   let rgb = mix3(DUST_SILICATE, DUST_SOOT, phys.carbonFrac);
   rgb = mix3(rgb, DUST_ICE, phys.iceFrac * 0.7);
   // Metallicity is the dust-to-gas ratio: metal-poor gas makes thin dust.
@@ -519,12 +526,28 @@ function finishCloud(c: Omit<StarCloud, 'n' | 'ms'>, n: number, t0: number): Sta
   };
 }
 
-function keepSilhouettePhase(ev: ReturnType<typeof evolve>): boolean {
-  if (ev.nebula !== 'none') return true;
+function nebulaGain(ev: ReturnType<typeof evolve>, id: number): number {
+  const kind = kindFromNebula(ev.nebula);
+  if (kind === KIND_STAR) return 0;
+  return emissionLook(kind, id, {
+    deadFor: Math.max(0, ev.postGyr - giantWindow(ev.massZams)),
+    ageGyr: ev.ageGyr,
+    luminosity: ev.luminosity,
+    carbon: ev.carbon,
+    feh: ev.feh,
+  }).gain;
+}
+
+function keepSilhouettePhase(ev: ReturnType<typeof evolve>, id: number): boolean {
+  if (ev.nebula !== 'none') {
+    // H II regions are the showpiece nurseries — keep every one.
+    if (ev.nebula === 'hii') return true;
+    return nebulaGain(ev, id) >= UNIVERSE.GALAXY_SILHOUETTE_NEB_GAIN;
+  }
   if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
     return false;
   }
-  return isLuminousPhase(ev.phase, ev.mk, ev.luminosity);
+  return isLuminousPhase(ev.phase, ev.mk, ev.luminosity) && ev.luminosity >= UNIVERSE.GALAXY_SILHOUETTE_L;
 }
 
 /**
@@ -661,12 +684,12 @@ function gasDensityCeil(R: number, z: number): number {
 }
 
 /**
- * Magnitude-limited luminous tail of the whole disk. Living A-and-
- * hotter / giant / WR light plus nebula hosts (H II / PN / SNR) and
- * dust clumps minted from the ISM field (a population, not a
- * per-cell overlay). Sparse cells emit nothing. Minted once per
- * seed; the GPU keeps every point and the shader hides the sample
- * ball. Not pickable. Dust ids are (cell, clump), never catalog stars.
+ * Magnitude-limited luminous tail of the whole disk. Living stars
+ * above SILHOUETTE_L, young/bright nebula hosts, and dust envelopes
+ * larger than SILHOUETTE_DUST_R. Sparse cells emit nothing. Minted
+ * once per seed; the GPU keeps every point and the shader hides the
+ * sample ball. Not pickable. Dust ids are (cell, clump), never
+ * catalog stars.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
@@ -700,7 +723,7 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
               const birth = slotBirthRaw(seed, cell, slot, filled);
               if (!maybeClockRow(birth)) continue;
               const ev = sketchEvolve(birth);
-              if (!keepSilhouettePhase(ev)) continue;
+              if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
               if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
               writeEvolved(cell, slot, n++, c, birth, ev);
             }
@@ -709,6 +732,7 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
         if (dustCeil >= 0.05) {
           const clumps = dustClumpsInCell(seed, cell);
           for (let k = 0; k < clumps; k++) {
+            if (dustRadiusKpc(seed, cell, k) < UNIVERSE.GALAXY_SILHOUETTE_DUST_R) continue;
             if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
             writeDust(seed, cell, k, n++, c);
           }
