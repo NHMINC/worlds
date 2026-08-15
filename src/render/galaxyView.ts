@@ -11,9 +11,9 @@
  * (cheap birth, no evolve — the id is still the star). The camera is
  * free flight through that frozen cloud: look, strafe, dolly. There is
  * no orbit lock on the sector centre or the selection. Photosphere
- * discs mesh when you are close; brightness is luminosity, not a
- * sampled highlight. Tap mints the full catalog row. Set course is
- * the dossier button.
+ * discs mesh and grow with 1/distance up to STAR_ANG_MAX. A compact
+ * sight HUD names the most-centred star; dark ones get a reticle.
+ * Tap mints the full catalog row. Set course is the dossier button.
  *
  * Nothing in either mode queries or rebuilds the catalog per camera
  * move — the blink / cluster / stutter / re-roll failure class of the
@@ -23,7 +23,19 @@ import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import { createSectorMap, type SectorMap } from './galaxySectors';
-import { createStarDiscs, RESOLVE_MAX, type StarDiscs } from './galaxyStar';
+import {
+  createStarDiscs,
+  glowRadiusKpc,
+  GLOW_DIM,
+  GLOW_K,
+  GLOW_P,
+  RESOLVE_MAX,
+  STAR_ANG_MAX,
+  STAR_DISC_ANG,
+  type StarDiscs,
+} from './galaxyStar';
+import { classifyStar } from '../world/stellar';
+import { systemAt } from '../world/systemgen';
 import {
   sectorCenter,
   sectorName,
@@ -33,6 +45,7 @@ import {
   buildArcCloud,
   sketchMatches,
   MK_LETTER,
+  BIT_REMNANT,
   type ArcCloud,
   type SectorId,
 } from '../world/sectors';
@@ -44,8 +57,10 @@ const MAP_R_HOME = 34;
 /** Arc-orbit radius, in units of the arc's own span. */
 const ARC_R_FRAME = 1.7;
 const ARC_R_EXIT = 4.2;
-/** kpc — a photosphere disc only when you are among the stars. */
-const DISC_DIST = 0.28;
+/** Sight cone for the centred-star HUD (cos 12°). */
+const FOCUS_COS = 0.978;
+/** Show the nameplate once the sighted star is this close (kpc). */
+const FOCUS_HUD_DIST = 0.55;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
@@ -73,11 +88,11 @@ export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
 
 const STAR_VERT = /* glsl */ `
   attribute vec3 aColor;
-  attribute float aSize;
+  attribute float aLum;
   attribute float aPulse;
   attribute float aVis;
   uniform float uTime;
-  uniform float uPixel;
+  uniform float uPxPerRad;
   varying vec3 vColor;
   varying float vPulse;
   void main() {
@@ -85,9 +100,12 @@ const STAR_VERT = /* glsl */ `
     float pulse = aPulse > 0.5 ? 0.55 + 0.45 * sin(uTime * 18.0 + position.x * 7.0) : 1.0;
     vPulse = pulse * aVis;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    float dist = max(0.004, -mv.z);
-    float persp = clamp(0.16 / dist, 0.14, 3.6);
-    gl_PointSize = clamp(aSize * uPixel * persp, 1.0, 7.0);
+    float dist = max(0.003, -mv.z);
+    float L = max(aLum, 1e-4);
+    float rWorld = ${GLOW_K.toFixed(4)} * pow(L, ${GLOW_P.toFixed(2)});
+    if (aLum < 0.05) rWorld = max(rWorld, ${GLOW_DIM.toFixed(4)});
+    float ang = min(rWorld / dist, ${STAR_ANG_MAX.toFixed(3)});
+    gl_PointSize = clamp(2.0 * ang * uPxPerRad, 1.0, 16.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -135,6 +153,21 @@ const MARK_FRAG = /* glsl */ `
   }
 `;
 
+export interface GalaxyFocus {
+  id: number;
+  name: string;
+  cls: string;
+  phase: string;
+  planets: number;
+  moons: number;
+  life: boolean;
+  dark: boolean;
+  /** Stage-local pixels. */
+  x: number;
+  y: number;
+  dist: number;
+}
+
 export interface GalaxyFrame {
   mode: GalaxyMode;
   theta: number;
@@ -149,6 +182,8 @@ export interface GalaxyFrame {
   sector: string | null;
   /** Exact occupied-slot population of the open arc (0 on the map). */
   population: number;
+  /** Most-centred star in the sight, when close enough. */
+  focus: GalaxyFocus | null;
 }
 
 export interface SectorSelection {
@@ -192,7 +227,12 @@ export class GalaxyView {
   private sectors: SectorMap;
   private discs: StarDiscs;
   private discIds = new Set<number>();
-  private lastDiscAt = 0;
+  private lastSightAt = 0;
+  private focusObj: GalaxyObject | null = null;
+  private focusHud: GalaxyFocus | null = null;
+  private focusHoldId = -1;
+  private focusHoldScore = 0;
+  private briefMemo = new Map<number, { name: string; planets: number; moons: number; life: boolean }>();
 
   private starPts: THREE.Points | null = null;
   private starGeo: THREE.BufferGeometry | null = null;
@@ -423,7 +463,7 @@ export class GalaxyView {
     if (this.interestMk) this.interestMk.pts.visible = false;
     this.select(select);
     this.applyCam();
-    this.pickDiscs(true);
+    this.updateSight(true);
   }
 
   /** Back to the saucer. The arc's stars are dropped; the map is static. */
@@ -434,6 +474,10 @@ export class GalaxyView {
     this.objects = [];
     this.cloud = null;
     this.sectorPop = 0;
+    this.focusObj = null;
+    this.focusHud = null;
+    this.focusHoldId = -1;
+    this.focusHoldScore = 0;
     this.censusMemo = {};
     this.discs.setStars([], this.camera.position);
     this.discs.group.visible = false;
@@ -471,7 +515,7 @@ export class GalaxyView {
     const n = Math.max(1, cloud?.n ?? 0);
     const pos = cloud ? cloud.pos : new Float32Array(3);
     const col = cloud ? cloud.col : new Float32Array(3);
-    const size = cloud ? cloud.size : new Float32Array(1);
+    const lum = cloud ? cloud.lum : new Float32Array(1);
     const pulse = cloud ? cloud.pulse : new Float32Array(1);
     const vis = new Float32Array(n);
     if (cloud) {
@@ -480,7 +524,7 @@ export class GalaxyView {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
+    geo.setAttribute('aLum', new THREE.BufferAttribute(lum, 1));
     geo.setAttribute('aPulse', new THREE.BufferAttribute(pulse, 1));
     const visAttr = new THREE.BufferAttribute(vis, 1);
     geo.setAttribute('aVis', visAttr);
@@ -488,7 +532,7 @@ export class GalaxyView {
     const mat = new THREE.ShaderMaterial({
       vertexShader: STAR_VERT,
       fragmentShader: STAR_FRAG,
-      uniforms: { uTime: { value: 0 }, uPixel: { value: this.renderer.getPixelRatio() } },
+      uniforms: { uTime: { value: 0 }, uPxPerRad: { value: 400 } },
       transparent: true,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -507,7 +551,7 @@ export class GalaxyView {
   setFilter(f: GalaxyFilter): void {
     this.filter = f;
     this.censusMemo = {};
-    if (this.mode === 'arc') this.pickDiscs(true);
+    if (this.mode === 'arc') this.updateSight(true);
     else this.applyStarVis();
   }
 
@@ -609,8 +653,28 @@ export class GalaxyView {
     this.arcPos.set(c.x + 0.028, c.y + 0.018, c.z + 0.012);
     this.aimAt(c.x, c.y, c.z);
     this.applyCam();
-    this.pickDiscs(true);
+    this.updateSight(true);
     return best;
+  }
+
+  focusedObject(): GalaxyObject | null {
+    return this.focusObj;
+  }
+
+  /** Resize meshed discs to the live camera — smoke / tests. */
+  syncArc(): void {
+    if (this.mode === 'arc') this.discs.syncCamera(this.camera);
+  }
+
+  /** Apparent angle (rad) of a meshed disc — smoke proves stars grow. */
+  discApparent(id: number): number {
+    const r = this.discs.radiusOf(id);
+    if (r <= 0) return 0;
+    const o = objectAt(this.seed, id);
+    if (!o) return 0;
+    const c = galToCart(o.pos);
+    const dist = Math.hypot(c.x - this.arcPos.x, c.y - this.arcPos.y, c.z - this.arcPos.z);
+    return r / Math.max(1e-5, dist);
   }
 
   /**
@@ -1083,46 +1147,48 @@ export class GalaxyView {
   // --------------------------------------------------------------- discs
 
   /**
-   * Mesh photospheres for stars you are close to, ranked by apparent
-   * brightness (L / d²). Overview has none — the field is the IMF, not
-   * a brightest-N highlight.
+   * Mesh photospheres that have grown past a point sprite, and lock the
+   * sight onto the most-centred star. One walk of the frozen cloud.
    */
-  private pickDiscs(force = false): void {
+  private updateSight(force = false): void {
     if (this.mode !== 'arc') return;
     const now = performance.now();
-    if (!force && now - this.lastDiscAt < 120) return;
-    this.lastDiscAt = now;
+    if (!force && now - this.lastSightAt < 50) return;
+    this.lastSightAt = now;
     const cloud = this.cloud;
     const near: GalaxyObject[] = [];
     const seen = new Set<number>();
     const take = (o: GalaxyObject | null): void => {
       if (!o || seen.has(o.id) || near.length >= RESOLVE_MAX) return;
-      if (!matchesFilter(o, this.filter) && o !== this.selected) return;
+      if (!matchesFilter(o, this.filter) && o !== this.selected && o !== this.focusObj) return;
       seen.add(o.id);
       near.push(o);
     };
-    const maxD2 = DISC_DIST * DISC_DIST;
-    if (this.selected) {
-      const c = galToCart(this.selected.pos);
-      const d2 =
-        (c.x - this.arcPos.x) ** 2 + (c.y - this.arcPos.y) ** 2 + (c.z - this.arcPos.z) ** 2;
-      if (d2 <= maxD2) take(this.selected);
-    }
+
+    this.orientArc();
+    const cx = this.arcPos.x;
+    const cy = this.arcPos.y;
+    const cz = this.arcPos.z;
+    const fx = this.arcFwd.x;
+    const fy = this.arcFwd.y;
+    const fz = this.arcFwd.z;
+    const discBest: Array<{ id: number; app: number }> = [];
+    const considerDisc = (sid: number, app: number) => {
+      if (discBest.length < RESOLVE_MAX) {
+        discBest.push({ id: sid, app });
+        if (discBest.length === RESOLVE_MAX) discBest.sort((a, b) => a.app - b.app);
+        return;
+      }
+      if (app <= discBest[0].app) return;
+      discBest[0] = { id: sid, app };
+      discBest.sort((a, b) => a.app - b.app);
+    };
+
+    let sightId = -1;
+    let sightScore = -1;
+    let sightDist = 0;
+    let sightDark = false;
     if (cloud) {
-      const cx = this.arcPos.x;
-      const cy = this.arcPos.y;
-      const cz = this.arcPos.z;
-      const best: Array<{ id: number; app: number }> = [];
-      const consider = (sid: number, app: number) => {
-        if (best.length < RESOLVE_MAX) {
-          best.push({ id: sid, app });
-          if (best.length === RESOLVE_MAX) best.sort((a, b) => a.app - b.app);
-          return;
-        }
-        if (app <= best[0].app) return;
-        best[0] = { id: sid, app };
-        best.sort((a, b) => a.app - b.app);
-      };
       const pos = cloud.pos;
       const lum = cloud.lum;
       const bits = cloud.bits;
@@ -1133,21 +1199,144 @@ export class GalaxyView {
         const dy = pos[i * 3 + 1] - cy;
         const dz = pos[i * 3 + 2] - cz;
         const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 > maxD2 || d2 < 1e-12) continue;
-        consider(ids[i], lum[i] / d2);
-      }
-      best.sort((a, b) => b.app - a.app);
-      for (const b of best) {
-        if (near.length >= RESOLVE_MAX) break;
-        take(objectAt(this.seed, b.id));
+        if (d2 < 1e-12) continue;
+        const dist = Math.sqrt(d2);
+        const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
+        const rWorld = glowRadiusKpc(lum[i], dim);
+        const ang = rWorld / dist;
+        if (ang >= STAR_DISC_ANG) considerDisc(ids[i], ang);
+        const along = (dx * fx + dy * fy + dz * fz) / dist;
+        if (along < FOCUS_COS || dist > 1.4) continue;
+        const off = 1 - along;
+        const score = ang / (0.002 + off * 8);
+        if (score > sightScore) {
+          sightScore = score;
+          sightId = ids[i];
+          sightDist = dist;
+          sightDark = dim;
+        }
       }
     }
+
+    if (
+      this.focusHoldId >= 0 &&
+      sightId >= 0 &&
+      sightId !== this.focusHoldId &&
+      sightScore < this.focusHoldScore * 1.25
+    ) {
+      sightId = this.focusHoldId;
+      const held = objectAt(this.seed, sightId);
+      if (held) {
+        const c = galToCart(held.pos);
+        sightDist = Math.hypot(c.x - cx, c.y - cy, c.z - cz);
+        sightDark =
+          held.star.phase === 'white_dwarf' ||
+          held.star.phase === 'neutron_star' ||
+          held.star.phase === 'pulsar' ||
+          held.star.phase === 'black_hole' ||
+          held.star.luminosity < 0.05;
+      }
+    }
+
+    if (this.selected) {
+      const c = galToCart(this.selected.pos);
+      const dist = Math.hypot(c.x - cx, c.y - cy, c.z - cz);
+      const dim =
+        this.selected.star.phase === 'white_dwarf' ||
+        this.selected.star.phase === 'neutron_star' ||
+        this.selected.star.phase === 'pulsar' ||
+        this.selected.star.phase === 'black_hole' ||
+        this.selected.star.luminosity < 0.05;
+      if (glowRadiusKpc(this.selected.star.luminosity, dim) / Math.max(1e-4, dist) >= STAR_DISC_ANG) {
+        take(this.selected);
+      }
+    }
+    discBest.sort((a, b) => b.app - a.app);
+    for (const b of discBest) {
+      if (near.length >= RESOLVE_MAX) break;
+      take(objectAt(this.seed, b.id));
+    }
+    if (sightId >= 0) take(objectAt(this.seed, sightId));
+
     this.objects = near;
     this.discs.setStars(near, this.camera.position);
     this.discs.syncCamera(this.camera);
     this.discIds.clear();
     for (const o of near) this.discIds.add(o.id);
     this.applyStarVis();
+    this.setFocus(sightId, sightDist, sightDark, sightScore);
+  }
+
+  private setFocus(id: number, dist: number, dark: boolean, score: number): void {
+    if (id < 0 || dist > FOCUS_HUD_DIST * 1.6) {
+      this.focusObj = null;
+      this.focusHud = null;
+      this.focusHoldId = -1;
+      this.focusHoldScore = 0;
+      return;
+    }
+    const obj = objectAt(this.seed, id);
+    if (!obj) {
+      this.focusObj = null;
+      this.focusHud = null;
+      return;
+    }
+    this.focusHoldId = id;
+    this.focusHoldScore = score;
+    this.focusObj = obj;
+    const close = dist <= FOCUS_HUD_DIST || dark;
+    if (!close) {
+      this.focusHud = null;
+      return;
+    }
+    const brief = this.briefFor(obj);
+    const proj = this.projectClient(obj);
+    const rect = this.canvas.getBoundingClientRect();
+    const st = obj.star;
+    const dim =
+      dark ||
+      st.phase === 'white_dwarf' ||
+      st.phase === 'neutron_star' ||
+      st.phase === 'pulsar' ||
+      st.phase === 'black_hole' ||
+      st.luminosity < 0.05;
+    this.focusHud = {
+      id: obj.id,
+      name: brief.name,
+      cls: classifyStar(st),
+      phase: st.phase.replace(/_/g, ' '),
+      planets: brief.planets,
+      moons: brief.moons,
+      life: brief.life,
+      dark: dim,
+      x: proj ? proj.x - rect.left : rect.width * 0.5,
+      y: proj ? proj.y - rect.top : rect.height * 0.5,
+      dist,
+    };
+  }
+
+  private briefFor(obj: GalaxyObject): { name: string; planets: number; moons: number; life: boolean } {
+    const hit = this.briefMemo.get(obj.id);
+    if (hit) return hit;
+    if (this.briefMemo.size > 48) this.briefMemo.clear();
+    try {
+      const spec = systemAt(this.seed, obj.id);
+      let planets = 0;
+      let moons = 0;
+      let life = false;
+      for (const b of spec.bodies) {
+        if (b.parent) moons++;
+        else planets++;
+        if (b.physics.life) life = true;
+      }
+      const row = { name: spec.star.name, planets, moons, life };
+      this.briefMemo.set(obj.id, row);
+      return row;
+    } catch {
+      const row = { name: classifyStar(obj.star), planets: 0, moons: 0, life: false };
+      this.briefMemo.set(obj.id, row);
+      return row;
+    }
   }
 
   /** Points under a disc hide; filter-mismatched points dim. */
@@ -1173,7 +1362,7 @@ export class GalaxyView {
     if (this.mode === 'arc') {
       this.steerArc(dt);
       this.applyCam();
-      this.pickDiscs();
+      this.updateSight();
     } else {
       if (!this.dragging && this.idle > 3) this.tgtTheta += dt * 0.04;
       this.theta += (this.tgtTheta - this.theta) * (1 - Math.exp(-dt * 4.2));
@@ -1187,7 +1376,9 @@ export class GalaxyView {
     const px = this.renderer.getPixelRatio();
     if (this.starMat) {
       this.starMat.uniforms.uTime.value = t;
-      this.starMat.uniforms.uPixel.value = px;
+      const fov = THREE.MathUtils.degToRad(this.camera.fov);
+      this.starMat.uniforms.uPxPerRad.value =
+        (this.canvas.clientHeight * px) / Math.max(1e-4, 2 * Math.tan(fov * 0.5));
     }
     if (this.mode === 'arc') this.discs.syncCamera(this.camera);
 
@@ -1221,6 +1412,7 @@ export class GalaxyView {
       discs: this.discIds.size,
       sector: this.sectorSel ? sectorName(this.sectorSel) : null,
       population: this.sectorPop,
+      focus: this.mode === 'arc' ? this.focusHud : null,
     });
     this.raf = requestAnimationFrame(this.frame);
   };

@@ -194,10 +194,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     cheap point (`buildArcCloud` — birth position + IMF clock, no
     `evolve` until you tap). That is the arc's population, not a 2,500
     survey. Point brightness is luminosity (alive MS clock, dim remnant
-    pin), not a sampled highlight. Photosphere discs mesh when you fly
-    close (`L / d²` inside ~0.3 kpc) — drawing LOD, not points of
-    interest. The camera is **free flight** through that frozen cloud:
-    drag looks, wheel/pinch dollies, WASD flies, Shift/right-drag
+    pin), not a sampled highlight. Apparent size is `glowRadius / dist`,
+    clamped to `STAR_ANG_MAX` (~6°) so you fly up to a star without it
+    eating the field. Photosphere discs mesh when that angle crosses
+    `STAR_DISC_ANG` — drawing LOD, not a sample. A compact sight HUD
+    names the most-centred star (class, planets, life); dark remnants
+    get a reticle. The camera is **free flight** through that frozen
+    cloud: drag looks, wheel/pinch dollies, WASD flies, Shift/right-drag
     strafes. There is no orbit lock on the sector centre or the
     selection. Tap mints the full catalog row (`objectAt`). Set course
     is the dossier button. Fly far out (or the breadcrumb) to return

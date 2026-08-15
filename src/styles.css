@@ -1001,6 +1001,120 @@ body,
   pointer-events: none;
 }
 
+.gx-pip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 1;
+}
+.gx-pip::before,
+.gx-pip::after {
+  content: '';
+  position: absolute;
+  background: rgba(244, 228, 193, 0.55);
+}
+.gx-pip::before {
+  left: 5px;
+  top: 0;
+  width: 2px;
+  height: 12px;
+}
+.gx-pip::after {
+  left: 0;
+  top: 5px;
+  width: 12px;
+  height: 2px;
+}
+
+.gx-reticle {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(244, 228, 193, 0.45);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1;
+  box-shadow: 0 0 0 5px rgba(244, 228, 193, 0.04);
+}
+.gx-reticle.dark {
+  width: 34px;
+  height: 34px;
+  border-color: rgba(244, 228, 193, 0.92);
+  box-shadow:
+    0 0 0 1px rgba(244, 228, 193, 0.25),
+    0 0 12px rgba(244, 228, 193, 0.2);
+}
+.gx-reticle.dark::before,
+.gx-reticle.dark::after {
+  content: '';
+  position: absolute;
+  background: rgba(244, 228, 193, 0.9);
+}
+.gx-reticle.dark::before {
+  left: 50%;
+  top: -5px;
+  width: 1px;
+  height: 8px;
+  transform: translateX(-50%);
+}
+.gx-reticle.dark::after {
+  left: -5px;
+  top: 50%;
+  width: 8px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.gx-plate {
+  position: absolute;
+  left: 50%;
+  bottom: calc(76px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: auto;
+  min-width: 160px;
+  max-width: min(260px, calc(100vw - 28px));
+  padding: 7px 12px 8px;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.gx-plate b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.gx-plate em,
+.gx-plate i {
+  display: block;
+  font-style: normal;
+  font-size: 11px;
+  color: var(--text-dim);
+  letter-spacing: 0.03em;
+}
+.gx-plate-go {
+  margin-top: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
 .galaxy-top,
 .galaxy-dossier,
 .galaxy-census,

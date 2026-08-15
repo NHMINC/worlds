@@ -179,6 +179,21 @@ if (await galaxyBtn.count()) {
   await page.screenshot({ path: 'previews/galaxy-3-discs.png' });
   if (!close.n) errors.push('no photospheres inside the arc');
 
+  const grow = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    const id = v.selectedObject?.()?.id ?? v.focusedObject?.()?.id;
+    if (id == null) return null;
+    const a0 = v.discApparent?.(id) ?? 0;
+    v.flyAlong?.(0.01);
+    v.syncArc?.();
+    const a1 = v.discApparent?.(id) ?? 0;
+    return { id, a0, a1, plate: Boolean(document.querySelector('.gx-plate')) };
+  });
+  console.log('GROW', JSON.stringify(grow));
+  if (!grow || grow.a0 <= 0) errors.push('approached star has no growing disc');
+  if (grow && grow.a1 <= grow.a0 * 1.02) errors.push(`star did not grow on approach ${grow.a0} → ${grow.a1}`);
+  if (grow && !grow.plate) errors.push('no compact sight HUD after approaching a star');
+
   // Back out to the map via the breadcrumb, then re-enter by tapping a tile.
   await page.click('.gx-crumb');
   await page.waitForTimeout(1200);

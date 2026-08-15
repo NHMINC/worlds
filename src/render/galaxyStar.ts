@@ -15,6 +15,33 @@ export const RESOLVE_MAX = 28;
  * 7.2: the detection bubble should light up well before arrival. */
 export const RESOLVE_DIST = 21.6;
 
+/**
+ * Toy glow radius (kpc). Real R☉ is metres against kiloparsecs —
+ * unusable. Apparent angle is r / distance, clamped to STAR_ANG_MAX
+ * so you can fly up to a star without it eating the field.
+ */
+export const GLOW_K = 0.0028;
+export const GLOW_P = 0.16;
+/** Dim / remnant floor — they still grow, then a reticle finds them. */
+export const GLOW_DIM = 0.0015;
+/** ~6° — the star fills a sight, not the sky. */
+export const STAR_ANG_MAX = 0.10;
+/** Hand off GL_POINTS → disc once the bead would exceed ~this angle. */
+export const STAR_DISC_ANG = 0.0065;
+
+export function glowRadiusKpc(L: number, dim = false): number {
+  const r = GLOW_K * Math.pow(Math.max(L, 1e-4), GLOW_P);
+  return Math.max(dim ? GLOW_DIM : 0.00075, Math.min(0.016, r));
+}
+
+export function apparentAngle(rWorld: number, dist: number): number {
+  return rWorld / Math.max(1e-5, dist);
+}
+
+export function clampedGlow(rWorld: number, dist: number): number {
+  return Math.min(rWorld, STAR_ANG_MAX * Math.max(1e-5, dist));
+}
+
 const KIND = {
   photo: 0,
   giant: 1,
@@ -168,6 +195,8 @@ export type StarDiscs = {
   syncCamera: (camera: THREE.Camera) => void;
   pick: (raycaster: THREE.Raycaster) => GalaxyObject | null;
   list: () => GalaxyObject[];
+  /** Live world radius of a meshed disc, or 0. */
+  radiusOf: (id: number) => number;
   dispose: () => void;
 };
 
@@ -204,6 +233,7 @@ export function createStarDiscs(): StarDiscs {
   let current: GalaxyObject[] = [];
   const worlds: THREE.Vector3[] = [];
   const radii: number[] = [];
+  const rWorlds: number[] = [];
 
   function paint(slot: Slot, rgb: THREE.Color, k: number) {
     const n = slot.col.count;
@@ -215,11 +245,11 @@ export function createStarDiscs(): StarDiscs {
     slot.kind.needsUpdate = true;
   }
 
-  function setStars(stars: GalaxyObject[], _cam: THREE.Vector3) {
-    void _cam;
+  function setStars(stars: GalaxyObject[], cam: THREE.Vector3) {
     current = stars.slice(0, RESOLVE_MAX);
     worlds.length = 0;
     radii.length = 0;
+    rWorlds.length = 0;
     for (let i = 0; i < RESOLVE_MAX; i++) {
       const slot = slots[i];
       if (i >= current.length) {
@@ -230,14 +260,17 @@ export function createStarDiscs(): StarDiscs {
       const c = galToCart(o.pos);
       const p = new THREE.Vector3(c.x, c.y, c.z);
       worlds.push(p);
-      // World size from present-day L, not from a framing-camera sample.
-      // Apparent angle grows as 1/distance — a disc appears when you
-      // fly near, it does not stay a planet-sun from the overview.
-      const L = Math.max(o.star.luminosity, 1e-4);
-      let rWorld = 0.00052 * Math.pow(L, 0.14);
-      if (o.star.nebula !== 'none') rWorld *= 2.2;
-      if (o.star.phase === 'black_hole') rWorld = 0.00032;
-      const rad = THREE.MathUtils.clamp(rWorld, 0.0002, 0.0028);
+      const dim =
+        o.star.phase === 'white_dwarf' ||
+        o.star.phase === 'neutron_star' ||
+        o.star.phase === 'pulsar' ||
+        o.star.phase === 'black_hole' ||
+        o.star.luminosity < 0.05;
+      let rWorld = glowRadiusKpc(Math.max(o.star.luminosity, 1e-4), dim);
+      if (o.star.nebula !== 'none') rWorld *= 2.1;
+      rWorlds.push(rWorld);
+      const dist = Math.max(1e-4, p.distanceTo(cam));
+      const rad = clampedGlow(rWorld, dist);
       radii.push(rad);
       slot.mesh.position.copy(p);
       slot.mesh.scale.setScalar(rad);
@@ -247,8 +280,15 @@ export function createStarDiscs(): StarDiscs {
   }
 
   function syncCamera(camera: THREE.Camera) {
-    for (const slot of slots) {
-      if (slot.mesh.visible) slot.mesh.lookAt(camera.position);
+    const cam = camera.position;
+    for (let i = 0; i < current.length; i++) {
+      const slot = slots[i];
+      if (!slot.mesh.visible) continue;
+      const dist = Math.max(1e-4, cam.distanceTo(worlds[i]));
+      const rad = clampedGlow(rWorlds[i], dist);
+      radii[i] = rad;
+      slot.mesh.scale.setScalar(rad);
+      slot.mesh.lookAt(cam);
     }
   }
 
@@ -277,6 +317,10 @@ export function createStarDiscs(): StarDiscs {
     syncCamera,
     pick,
     list: () => current,
+    radiusOf(id: number) {
+      const i = current.findIndex((o) => o.id === id);
+      return i >= 0 ? radii[i] ?? 0 : 0;
+    },
     dispose() {
       for (const s of slots) {
         s.geo.dispose();

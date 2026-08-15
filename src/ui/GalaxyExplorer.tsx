@@ -51,6 +51,7 @@ export function GalaxyExplorer(props: Props) {
     discs: 0,
     sector: null,
     population: 0,
+    focus: null,
   });
 
   useEffect(() => {
@@ -74,7 +75,11 @@ export function GalaxyExplorer(props: Props) {
             prev.pickable !== f.pickable ||
             prev.resolved !== f.resolved ||
             prev.discs !== f.discs ||
-            prev.sector !== f.sector
+            prev.sector !== f.sector ||
+            prev.focus?.id !== f.focus?.id ||
+            (f.focus != null &&
+              (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
+                Math.abs((prev.focus?.y ?? 0) - f.focus.y) > 2))
               ? f
               : prev,
           );
@@ -130,6 +135,37 @@ export function GalaxyExplorer(props: Props) {
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
         {!ready && <div className="galaxy-loading">Charting the sectors…</div>}
+        {inArc && <div className="gx-pip" aria-hidden />}
+        {inArc && frame.focus && (
+          <div
+            className={`gx-reticle${frame.focus.dark ? ' dark' : ''}`}
+            style={{ left: frame.focus.x, top: frame.focus.y }}
+            aria-hidden
+          />
+        )}
+        {inArc && frame.focus && (
+          <div className="gx-plate">
+            <b>{frame.focus.name}</b>
+            <em>
+              {frame.focus.cls} · {frame.focus.phase}
+            </em>
+            <i>
+              {frame.focus.planets} planet{frame.focus.planets === 1 ? '' : 's'}
+              {frame.focus.moons ? ` · ${frame.focus.moons} moon${frame.focus.moons === 1 ? '' : 's'}` : ''}
+              {frame.focus.life ? ' · life' : ''}
+            </i>
+            <button
+              type="button"
+              className="gx-plate-go"
+              onClick={() => {
+                const o = viewRef.current?.focusedObject();
+                if (o) props.onSetCourse(o);
+              }}
+            >
+              Set course
+            </button>
+          </div>
+        )}
       </div>
 
       <header className="galaxy-top">
@@ -231,7 +267,7 @@ export function GalaxyExplorer(props: Props) {
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
           {inArc
-            ? ' · tap a star · WASD / wheel fly · drag looks · Shift-drag strafes · Set course to go'
+            ? ' · fly through · sight names the star · Set course to go'
             : ' · tap an arc to enter · markers are worlds'}
         </div>
       </footer>
