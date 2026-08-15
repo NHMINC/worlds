@@ -151,10 +151,9 @@ const STAR_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Magnifier photosphere: size r/d and flux L/d² in VIEW
-      // metres. Far pins stay a pixel; they grow and brighten as
-      // the bubble slides onto them. Colour is teff. The backdrop
-      // layer does not use this path.
+      // Magnifier: start as one CSS pixel. Size is max(1px, 2 r/d)
+      // so a star is a point until the bubble has slid onto it,
+      // then it grows. Flux L/d², colour teff. Backdrop stays 1px.
       float L = max(aLum, 1e-4);
       float r = max(L < 0.05 ? uGlowDim : uPhotoMin, uPhotoK * pow(L, uPhotoP));
       r = min(r, uPhotoMax);
@@ -285,9 +284,9 @@ const STAR_FRAG = /* glsl */ `
       float I = max(vVis, 0.0);
       float peak = max(max(vColor.r, vColor.g), vColor.b);
       vec3 chroma = vColor / max(peak, 1e-4);
-      if (vPx > 2.6) {
-        // Grown photosphere inside the magnifier: a limb-darkened
-        // disc of teff colour. The 1px path is the far pin / backdrop.
+      if (vPx > 4.0) {
+        // Only a disc once the pin has actually grown. Below this
+        // the sprite is still a point of light.
         float r = length(p);
         if (r > 1.0) discard;
         float limb = 1.0 - 0.22 * r * r;

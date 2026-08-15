@@ -1,9 +1,9 @@
 /**
- * Two layers, two laws. Inside the magnifier a star is a photosphere:
- * size is r / d so it grows as the bubble slides onto it, brightness
- * is L / d², colour is teff. Outside the bubble the luminous tail
- * stays one CSS pixel — a magnitude-limited field, not a second
- * set of growing bodies. objectAt is still O(1) on tap.
+ * Two layers, two laws. Inside the magnifier a star starts as one
+ * CSS pixel. Size is max(1px, 2 r/d) so it stays a point until the
+ * bubble slides onto it, then it grows; brightness is L / d²,
+ * colour is teff. Outside the bubble the luminous tail stays one
+ * pixel. objectAt is still O(1) on tap.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
@@ -20,13 +20,14 @@ export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
 /**
- * Magnifier photosphere (kpc). Bigger than the picking pin so a
- * star grows while there is still 40 kpc of approach left. The
- * backdrop does not use this — it stays a pixel.
+ * Magnifier photosphere (kpc). At the 40 kpc rim, r/d is under one
+ * CSS pixel — a point of light. It only beats that floor as the
+ * bubble slides in. PHOTO_MIN used to be 0.022 and every star
+ * opened as a disc. The backdrop does not use this.
  */
-export const PHOTO_K = 0.052;
+export const PHOTO_K = 0.024;
 export const PHOTO_P = 0.18;
-export const PHOTO_MIN = 0.022;
+export const PHOTO_MIN = 0.006;
 export const PHOTO_MAX = 0.16;
 /**
  * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.

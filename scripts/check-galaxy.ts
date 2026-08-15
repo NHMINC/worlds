@@ -243,8 +243,8 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const rim = photoApparentPx(1, 40, pxPer);
   const midPx = photoApparentPx(1, 8, pxPer);
   const close = photoApparentPx(1, 2, pxPer);
-  check(rim <= 6, `rim photosphere ${rim.toFixed(1)}px is a disc, not a pin`);
-  check(midPx > rim * 2.5, `magnifier must grow on approach: rim ${rim.toFixed(1)} mid ${midPx.toFixed(1)}`);
+  check(rim <= 2.2, `rim must start as a pin, got ${rim.toFixed(1)}px`);
+  check(midPx > rim * 2.2, `magnifier must grow on approach: rim ${rim.toFixed(1)} mid ${midPx.toFixed(1)}`);
   check(close > midPx * 1.8, `close photosphere ${close.toFixed(1)} must beat mid ${midPx.toFixed(1)}`);
 }
 
