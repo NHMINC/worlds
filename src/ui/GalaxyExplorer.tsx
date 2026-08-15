@@ -52,6 +52,7 @@ export function GalaxyExplorer(props: Props) {
     sector: null,
     population: 0,
     focus: null,
+    warp: false,
   });
 
   useEffect(() => {
@@ -76,6 +77,7 @@ export function GalaxyExplorer(props: Props) {
             prev.resolved !== f.resolved ||
             prev.grown !== f.grown ||
             prev.sector !== f.sector ||
+            prev.warp !== f.warp ||
             prev.focus?.id !== f.focus?.id ||
             (f.focus != null &&
               (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
@@ -136,6 +138,15 @@ export function GalaxyExplorer(props: Props) {
         <canvas ref={canvasRef} />
         {!ready && <div className="galaxy-loading">Charting the sectors…</div>}
         {inRegion && <div className="gx-pip" aria-hidden />}
+        {inRegion && (
+          <button
+            type="button"
+            className={`gx-warp${frame.warp ? ' stop' : ''}`}
+            onClick={() => viewRef.current?.setWarp(!frame.warp)}
+          >
+            {frame.warp ? 'Stop' : 'Warp'}
+          </button>
+        )}
         {inRegion && frame.focus && (
           <div className="gx-plate">
             <b>{frame.focus.name}</b>
@@ -260,7 +271,7 @@ export function GalaxyExplorer(props: Props) {
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
           {inRegion
-            ? ' · double-tap and hold to fly · drag to look · Set course to go'
+            ? ' · ↑ / Warp to fly · ↓ / Stop to brake · drag to look'
             : ' · tap the galaxy to enter a volume · markers are worlds'}
         </div>
       </footer>

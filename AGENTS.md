@@ -189,7 +189,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     the map; the speckle is chart fabric, not a sky. The map camera
     orbits the origin.
   - **Region**: a magnification sphere of radius `GALAXY_REGION_R`
-    (~4 kpc) in catalog space. Near the centre (`GALAXY_REGION_FULL_R`)
+    (~2 kpc) in catalog space. Near the centre (`GALAXY_REGION_FULL_R`)
     every occupied slot is a point. Farther cells keep only the
     massive tail of their IMF.     The camera sits at the sphere centre — it does not tour the
     ball. Gestures **slide the sphere** through the catalog: stars
@@ -218,14 +218,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `ZOOM_GESTURE_SPAN` (~2.6×); a ~0.6 s pause starts the next motion.
   After a pinch, the surviving finger is NOT a drag — rotation resumes
   only with a fresh single-finger touch. In **region** mode the camera
-  stays at the bubble centre. Fly is a **double-tap and hold**
-  (one pointer path for mouse and touch): speed builds to a cap,
-  stays there while held, and brakes fast on release. Moving the
-  finger or mouse during the hold turns the look — that is the
-  heading. Drag without a hold only looks. Wheel/pinch do not fly.
-  A second finger cancels the hold. The canvas is `touch-action:
-  none`, so iOS/Android do not steal the double-tap as a page zoom.
-  WASD still slides. The breadcrumb returns to the map.
+  stays at the bubble centre. Fly is a **latched warp**: ↑ / W
+  (or the **Warp** button) accelerates to a cap at the same rate
+  ↓ / S / **Stop** brakes. A tap, not a hold. Drag looks. Wheel/pinch
+  do not fly. A/D still slide. The breadcrumb returns to the map.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper

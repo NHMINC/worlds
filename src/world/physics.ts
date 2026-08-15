@@ -409,7 +409,7 @@ export const UNIVERSE = {
   GALAXY_SECTOR_RINGS: 40,
   GALAXY_SECTOR_STARS: 2500,
   /** Catalog neighbourhood minted around the tap (kpc). */
-  GALAXY_REGION_R: 4.0,
+  GALAXY_REGION_R: 2.0,
   /** Flight / viewing ball (kpc). Same stars, expanded around the tap. */
   GALAXY_REGION_VIEW_R: 40,
   /** Within this of the tap, every occupied slot is drawn. */
