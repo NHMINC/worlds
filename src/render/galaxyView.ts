@@ -32,6 +32,7 @@ import {
   POINT_NEAR_BOOST,
   SHINE_FLUX_GAIN,
   SHINE_FLUX_K,
+  SHINE_HALO_PX,
   SHINE_TAIL,
   glowRadiusKpc,
 } from './galaxyStar';
@@ -250,6 +251,7 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustFreq;
   uniform float uDustRim;
   uniform float uShineTail;
+  uniform float uShineHalo;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -264,18 +266,19 @@ const STAR_FRAG = /* glsl */ `
     if (uPass > 1.5 && vKind < 3.5) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
-      // Pixel of light + serious glare. Core is ~1 px in pixel space.
-      // Tail is 1/r² from flux — same family as star.ts. Window dies
-      // at the quad edge so there is no rim, no filled disc.
+      // Pixel of light + spherical glow. Core is ~1 px. Halo is a
+      // radial gaussian — a ball of light, not a 1/r² sparkle and
+      // not a diffraction cross. Window dies at the edge; no rim.
       float r = length(p);
       if (r > 1.0) discard;
       float rPx = r * max(vPx, 1.0) * 0.5;
       float flux = clamp(vVis, 0.0, 8.0);
       float core = exp(-rPx * rPx * 2.8);
-      float tail = (uShineTail * flux) / (0.05 + 0.18 * rPx * rPx);
+      float haloW = max(uShineHalo, 3.0);
+      float halo = exp(-rPx * rPx / (haloW * haloW));
       float window = 1.0 - r * r;
       window *= window;
-      float shine = (core * flux * 1.35 + tail) * window;
+      float shine = (core * flux * 1.4 + halo * uShineTail * flux) * window;
       if (shine < 0.003) discard;
       vec3 col = mix(vColor, vec3(1.0), clamp(0.28 * core * min(flux, 2.6), 0.0, 0.55));
       gl_FragColor = vec4(col * shine, min(shine, 1.0));
@@ -918,6 +921,7 @@ export class GalaxyView {
       uShineFluxK: { value: SHINE_FLUX_K },
       uShineFluxGain: { value: SHINE_FLUX_GAIN },
       uShineTail: { value: SHINE_TAIL },
+      uShineHalo: { value: SHINE_HALO_PX },
       uGlowPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
       uFluxEps: { value: POINT_FLUX_EPS },
     };

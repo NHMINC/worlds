@@ -12,7 +12,7 @@ import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar'
 import { systemAt } from '../src/world/systemgen';
 import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
-import { SHINE_TAIL, shineFromFlux, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
+import { SHINE_HALO_PX, SHINE_TAIL, shineFromFlux, starKind, visualRadiusKpc } from '../src/render/galaxyStar';
 import type { GalaxyObject } from '../src/world/galaxy';
 import type { StellarState } from '../src/world/stellar';
 
@@ -230,6 +230,7 @@ check(starKind(asObj(bh)) === 5, `BH kind ${starKind(asObj(bh))}`);
 check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, got ${starKind(asObj(freshWd))}`);
 check(UNIVERSE.SILHOUETTE_STAR_PX >= 16, `STAR_PX ${UNIVERSE.SILHOUETTE_STAR_PX} cannot hold a glare`);
 check(SHINE_TAIL >= 0.8, `shine tail ${SHINE_TAIL} is not a serious glow`);
+check(SHINE_HALO_PX >= 4, `halo ${SHINE_HALO_PX} is a sparkle, not a sphere`);
 {
   const d2 = 150 * 150;
   const dim = shineFromFlux(5 / d2);

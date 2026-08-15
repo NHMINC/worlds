@@ -1,10 +1,10 @@
 /**
  * Arc stars are GL_POINTS that pretend to be the photosphere.
  * At explorer distance a star is a point source — one pixel of
- * light — with a serious glare. The core is a pin; the glow is
- * 1/r² from flux (same family as the in-system glare). There is
- * no filled disc. Brightness is L / d² through a photograph
- * stretch that keeps rank. objectAt is still O(1) on tap.
+ * light — with a spherical glow. The core is a pin; the halo is
+ * a radial gaussian from flux. No cross, no spangle, no filled
+ * disc. Brightness is L / d² through a photograph stretch that
+ * keeps rank. objectAt is still O(1) on tap.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
@@ -27,8 +27,10 @@ export const POINT_MAX_PX = 56;
  */
 export const SHINE_FLUX_K = 2800;
 export const SHINE_FLUX_GAIN = 0.48;
-/** 1/r² glare strength. Dim pins stay pins; bright ones throw a glow. */
-export const SHINE_TAIL = 1.15;
+/** Spherical halo gain. Dim pins stay pins; bright ones throw a ball of light. */
+export const SHINE_TAIL = 1.2;
+/** Halo width (px). Radial gaussian — a sphere, not a spike. */
+export const SHINE_HALO_PX = 6.8;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). */
