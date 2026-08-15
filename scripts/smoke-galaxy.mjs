@@ -93,33 +93,19 @@ if (await galaxyBtn.count()) {
   console.log('ARC', JSON.stringify(arc));
   await page.screenshot({ path: 'previews/galaxy-2-arc.png' });
   if (arc.mode !== 'arc') errors.push('tapping home marker did not enter its arc');
-  if (!arc.stars || arc.stars < 2000) errors.push(`arc loaded only ${arc.stars} stars`);
+  if (!arc.stars || arc.stars < 80_000) errors.push(`arc loaded only ${arc.stars} stars (want the whole population)`);
   if (!arc.dossier) errors.push('home marker tap did not open a dossier');
 
   const survey = await page.evaluate(() => {
     const v = window.__galaxyView;
-    const rows = v.surveyStars?.() ?? [];
-    const discs = new Set((v.resolvedStars?.() ?? []).map((o) => o.id));
-    const ids = rows.map((o) => o.id);
-    const uniq = new Set(ids).size;
-    const discPts = [];
-    for (const o of v.resolvedStars?.() ?? []) {
-      const p = v.projectClient(o);
-      if (p) discPts.push(p);
-    }
-    let point = null;
-    for (const o of rows) {
-      if (discs.has(o.id)) continue;
-      const p = v.projectClient(o);
-      if (!p || p.x < 80 || p.x > 1200 || p.y < 80 || p.y > 720) continue;
-      if (discPts.some((d) => Math.hypot(d.x - p.x, d.y - p.y) < 36)) continue;
-      point = { id: o.id, x: p.x, y: p.y };
-      break;
-    }
-    return { n: rows.length, uniq, point };
+    return {
+      n: v.beaconCount?.() ?? 0,
+      ms: v.lastEnterMs ?? null,
+      point: v.probePointStar?.() ?? null,
+    };
   });
-  console.log('SURVEY', JSON.stringify(survey));
-  if (survey.uniq !== survey.n) errors.push(`survey has duplicate ids (${survey.uniq} unique of ${survey.n})`);
+  console.log('CLOUD', JSON.stringify(survey));
+  if (survey.n < 80_000) errors.push(`cloud ${survey.n} is not the full arc`);
 
   // A point star (not one of the 28 discs) must open the dossier, not set course.
   if (survey.point) {

@@ -398,9 +398,9 @@ export const UNIVERSE = {
    * inner arcs are thin, outer arcs are wide, and every arc holds
    * roughly the same number of stars. Each arc is an exact block of
    * catalog cells — the address system is untouched. Real stars are
-   * drawn only INSIDE an arc (the brightest SECTOR_STARS unique living
-   * stars of it, a magnitude-limited survey); the map itself draws no
-   * stars at all. Every surveyed star is tappable.
+   * drawn only INSIDE an arc (every occupied slot, cheap birth then
+   * `evolve` on tap); the map itself draws no stars at all. Every
+   * drawn star is tappable.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,

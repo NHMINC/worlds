@@ -16,7 +16,7 @@
  */
 import { mulberry32, xmur3 } from './rng';
 import { UNIVERSE } from './physics';
-import { evolve, imfMass, type StellarState } from './stellar';
+import { evolve, imfMass, msLifetime, msLuminosity, msRadius, teffFromLR, type StellarState } from './stellar';
 
 export type Population = 'thin' | 'thick' | 'halo' | 'bulge' | 'bar';
 
@@ -251,7 +251,34 @@ function objectAtRaw(seed: string, id: number): GalaxyObject | null {
   if (cell < 0 || cell >= cellCount() || slot < 0) return null;
   const filled = slotsInCell(seed, cell);
   if (slot >= filled) return null;
+  const b = slotBirthRaw(seed, cell, slot, filled);
+  const { feh, carbon } = chemistry(b.pop, b.pos.R, b.ageGyr, b.rng());
+  const star = evolve({
+    massZams: b.massZams,
+    ageGyr: b.ageGyr,
+    feh,
+    carbon,
+    inArm: b.inArm,
+  });
+  return { id, pos: b.pos, pop: b.pop, inArm: b.inArm, star };
+}
 
+/**
+ * The birth of a slot: position, population, age, ZAMS mass — everything
+ * `objectAt` uses before `evolve`. Cheap enough to run for every occupied
+ * slot in an arc. The rng stream is left at the chemistry draw so
+ * `objectAt` continues identically.
+ */
+export interface SlotBirth {
+  pos: GalPos;
+  pop: Population;
+  inArm: boolean;
+  ageGyr: number;
+  massZams: number;
+  rng: () => number;
+}
+
+export function slotBirthRaw(seed: string, cell: number, slot: number, filled: number): SlotBirth {
   const rng = rngFor(seed, cell, slot);
   const mid = cellCenter(cell);
   const { GALAXY_NZ: nz } = UNIVERSE;
@@ -272,19 +299,25 @@ function objectAtRaw(seed: string, id: number): GalaxyObject | null {
   const pop = pickPop(parts, rng());
   const [ageLo, ageHi] = ageWindow(pop, pos.R);
   const arm = inSpiralArm(pos.R, pos.theta);
-  // Density wave: thin-disk births pile up on the arm crest (young = small age).
   let uAge = rng();
   if (pop === 'thin' && arm) uAge = Math.pow(uAge, 2.2);
   const ageGyr = ageLo + uAge * Math.max(0.01, ageHi - ageLo);
-  const { feh, carbon } = chemistry(pop, pos.R, ageGyr, rng());
-  // Stratified IMF: the cell *is* the population. Slot 0 is the
-  // brown-dwarf tail; slot n−1 is the O-star tip. Jitter so two
-  // adjacent slots are not a ladder of twins.
   const jitter = u01(seed, 'imfJ', cell, slot);
   const uImf = Math.min(0.999999, (slot + jitter) / Math.max(1, filled));
   const massZams = imfMass(uImf);
-  const star = evolve({ massZams, ageGyr, feh, carbon, inArm: arm });
-  return { id, pos, pop, inArm: arm, star };
+  return { pos, pop, inArm: arm, ageGyr, massZams, rng };
+}
+
+export function isSlotAlive(massZams: number, ageGyr: number): boolean {
+  return ageGyr < msLifetime(massZams);
+}
+
+export function slotMsLum(massZams: number): number {
+  return msLuminosity(massZams);
+}
+
+export function slotMsTeff(massZams: number): number {
+  return teffFromLR(msLuminosity(massZams), msRadius(massZams));
 }
 
 export interface NearQuery {

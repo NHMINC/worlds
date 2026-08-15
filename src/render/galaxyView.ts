@@ -6,13 +6,11 @@
  * home, the current system, visited systems, and ~100 deterministic
  * systems of interest. No stars are drawn on the map.
  *
- * ARC mode is one tapped "thick arc": its brightest ~2,500 REAL catalog
- * stars load ONCE as a static point buffer (every dot an addressable
- * id). Every surveyed star stays drawn at a fixed pixel size — nothing
- * about visibility or point size reads the camera — and every one is
- * tappable (screen-space nearest; Set course is the dossier button).
- * Photosphere discs are a rounder LOD for the brightest N, picked once
- * on entry; they do not steal taps or set course by themselves.
+ * ARC mode is one tapped "thick arc": every occupied slot is a point
+ * (cheap birth, no evolve — the id is still the star). Photosphere
+ * discs are the brightest handful, evolved on entry. Tap mints the
+ * full catalog row. Zoom in and the look point follows the selection
+ * so you can fly among them.
  *
  * Nothing in either mode queries or rebuilds per camera move — the
  * blink / cluster / stutter / re-roll failure class of the free-flight
@@ -21,17 +19,18 @@
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
-import { classifyStar, teffToRgb } from '../world/stellar';
 import { createSectorMap, type SectorMap } from './galaxySectors';
 import { createStarDiscs, RESOLVE_MAX, type StarDiscs } from './galaxyStar';
 import {
   sectorCenter,
   sectorName,
   sectorOfPos,
-  sectorPopulation,
-  sectorSample,
   sectorSpan,
   systemsOfInterest,
+  buildArcCloud,
+  sketchMatches,
+  MK_LETTER,
+  type ArcCloud,
   type SectorId,
 } from '../world/sectors';
 
@@ -40,7 +39,6 @@ const MAP_R_MIN = 9;
 const MAP_R_MAX = 46;
 const MAP_R_HOME = 34;
 /** Arc-orbit radius, in units of the arc's own span. */
-const ARC_R_IN = 0.14;
 const ARC_R_FRAME = 1.7;
 const ARC_R_EXIT = 4.2;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
@@ -82,7 +80,7 @@ const STAR_VERT = /* glsl */ `
     float pulse = aPulse > 0.5 ? 0.55 + 0.45 * sin(uTime * 18.0 + position.x * 7.0) : 1.0;
     vPulse = pulse * aVis;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = clamp(aSize * uPixel, 3.0, 7.0);
+    gl_PointSize = clamp(aSize * uPixel, 1.0, 7.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -170,6 +168,7 @@ export class GalaxyView {
   /** Stars loaded for the open arc (empty on the map). */
   objects: GalaxyObject[] = [];
   readonly home: GalaxyObject | null;
+  lastEnterMs = 0;
   private seed: string;
 
   private renderer: THREE.WebGLRenderer;
@@ -193,6 +192,7 @@ export class GalaxyView {
   private starGeo: THREE.BufferGeometry | null = null;
   private starMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
+  private cloud: ArcCloud | null = null;
 
   private visitedMk: MarkerSet | null = null;
   private interestMk: MarkerSet | null = null;
@@ -362,14 +362,19 @@ export class GalaxyView {
 
   // ------------------------------------------------------------- arc mode
 
-  /** Open one thick arc: load its brightest stars once, dive the camera. */
+  /** Open one thick arc: draw every occupied slot, dive the camera. */
   enterArc(id: SectorId, select: GalaxyObject | null = null): void {
     this.disposeArcStars();
     this.mode = 'arc';
     this.sectorSel = id;
     this.sectors.setSelected(id);
-    this.sectorPop = sectorPopulation(this.seed, id);
-    this.objects = sectorSample(this.seed, id, UNIVERSE.GALAXY_SECTOR_STARS);
+    const cloud = buildArcCloud(this.seed, id);
+    this.cloud = cloud;
+    this.sectorPop = cloud.n;
+    this.lastEnterMs = cloud.ms;
+    this.objects = cloud.brightIds
+      .map((sid) => objectAt(this.seed, sid))
+      .filter((o): o is GalaxyObject => o != null);
     this.buildArcStars();
     this.censusMemo = {};
 
@@ -380,9 +385,9 @@ export class GalaxyView {
     this.tgtPhi = 0.9;
     this.gestureR = this.tgtRadius;
     this.idle = 0;
+    this.camera.near = 0.001;
+    this.camera.updateProjectionMatrix();
     this.discs.group.visible = true;
-    // Inside an arc the map stands aside: the saucer's tiles would wall
-    // the camera in; the stars ARE the scene now.
     this.sectors.group.visible = false;
     if (this.visitedMk) this.visitedMk.pts.visible = false;
     if (this.interestMk) this.interestMk.pts.visible = false;
@@ -397,6 +402,7 @@ export class GalaxyView {
     this.mode = 'map';
     this.disposeArcStars();
     this.objects = [];
+    this.cloud = null;
     this.sectorPop = 0;
     this.censusMemo = {};
     this.discs.setStars([], this.camera.position);
@@ -409,6 +415,8 @@ export class GalaxyView {
     this.tgtLook.set(0, 0, 0);
     this.tgtRadius = MAP_R_HOME;
     this.gestureR = this.tgtRadius;
+    this.camera.near = 0.02;
+    this.camera.updateProjectionMatrix();
     // Keep the last arc highlighted as a breadcrumb on the map.
   }
 
@@ -425,27 +433,15 @@ export class GalaxyView {
   }
 
   private buildArcStars(): void {
-    const objs = this.objects;
-    const n = Math.max(1, objs.length);
-    const pos = new Float32Array(n * 3);
-    const col = new Float32Array(n * 3);
-    const size = new Float32Array(n);
-    const pulse = new Float32Array(n);
+    const cloud = this.cloud;
+    const n = Math.max(1, cloud?.n ?? 0);
+    const pos = cloud ? cloud.pos : new Float32Array(3);
+    const col = cloud ? cloud.col : new Float32Array(3);
+    const size = cloud ? cloud.size : new Float32Array(1);
+    const pulse = cloud ? cloud.pulse : new Float32Array(1);
     const vis = new Float32Array(n);
-    for (let i = 0; i < objs.length; i++) {
-      const o = objs[i];
-      const c = galToCart(o.pos);
-      pos[i * 3] = c.x;
-      pos[i * 3 + 1] = c.y;
-      pos[i * 3 + 2] = c.z;
-      const rgb = starRgb(o);
-      col[i * 3] = rgb[0];
-      col[i * 3 + 1] = rgb[1];
-      col[i * 3 + 2] = rgb[2];
-      const L = Math.max(1e-6, o.star.luminosity);
-      size[i] = 1.5 + Math.min(3.4, Math.log10(1 + L) * 1.6);
-      pulse[i] = o.star.phase === 'pulsar' ? 1 : 0;
-      vis[i] = matchesFilter(o, this.filter) ? 1 : 0.12;
+    if (cloud) {
+      for (let i = 0; i < cloud.n; i++) vis[i] = cloud.gain[i];
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -454,7 +450,7 @@ export class GalaxyView {
     geo.setAttribute('aPulse', new THREE.BufferAttribute(pulse, 1));
     const visAttr = new THREE.BufferAttribute(vis, 1);
     geo.setAttribute('aVis', visAttr);
-    if (objs.length === 0) geo.setDrawRange(0, 0);
+    if (!cloud || cloud.n === 0) geo.setDrawRange(0, 0);
     const mat = new THREE.ShaderMaterial({
       vertexShader: STAR_VERT,
       fragmentShader: STAR_FRAG,
@@ -502,14 +498,18 @@ export class GalaxyView {
     return this.selected;
   }
 
-  /** Class census of the open arc's loaded stars, filtered. */
+  /** Class census of the open arc (cheap MK from the birth clock). */
   census(): Record<string, number> {
     if (Object.keys(this.censusMemo).length > 0) return this.censusMemo;
     const c: Record<string, number> = {};
-    for (const o of this.objects) {
-      if (!matchesFilter(o, this.filter)) continue;
-      const k = classifyStar(o.star).replace(/\+.*/, '').replace(/[0-9].*/, '');
-      const letter = /^[OBAFGKMLT]/.test(k) ? k[0] : k;
+    const cloud = this.cloud;
+    if (!cloud) {
+      this.censusMemo = c;
+      return c;
+    }
+    for (let i = 0; i < cloud.n; i++) {
+      if (!sketchMatches(cloud.bits[i], this.filter)) continue;
+      const letter = MK_LETTER[cloud.mk[i]] ?? 'WD';
       c[letter] = (c[letter] ?? 0) + 1;
     }
     this.censusMemo = c;
@@ -517,7 +517,7 @@ export class GalaxyView {
   }
 
   beaconCount(): number {
-    return this.objects.length;
+    return this.cloud?.n ?? this.objects.length;
   }
 
   /** The arc's loaded survey — every row is a tappable catalog id. */
@@ -574,13 +574,47 @@ export class GalaxyView {
     if (!best) return null;
     this.focus(best);
     const c = galToCart(best.pos);
-    const span = sectorSpan(sectorOfPos(best.pos));
     this.tgtLook.set(c.x, c.y, c.z);
     this.look.copy(this.tgtLook);
-    this.tgtRadius = Math.max(span * ARC_R_IN, 0.25);
+    this.tgtRadius = 0.04;
     this.radius = this.tgtRadius;
     this.applyCam();
     return best;
+  }
+
+  /**
+   * An on-screen cloud star that is not a disc — smoke proves the
+   * full field is tappable, not just the brightest 28.
+   */
+  probePointStar(): { id: number; x: number; y: number } | null {
+    const cloud = this.cloud;
+    if (!cloud) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    this.camera.updateMatrixWorld();
+    const e = this.camera.matrixWorldInverse.elements;
+    const p = this.camera.projectionMatrix.elements;
+    const step = Math.max(1, Math.floor(cloud.n / 4000));
+    for (let i = 0; i < cloud.n; i += step) {
+      if (this.discIds.has(cloud.ids[i])) continue;
+      if (!sketchMatches(cloud.bits[i], this.filter)) continue;
+      const x = cloud.pos[i * 3];
+      const y = cloud.pos[i * 3 + 1];
+      const z = cloud.pos[i * 3 + 2];
+      const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
+      const my = e[1] * x + e[5] * y + e[9] * z + e[13];
+      const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
+      const mw = e[3] * x + e[7] * y + e[11] * z + e[15];
+      const cw = p[3] * mx + p[7] * my + p[11] * mz + p[15] * mw;
+      if (cw <= 1e-6) continue;
+      const nx = (p[0] * mx + p[4] * my + p[8] * mz + p[12] * mw) / cw;
+      const ny = (p[1] * mx + p[5] * my + p[9] * mz + p[13] * mw) / cw;
+      if (nx * nx + ny * ny > 0.55) continue;
+      const sx = rect.left + (nx * 0.5 + 0.5) * rect.width;
+      const sy = rect.top + (-ny * 0.5 + 0.5) * rect.height;
+      if (sx < 80 || sx > 1200 || sy < 80 || sy > 720) continue;
+      return { id: cloud.ids[i], x: sx, y: sy };
+    }
+    return null;
   }
 
   /**
@@ -630,6 +664,7 @@ export class GalaxyView {
       const c = galToCart(obj.pos);
       this.pickRing.position.set(c.x, c.y, c.z);
       this.pickRing.visible = true;
+      if (this.mode === 'arc') this.tgtLook.set(c.x, c.y, c.z);
     } else {
       this.pickRing.visible = false;
     }
@@ -649,9 +684,7 @@ export class GalaxyView {
   }
 
   private minR(): number {
-    if (this.mode === 'arc' && this.sectorSel) {
-      return Math.max(0.12, sectorSpan(this.sectorSel) * ARC_R_IN);
-    }
+    if (this.mode === 'arc') return 0.006;
     return MAP_R_MIN;
   }
 
@@ -743,22 +776,46 @@ export class GalaxyView {
       if (arc) this.enterArc(arc);
       return;
     }
-    // Arc mode: every surveyed star is the same object. Nearest on
-    // screen wins; the dossier's Set course is how you go. Photosphere
-    // discs are paint — they must not steal the tap or jump the ship.
-    let best: GalaxyObject | null = null;
-    let bestD = 28;
-    for (const o of this.objects) {
-      if (!matchesFilter(o, this.filter)) continue;
-      const p = this.projectClient(o);
-      if (!p) continue;
-      const d = Math.hypot(p.x - cx, p.y - cy);
+    const picked = this.pickCloud(cx, cy);
+    this.select(picked);
+  }
+
+  private pickCloud(cx: number, cy: number): GalaxyObject | null {
+    const cloud = this.cloud;
+    if (!cloud) return null;
+    this.camera.updateMatrixWorld();
+    const e = this.camera.matrixWorldInverse.elements;
+    const p = this.camera.projectionMatrix.elements;
+    const rect = this.canvas.getBoundingClientRect();
+    const pos = cloud.pos;
+    const bits = cloud.bits;
+    const ids = cloud.ids;
+    let bestI = -1;
+    let bestD = 22;
+    for (let i = 0; i < cloud.n; i++) {
+      if (!sketchMatches(bits[i], this.filter)) continue;
+      const x = pos[i * 3];
+      const y = pos[i * 3 + 1];
+      const z = pos[i * 3 + 2];
+      const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
+      const my = e[1] * x + e[5] * y + e[9] * z + e[13];
+      const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
+      const mw = e[3] * x + e[7] * y + e[11] * z + e[15];
+      const cw = p[3] * mx + p[7] * my + p[11] * mz + p[15] * mw;
+      if (cw <= 1e-6) continue;
+      const nx = (p[0] * mx + p[4] * my + p[8] * mz + p[12] * mw) / cw;
+      const ny = (p[1] * mx + p[5] * my + p[9] * mz + p[13] * mw) / cw;
+      if (nx < -1.15 || nx > 1.15 || ny < -1.15 || ny > 1.15) continue;
+      const sx = rect.left + (nx * 0.5 + 0.5) * rect.width;
+      const sy = rect.top + (-ny * 0.5 + 0.5) * rect.height;
+      const d = Math.hypot(sx - cx, sy - cy);
       if (d < bestD) {
         bestD = d;
-        best = o;
+        bestI = i;
       }
     }
-    this.select(best);
+    if (bestI < 0) return null;
+    return objectAt(this.seed, ids[bestI]);
   }
 
   // ------------------------------------------------------------- input
@@ -884,12 +941,12 @@ export class GalaxyView {
 
   /** Points under a disc hide; filter-mismatched points dim. */
   private applyStarVis(): void {
-    if (!this.starVis) return;
+    if (!this.starVis || !this.cloud) return;
     const arr = this.starVis.array as Float32Array;
-    for (let i = 0; i < this.objects.length; i++) {
-      const o = this.objects[i];
-      if (this.discIds.has(o.id)) arr[i] = 0;
-      else arr[i] = matchesFilter(o, this.filter) ? 1 : 0.12;
+    const { ids, bits, gain, n } = this.cloud;
+    for (let i = 0; i < n; i++) {
+      if (this.discIds.has(ids[i])) arr[i] = 0;
+      else arr[i] = sketchMatches(bits[i], this.filter) ? gain[i] : gain[i] * 0.08;
     }
     this.starVis.needsUpdate = true;
   }
@@ -917,7 +974,10 @@ export class GalaxyView {
     }
     if (this.mode === 'arc') this.discs.syncCamera(this.camera);
 
-    const ringS = Math.max(0.02, this.radius * 0.03);
+    const ringS =
+      this.mode === 'arc'
+        ? Math.max(0.006, Math.min(0.04, this.radius * 0.12))
+        : Math.max(0.02, this.radius * 0.03);
     this.pickRing.scale.setScalar(ringS * (this.mode === 'arc' ? 0.5 : 1));
     this.homeRing.scale.setScalar(ringS);
     this.hereRing.scale.setScalar(ringS * 0.85);
@@ -932,18 +992,11 @@ export class GalaxyView {
       phi: this.phi,
       radius: this.radius,
       pickable: this.mode === 'arc',
-      resolved: this.objects.length,
+      resolved: this.cloud?.n ?? 0,
       discs: this.discIds.size,
       sector: this.sectorSel ? sectorName(this.sectorSel) : null,
       population: this.sectorPop,
     });
     this.raf = requestAnimationFrame(this.frame);
   };
-}
-
-function starRgb(o: GalaxyObject): [number, number, number] {
-  if (o.star.phase === 'black_hole') return [0.35, 0.22, 0.55];
-  if (o.star.phase === 'pulsar') return [0.75, 0.88, 1];
-  if (o.star.phase === 'neutron_star') return [0.55, 0.7, 0.95];
-  return teffToRgb(o.star.teff);
 }
