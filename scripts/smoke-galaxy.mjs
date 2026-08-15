@@ -98,19 +98,17 @@ if (await galaxyBtn.count()) {
 
   const survey = await page.evaluate(() => {
     const v = window.__galaxyView;
-    v.theta = v.tgtTheta;
-    v.phi = v.tgtPhi;
-    v.radius = v.tgtRadius;
-    v.look.copy(v.tgtLook);
     v.applyCam?.();
     return {
       n: v.beaconCount?.() ?? 0,
       ms: v.lastEnterMs ?? null,
       point: v.probePointStar?.() ?? null,
+      discsAtOverview: v.resolvedStars?.()?.length ?? 0,
     };
   });
   console.log('CLOUD', JSON.stringify(survey));
   if (survey.n < 80_000) errors.push(`cloud ${survey.n} is not the full arc`);
+  if (survey.discsAtOverview > 0) errors.push(`overview meshed ${survey.discsAtOverview} highlight discs — brightness should be the IMF, not a sample`);
 
   // A point star (not one of the 28 discs) must open the dossier, not set course.
   if (survey.point) {
@@ -127,18 +125,40 @@ if (await galaxyBtn.count()) {
     errors.push('no on-screen survey star outside the disc roster');
   }
 
-  // Disc roster is frozen at entry: orbiting must not join or drop members.
+  // Overview: turning in place must not mint highlight discs. The field
+  // is the IMF; photospheres appear when you fly close.
   const roster0 = await page.evaluate(() =>
     (window.__galaxyView?.resolvedStars?.() ?? []).map((o) => o.id).join(','),
   );
   await page.evaluate(() => window.__galaxyView?.orbitBy?.(1.35, -0.4));
-  await page.waitForTimeout(1600);
+  await page.waitForTimeout(400);
   const roster1 = await page.evaluate(() =>
     (window.__galaxyView?.resolvedStars?.() ?? []).map((o) => o.id).join(','),
   );
   console.log('ROSTER', JSON.stringify({ before: roster0, after: roster1 }));
-  if (roster0 !== roster1) errors.push('photosphere roster changed after orbiting the camera');
+  if (roster0 !== roster1) errors.push('overview photospheres appeared after looking around');
+  if (roster0) errors.push('overview still has highlight discs');
   await page.screenshot({ path: 'previews/galaxy-2b-orbit.png' });
+
+  const strafe = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    const c = v.arcCenter;
+    const p0 = v.camera.position.clone();
+    v.flyStrafe?.(0.45);
+    const p1 = v.camera.position;
+    const ax = p0.x - c.x, ay = p0.y - c.y, az = p0.z - c.z;
+    const bx = p1.x - c.x, by = p1.y - c.y, bz = p1.z - c.z;
+    const na = Math.hypot(ax, ay, az);
+    const nb = Math.hypot(bx, by, bz);
+    const dot = (ax * bx + ay * by + az * bz) / Math.max(1e-9, na * nb);
+    return {
+      moved: Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z),
+      cos: dot,
+    };
+  });
+  console.log('STRAFE', JSON.stringify(strafe));
+  if (!strafe || strafe.moved < 0.2) errors.push('strafe did not fly off the orbit lock');
+  if (strafe && strafe.cos > 0.995) errors.push('strafe stayed on a radial from the arc centre (orbit lock still on)');
 
   // Approach: park next to the selected star; photospheres must mesh.
   const approached = await page.evaluate(() => {

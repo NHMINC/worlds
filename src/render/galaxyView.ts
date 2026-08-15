@@ -4,17 +4,20 @@
  * MAP mode shows the saucer — a static mesh of annular-sector tiles
  * coloured by the density law (galaxySectors.ts) — plus markers for
  * home, the current system, visited systems, and ~100 deterministic
- * systems of interest. No stars are drawn on the map.
+ * systems of interest. No stars are drawn on the map. The map camera
+ * orbits the origin.
  *
  * ARC mode is one tapped "thick arc": every occupied slot is a point
- * (cheap birth, no evolve — the id is still the star). Photosphere
- * discs are the brightest handful, evolved on entry. Tap mints the
- * full catalog row. Zoom in and the look point follows the selection
- * so you can fly among them.
+ * (cheap birth, no evolve — the id is still the star). The camera is
+ * free flight through that frozen cloud: look, strafe, dolly. There is
+ * no orbit lock on the sector centre or the selection. Photosphere
+ * discs mesh when you are close; brightness is luminosity, not a
+ * sampled highlight. Tap mints the full catalog row. Set course is
+ * the dossier button.
  *
- * Nothing in either mode queries or rebuilds per camera move — the
- * blink / cluster / stutter / re-roll failure class of the free-flight
- * explorer is structurally impossible here.
+ * Nothing in either mode queries or rebuilds the catalog per camera
+ * move — the blink / cluster / stutter / re-roll failure class of the
+ * old free-flight explorer is structurally impossible here.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -41,6 +44,8 @@ const MAP_R_HOME = 34;
 /** Arc-orbit radius, in units of the arc's own span. */
 const ARC_R_FRAME = 1.7;
 const ARC_R_EXIT = 4.2;
+/** kpc — a photosphere disc only when you are among the stars. */
+const DISC_DIST = 0.28;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
@@ -80,7 +85,9 @@ const STAR_VERT = /* glsl */ `
     float pulse = aPulse > 0.5 ? 0.55 + 0.45 * sin(uTime * 18.0 + position.x * 7.0) : 1.0;
     vPulse = pulse * aVis;
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = clamp(aSize * uPixel, 1.0, 7.0);
+    float dist = max(0.004, -mv.z);
+    float persp = clamp(0.16 / dist, 0.14, 3.6);
+    gl_PointSize = clamp(aSize * uPixel * persp, 1.0, 7.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -185,8 +192,7 @@ export class GalaxyView {
   private sectors: SectorMap;
   private discs: StarDiscs;
   private discIds = new Set<number>();
-  /** Framing camera frozen at arc entry — sizes discs, never membership. */
-  private discCam = new THREE.Vector3();
+  private lastDiscAt = 0;
 
   private starPts: THREE.Points | null = null;
   private starGeo: THREE.BufferGeometry | null = null;
@@ -213,6 +219,22 @@ export class GalaxyView {
   private tgtRadius = 40;
   private look = new THREE.Vector3();
   private tgtLook = new THREE.Vector3();
+
+  /** Arc free-flight pose (world kpc). Unused on the map. */
+  private arcPos = new THREE.Vector3();
+  private arcYaw = 0;
+  private arcPitch = -0.6;
+  private arcCenter = new THREE.Vector3();
+  private arcFwd = new THREE.Vector3();
+  private arcRight = new THREE.Vector3();
+  private arcUp = new THREE.Vector3();
+  private arcLook = new THREE.Vector3();
+  private readonly worldUp = new THREE.Vector3(0, 1, 0);
+  private keys = new Set<string>();
+  private panBtn = 0;
+  private pinchMidX = 0;
+  private pinchMidY = 0;
+  private enteredAt = 0;
 
   private dragging = false;
   private lastX = 0;
@@ -276,6 +298,8 @@ export class GalaxyView {
     canvas.addEventListener('pointercancel', this.onUp);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('keydown', this.onKeyDown);
+    window.addEventListener('keyup', this.onKeyUp);
 
     this.setPreset('face');
     this.theta = this.tgtTheta;
@@ -372,18 +396,24 @@ export class GalaxyView {
     this.cloud = cloud;
     this.sectorPop = cloud.n;
     this.lastEnterMs = cloud.ms;
-    this.objects = cloud.brightIds
-      .map((sid) => objectAt(this.seed, sid))
-      .filter((o): o is GalaxyObject => o != null);
+    this.objects = [];
     this.buildArcStars();
     this.censusMemo = {};
 
     const c = galToCart(sectorCenter(id));
     const span = sectorSpan(id);
-    this.tgtLook.set(c.x, c.y, c.z);
-    this.tgtRadius = span * ARC_R_FRAME;
-    this.tgtPhi = 0.9;
-    this.gestureR = this.tgtRadius;
+    this.arcCenter.set(c.x, c.y, c.z);
+    const r = span * ARC_R_FRAME;
+    const phi = 0.9;
+    const th = this.tgtTheta;
+    this.arcPos.set(
+      c.x + r * Math.sin(phi) * Math.cos(th),
+      c.y + r * Math.cos(phi),
+      c.z + r * Math.sin(phi) * Math.sin(th),
+    );
+    const aim = select ? galToCart(select.pos) : c;
+    this.aimAt(aim.x, aim.y, aim.z);
+    this.enteredAt = performance.now();
     this.idle = 0;
     this.camera.near = 0.001;
     this.camera.updateProjectionMatrix();
@@ -392,8 +422,8 @@ export class GalaxyView {
     if (this.visitedMk) this.visitedMk.pts.visible = false;
     if (this.interestMk) this.interestMk.pts.visible = false;
     this.select(select);
-    this.captureDiscCam();
-    this.pickDiscs();
+    this.applyCam();
+    this.pickDiscs(true);
   }
 
   /** Back to the saucer. The arc's stars are dropped; the map is static. */
@@ -413,6 +443,10 @@ export class GalaxyView {
     if (this.interestMk) this.interestMk.pts.visible = true;
     this.select(null);
     this.tgtLook.set(0, 0, 0);
+    this.tgtTheta = this.arcYaw;
+    this.tgtPhi = 0.9;
+    this.theta = this.tgtTheta;
+    this.phi = this.tgtPhi;
     this.tgtRadius = MAP_R_HOME;
     this.gestureR = this.tgtRadius;
     this.camera.near = 0.02;
@@ -473,7 +507,7 @@ export class GalaxyView {
   setFilter(f: GalaxyFilter): void {
     this.filter = f;
     this.censusMemo = {};
-    if (this.mode === 'arc') this.pickDiscs();
+    if (this.mode === 'arc') this.pickDiscs(true);
     else this.applyStarVis();
   }
 
@@ -564,21 +598,18 @@ export class GalaxyView {
   }
 
   /**
-   * Jump straight next to the nearest pinned star (selected, here, or
-   * home) inside its arc, close enough that its photosphere is a disc.
-   * Smoke / tests. Does not re-pick the disc roster — that is frozen
-   * at arc entry.
+   * Jump next to a pinned star (selected, here, or home) inside its
+   * arc, close enough that its photosphere can mesh. Smoke / tests.
    */
   approachNearest(): GalaxyObject | null {
     const best = this.selected ?? this.hereObj ?? this.home;
     if (!best) return null;
     this.focus(best);
     const c = galToCart(best.pos);
-    this.tgtLook.set(c.x, c.y, c.z);
-    this.look.copy(this.tgtLook);
-    this.tgtRadius = 0.04;
-    this.radius = this.tgtRadius;
+    this.arcPos.set(c.x + 0.028, c.y + 0.018, c.z + 0.012);
+    this.aimAt(c.x, c.y, c.z);
     this.applyCam();
+    this.pickDiscs(true);
     return best;
   }
 
@@ -618,13 +649,38 @@ export class GalaxyView {
   }
 
   /**
-   * Rotate the orbit in place. Smoke uses this to prove disc membership
-   * does not follow the camera. The look point stays put.
+   * Rotate the look in place. Smoke uses this to prove overview discs
+   * do not appear just because the camera turned.
    */
   orbitBy(dTheta: number, dPhi = 0): void {
+    if (this.mode === 'arc') {
+      this.arcYaw += dTheta;
+      this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dPhi, -1.45, 1.45);
+      this.applyCam();
+      this.idle = 0;
+      return;
+    }
     this.tgtTheta += dTheta;
     this.tgtPhi = THREE.MathUtils.clamp(this.tgtPhi + dPhi, 0.08, 1.45);
     this.idle = 0;
+  }
+
+  /** Translate along the current look. Smoke / WASD. */
+  flyAlong(kpc: number): void {
+    if (this.mode !== 'arc') return;
+    this.orientArc();
+    this.arcPos.addScaledVector(this.arcFwd, kpc);
+    this.applyCam();
+    this.maybeExitArc();
+  }
+
+  /** Translate along camera right. Smoke: proves we are not on a radial lock. */
+  flyStrafe(kpc: number): void {
+    if (this.mode !== 'arc') return;
+    this.orientArc();
+    this.arcPos.addScaledVector(this.arcRight, kpc);
+    this.applyCam();
+    this.maybeExitArc();
   }
 
   resize(w: number, h: number): void {
@@ -641,6 +697,8 @@ export class GalaxyView {
     this.canvas.removeEventListener('pointerup', this.onUp);
     this.canvas.removeEventListener('pointercancel', this.onUp);
     this.canvas.removeEventListener('wheel', this.onWheel);
+    window.removeEventListener('keydown', this.onKeyDown);
+    window.removeEventListener('keyup', this.onKeyUp);
     this.disposeArcStars();
     for (const mk of [this.visitedMk, this.interestMk]) {
       if (!mk) continue;
@@ -664,7 +722,6 @@ export class GalaxyView {
       const c = galToCart(obj.pos);
       this.pickRing.position.set(c.x, c.y, c.z);
       this.pickRing.visible = true;
-      if (this.mode === 'arc') this.tgtLook.set(c.x, c.y, c.z);
     } else {
       this.pickRing.visible = false;
     }
@@ -673,7 +730,37 @@ export class GalaxyView {
 
   // ------------------------------------------------------------- camera
 
+  private aimAt(x: number, y: number, z: number): void {
+    const dx = x - this.arcPos.x;
+    const dy = y - this.arcPos.y;
+    const dz = z - this.arcPos.z;
+    const len = Math.max(1e-8, Math.hypot(dx, dy, dz));
+    this.arcPitch = Math.asin(THREE.MathUtils.clamp(dy / len, -1, 1));
+    this.arcYaw = Math.atan2(dx, dz);
+  }
+
+  private orientArc(): void {
+    const cp = Math.cos(this.arcPitch);
+    this.arcFwd.set(cp * Math.sin(this.arcYaw), Math.sin(this.arcPitch), cp * Math.cos(this.arcYaw));
+    this.arcRight.crossVectors(this.arcFwd, this.worldUp);
+    if (this.arcRight.lengthSq() < 1e-10) this.arcRight.set(1, 0, 0);
+    else this.arcRight.normalize();
+    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+  }
+
   private applyCam(): void {
+    if (this.mode === 'arc') {
+      this.orientArc();
+      this.camera.position.copy(this.arcPos);
+      this.camera.up.copy(this.arcUp);
+      this.arcLook.copy(this.arcPos).add(this.arcFwd);
+      this.camera.lookAt(this.arcLook);
+      this.radius = this.arcPos.distanceTo(this.arcCenter);
+      this.theta = this.arcYaw;
+      this.phi = Math.PI / 2 - this.arcPitch;
+      this.look.copy(this.arcLook);
+      return;
+    }
     const r = this.radius;
     const x = this.look.x + r * Math.sin(this.phi) * Math.cos(this.theta);
     const y = this.look.y + r * Math.cos(this.phi);
@@ -684,39 +771,64 @@ export class GalaxyView {
   }
 
   private minR(): number {
-    if (this.mode === 'arc') return 0.006;
     return MAP_R_MIN;
   }
 
   private maxR(): number {
-    if (this.mode === 'arc' && this.sectorSel) {
-      return sectorSpan(this.sectorSel) * (ARC_R_EXIT + 0.6);
-    }
     return MAP_R_MAX;
   }
 
+  /** Cruise speed from nearest sampled star (and the arc centre). */
+  private arcPace(): number {
+    const cloud = this.cloud;
+    const cx = this.arcPos.x;
+    const cy = this.arcPos.y;
+    const cz = this.arcPos.z;
+    let minD = this.arcPos.distanceTo(this.arcCenter);
+    if (cloud) {
+      const step = Math.max(1, Math.floor(cloud.n / 6000));
+      const pos = cloud.pos;
+      for (let i = 0; i < cloud.n; i += step) {
+        const d = Math.hypot(pos[i * 3] - cx, pos[i * 3 + 1] - cy, pos[i * 3 + 2] - cz);
+        if (d < minD) minD = d;
+      }
+    }
+    if (this.selected) {
+      const c = galToCart(this.selected.pos);
+      minD = Math.min(minD, Math.hypot(c.x - cx, c.y - cy, c.z - cz));
+    }
+    return THREE.MathUtils.clamp(0.42 * minD, 0.005, 0.65);
+  }
+
+  private maybeExitArc(): void {
+    if (this.mode !== 'arc' || !this.sectorSel) return;
+    if (performance.now() - this.enteredAt < 250) return;
+    if (this.arcPos.distanceTo(this.arcCenter) > sectorSpan(this.sectorSel) * ARC_R_EXIT) {
+      this.exitArc();
+    }
+  }
+
   /**
-   * Direct zoom: scale the target radius, let the frame ease carry it.
-   * The look point NEVER moves — you zoom to what you framed. One
-   * motion crosses at most ZOOM_GESTURE_SPAN; a ~0.6 s pause starts
-   * the next motion. In arc mode, zooming out past the arc's span
-   * returns to the map.
+   * Map: scale the orbit radius toward what is already framed.
+   * Arc: dolly along the look — no lock point.
    */
   private zoom(factor: number): void {
     const now = performance.now();
+    this.idle = 0;
+    if (this.mode === 'arc') {
+      this.orientArc();
+      const pace = this.arcPace();
+      this.arcPos.addScaledVector(this.arcFwd, -Math.log(Math.max(1e-4, factor)) * pace * 2.2);
+      this.applyCam();
+      this.maybeExitArc();
+      this.lastZoomAt = now;
+      return;
+    }
     if (now - this.lastZoomAt > 600) this.gestureR = this.tgtRadius;
     this.lastZoomAt = now;
     const lo = Math.max(this.minR(), this.gestureR / ZOOM_GESTURE_SPAN);
     const hi = Math.min(this.maxR(), this.gestureR * ZOOM_GESTURE_SPAN);
     this.tgtRadius = Math.max(lo, Math.min(hi, this.tgtRadius * factor));
-    this.idle = 0;
-    if (
-      this.mode === 'arc' &&
-      this.sectorSel &&
-      this.tgtRadius > sectorSpan(this.sectorSel) * ARC_R_EXIT
-    ) {
-      this.exitArc();
-    }
   }
 
   // ------------------------------------------------------------- picking
@@ -827,6 +939,7 @@ export class GalaxyView {
       // Synthetic events may carry an unknown pointerId; capture is optional.
     }
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    this.panBtn = e.button;
     if (this.pointers.size === 1) {
       // A fresh single-finger touch is the ONLY way back into rotation
       // after a pinch (see onUp).
@@ -839,6 +952,8 @@ export class GalaxyView {
       this.dragging = false;
       const pts = [...this.pointers.values()];
       this.pinch0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      this.pinchMidX = (pts[0].x + pts[1].x) * 0.5;
+      this.pinchMidY = (pts[0].y + pts[1].y) * 0.5;
       this.gestureR = this.tgtRadius;
       this.lastZoomAt = performance.now();
     }
@@ -850,13 +965,18 @@ export class GalaxyView {
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const mx = (pts[0].x + pts[1].x) * 0.5;
+      const my = (pts[0].y + pts[1].y) * 0.5;
       if (this.pinch0 > 0) {
-        // Sub-linear response tames pinch sensitivity; the eased radius
-        // does the smoothing.
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
       }
+      if (this.mode === 'arc') {
+        this.strafePixels(mx - this.pinchMidX, my - this.pinchMidY);
+      }
       this.pinch0 = d;
+      this.pinchMidX = mx;
+      this.pinchMidY = my;
       this.moved += 4;
       this.idle = 0;
       return;
@@ -867,12 +987,35 @@ export class GalaxyView {
     this.lastX = e.clientX;
     this.lastY = e.clientY;
     this.moved += Math.hypot(dx, dy);
+    this.idle = 0;
+    const strafe = this.mode === 'arc' && (this.panBtn === 1 || this.panBtn === 2 || e.shiftKey);
+    if (strafe) {
+      this.strafePixels(dx, dy);
+      return;
+    }
+    if (this.mode === 'arc') {
+      this.arcYaw -= dx * 0.005;
+      this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
+      this.applyCam();
+      return;
+    }
     this.tgtTheta -= dx * 0.005;
     this.tgtPhi = Math.max(0.08, Math.min(1.52, this.tgtPhi - dy * 0.005));
     this.theta = this.tgtTheta;
     this.phi = this.tgtPhi;
-    this.idle = 0;
   };
+
+  private strafePixels(dx: number, dy: number): void {
+    if (this.mode !== 'arc') return;
+    this.orientArc();
+    const dist = Math.max(0.02, this.arcPace() * 8);
+    const worldH = 2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5);
+    const wpp = worldH / Math.max(1, this.canvas.clientHeight);
+    this.arcPos.addScaledVector(this.arcRight, -dx * wpp);
+    this.arcPos.addScaledVector(this.arcUp, dy * wpp);
+    this.applyCam();
+    this.maybeExitArc();
+  }
 
   private onUp = (e: PointerEvent): void => {
     this.pointers.delete(e.pointerId);
@@ -893,46 +1036,114 @@ export class GalaxyView {
     this.idle = 0;
   };
 
+  private onKeyDown = (e: KeyboardEvent): void => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    const fly =
+      e.code === 'KeyW' ||
+      e.code === 'KeyA' ||
+      e.code === 'KeyS' ||
+      e.code === 'KeyD' ||
+      e.code === 'KeyQ' ||
+      e.code === 'KeyE' ||
+      e.code === 'Space' ||
+      e.code === 'KeyC' ||
+      e.code === 'ArrowUp' ||
+      e.code === 'ArrowDown' ||
+      e.code === 'ArrowLeft' ||
+      e.code === 'ArrowRight';
+    if (fly && this.mode === 'arc') e.preventDefault();
+    this.keys.add(e.code);
+  };
+
+  private onKeyUp = (e: KeyboardEvent): void => {
+    this.keys.delete(e.code);
+  };
+
+  private steerArc(dt: number): void {
+    let mx = 0;
+    let my = 0;
+    let mz = 0;
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) mz += 1;
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) mz -= 1;
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mx += 1;
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mx -= 1;
+    if (this.keys.has('KeyE') || this.keys.has('Space')) my += 1;
+    if (this.keys.has('KeyQ') || this.keys.has('KeyC')) my -= 1;
+    if (mx === 0 && my === 0 && mz === 0) return;
+    this.orientArc();
+    const boost = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 3 : 1;
+    const pace = this.arcPace() * boost;
+    this.arcPos.addScaledVector(this.arcRight, mx * pace * dt);
+    this.arcPos.addScaledVector(this.arcUp, my * pace * dt);
+    this.arcPos.addScaledVector(this.arcFwd, mz * pace * dt);
+    this.maybeExitArc();
+    this.idle = 0;
+  }
+
   // --------------------------------------------------------------- discs
 
   /**
-   * Freeze the disc-sizing camera to the intended arc framing (sector
-   * centre, ARC_R_FRAME). A dive from the map, a re-entry from another
-   * arc, and a later orbit all mint the same bloom radii. The live
-   * camera only billboards.
+   * Mesh photospheres for stars you are close to, ranked by apparent
+   * brightness (L / d²). Overview has none — the field is the IMF, not
+   * a brightest-N highlight.
    */
-  private captureDiscCam(): void {
-    const r = this.tgtRadius;
-    const phi = this.tgtPhi;
-    // Canonical azimuth: bloom radii belong to the arc, not to the
-    // heading you arrived on.
-    this.discCam.set(
-      this.tgtLook.x + r * Math.sin(phi),
-      this.tgtLook.y + r * Math.cos(phi),
-      this.tgtLook.z,
-    );
-  }
-
-  /**
-   * Survey's brightest RESOLVE_MAX, plus the selected pin. Rank is the
-   * sample order (already starGlow). Camera position is not an input.
-   */
-  private pickDiscs(): void {
+  private pickDiscs(force = false): void {
     if (this.mode !== 'arc') return;
+    const now = performance.now();
+    if (!force && now - this.lastDiscAt < 120) return;
+    this.lastDiscAt = now;
+    const cloud = this.cloud;
     const near: GalaxyObject[] = [];
     const seen = new Set<number>();
     const take = (o: GalaxyObject | null): void => {
       if (!o || seen.has(o.id) || near.length >= RESOLVE_MAX) return;
+      if (!matchesFilter(o, this.filter) && o !== this.selected) return;
       seen.add(o.id);
       near.push(o);
     };
-    take(this.selected);
-    for (const o of this.objects) {
-      if (!matchesFilter(o, this.filter)) continue;
-      take(o);
-      if (near.length >= RESOLVE_MAX) break;
+    const maxD2 = DISC_DIST * DISC_DIST;
+    if (this.selected) {
+      const c = galToCart(this.selected.pos);
+      const d2 =
+        (c.x - this.arcPos.x) ** 2 + (c.y - this.arcPos.y) ** 2 + (c.z - this.arcPos.z) ** 2;
+      if (d2 <= maxD2) take(this.selected);
     }
-    this.discs.setStars(near, this.discCam);
+    if (cloud) {
+      const cx = this.arcPos.x;
+      const cy = this.arcPos.y;
+      const cz = this.arcPos.z;
+      const best: Array<{ id: number; app: number }> = [];
+      const consider = (sid: number, app: number) => {
+        if (best.length < RESOLVE_MAX) {
+          best.push({ id: sid, app });
+          if (best.length === RESOLVE_MAX) best.sort((a, b) => a.app - b.app);
+          return;
+        }
+        if (app <= best[0].app) return;
+        best[0] = { id: sid, app };
+        best.sort((a, b) => a.app - b.app);
+      };
+      const pos = cloud.pos;
+      const lum = cloud.lum;
+      const bits = cloud.bits;
+      const ids = cloud.ids;
+      for (let i = 0; i < cloud.n; i++) {
+        if (!sketchMatches(bits[i], this.filter)) continue;
+        const dx = pos[i * 3] - cx;
+        const dy = pos[i * 3 + 1] - cy;
+        const dz = pos[i * 3 + 2] - cz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > maxD2 || d2 < 1e-12) continue;
+        consider(ids[i], lum[i] / d2);
+      }
+      best.sort((a, b) => b.app - a.app);
+      for (const b of best) {
+        if (near.length >= RESOLVE_MAX) break;
+        take(objectAt(this.seed, b.id));
+      }
+    }
+    this.objects = near;
+    this.discs.setStars(near, this.camera.position);
     this.discs.syncCamera(this.camera);
     this.discIds.clear();
     for (const o of near) this.discIds.add(o.id);
@@ -959,12 +1170,18 @@ export class GalaxyView {
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
     this.idle += dt;
-    if (this.mode === 'map' && !this.dragging && this.idle > 3) this.tgtTheta += dt * 0.04;
-    this.theta += (this.tgtTheta - this.theta) * (1 - Math.exp(-dt * 4.2));
-    this.phi += (this.tgtPhi - this.phi) * (1 - Math.exp(-dt * 4.2));
-    this.radius += (this.tgtRadius - this.radius) * (1 - Math.exp(-dt * 3.6));
-    this.look.lerp(this.tgtLook, 1 - Math.exp(-dt * 3.2));
-    this.applyCam();
+    if (this.mode === 'arc') {
+      this.steerArc(dt);
+      this.applyCam();
+      this.pickDiscs();
+    } else {
+      if (!this.dragging && this.idle > 3) this.tgtTheta += dt * 0.04;
+      this.theta += (this.tgtTheta - this.theta) * (1 - Math.exp(-dt * 4.2));
+      this.phi += (this.tgtPhi - this.phi) * (1 - Math.exp(-dt * 4.2));
+      this.radius += (this.tgtRadius - this.radius) * (1 - Math.exp(-dt * 3.6));
+      this.look.lerp(this.tgtLook, 1 - Math.exp(-dt * 3.2));
+      this.applyCam();
+    }
 
     const t = now * 0.001;
     const px = this.renderer.getPixelRatio();
@@ -974,13 +1191,21 @@ export class GalaxyView {
     }
     if (this.mode === 'arc') this.discs.syncCamera(this.camera);
 
-    const ringS =
-      this.mode === 'arc'
-        ? Math.max(0.006, Math.min(0.04, this.radius * 0.12))
-        : Math.max(0.02, this.radius * 0.03);
-    this.pickRing.scale.setScalar(ringS * (this.mode === 'arc' ? 0.5 : 1));
-    this.homeRing.scale.setScalar(ringS);
-    this.hereRing.scale.setScalar(ringS * 0.85);
+    const cam = this.camera.position;
+    const ringFor = (mesh: THREE.Mesh, lo: number, hi: number, k: number) => {
+      const d = cam.distanceTo(mesh.position);
+      mesh.scale.setScalar(Math.max(lo, Math.min(hi, d * k)));
+    };
+    if (this.mode === 'arc') {
+      ringFor(this.pickRing, 0.00035, 0.03, 0.045);
+      ringFor(this.homeRing, 0.00035, 0.03, 0.045);
+      ringFor(this.hereRing, 0.00035, 0.03, 0.04);
+    } else {
+      const ringS = Math.max(0.02, this.radius * 0.03);
+      this.pickRing.scale.setScalar(ringS);
+      this.homeRing.scale.setScalar(ringS);
+      this.hereRing.scale.setScalar(ringS * 0.85);
+    }
     this.pickRing.rotation.z = t * 0.35;
     this.homeRing.rotation.z = -t * 0.12;
     this.hereRing.rotation.z = t * 0.2;

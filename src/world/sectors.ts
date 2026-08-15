@@ -216,8 +216,8 @@ export interface ArcCloud {
   bits: Uint8Array;
   /** MK letter index 0=WD/other, 1=O .. 8=M, 9=L, 10=T. */
   mk: Uint8Array;
-  /** Brightest ids by cheap MS light — disc / dossier candidates. */
-  brightIds: number[];
+  /** Cheap MS luminosity (alive) or a dim remnant pin. Apparent mag uses this. */
+  lum: Float32Array;
   ms: number;
 }
 
@@ -276,17 +276,7 @@ export function buildArcCloud(seed: string, id: SectorId): ArcCloud {
   const gain = new Float32Array(n);
   const bits = new Uint8Array(n);
   const mk = new Uint8Array(n);
-  const best: Array<{ id: number; L: number }> = [];
-  const consider = (sid: number, L: number) => {
-    if (best.length < 40) {
-      best.push({ id: sid, L });
-      if (best.length === 40) best.sort((a, b) => a.L - b.L);
-      return;
-    }
-    if (L <= best[0].L) return;
-    best[0] = { id: sid, L };
-    best.sort((a, b) => a.L - b.L);
-  };
+  const lum = new Float32Array(n);
 
   let i = 0;
   for (let ci = 0; ci < cells.length; ci++) {
@@ -319,11 +309,10 @@ export function buildArcCloud(seed: string, id: SectorId): ArcCloud {
       if (b.inArm) bit |= BIT_ARM;
       bits[i] = bit;
       mk[i] = alive ? (MK_IX[mkFromTeff(teff)] ?? 0) : 0;
-      consider(sid, L);
+      lum[i] = L;
       i++;
     }
   }
-  best.sort((a, b) => b.L - a.L);
   return {
     n,
     ids,
@@ -334,7 +323,7 @@ export function buildArcCloud(seed: string, id: SectorId): ArcCloud {
     gain,
     bits,
     mk,
-    brightIds: best.map((b) => b.id),
+    lum,
     ms: performance.now() - t0,
   };
 }

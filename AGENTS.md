@@ -176,41 +176,48 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   front only multiplies the same Chapman transmittance the sky already
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
-- **The explorer is a SECTOR MAP, not a free flight.** The galaxy is
+- **The explorer is a SECTOR MAP, not a camera-relative catalog.** The galaxy is
   divided into `GALAXY_SECTORS` pizza slices × `GALAXY_SECTOR_RINGS`
   annuli (`src/world/sectors.ts`); one intersection — a "thick arc" —
   is an EXACT block of catalog cells, so the address grid is untouched.
   Ring boundaries sit at EQUAL ENCLOSED MASS (inverse CDF of the same
   density law): inner arcs are thin, outer arcs wide, every arc holds
-  roughly the same number of stars. Two views, both static:
+  roughly the same number of stars. Two views; the catalog is static
+  in both:
   - **Map**: a saucer mesh of arc tiles (`galaxySectors.ts`) coloured
     by the density law — golden bulge/bar, blue crests, brown lanes —
     plus markers for home, here, visited systems, and ~100
     deterministic systems of interest (`systemsOfInterest`). NO stars
     are drawn on the map; the tile speckle is chart fabric, not a sky.
+    The map camera orbits the origin.
   - **Arc**: tap a tile and **every occupied slot** is drawn once as a
     cheap point (`buildArcCloud` — birth position + IMF clock, no
     `evolve` until you tap). That is the arc's population, not a 2,500
-    survey. Photosphere discs are the brightest handful, evolved on
-    entry. Tap mints the full catalog row (`objectAt`). Select eases
-    the look point onto that star; zoom in to fly among neighbours.
-    Set course is the dossier button. Zoom out (or the breadcrumb) to
-    return to the map.
-  Nothing queries or rebuilds per camera move in either mode — the
-  free-flight explorer's blink / cluster / stutter / re-roll bug class
-  was structural, and it is retired along with the raymarched field
-  and the dynamic beacon system. A painted starfield is still a lie:
-  every individual star drawn anywhere is an addressable catalog row.
-  The in-system night shell (`buildStars`) is still unseeded and must
-  retire so ground and explorer agree.
-- **Explorer gestures.** Zoom is direct, gentle, and never redirects:
-  wheel/pinch scale the orbit radius toward what is already framed;
-  the eased radius is the only smoothing and the look point never
-  moves on a zoom. One continuous motion crosses at most
+    survey. Point brightness is luminosity (alive MS clock, dim remnant
+    pin), not a sampled highlight. Photosphere discs mesh when you fly
+    close (`L / d²` inside ~0.3 kpc) — drawing LOD, not points of
+    interest. The camera is **free flight** through that frozen cloud:
+    drag looks, wheel/pinch dollies, WASD flies, Shift/right-drag
+    strafes. There is no orbit lock on the sector centre or the
+    selection. Tap mints the full catalog row (`objectAt`). Set course
+    is the dossier button. Fly far out (or the breadcrumb) to return
+    to the map.
+  Nothing queries or rebuilds the catalog per camera move in either
+  mode — the old free-flight explorer's blink / cluster / stutter /
+  re-roll bug class was structural, and it is retired along with the
+  raymarched field and the dynamic beacon system. A painted starfield
+  is still a lie: every individual star drawn anywhere is an
+  addressable catalog row. The in-system night shell (`buildStars`) is
+  still unseeded and must retire so ground and explorer agree.
+- **Explorer gestures.** On the **map**, zoom is direct, gentle, and
+  never redirects: wheel/pinch scale the orbit radius toward what is
+  already framed; the eased radius is the only smoothing and the look
+  point never moves on a zoom. One continuous motion crosses at most
   `ZOOM_GESTURE_SPAN` (~2.6×); a ~0.6 s pause starts the next motion.
   After a pinch, the surviving finger is NOT a drag — rotation resumes
-  only with a fresh single-finger touch. In arc mode, zooming out past
-  the arc's span returns to the map.
+  only with a fresh single-finger touch. In **arc** mode the camera is
+  not an orbit: wheel/pinch move you along the look, drag turns the
+  view, and flying out past the arc's span returns to the map.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper

@@ -115,6 +115,7 @@ const check = (cond: boolean, msg: string) => {
   const cloud = buildArcCloud(seed, id);
   check(cloud.n === pop, `cloud ${cloud.n} != population ${pop}`);
   check(cloud.n > 50_000, `arc cloud too small ${cloud.n}`);
+  check(cloud.lum.length === cloud.n, `cloud lum ${cloud.lum.length}`);
   console.log(`  home-like arc cloud: ${cloud.n} slots in ${cloud.ms.toFixed(0)} ms`);
 
   // Birth pose must be the same row objectAt evolves.

@@ -1,9 +1,9 @@
 /**
  * Close-up stars: photospheres from evolve(), not bigger point sprites.
  * GL_POINTS become squares on a phone once gl_PointSize grows. The arc
- * view picks the survey's brightest N once on entry and meshes those
- * discs; the camera never joins or drops members. Type, radius, and
- * phase come from evolve() — objectAt is O(1).
+ * view meshes a disc when you are close enough that a point would lie;
+ * membership is distance × luminosity, not a brightest-N sample. Type,
+ * radius, and phase come from evolve() — objectAt is O(1).
  */
 import * as THREE from 'three';
 import { galToCart, type GalaxyObject } from '../world/galaxy';
@@ -215,7 +215,8 @@ export function createStarDiscs(): StarDiscs {
     slot.kind.needsUpdate = true;
   }
 
-  function setStars(stars: GalaxyObject[], cam: THREE.Vector3) {
+  function setStars(stars: GalaxyObject[], _cam: THREE.Vector3) {
+    void _cam;
     current = stars.slice(0, RESOLVE_MAX);
     worlds.length = 0;
     radii.length = 0;
@@ -229,20 +230,14 @@ export function createStarDiscs(): StarDiscs {
       const c = galToCart(o.pos);
       const p = new THREE.Vector3(c.x, c.y, c.z);
       worlds.push(p);
-      // One-shot world-space size from the arc's framing camera. A few
-      // milliradians: rounder than a GL_POINT, smaller than neighbour
-      // spacing, so the brightest N are beads not planets. Later orbits
-      // do not resize.
-      const dist = p.distanceTo(cam);
+      // World size from present-day L, not from a framing-camera sample.
+      // Apparent angle grows as 1/distance — a disc appears when you
+      // fly near, it does not stay a planet-sun from the overview.
       const L = Math.max(o.star.luminosity, 1e-4);
-      // Beads, not planets: inside a ~1 kpc arc a 0.04 rad disc covers
-      // neighbours and the sky reads as 28 suns plus speckle. A few
-      // milliradians is rounder than a GL_POINT and smaller than spacing.
-      let ang = 0.0032 * Math.pow(L, 0.12);
-      if (o.star.nebula !== 'none') ang *= 1.8;
-      if (o.star.phase === 'black_hole') ang = 0.003;
-      ang = THREE.MathUtils.clamp(ang, 0.0024, 0.007);
-      const rad = ang * dist;
+      let rWorld = 0.00052 * Math.pow(L, 0.14);
+      if (o.star.nebula !== 'none') rWorld *= 2.2;
+      if (o.star.phase === 'black_hole') rWorld = 0.00032;
+      const rad = THREE.MathUtils.clamp(rWorld, 0.0002, 0.0028);
       radii.push(rad);
       slot.mesh.position.copy(p);
       slot.mesh.scale.setScalar(rad);
