@@ -376,7 +376,7 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     const f = slotsInCell(seed, cells[i]);
     filledOf[i] = f;
     if (f <= 0) continue;
-    const d = Math.max(0, cellDist(cells[i], x, y, z) - slotScatterKpc() - 0.02);
+    const d = cellDist(cells[i], x, y, z);
     const s0 = Math.floor(regionImfFloor(d) * f);
     slot0[i] = s0;
     cap += f - s0;
@@ -462,7 +462,7 @@ export function advanceRegionCloud(
     const id = cloud.ids[i];
     const { cell, slot } = splitId(id);
     const filled = slotsInCell(seed, cell);
-    if (slot < Math.floor(regionImfFloor(Math.max(0, cellDist(cell, x1, y1, z1) - scatter)) * filled)) continue;
+    if (slot < Math.floor(regionImfFloor(cellDist(cell, x1, y1, z1)) * filled)) continue;
     keep = ensureCloudCap(keep, n, n + 1);
     copyStar(cloud, i, keep, n);
     have.add(id);
@@ -472,11 +472,11 @@ export function advanceRegionCloud(
   for (const cell of cells) {
     const filled = slotsInCell(seed, cell);
     if (filled <= 0) continue;
-    const raw1 = cellDist(cell, x1, y1, z1);
-    const raw0 = cellDist(cell, x0, y0, z0);
-    const s1 = Math.floor(regionImfFloor(Math.max(0, raw1 - scatter)) * filled);
-    const s0 = Math.floor(regionImfFloor(Math.max(0, raw0 - scatter)) * filled);
-    const wellInsideOld = raw0 + scatter < r && raw1 + scatter < r;
+    const d1 = cellDist(cell, x1, y1, z1);
+    const d0 = cellDist(cell, x0, y0, z0);
+    const s1 = Math.floor(regionImfFloor(d1) * filled);
+    const s0 = Math.floor(regionImfFloor(d0) * filled);
+    const wellInsideOld = d0 + scatter < r && d1 + scatter < r;
     if (wellInsideOld && s1 >= s0) continue;
     const from = s1;
     const to = wellInsideOld ? s0 : filled;

@@ -715,7 +715,12 @@ export class GalaxyView {
       cat.y - this.arcFwd.y * off,
       cat.z - this.arcFwd.z * off,
     );
-    this.moveBubble(0, 0, 0, true);
+    this.mintAt.copy(this.arcCenter);
+    this.refreshViewPos();
+    if (this.selected) {
+      const c = this.viewCart(this.selected);
+      this.pickRing.position.set(c.x, c.y, c.z);
+    }
     const v = this.viewCart(best);
     this.aimAt(v.x, v.y, v.z);
     this.applyCam();
