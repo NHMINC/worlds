@@ -402,7 +402,9 @@ function writeEvolved(
     mk: ev.mk ? (MK_IX[ev.mk] ?? 0) : 0,
     pulse: shape.seed,
     size: kind === KIND_STAR ? (L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0)) : shape.radiusKpc,
-    gain: 0.22 + 0.78 * (L / (L + 0.25)),
+    gain: kind === KIND_STAR
+      ? 0.22 + 0.78 * (L / (L + 0.25))
+      : 0.16 + 0.28 * (L / (L + 0.8)),
   });
 }
 

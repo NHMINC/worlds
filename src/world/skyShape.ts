@@ -5,8 +5,10 @@
  * the one you fly into.
  *
  * v1 is a camera-facing billboard whose fragment is a cheap SDF
- * (filled clump / ring / bipolar / slab). World size is kpc. A later
- * volume or mesh upgrades this evaluator — not the catalog.
+ * (filled clump / ring / bipolar / slab). The host is a tight core;
+ * the envelope is a quiet halo — not an empty pond of rings.
+ * World size is kpc. A later volume or mesh upgrades this
+ * evaluator — not the catalog.
  */
 import { UNIVERSE } from './physics';
 import type { NebulaKind } from './stellar';
@@ -72,7 +74,7 @@ export function shapeAt(kind: SkyKind, id: number): SkyShape {
     const bipolar = h0 > 0.5;
     return {
       kind,
-      radiusKpc: 0.045 + 0.055 * h1,
+      radiusKpc: 0.028 + 0.03 * h1,
       flatten: bipolar ? 0.35 : 0.12,
       axes: bipolar ? [0.55 + 0.25 * h2, 1.05 + 0.25 * h3] : [1, 1],
       clump: bipolar ? 2 : 1,
@@ -83,7 +85,7 @@ export function shapeAt(kind: SkyKind, id: number): SkyShape {
   if (kind === KIND_SNR) {
     return {
       kind,
-      radiusKpc: 0.07 + 0.1 * h0,
+      radiusKpc: 0.04 + 0.05 * h0,
       flatten: 0.2 + 0.15 * h1,
       axes: [0.85 + 0.3 * h2, 0.85 + 0.3 * h3],
       clump: 2 + Math.floor(h1 * 3),
@@ -129,25 +131,31 @@ float skyMask(float kind, vec2 uv, float seed) {
     return smoothstep(1.0, 0.32, r);
   }
   if (kind < 1.5) {
+    float core = smoothstep(0.14, 0.0, r);
     float n = skyHash(dot(uv, vec2(3.1, 5.7)) + seed * 17.0);
     float rad = 0.62 + 0.38 * n;
     float clump = smoothstep(rad, rad * 0.28, r);
     float flatten = 1.0 - 0.5 * uv.y * uv.y;
-    return clump * flatten;
+    return max(core, 0.5 * clump * flatten);
   }
   if (kind < 2.5) {
+    float core = smoothstep(0.15, 0.0, r);
     float bipolar = step(0.5, seed);
+    float env = 0.0;
     if (bipolar > 0.5) {
       float waist = exp(-uv.x * uv.x * 7.5) * smoothstep(1.05, 0.12, abs(uv.y));
-      return waist * (1.0 - smoothstep(0.18, 0.0, r));
+      env = waist * (1.0 - smoothstep(0.18, 0.0, r));
+    } else {
+      env = smoothstep(0.07, 0.0, abs(r - 0.74));
     }
-    return smoothstep(0.16, 0.0, abs(r - 0.64));
+    return max(core, 0.26 * env);
   }
   if (kind < 3.5) {
-    float shell = smoothstep(0.13, 0.0, abs(r - 0.72));
+    float core = smoothstep(0.14, 0.0, r);
+    float shell = smoothstep(0.06, 0.0, abs(r - 0.78));
     float fil = smoothstep(0.35, 0.88, skyHash(dot(uv, vec2(8.2, 3.4)) + seed * 9.0));
     fil *= smoothstep(1.0, 0.45, r);
-    return max(shell, fil * 0.55);
+    return max(core, 0.24 * max(shell, fil * 0.4));
   }
   float slab = smoothstep(1.0, 0.18, abs(uv.y) * 2.35) * smoothstep(1.05, 0.3, abs(uv.x));
   float wrinkle = 0.65 + 0.35 * skyHash(dot(uv, vec2(5.1, 7.3)) + seed * 11.0);

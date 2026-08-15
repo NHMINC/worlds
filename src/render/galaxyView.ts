@@ -118,7 +118,8 @@ const STAR_VERT = /* glsl */ `
     vColor = aColor;
     if (aKind > 0.5) {
       float ang = max(aSize, 0.02) / d;
-      gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, 220.0);
+      float cap = aKind < 3.5 ? 56.0 : 220.0;
+      gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, cap);
       vVis = aVis;
     } else {
       float L = max(aLum, 1e-4);
