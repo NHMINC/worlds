@@ -107,10 +107,11 @@ export function createSectorMap(): SectorMap {
   const { GALAXY_SECTORS: S, GALAXY_SECTOR_RINGS: RINGS, GALAXY_NTH: nth } = UNIVERSE;
   const radii = ringRadii();
 
-  // Two sheets (top / bottom) of RINGS × S tiles; each tile is a small
-  // grid so arm colour bends smoothly across wide outer arcs.
+  // Two sheets (top / bottom) of RINGS × S tiles. Radial subdivisions
+  // exist so the Gaussian bulge is a dome, not one cone-facet per ring
+  // (R_SEG=1 made even a zero-slope law look like a witch's hat).
   const AZ_SEG = 2;
-  const R_SEG = 1;
+  const R_SEG = 4;
   const vertsPerTile = (AZ_SEG + 1) * (R_SEG + 1);
   const trisPerTile = AZ_SEG * R_SEG * 2;
   const tiles = RINGS * S;

@@ -867,11 +867,16 @@ export class GalaxyView {
   private pickDiscs(): void {
     if (this.mode !== 'arc') return;
     const near: GalaxyObject[] = [];
-    if (this.selected) near.push(this.selected);
-    for (const o of this.objects) {
-      if (this.selected && o.id === this.selected.id) continue;
-      if (!matchesFilter(o, this.filter)) continue;
+    const seen = new Set<number>();
+    const take = (o: GalaxyObject | null): void => {
+      if (!o || seen.has(o.id) || near.length >= RESOLVE_MAX) return;
+      seen.add(o.id);
       near.push(o);
+    };
+    take(this.selected);
+    for (const o of this.objects) {
+      if (!matchesFilter(o, this.filter)) continue;
+      take(o);
       if (near.length >= RESOLVE_MAX) break;
     }
     this.discs.setStars(near, this.discCam);
