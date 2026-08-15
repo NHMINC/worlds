@@ -464,9 +464,10 @@ export const UNIVERSE = {
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX / DUST_PX as pixel floors so far sources stay
    * findable; sprites under DUST_MINPX skip the march (a disc).
-   * STAR_PX is the glare sprite that holds a 1/r² bloom around a
-   * one-pixel core. The core is the star; the glow is flux, not a
-   * filled disc. Intensity is L / d² through a photograph stretch.
+   * STAR_PX is the glare sprite that holds a spherical gaussian
+   * bloom around a one-pixel core. The core is the star; the glow
+   * is a ball of light from flux — not a cross, not a filled disc.
+   * Intensity is L / d² through a photograph stretch.
    * SUPER_GAIN is exposure. Optical approximations, like AIR_LINE.
    * Not pickable.
    */
