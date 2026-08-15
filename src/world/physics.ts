@@ -424,18 +424,19 @@ export const UNIVERSE = {
    * of the disk — luminous living stars above SILHOUETTE_M (A and
    * hotter, giants, WR) plus nebula hosts and dusty cell centres —
    * is placed with the same magnifier. Distant discs are toy angular
-   * sizes (STAR / NEBULA / DUST _PX). A nebula is a halo on its
-   * host, not a sky-filling ring. SUPER_GAIN stretches the
-   * bright end the clock already made. DUST_TAU is how hard a dust
-   * sprite darkens; DUST_FLOOR is the ISM column that mints a
-   * centre. Optical approximations, like AIR_LINE. Not pickable.
+   * sizes (STAR / NEBULA / DUST _PX). Envelopes are 50% transparent
+   * spheres on the source (ENVELOPE_ALPHA) — cyan PN, white SNR/H II,
+   * brown dust. They overlap as glass; they do not add energy.
+   * SUPER_GAIN stretches the bright end the clock already made.
+   * DUST_FLOOR is the ISM column that mints a dust centre.
+   * Optical approximations, like AIR_LINE. Not pickable.
    */
   GALAXY_SILHOUETTE_M: 5,
   SILHOUETTE_STAR_PX: 2.4,
   SILHOUETTE_NEBULA_PX: 7,
-  SILHOUETTE_DUST_PX: 22,
+  SILHOUETTE_DUST_PX: 10,
   SILHOUETTE_SUPER_GAIN: 1.6,
-  SILHOUETTE_DUST_TAU: 0.55,
+  SILHOUETTE_ENVELOPE_ALPHA: 0.5,
   SILHOUETTE_DUST_FLOOR: 0.16,
 
   /**

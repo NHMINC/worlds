@@ -1,16 +1,13 @@
 /**
- * Shared nebula / dust shape law. Clock or ISM → kind, then the
- * address hashes instance traits. The same function feeds the distant
+ * Shared nebula / dust envelope law. Clock or ISM → kind, then a
+ * sphere on the virtual source. The same function feeds the distant
  * backdrop and the local sample, so the object you see far away is
  * the one you fly into.
  *
- * v1 is a camera-facing billboard whose fragment is a cheap SDF
- * (filled clump / ring / bipolar / slab). The host is a tight core;
- * the envelope is a quiet halo — not an empty pond of rings.
- * World size is kpc. A later volume or mesh upgrades this
- * evaluator — not the catalog.
+ * v1 is a camera-facing disc (the cheap sphere silhouette). World
+ * size is kpc. A later volume or mesh upgrades this evaluator —
+ * not the catalog.
  */
-import { UNIVERSE } from './physics';
 import type { NebulaKind } from './stellar';
 
 export const KIND_STAR = 0;
@@ -25,9 +22,9 @@ export interface SkyShape {
   kind: SkyKind;
   /** Billboard half-extent in catalog kpc. */
   radiusKpc: number;
-  /** 0 = round, 1 = flattened to the disk. */
+  /** 0 = round, 1 = flattened to the disk. Unused on the sphere. */
   flatten: number;
-  /** In-plane stretch (x, y in the sprite). */
+  /** In-plane stretch. Unused on the sphere. */
   axes: [number, number];
   clump: number;
   seed: number;
@@ -49,61 +46,34 @@ export function kindFromNebula(nebula: NebulaKind): SkyKind {
   return KIND_STAR;
 }
 
+const WHITE: [number, number, number] = [1, 1, 1];
+const CYAN: [number, number, number] = [0.35, 0.95, 0.95];
+const BROWN: [number, number, number] = [0.48, 0.32, 0.18];
+
 /**
- * Characteristics of the envelope around a virtual source.
- * Stars return a tight photosphere disc; nebulae and dust return
- * typed extents the shaders march as an SDF.
+ * Sphere on a virtual source. Stars return a tight photosphere;
+ * nebulae and dust return a modest ball the shaders draw at 50%
+ * alpha. Colour is the kind; radius hashes a little so neighbours
+ * are not clones.
  */
 export function shapeAt(kind: SkyKind, id: number): SkyShape {
   const h0 = shapeHash(id, 1);
-  const h1 = shapeHash(id, 2);
-  const h2 = shapeHash(id, 3);
-  const h3 = shapeHash(id, 4);
-  if (kind === KIND_HII) {
-    return {
-      kind,
-      radiusKpc: 0.1 + 0.14 * h0,
-      flatten: 0.55 + 0.25 * h1,
-      axes: [0.75 + 0.5 * h2, 0.55 + 0.35 * h3],
-      clump: 3 + Math.floor(h1 * 4),
-      seed: h0,
-      rgb: [1.0, 0.32 + 0.12 * h2, 0.42 + 0.1 * h3],
-    };
-  }
+  const r = 0.028 + 0.022 * h0;
   if (kind === KIND_PN) {
-    const bipolar = h0 > 0.5;
-    return {
-      kind,
-      radiusKpc: 0.028 + 0.03 * h1,
-      flatten: bipolar ? 0.35 : 0.12,
-      axes: bipolar ? [0.55 + 0.25 * h2, 1.05 + 0.25 * h3] : [1, 1],
-      clump: bipolar ? 2 : 1,
-      seed: h0,
-      rgb: [0.4 + 0.15 * h2, 0.95, 0.7 + 0.15 * h3],
-    };
+    return { kind, radiusKpc: r, flatten: 0, axes: [1, 1], clump: 1, seed: h0, rgb: CYAN };
   }
-  if (kind === KIND_SNR) {
-    return {
-      kind,
-      radiusKpc: 0.04 + 0.05 * h0,
-      flatten: 0.2 + 0.15 * h1,
-      axes: [0.85 + 0.3 * h2, 0.85 + 0.3 * h3],
-      clump: 2 + Math.floor(h1 * 3),
-      seed: h0,
-      rgb: [1.0, 0.62 + 0.2 * h2, 0.38 + 0.12 * h3],
-    };
+  if (kind === KIND_HII || kind === KIND_SNR) {
+    return { kind, radiusKpc: r * 1.1, flatten: 0, axes: [1, 1], clump: 1, seed: h0, rgb: WHITE };
   }
   if (kind === KIND_DUST) {
-    const dust = UNIVERSE.GALAXY_DUST_RGB;
-    const inv = 1 / Math.max(dust[0], dust[1], dust[2]);
     return {
       kind,
-      radiusKpc: 0.16 + 0.22 * h0,
-      flatten: 0.72 + 0.2 * h1,
-      axes: [1.1 + 0.6 * h2, 0.35 + 0.25 * h3],
-      clump: 2,
+      radiusKpc: 0.055 + 0.04 * h0,
+      flatten: 0,
+      axes: [1, 1],
+      clump: 1,
       seed: h0,
-      rgb: [0.42 * dust[2] * inv, 0.32 * dust[1] * inv, 0.22 * dust[0] * inv],
+      rgb: BROWN,
     };
   }
   return {
@@ -113,52 +83,18 @@ export function shapeAt(kind: SkyKind, id: number): SkyShape {
     axes: [1, 1],
     clump: 1,
     seed: h0,
-    rgb: [1, 1, 1],
+    rgb: WHITE,
   };
 }
 
 /**
- * Fragment SDF for a kinded billboard. `uv` is gl_PointCoord in −1..1.
- * Returns 0..1 coverage. Stars are a soft disc; the rest are typed.
+ * Fragment mask. Stars and envelopes are the same cheap sphere:
+ * a filled disc with a soft limb. Kind only picks the colour
+ * on the CPU.
  */
 export const SHAPE_GLSL = /* glsl */ `
-float skyHash(float n) {
-  return fract(sin(n) * 43758.5453123);
-}
 float skyMask(float kind, vec2 uv, float seed) {
   float r = length(uv);
-  if (kind < 0.5) {
-    return smoothstep(1.0, 0.32, r);
-  }
-  if (kind < 1.5) {
-    float core = smoothstep(0.14, 0.0, r);
-    float n = skyHash(dot(uv, vec2(3.1, 5.7)) + seed * 17.0);
-    float rad = 0.62 + 0.38 * n;
-    float clump = smoothstep(rad, rad * 0.28, r);
-    float flatten = 1.0 - 0.5 * uv.y * uv.y;
-    return max(core, 0.5 * clump * flatten);
-  }
-  if (kind < 2.5) {
-    float core = smoothstep(0.15, 0.0, r);
-    float bipolar = step(0.5, seed);
-    float env = 0.0;
-    if (bipolar > 0.5) {
-      float waist = exp(-uv.x * uv.x * 7.5) * smoothstep(1.05, 0.12, abs(uv.y));
-      env = waist * (1.0 - smoothstep(0.18, 0.0, r));
-    } else {
-      env = smoothstep(0.07, 0.0, abs(r - 0.74));
-    }
-    return max(core, 0.26 * env);
-  }
-  if (kind < 3.5) {
-    float core = smoothstep(0.14, 0.0, r);
-    float shell = smoothstep(0.06, 0.0, abs(r - 0.78));
-    float fil = smoothstep(0.35, 0.88, skyHash(dot(uv, vec2(8.2, 3.4)) + seed * 9.0));
-    fil *= smoothstep(1.0, 0.45, r);
-    return max(core, 0.24 * max(shell, fil * 0.4));
-  }
-  float slab = smoothstep(1.0, 0.18, abs(uv.y) * 2.35) * smoothstep(1.05, 0.3, abs(uv.x));
-  float wrinkle = 0.65 + 0.35 * skyHash(dot(uv, vec2(5.1, 7.3)) + seed * 11.0);
-  return slab * wrinkle;
+  return smoothstep(1.0, 0.72, r + 0.0 * (kind + seed));
 }
 `;

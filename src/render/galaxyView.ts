@@ -188,15 +188,15 @@ const SILHOUETTE_VERT = /* glsl */ `
 
 const STAR_FRAG = /* glsl */ `
   ${SHAPE_GLSL}
-  uniform float uDustPass;
-  uniform float uDustTau;
+  uniform float uEnvelope;
+  uniform float uEnvelopeAlpha;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
   varying float vSeed;
   void main() {
-    if (uDustPass < 0.5 && vKind > 3.5) discard;
-    if (uDustPass > 0.5 && vKind < 3.5) discard;
+    if (uEnvelope < 0.5 && vKind > 0.5) discard;
+    if (uEnvelope > 0.5 && vKind < 0.5) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
     if (vKind < 0.5) {
@@ -207,11 +207,7 @@ const STAR_FRAG = /* glsl */ `
     }
     float mask = skyMask(vKind, p, vSeed);
     if (mask < 0.02) discard;
-    if (uDustPass > 0.5) {
-      gl_FragColor = vec4(vColor, uDustTau * mask * vVis);
-      return;
-    }
-    gl_FragColor = vec4(vColor, vVis * mask);
+    gl_FragColor = vec4(vColor, uEnvelopeAlpha * mask);
   }
 `;
 
@@ -699,8 +695,8 @@ export class GalaxyView {
       uMaxPx: { value: POINT_MAX_PX },
       uNearBoost: { value: POINT_NEAR_BOOST },
       uFluxEps: { value: POINT_FLUX_EPS },
-      uDustPass: { value: 0 },
-      uDustTau: { value: UNIVERSE.SILHOUETTE_DUST_TAU },
+      uEnvelope: { value: 0 },
+      uEnvelopeAlpha: { value: UNIVERSE.SILHOUETTE_ENVELOPE_ALPHA },
     };
   }
 
@@ -731,13 +727,11 @@ export class GalaxyView {
     const dustMat = new THREE.ShaderMaterial({
       vertexShader: STAR_VERT,
       fragmentShader: STAR_FRAG,
-      uniforms: { ...this.localGlowUniforms(), uDustPass: { value: 1 } },
+      uniforms: { ...this.localGlowUniforms(), uEnvelope: { value: 1 } },
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: THREE.CustomBlending,
-      blendSrc: THREE.ZeroFactor,
-      blendDst: THREE.OneMinusSrcAlphaFactor,
+      blending: THREE.NormalBlending,
       toneMapped: false,
     });
     const dustPts = new THREE.Points(geo, dustMat);
@@ -750,7 +744,7 @@ export class GalaxyView {
     this.applyStarVis();
   }
 
-  private silUniforms(dustPass: number): Record<string, THREE.IUniform> {
+  private silUniforms(envelope: number): Record<string, THREE.IUniform> {
     return {
       uCenter: { value: new THREE.Vector3() },
       uScale: { value: 1 },
@@ -760,8 +754,8 @@ export class GalaxyView {
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
       uDustPx: { value: UNIVERSE.SILHOUETTE_DUST_PX },
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
-      uDustPass: { value: dustPass },
-      uDustTau: { value: UNIVERSE.SILHOUETTE_DUST_TAU },
+      uEnvelope: { value: envelope },
+      uEnvelopeAlpha: { value: UNIVERSE.SILHOUETTE_ENVELOPE_ALPHA },
     };
   }
 
@@ -801,9 +795,7 @@ export class GalaxyView {
       transparent: true,
       depthTest: false,
       depthWrite: false,
-      blending: THREE.CustomBlending,
-      blendSrc: THREE.ZeroFactor,
-      blendDst: THREE.OneMinusSrcAlphaFactor,
+      blending: THREE.NormalBlending,
       toneMapped: false,
     });
     const dustPts = new THREE.Points(geo, dustMat);

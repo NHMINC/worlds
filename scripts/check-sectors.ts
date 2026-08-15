@@ -239,7 +239,11 @@ const check = (cond: boolean, msg: string) => {
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');
-  check(shapeAt(KIND_PN, 1).rgb[1] > 0.7 && shapeAt(KIND_SNR, 1).rgb[0] > 0.7, 'nebula tints');
+  const pn = shapeAt(KIND_PN, 1).rgb;
+  const snr = shapeAt(KIND_SNR, 1).rgb;
+  const hii = shapeAt(KIND_HII, 1).rgb;
+  check(pn[1] > 0.7 && pn[2] > 0.7 && pn[0] < pn[1], 'PN must be cyan');
+  check(snr[0] > 0.9 && snr[1] > 0.9 && hii[0] > 0.9, 'SNR / H II must be white');
   let checked = 0;
   for (let i = 0; i < a.n && checked < 8; i++) {
     if (a.kind[i] === KIND_DUST) continue;

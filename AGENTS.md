@@ -210,11 +210,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     **cell centres** from the ISM column — not fake stars, not
     landings. Cached per seed. Distant discs are toy angular
     sizes (`SILHOUETTE_*_PX`); `shapeAt` is the shared envelope
-    law so a nebula or dust clump you see far away is the one
-    you fly into. The magnifier is unchanged: backdrop dots are
+    law — a 50% transparent sphere on the source (cyan PN, white
+    SNR/H II, brown dust). They overlap as glass, not additive
+    stacks. The magnifier is unchanged: backdrop dots are
     not pickable; a star is visitable only when the 2 kpc ball
-    has resolved that id. Dust draws after additive glow so
-    lanes obscure. The sphere itself is untouched; the map
+    has resolved that id. The sphere itself is untouched; the map
     saucer stays hidden. The breadcrumb returns to the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
