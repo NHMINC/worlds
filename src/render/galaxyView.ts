@@ -611,7 +611,7 @@ export class GalaxyView {
       if (nx * nx + ny * ny > 0.55) continue;
       const sx = rect.left + (nx * 0.5 + 0.5) * rect.width;
       const sy = rect.top + (-ny * 0.5 + 0.5) * rect.height;
-      if (sx < 80 || sx > 1200 || sy < 80 || sy > 720) continue;
+      if (sx < 280 || sx > 1000 || sy < 120 || sy > 520) continue;
       return { id: cloud.ids[i], x: sx, y: sy };
     }
     return null;
@@ -777,7 +777,7 @@ export class GalaxyView {
       return;
     }
     const picked = this.pickCloud(cx, cy);
-    this.select(picked);
+    if (picked) this.select(picked);
   }
 
   private pickCloud(cx: number, cy: number): GalaxyObject | null {

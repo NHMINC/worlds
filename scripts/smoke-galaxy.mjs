@@ -98,6 +98,11 @@ if (await galaxyBtn.count()) {
 
   const survey = await page.evaluate(() => {
     const v = window.__galaxyView;
+    v.theta = v.tgtTheta;
+    v.phi = v.tgtPhi;
+    v.radius = v.tgtRadius;
+    v.look.copy(v.tgtLook);
+    v.applyCam?.();
     return {
       n: v.beaconCount?.() ?? 0,
       ms: v.lastEnterMs ?? null,
