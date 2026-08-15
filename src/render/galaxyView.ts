@@ -6,14 +6,13 @@
  * visited systems, and ~100 deterministic systems of interest. No
  * stars are drawn on the map. The map camera orbits the origin.
  *
- * REGION mode is a tap on that shape: a fixed-radius ball around the
- * hit (midplane) or a pinned star. Every occupied slot inside is a
- * point (cheap birth, no evolve — the id is still the star). The
- * camera is free flight through that frozen cloud. Distant stars are
- * 1px pinpricks; closer ones grow and brighten from luminosity and
- * distance. The centre reticle on a grown point can set course.
- * Tap still mints the catalog row. Fly far out (or the breadcrumb)
- * to return to the map.
+ * REGION mode is a tap on that shape: a catalog neighbourhood around
+ * the hit (midplane) or a pinned star, flown in a larger viewing
+ * ball (VIEW_R). Same stars; offsets from the tap are scaled. Distant
+ * stars are 1px pinpricks; closer ones grow and brighten from
+ * luminosity and distance. The centre reticle on a grown point can
+ * set course. Tap still mints the catalog row. Fly far out (or the
+ * breadcrumb) to return to the map.
  *
  * Nothing in either mode queries or rebuilds the catalog per camera
  * move — the blink / cluster / stutter / re-roll failure class of the
@@ -49,10 +48,10 @@ import {
 const MAP_R_MIN = 9;
 const MAP_R_MAX = 46;
 const MAP_R_HOME = 34;
-/** Start inside the ball, a little past the tap, looking out through it. */
+/** Start near the tap, looking out through the expanded ball. */
 const REGION_START_IN = 0.09;
-const REGION_LOOK = 2.4;
-/** Leave once you have flown out of the ball. */
+const REGION_LOOK = 16;
+/** Leave once you have flown out of the viewing ball. */
 const REGION_R_EXIT = 1.18;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
@@ -423,6 +422,42 @@ export class GalaxyView {
 
   // ------------------------------------------------------------- region mode
 
+  /** VIEW_R / REGION_R — same stars, larger flight ball. */
+  private regionViewScale(): number {
+    return UNIVERSE.GALAXY_REGION_VIEW_R / Math.max(1e-6, UNIVERSE.GALAXY_REGION_R);
+  }
+
+  /** Catalog cartesian → region flight space (identity on the map). */
+  private viewCart(obj: GalaxyObject): { x: number; y: number; z: number } {
+    const c = galToCart(obj.pos);
+    if (this.mode !== 'region') return c;
+    const s = this.regionViewScale();
+    const cx = this.arcCenter.x;
+    const cy = this.arcCenter.y;
+    const cz = this.arcCenter.z;
+    return {
+      x: cx + (c.x - cx) * s,
+      y: cy + (c.y - cy) * s,
+      z: cz + (c.z - cz) * s,
+    };
+  }
+
+  /** Spread the minted neighbourhood through the viewing ball. */
+  private expandCloudToView(cloud: StarCloud): void {
+    const s = this.regionViewScale();
+    if (Math.abs(s - 1) < 1e-9) return;
+    const cx = this.arcCenter.x;
+    const cy = this.arcCenter.y;
+    const cz = this.arcCenter.z;
+    const pos = cloud.pos;
+    for (let i = 0; i < cloud.n; i++) {
+      const i3 = i * 3;
+      pos[i3] = cx + (pos[i3] - cx) * s;
+      pos[i3 + 1] = cy + (pos[i3 + 1] - cy) * s;
+      pos[i3 + 2] = cz + (pos[i3 + 2] - cz) * s;
+    }
+  }
+
   /**
    * Open a fixed-radius ball around a world point. `select` is pinned
    * when the dive is a star (home, marker); a saucer tap leaves it null.
@@ -431,6 +466,8 @@ export class GalaxyView {
     this.disposeArcStars();
     this.mode = 'region';
     const cloud = buildRegionCloud(this.seed, x, y, z, UNIVERSE.GALAXY_REGION_R);
+    this.arcCenter.set(x, y, z);
+    this.expandCloudToView(cloud);
     this.cloud = cloud;
     this.sectorPop = cloud.n;
     this.regionLabel = regionName(x, y, z);
@@ -439,13 +476,12 @@ export class GalaxyView {
     this.buildArcStars();
     this.censusMemo = {};
 
-    this.arcCenter.set(x, y, z);
     const glen = Math.hypot(x, z);
     const ox = glen > 1e-4 ? x / glen : 1;
     const oz = glen > 1e-4 ? z / glen : 0;
     this.arcPos.set(x + ox * REGION_START_IN, y, z + oz * REGION_START_IN);
     if (select) {
-      const s = galToCart(select.pos);
+      const s = this.viewCart(select);
       this.aimAt(s.x + ox * REGION_LOOK, s.y, s.z + oz * REGION_LOOK);
     } else {
       this.aimAt(x + ox * REGION_LOOK, y, z + oz * REGION_LOOK);
@@ -619,7 +655,7 @@ export class GalaxyView {
   cloudFitsRegion(): boolean {
     const cloud = this.cloud;
     if (!cloud || cloud.n <= 0) return false;
-    const r = UNIVERSE.GALAXY_REGION_R + 1e-5;
+    const r = UNIVERSE.GALAXY_REGION_VIEW_R + 1e-5;
     const r2 = r * r;
     const cx = this.arcCenter.x;
     const cy = this.arcCenter.y;
@@ -675,7 +711,7 @@ export class GalaxyView {
     const best = this.selected ?? this.hereObj ?? this.home;
     if (!best) return null;
     this.focus(best);
-    const c = galToCart(best.pos);
+    const c = this.viewCart(best);
     this.arcPos.set(c.x + 0.028, c.y + 0.018, c.z + 0.012);
     this.aimAt(c.x, c.y, c.z);
     this.applyCam();
@@ -707,7 +743,7 @@ export class GalaxyView {
     }
     const o = objectAt(this.seed, id);
     if (!o) return 0;
-    const c = galToCart(o.pos);
+    const c = this.viewCart(o);
     const dist = Math.hypot(c.x - this.arcPos.x, c.y - this.arcPos.y, c.z - this.arcPos.z);
     return glowRadiusKpc(o.star.luminosity, o.star.luminosity < 0.05) / Math.max(1e-5, dist);
   }
@@ -814,7 +850,7 @@ export class GalaxyView {
   private select(obj: GalaxyObject | null): void {
     this.selected = obj;
     if (obj) {
-      const c = galToCart(obj.pos);
+      const c = this.viewCart(obj);
       this.pickRing.position.set(c.x, c.y, c.z);
       this.pickRing.visible = true;
     } else {
@@ -895,7 +931,7 @@ export class GalaxyView {
       }
     }
     if (this.selected) {
-      const c = galToCart(this.selected.pos);
+      const c = this.viewCart(this.selected);
       minD = Math.min(minD, Math.hypot(c.x - cx, c.y - cy, c.z - cz));
     }
     return THREE.MathUtils.clamp(0.42 * minD, 0.005, 0.65);
@@ -904,7 +940,7 @@ export class GalaxyView {
   private maybeExitArc(): void {
     if (this.mode !== 'region') return;
     if (performance.now() - this.enteredAt < 250) return;
-    if (this.arcPos.distanceTo(this.arcCenter) > UNIVERSE.GALAXY_REGION_R * REGION_R_EXIT) {
+    if (this.arcPos.distanceTo(this.arcCenter) > UNIVERSE.GALAXY_REGION_VIEW_R * REGION_R_EXIT) {
       this.exitRegion();
     }
   }
@@ -937,7 +973,7 @@ export class GalaxyView {
   /** Client-pixel position of a catalog object, or null if off-screen. */
   projectClient(obj: GalaxyObject): { x: number; y: number } | null {
     const rect = this.canvas.getBoundingClientRect();
-    const c = galToCart(obj.pos);
+    const c = this.viewCart(obj);
     const v = new THREE.Vector3(c.x, c.y, c.z).project(this.camera);
     if (v.z < -1.2 || v.z > 1.2) return null;
     return {

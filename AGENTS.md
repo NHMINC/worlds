@@ -188,19 +188,20 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     systems of interest (`systemsOfInterest`). NO stars are drawn on
     the map; the speckle is chart fabric, not a sky. The map camera
     orbits the origin.
-  - **Region**: tap the shape and open a ball of radius
+  - **Region**: tap the shape and mint a neighbourhood of radius
     `GALAXY_REGION_R` (~4 kpc) around that point. Near the tap
     (`GALAXY_REGION_FULL_R`) every occupied slot is a point. Farther
     cells keep only the massive tail of their IMF — the catalog zoom
-    law — so the volume has gaps you can fly instead of a glowing
-    marble. Cheap birth, no `evolve` until you tap. The camera
-    starts **inside** the ball, looking out. Distant stars are **1px
-    pinpricks**. Closer ones grow and brighten from birth-clock
-    luminosity and distance (`glowRadiusKpc` / `d`, flux `L / d²`).
-    Tight disc, no gaussian halo, no mesh roster. A pixel cap is
-    hardware. The centre reticle on a grown point can set course.
-    Tap still mints the catalog row (`objectAt`). Fly out of the
-    ball (or the breadcrumb) to return to the map.
+    law. Those same stars are flown in a ball of
+    `GALAXY_REGION_VIEW_R` (40 kpc): offsets from the tap are scaled,
+    we do not mint more. Cheap birth, no `evolve` until you tap. The
+    camera starts **inside** the ball, looking out. Distant stars
+    are **1px pinpricks**. Closer ones grow and brighten from
+    birth-clock luminosity and distance (`glowRadiusKpc` / `d`, flux
+    `L / d²`). Tight disc, no gaussian halo, no mesh roster. A pixel
+    cap is hardware. The centre reticle on a grown point can set
+    course. Tap still mints the catalog row (`objectAt`). Fly out of
+    the viewing ball (or the breadcrumb) to return to the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
   re-roll bug class was structural, and it is retired along with the

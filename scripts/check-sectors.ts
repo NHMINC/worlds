@@ -152,6 +152,7 @@ const check = (cond: boolean, msg: string) => {
 // --- region ball: fixed R, every occupant, pose matches objectAt ---
 {
   const r = UNIVERSE.GALAXY_REGION_R;
+  check(UNIVERSE.GALAXY_REGION_VIEW_R > r, `view ball ${UNIVERSE.GALAXY_REGION_VIEW_R} must outspan mint ${r}`);
   check(regionImfFloor(0) === 0, 'tap neighbourhood must keep every slot');
   check(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R) === 0, 'full-R edge must still be complete');
   check(Math.abs(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R + UNIVERSE.GALAXY_REGION_U_RAMP) - UNIVERSE.GALAXY_REGION_U_FAR) < 1e-9, 'ramp must reach U_FAR');

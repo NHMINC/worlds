@@ -400,12 +400,16 @@ export const UNIVERSE = {
    * tap (FULL_R). Farther cells keep only the massive tail of their
    * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
    * you can fly. Count is still an outcome — the bulge is denser.
+   * The camera flies a larger ball (VIEW_R): the same stars, offsets
+   * from the tap scaled by VIEW_R / REGION_R. We do not mint more.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,
   GALAXY_SECTOR_STARS: 2500,
-  /** Fixed region radius (kpc). One length; density fills it. */
+  /** Catalog neighbourhood minted around the tap (kpc). */
   GALAXY_REGION_R: 4.0,
+  /** Flight / viewing ball (kpc). Same stars, expanded around the tap. */
+  GALAXY_REGION_VIEW_R: 40,
   /** Within this of the tap, every occupied slot is drawn. */
   GALAXY_REGION_FULL_R: 0.12,
   /** Distance over which the IMF cut ramps to U_FAR. */
