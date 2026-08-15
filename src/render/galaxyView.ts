@@ -23,7 +23,6 @@ import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import { createSectorMap, type SectorMap } from './galaxySectors';
-import { createGalaxyField, type GalaxyField } from './galaxyField';
 import {
   aimLocks,
   GLOW_DIM,
@@ -203,7 +202,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uPixel;
   uniform float uPxPerRad;
   uniform float uRegionR;
-  uniform float uNearR;
   uniform float uStarPx;
   uniform float uNebulaPx;
   uniform float uDustPx;
@@ -232,11 +230,8 @@ const SILHOUETTE_VERT = /* glsl */ `
     vPx = 0.0;
     float dCat = length(position - uCenter);
     // Cull wrong-kind sprites for the pass here — a fragment discard
-    // still rasterizes the whole quad, tripling core overdraw. Far
-    // envelopes are the field integral's job (galaxyField.ts): a
-    // nebula is an object only within uNearR of the bubble.
+    // still rasterizes the whole quad, tripling core overdraw.
     if (dCat < uRegionR ||
-        (aKind > 0.5 && dCat > uNearR) ||
         (uPass < 0.5 && aKind > 0.5) ||
         (uPass > 0.5 && uPass < 1.5 && (aKind < 0.5 || aKind > 3.5)) ||
         (uPass > 1.5 && aKind < 3.5)) {
@@ -590,7 +585,6 @@ export class GalaxyView {
   private visitedMk: MarkerSet | null = null;
   private interestMk: MarkerSet | null = null;
   private camRot3 = new THREE.Matrix3();
-  private field: GalaxyField;
 
   private homeRing: THREE.Mesh;
   private hereRing: THREE.Mesh;
@@ -655,10 +649,6 @@ export class GalaxyView {
 
     this.sectors = createSectorMap();
     this.scene.add(this.sectors.group);
-
-    // Distant backdrop in region mode: one integral, not a sprite stack.
-    this.field = createGalaxyField();
-    this.scene.add(this.field.quad);
 
     this.homeRing = this.makeRing(0x9ec4ff, 0.28);
     this.hereRing = this.makeRing(0x7fa88b, 0.22);
@@ -834,7 +824,6 @@ export class GalaxyView {
     this.camera.far = regionCamFar();
     this.camera.updateProjectionMatrix();
     this.sectors.group.visible = false;
-    this.field.quad.visible = true;
     if (this.visitedMk) this.visitedMk.pts.visible = false;
     if (this.interestMk) this.interestMk.pts.visible = false;
     this.select(select);
@@ -860,7 +849,6 @@ export class GalaxyView {
     this.borderBusy = false;
     this.borderWorker?.postMessage({ type: 'clear' });
     this.sectors.group.visible = true;
-    this.field.quad.visible = false;
     if (this.visitedMk) this.visitedMk.pts.visible = true;
     if (this.interestMk) this.interestMk.pts.visible = true;
     this.select(null);
@@ -1065,7 +1053,6 @@ export class GalaxyView {
       uPixel: { value: this.renderer.getPixelRatio() },
       uPxPerRad: { value: this.pxPerRad() },
       uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
-      uNearR: { value: UNIVERSE.GALAXY_NEAR_ENVELOPES },
       uStarPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
       uDustPx: { value: UNIVERSE.SILHOUETTE_DUST_PX },
@@ -1421,8 +1408,6 @@ export class GalaxyView {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
-    const buf = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-    this.field.setSize(buf.x, buf.y);
   }
 
   dispose(): void {
@@ -1446,7 +1431,6 @@ export class GalaxyView {
       mk.mat.dispose();
     }
     this.sectors.dispose();
-    this.field.dispose();
     this.homeRing.geometry.dispose();
     (this.homeRing.material as THREE.Material).dispose();
     this.hereRing.geometry.dispose();
@@ -2292,11 +2276,6 @@ export class GalaxyView {
     this.homeRing.rotation.z = -t * 0.12;
     this.hereRing.rotation.z = t * 0.2;
 
-    // The distant backdrop: one march of the density law into a
-    // low-res target, composited under the sprite layers.
-    if (this.mode === 'region') {
-      this.field.render(this.renderer, this.camRot3, this.arcCenter, this.camera);
-    }
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onFrame?.({
       mode: this.mode,

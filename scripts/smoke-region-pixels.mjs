@@ -97,9 +97,7 @@ async function sample(label, path) {
       inBall: v.cloudFitsRegion?.(),
     };
   });
-  // Software rasterizers (CI) can take seconds per frame; the default
-  // screenshot timeout starves on the rAF-based stability wait.
-  const png = await page.locator('.galaxy-stage').screenshot({ timeout: 90000 });
+  const png = await page.locator('.galaxy-stage').screenshot();
   writeFileSync(path, png);
   const pix = pngLit(png);
   const row = { ...meta, ...pix };
