@@ -8,10 +8,11 @@
  *
  * REGION mode is a magnification sphere in catalog space. The
  * camera sits at the centre — it does not fly around inside the
- * ball. Gestures slide the sphere: stars that cross in are minted,
- * stars that leave drop out. Space is magnified (VIEW_R / REGION_R);
- * star size is not. Distant stars are 1px pinpricks; closer ones
- * grow. The breadcrumb returns to the map.
+ * ball. Gestures slide the sphere: the vertex shader follows the
+ * centre every frame; a worker mints and drops the rim. Space is
+ * magnified (VIEW_R / REGION_R); star size is not. Distant stars
+ * are 1px pinpricks; closer ones grow. The breadcrumb returns
+ * to the map.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -52,7 +53,7 @@ const MAG_REBUILD = 0.45;
 const TAP_MS = 340;
 const TAP_SLACK = 42;
 /** Hold-to-cruise in the magnified frame (view kpc / s). */
-const THRUST_MAX = 0.12;
+const THRUST_MAX = 0.36;
 const THRUST_ACCEL = 0.048;
 const THRUST_BRAKE = 0.42;
 /** Second tap must be held this long before cruise starts. */
@@ -86,6 +87,8 @@ const STAR_VERT = /* glsl */ `
   attribute vec3 aColor;
   attribute float aVis;
   attribute float aLum;
+  uniform vec3 uCenter;
+  uniform float uScale;
   uniform float uPixel;
   uniform float uPxPerRad;
   uniform float uGlowK;
@@ -98,7 +101,8 @@ const STAR_VERT = /* glsl */ `
   varying vec3 vColor;
   varying float vVis;
   void main() {
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    vec3 view = (position - uCenter) * uScale;
+    vec4 mv = modelViewMatrix * vec4(view, 1.0);
     float d = max(length(mv.xyz), 0.001);
     float L = max(aLum, 1e-4);
     float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
@@ -242,9 +246,11 @@ export class GalaxyView {
   private starGeo: THREE.BufferGeometry | null = null;
   private starMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
-  /** Magnified positions (catalog cloud stays unstretched). */
-  private viewPos: Float32Array | null = null;
+  /** Catalog positions (the vertex shader applies the magnifier). */
   private cloud: StarCloud | null = null;
+  private borderWorker: Worker | null = null;
+  private borderGen = 0;
+  private borderBusy = false;
 
   private visitedMk: MarkerSet | null = null;
   private interestMk: MarkerSet | null = null;
@@ -351,6 +357,7 @@ export class GalaxyView {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
+    this.bootBorderWorker();
 
     this.setPreset('face');
     this.theta = this.tgtTheta;
@@ -458,23 +465,6 @@ export class GalaxyView {
     return this.toView(c.x, c.y, c.z);
   }
 
-  private fillViewPos(cloud: StarCloud): Float32Array {
-    const s = this.magScale();
-    const cx = this.arcCenter.x;
-    const cy = this.arcCenter.y;
-    const cz = this.arcCenter.z;
-    const src = cloud.pos;
-    const pos = new Float32Array(cloud.n * 3);
-    for (let i = 0; i < cloud.n; i++) {
-      const i3 = i * 3;
-      pos[i3] = (src[i3] - cx) * s;
-      pos[i3 + 1] = (src[i3 + 1] - cy) * s;
-      pos[i3 + 2] = (src[i3 + 2] - cz) * s;
-    }
-    this.viewPos = pos;
-    return pos;
-  }
-
   /**
    * Open the magnification sphere around a world point. `select` is
    * pinned when the dive is a star (home, marker); a saucer tap
@@ -494,6 +484,9 @@ export class GalaxyView {
     this.buildArcStars();
     this.censusMemo = {};
     this.resetThrust();
+    this.borderGen++;
+    this.borderBusy = false;
+    this.syncWorkerCloud();
 
     this.arcPos.set(0, 0, 0);
     const glen = Math.hypot(x, z);
@@ -526,6 +519,9 @@ export class GalaxyView {
     this.censusMemo = {};
     this.grownCount = 0;
     this.resetThrust();
+    this.borderGen++;
+    this.borderBusy = false;
+    this.borderWorker?.postMessage({ type: 'clear' });
     this.sectors.group.visible = true;
     if (this.visitedMk) this.visitedMk.pts.visible = true;
     if (this.interestMk) this.interestMk.pts.visible = true;
@@ -556,17 +552,19 @@ export class GalaxyView {
 
   private buildArcStars(): void {
     const cloud = this.cloud;
-    const n = Math.max(1, cloud?.n ?? 0);
-    const pos = cloud ? this.fillViewPos(cloud) : new Float32Array(3);
+    const pos = cloud ? cloud.pos : new Float32Array(3);
     const col = cloud ? cloud.col : new Float32Array(3);
-    const vis = new Float32Array(n);
+    const vis = new Float32Array(cloud ? cloud.gain.length : 1);
     if (cloud) {
       for (let i = 0; i < cloud.n; i++) vis[i] = cloud.gain[i];
     }
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const posAttr = new THREE.BufferAttribute(pos, 3);
+    posAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', posAttr);
     geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     const visAttr = new THREE.BufferAttribute(vis, 1);
+    visAttr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute('aVis', visAttr);
     if (cloud) geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
     geo.setDrawRange(0, cloud?.n ?? 0);
@@ -574,6 +572,8 @@ export class GalaxyView {
       vertexShader: STAR_VERT,
       fragmentShader: STAR_FRAG,
       uniforms: {
+        uCenter: { value: new THREE.Vector3() },
+        uScale: { value: 1 },
         uPixel: { value: this.renderer.getPixelRatio() },
         uPxPerRad: { value: this.pxPerRad() },
         uGlowK: { value: GLOW_K },
@@ -595,6 +595,49 @@ export class GalaxyView {
     this.starGeo = geo;
     this.starMat = mat;
     this.starVis = visAttr;
+    this.pushMagUniforms();
+    this.applyStarVis();
+  }
+
+  /** Catalog positions stay on the GPU; only the magnifier uniforms move. */
+  private pushMagUniforms(): void {
+    if (!this.starMat) return;
+    this.starMat.uniforms.uCenter.value.set(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
+    this.starMat.uniforms.uScale.value = this.magScale();
+  }
+
+  /**
+   * Membership changed: reuse the point mesh. Remesh only when the
+   * cloud grew past the current buffers.
+   */
+  private syncArcStars(): void {
+    const cloud = this.cloud;
+    if (!cloud) return;
+    if (!this.starGeo || !this.starMat || !this.starVis) {
+      this.disposeArcStars();
+      this.buildArcStars();
+      return;
+    }
+    const posAttr = this.starGeo.getAttribute('position') as THREE.BufferAttribute;
+    if (posAttr.array !== cloud.pos) {
+      const next = new THREE.BufferAttribute(cloud.pos, 3);
+      next.setUsage(THREE.DynamicDrawUsage);
+      this.starGeo.setAttribute('position', next);
+      this.starGeo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
+      this.starGeo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
+      const vis = new Float32Array(cloud.gain.length);
+      const visAttr = new THREE.BufferAttribute(vis, 1);
+      visAttr.setUsage(THREE.DynamicDrawUsage);
+      this.starGeo.setAttribute('aVis', visAttr);
+      this.starVis = visAttr;
+    } else {
+      posAttr.needsUpdate = true;
+      (this.starGeo.getAttribute('aColor') as THREE.BufferAttribute).needsUpdate = true;
+      const lum = this.starGeo.getAttribute('aLum') as THREE.BufferAttribute | undefined;
+      if (lum) lum.needsUpdate = true;
+    }
+    this.starGeo.setDrawRange(0, cloud.n);
+    this.applyStarVis();
   }
 
   // --------------------------------------------------------------- state
@@ -734,7 +777,7 @@ export class GalaxyView {
       cat.z - this.arcFwd.z * off,
     );
     this.mintAt.copy(this.arcCenter);
-    this.refreshViewPos();
+    this.pushMagUniforms();
     if (this.selected) {
       const c = this.viewCart(this.selected);
       this.pickRing.position.set(c.x, c.y, c.z);
@@ -761,8 +804,8 @@ export class GalaxyView {
     if (!cloud) return 0;
     for (let i = 0; i < cloud.n; i++) {
       if (cloud.ids[i] !== id) continue;
-      const pos = this.viewPos ?? cloud.pos;
-      const dist = Math.hypot(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+      const v = this.toView(cloud.pos[i * 3], cloud.pos[i * 3 + 1], cloud.pos[i * 3 + 2]);
+      const dist = Math.hypot(v.x, v.y, v.z);
       const dim = (cloud.bits[i] & BIT_REMNANT) !== 0 || cloud.lum[i] < 0.05;
       return glowRadiusKpc(cloud.lum[i], dim) / Math.max(1e-5, dist);
     }
@@ -784,12 +827,17 @@ export class GalaxyView {
     const e = this.camera.matrixWorldInverse.elements;
     const p = this.camera.projectionMatrix.elements;
     const step = Math.max(1, Math.floor(cloud.n / 4000));
+    const s = this.magScale();
+    const cx = this.arcCenter.x;
+    const cy = this.arcCenter.y;
+    const cz = this.arcCenter.z;
+    const cat = cloud.pos;
     for (let i = 0; i < cloud.n; i += step) {
       if (!sketchMatches(cloud.bits[i], this.filter)) continue;
-      const pos = this.viewPos ?? cloud.pos;
-      const x = pos[i * 3];
-      const y = pos[i * 3 + 1];
-      const z = pos[i * 3 + 2];
+      const i3 = i * 3;
+      const x = (cat[i3] - cx) * s;
+      const y = (cat[i3 + 1] - cy) * s;
+      const z = (cat[i3 + 2] - cz) * s;
       const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
       const my = e[1] * x + e[5] * y + e[9] * z + e[13];
       const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
@@ -856,6 +904,8 @@ export class GalaxyView {
     this.canvas.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    this.borderWorker?.terminate();
+    this.borderWorker = null;
     this.disposeArcStars();
     for (const mk of [this.visitedMk, this.interestMk]) {
       if (!mk) continue;
@@ -936,6 +986,7 @@ export class GalaxyView {
       this.theta = this.arcYaw;
       this.phi = Math.PI / 2 - this.arcPitch;
       this.look.copy(this.arcLook);
+      this.pushMagUniforms();
       return;
     }
     const r = this.radius;
@@ -966,9 +1017,14 @@ export class GalaxyView {
     let minD = 8;
     if (cloud) {
       const step = Math.max(1, Math.floor(cloud.n / 6000));
-      const pos = this.viewPos ?? cloud.pos;
+      const s = this.magScale();
+      const cx = this.arcCenter.x;
+      const cy = this.arcCenter.y;
+      const cz = this.arcCenter.z;
+      const cat = cloud.pos;
       for (let i = 0; i < cloud.n; i += step) {
-        const d = Math.hypot(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+        const i3 = i * 3;
+        const d = Math.hypot((cat[i3] - cx) * s, (cat[i3 + 1] - cy) * s, (cat[i3 + 2] - cz) * s);
         if (d > 1e-4 && d < minD) minD = d;
       }
     }
@@ -982,9 +1038,10 @@ export class GalaxyView {
 
   /**
    * Gestures are in the magnified frame. The camera stays at the
-   * origin; the sphere centre moves by dView / scale. View positions
-   * always update so the field streams. Membership is a border
-   * monitor once the centre has moved MAG_SLIDE.
+   * origin; the sphere centre moves by dView / scale. The GPU holds
+   * catalog positions — the vertex shader applies the magnifier.
+   * Membership is a shell walk once the centre has moved MAG_SLIDE,
+   * run on a worker so the frame only updates the magnifier uniforms.
    */
   private moveBubble(vx: number, vy: number, vz: number, force = false): void {
     if (this.mode !== 'region' || !this.cloud) return;
@@ -993,40 +1050,143 @@ export class GalaxyView {
     this.arcCenter.y += vy / s;
     this.arcCenter.z += vz / s;
     const d = this.arcCenter.distanceTo(this.mintAt);
-    if (force || d >= MAG_SLIDE) {
-      const x0 = this.mintAt.x;
-      const y0 = this.mintAt.y;
-      const z0 = this.mintAt.z;
-      const x1 = this.arcCenter.x;
-      const y1 = this.arcCenter.y;
-      const z1 = this.arcCenter.z;
-      this.cloud =
-        d > MAG_REBUILD
-          ? buildRegionCloud(this.seed, x1, y1, z1)
-          : advanceRegionCloud(this.seed, this.cloud, x0, y0, z0, x1, y1, z1);
+    if (force || d > MAG_REBUILD) {
+      this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), true);
       this.mintAt.copy(this.arcCenter);
-      this.sectorPop = this.cloud.n;
-      this.regionLabel = regionName(x1, y1, z1);
-      this.censusMemo = {};
-      this.disposeArcStars();
-      this.buildArcStars();
-      this.applyStarVis();
-    } else {
-      this.refreshViewPos();
+      this.syncWorkerCloud();
+    } else if (d >= MAG_SLIDE) {
+      this.requestBorder();
     }
+    this.pushMagUniforms();
     if (this.selected) {
       const c = this.viewCart(this.selected);
       this.pickRing.position.set(c.x, c.y, c.z);
     }
   }
 
-  private refreshViewPos(): void {
-    if (!this.cloud || !this.starGeo) return;
-    const pos = this.fillViewPos(this.cloud);
-    const attr = this.starGeo.getAttribute('position') as THREE.BufferAttribute;
-    if (attr.count !== this.cloud.n) return;
-    (attr.array as Float32Array).set(pos);
-    attr.needsUpdate = true;
+  private bootBorderWorker(): void {
+    try {
+      this.borderWorker = new Worker(new URL('../world/regionCloud.worker.ts', import.meta.url), { type: 'module' });
+      this.borderWorker.onmessage = this.onBorderMessage;
+      this.borderWorker.onerror = () => {
+        this.borderWorker?.terminate();
+        this.borderWorker = null;
+        this.borderBusy = false;
+      };
+    } catch {
+      this.borderWorker = null;
+    }
+  }
+
+  private syncWorkerCloud(): void {
+    const c = this.cloud;
+    const w = this.borderWorker;
+    if (!c || !w) return;
+    const ids = c.ids.slice(0, c.n);
+    const pos = c.pos.slice(0, c.n * 3);
+    const col = c.col.slice(0, c.n * 3);
+    const size = c.size.slice(0, c.n);
+    const pulse = c.pulse.slice(0, c.n);
+    const gain = c.gain.slice(0, c.n);
+    const bits = c.bits.slice(0, c.n);
+    const mk = c.mk.slice(0, c.n);
+    const lum = c.lum.slice(0, c.n);
+    w.postMessage(
+      { type: 'set', seed: this.seed, n: c.n, ids, pos, col, size, pulse, gain, bits, mk, lum },
+      [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer],
+    );
+  }
+
+  private requestBorder(): void {
+    if (!this.cloud) return;
+    if (!this.borderWorker) {
+      this.applyMembership(
+        advanceRegionCloud(
+          this.seed,
+          this.cloud,
+          this.mintAt.x,
+          this.mintAt.y,
+          this.mintAt.z,
+          this.arcCenter.x,
+          this.arcCenter.y,
+          this.arcCenter.z,
+        ),
+        false,
+      );
+      this.mintAt.copy(this.arcCenter);
+      return;
+    }
+    if (this.borderBusy) return;
+    this.borderBusy = true;
+    this.borderWorker.postMessage({
+      type: 'advance',
+      gen: this.borderGen,
+      x0: this.mintAt.x,
+      y0: this.mintAt.y,
+      z0: this.mintAt.z,
+      x1: this.arcCenter.x,
+      y1: this.arcCenter.y,
+      z1: this.arcCenter.z,
+    });
+  }
+
+  private onBorderMessage = (e: MessageEvent): void => {
+    const m = e.data as {
+      type: string;
+      gen: number;
+      n: number;
+      ids: Float64Array;
+      pos: Float32Array;
+      col: Float32Array;
+      size: Float32Array;
+      pulse: Float32Array;
+      gain: Float32Array;
+      bits: Uint8Array;
+      mk: Uint8Array;
+      lum: Float32Array;
+      x: number;
+      y: number;
+      z: number;
+    };
+    if (m.type !== 'cloud' || m.gen !== this.borderGen || this.mode !== 'region') return;
+    this.borderBusy = false;
+    this.applyMembership(
+      {
+        n: m.n,
+        ids: m.ids,
+        pos: m.pos,
+        col: m.col,
+        size: m.size,
+        pulse: m.pulse,
+        gain: m.gain,
+        bits: m.bits,
+        mk: m.mk,
+        lum: m.lum,
+        ms: 0,
+      },
+      false,
+    );
+    this.mintAt.set(m.x, m.y, m.z);
+    if (this.arcCenter.distanceTo(this.mintAt) > MAG_REBUILD) {
+      this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), true);
+      this.mintAt.copy(this.arcCenter);
+      this.syncWorkerCloud();
+    } else if (this.arcCenter.distanceTo(this.mintAt) >= MAG_SLIDE) {
+      this.requestBorder();
+    }
+  };
+
+  private applyMembership(cloud: StarCloud, remesh: boolean): void {
+    this.cloud = cloud;
+    this.sectorPop = cloud.n;
+    this.regionLabel = regionName(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
+    this.censusMemo = {};
+    if (remesh) {
+      this.disposeArcStars();
+      this.buildArcStars();
+    } else {
+      this.syncArcStars();
+    }
   }
 
   /**
@@ -1112,7 +1272,11 @@ export class GalaxyView {
     const e = this.camera.matrixWorldInverse.elements;
     const p = this.camera.projectionMatrix.elements;
     const rect = this.canvas.getBoundingClientRect();
-    const pos = this.viewPos ?? cloud.pos;
+    const s = this.magScale();
+    const ox = this.arcCenter.x;
+    const oy = this.arcCenter.y;
+    const oz = this.arcCenter.z;
+    const cat = cloud.pos;
     const bits = cloud.bits;
     const ids = cloud.ids;
     const lum = cloud.lum;
@@ -1121,9 +1285,10 @@ export class GalaxyView {
     let bestD = Infinity;
     for (let i = 0; i < cloud.n; i++) {
       if (!sketchMatches(bits[i], this.filter)) continue;
-      const x = pos[i * 3];
-      const y = pos[i * 3 + 1];
-      const z = pos[i * 3 + 2];
+      const i3 = i * 3;
+      const x = (cat[i3] - ox) * s;
+      const y = (cat[i3 + 1] - oy) * s;
+      const z = (cat[i3 + 2] - oz) * s;
       const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
       const my = e[1] * x + e[5] * y + e[9] * z + e[13];
       const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
@@ -1387,7 +1552,11 @@ export class GalaxyView {
     const cy = 0;
     const cz = 0;
     const cosCone = Math.cos(0.028);
-    const pos = this.viewPos ?? cloud.pos;
+    const s = this.magScale();
+    const ox = this.arcCenter.x;
+    const oy = this.arcCenter.y;
+    const oz = this.arcCenter.z;
+    const cat = cloud.pos;
     const lum = cloud.lum;
     const bits = cloud.bits;
     const ids = cloud.ids;
@@ -1398,9 +1567,10 @@ export class GalaxyView {
     let bestDim = false;
     for (let i = 0; i < cloud.n; i++) {
       if (!sketchMatches(bits[i], this.filter)) continue;
-      const dx = pos[i * 3] - cx;
-      const dy = pos[i * 3 + 1] - cy;
-      const dz = pos[i * 3 + 2] - cz;
+      const i3 = i * 3;
+      const dx = (cat[i3] - ox) * s - cx;
+      const dy = (cat[i3 + 1] - oy) * s - cy;
+      const dz = (cat[i3 + 2] - oz) * s - cz;
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 < 1e-12) continue;
       const dist = Math.sqrt(d2);
@@ -1483,7 +1653,8 @@ export class GalaxyView {
     if (!this.starVis || !this.cloud) return;
     const arr = this.starVis.array as Float32Array;
     const { bits, gain, n } = this.cloud;
-    for (let i = 0; i < n; i++) {
+    const lim = Math.min(n, arr.length);
+    for (let i = 0; i < lim; i++) {
       arr[i] = sketchMatches(bits[i], this.filter) ? gain[i] : gain[i] * 0.08;
     }
     this.starVis.needsUpdate = true;
