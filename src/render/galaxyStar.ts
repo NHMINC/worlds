@@ -2,23 +2,30 @@
  * Arc stars are GL_POINTS that pretend to be the photosphere.
  * Size and brightness follow the birth-clock luminosity and
  * distance — every occupied slot, no mesh roster, no star-count
- * budget. Distant: ~1px. Nearer / more luminous: bigger and
- * brighter. Tight disc (no gaussian halo). A pixel cap is
- * hardware, not a census. objectAt is still O(1) on tap.
+ * budget. Distant: a pin. Nearer / more luminous: a brighter
+ * shine. The sprite is a glare (core + 1/r² tail), not a filled
+ * disc — same family as the in-system glare in star.ts. A pixel
+ * cap is hardware, not a census. objectAt is still O(1) on tap.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
 
 /**
- * Toy disc radius (kpc). Real R☉ is metres against kiloparsecs —
+ * Toy core radius (kpc). Real R☉ is metres against kiloparsecs —
  * unusable. Apparent size is r / distance, same as a real body.
  */
 export const GLOW_K = 0.0024;
 export const GLOW_P = 0.16;
 /** Dim / remnant floor — a black hole still has a body you can aim at. */
 export const GLOW_DIM = 0.0016;
-/** Hardware disc cap (px). Not a limit on how many stars may grow. */
+/** Hardware sprite cap (px) for the core; the glow pad sits on top. */
 export const POINT_MAX_PX = 56;
+/** Photosphere pin width (px). The shine lives around this, not as a disc. */
+export const SHINE_CORE_PX = 0.65;
+/** Additive 1/r² tail strength — the eye's response to flux. */
+export const SHINE_TAIL = 0.32;
+/** Extra sprite pixels so the glow can die before the quad edge. */
+export const SHINE_PAD_PX = 8;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). */

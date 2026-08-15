@@ -30,6 +30,9 @@ import {
   POINT_FLUX_EPS,
   POINT_MAX_PX,
   POINT_NEAR_BOOST,
+  SHINE_CORE_PX,
+  SHINE_PAD_PX,
+  SHINE_TAIL,
   glowRadiusKpc,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
@@ -105,6 +108,7 @@ const STAR_VERT = /* glsl */ `
   uniform float uMaxPx;
   uniform float uNearBoost;
   uniform float uFluxEps;
+  uniform float uShinePad;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -144,7 +148,11 @@ const STAR_VERT = /* glsl */ `
       vCenterView = vec3(0.0);
       vRadiusView = 0.0;
       vCenterCat = vec3(0.0);
-      vPx = 0.0;
+      // Pad the sprite so the 1/r² tail can die before the quad edge.
+      // The core angle is unchanged — picking still uses glowRadiusKpc.
+      float pad = uShinePad * uPixel;
+      gl_PointSize = clamp(gl_PointSize + pad, 1.0, uMaxPx + pad);
+      vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
   }
@@ -211,9 +219,15 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      float boost = 1.0 + uSuper * smoothstep(8.0, 180.0, aLum);
-      gl_PointSize = uStarPx * uPixel * boost;
-      vVis = 1.0;
+      // Magnitude-limited harvest: every row is already bright, so a
+      // flat pixel disc painted them all as the same white circle.
+      // Shine from L — a mid-A is a pin, a supergiant is a flare.
+      float L = max(aLum, 1e-4);
+      float flux = pow(L / (L + 12.0), 0.55);
+      float boost = 1.0 + uSuper * smoothstep(8.0, 220.0, L);
+      gl_PointSize = uStarPx * uPixel * (0.62 + 1.15 * flux) * boost;
+      vVis = aVis * (0.4 + 1.35 * flux) * boost;
+      vPx = gl_PointSize;
     }
     gl_Position = projectionMatrix * mv;
   }
@@ -232,6 +246,8 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustTauK;
   uniform float uDustFreq;
   uniform float uDustRim;
+  uniform float uShineCore;
+  uniform float uShineTail;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -247,9 +263,30 @@ const STAR_FRAG = /* glsl */ `
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     float r2 = dot(p, p);
     if (vKind < 0.5) {
-      if (r2 > 0.85 && r2 < 1.95) discard;
-      float limb = 1.0 - 0.22 * min(r2, 1.0);
-      gl_FragColor = vec4(vColor * limb, vVis);
+      // Shine, not a disc. Pixel-space core so a 40 px sprite is still
+      // a pin with a glow, not a filled circle. Tail is 1/r² — the
+      // same glare family as star.ts. Window dies at the quad edge.
+      float r = sqrt(r2);
+      if (r > 1.0) discard;
+      float rPx = r * max(vPx, 1.0) * 0.5;
+      float coreW = max(uShineCore, 0.2);
+      float core = exp(-rPx * rPx / (coreW * coreW));
+      float tail = uShineTail / (0.14 + rPx * rPx);
+      float window = 1.0 - r * r;
+      window *= window;
+      float flux = clamp(vVis, 0.0, 8.0);
+      float shine = (core * (0.72 + 0.9 * min(flux, 2.4)) + tail * min(flux, 3.2)) * window;
+      // Bright stars throw a faint diffraction cross (the aperture of
+      // the eye). Dim pins stay round.
+      float ax = abs(p.x);
+      float ay = abs(p.y);
+      float spike = max(
+        exp(-ax * 26.0) * exp(-ay * ay * 16.0),
+        exp(-ay * 26.0) * exp(-ax * ax * 16.0));
+      shine += spike * 0.26 * smoothstep(0.75, 2.1, flux) * window;
+      if (shine < 0.004) discard;
+      vec3 col = mix(vColor, vec3(1.0), clamp(0.48 * core, 0.0, 0.62));
+      gl_FragColor = vec4(col * shine, min(shine, 1.0));
       return;
     }
     if (vKind > 3.5) {
@@ -878,7 +915,17 @@ export class GalaxyView {
       uNearBoost: { value: POINT_NEAR_BOOST },
       uFluxEps: { value: POINT_FLUX_EPS },
       uPass: { value: 0 },
+      ...this.shineUniforms(),
       ...this.dustUniforms(),
+    };
+  }
+
+  /** Photosphere glare — core pin + 1/r² tail. Shared by both layers. */
+  private shineUniforms(): Record<string, THREE.IUniform> {
+    return {
+      uShineCore: { value: SHINE_CORE_PX },
+      uShineTail: { value: SHINE_TAIL },
+      uShinePad: { value: SHINE_PAD_PX },
     };
   }
 
@@ -964,6 +1011,7 @@ export class GalaxyView {
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
       uDustPx: { value: UNIVERSE.SILHOUETTE_DUST_PX },
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
+      ...this.shineUniforms(),
       ...this.dustUniforms(),
     };
   }
