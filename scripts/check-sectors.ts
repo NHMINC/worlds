@@ -3,7 +3,7 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, objectAt, splitId, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { cellCount, galToCart, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
 import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
@@ -19,6 +19,7 @@ import {
   spokeBounds,
   systemsOfInterest,
   buildArcCloud,
+  buildRegionCloud,
 } from '../src/world/sectors';
 
 const seed = UNIVERSE.CANONICAL_SEED;
@@ -147,6 +148,34 @@ const check = (cond: boolean, msg: string) => {
   check(ratio < 40, `arc populations vary ${ratio.toFixed(0)}x across rings (azimuth structure allows some)`);
 }
 
+// --- region ball: fixed R, every occupant, pose matches objectAt ---
+{
+  const r = UNIVERSE.GALAXY_REGION_R;
+  const rim = galToCart({ R: 14, theta: 0.4, z: 0 });
+  const a = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
+  const b4 = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
+  check(a.n === b4.n && a.n > 0, `region cloud not deterministic ${a.n} vs ${b4.n}`);
+  check(a.ids[0] === b4.ids[0], 'region first id drifted');
+  check(a.n > 4_000 && a.n < 25_000, `outer-disk region ${a.n} should be ~10k`);
+  let maxD = 0;
+  for (let i = 0; i < a.n; i++) {
+    const d = Math.hypot(a.pos[i * 3] - rim.x, a.pos[i * 3 + 1] - rim.y, a.pos[i * 3 + 2] - rim.z);
+    if (d > maxD) maxD = d;
+  }
+  check(maxD <= r + 1e-6, `region point ${maxD} outside ball ${r}`);
+  const { cell, slot } = splitId(a.ids[0]);
+  const filled = slotsInCell(seed, cell);
+  const birth = slotBirthRaw(seed, cell, slot, filled);
+  const cart = slotBirthCart(seed, cell, slot);
+  check(Math.abs(cart.x - a.pos[0]) < 1e-5 && Math.abs(cart.y - a.pos[1]) < 1e-5, 'slotBirthCart != cloud pos');
+  const o = objectAt(seed, a.ids[0]);
+  check(!!o && o.pos.R === birth.pos.R && o.pos.theta === birth.pos.theta, 'region row pose != objectAt');
+  const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
+  const homeCloud = buildRegionCloud(seed, homeC.x, homeC.y, homeC.z, r);
+  check(homeCloud.n > a.n, `home region ${homeCloud.n} should outnumber the rim ${a.n}`);
+  console.log(`  outer region: ${a.n} slots in ${a.ms.toFixed(0)} ms; home-like ${homeCloud.n} in ${homeCloud.ms.toFixed(0)} ms`);
+}
+
 // --- systems of interest: deterministic, spectacular, spread out ---
 {
   const a = systemsOfInterest(seed, 100);
@@ -155,8 +184,8 @@ const check = (cond: boolean, msg: string) => {
   check(a.every((o, i) => o.id === b3[i].id), 'interest picks not deterministic');
   const exotic = a.filter((o) => o.star.nebula !== 'none' || ['black_hole', 'pulsar', 'neutron_star', 'wolf_rayet', 'supergiant'].includes(o.star.phase));
   check(exotic.length >= 20, `only ${exotic.length} exotic picks in 100`);
-  const arcs = new Set(a.map((o) => sectorName(sectorOfPos(o.pos))));
-  check(arcs.size >= 50, `interest picks bunch into ${arcs.size} arcs`);
+  const bins = new Set(a.map((o) => `${Math.floor(o.pos.R / 1.6)}:${Math.floor(o.pos.theta * 4)}`));
+  check(bins.size >= 40, `interest picks bunch into ${bins.size} bins`);
 }
 
 // --- saucer dome: zero slope at the centre (no cone / golden spike) ---

@@ -1,20 +1,19 @@
 /**
- * The galaxy explorer: a two-level SECTOR MAP.
+ * The galaxy explorer: a saucer chart plus a regional dive.
  *
- * MAP mode shows the saucer — a static mesh of annular-sector tiles
- * coloured by the density law (galaxySectors.ts) — plus markers for
- * home, the current system, visited systems, and ~100 deterministic
- * systems of interest. No stars are drawn on the map. The map camera
- * orbits the origin.
+ * MAP mode shows the saucer — a static mesh coloured by the density
+ * law (galaxySectors.ts) — plus markers for home, the current system,
+ * visited systems, and ~100 deterministic systems of interest. No
+ * stars are drawn on the map. The map camera orbits the origin.
  *
- * ARC mode is one tapped "thick arc": every occupied slot is a point
- * (cheap birth, no evolve — the id is still the star). The camera is
- * free flight through that frozen cloud: look, strafe, dolly. There is
- * no orbit lock on the sector centre or the selection. Distant stars
- * are 1px pinpricks. Closer ones grow and brighten from their
- * luminosity and distance — they pretend to be the photosphere. No
- * mesh roster, no star-count budget. The centre reticle on a grown
- * point can set course at any time. Tap still mints the catalog row.
+ * REGION mode is a tap on that shape: a fixed-radius ball around the
+ * hit (midplane) or a pinned star. Every occupied slot inside is a
+ * point (cheap birth, no evolve — the id is still the star). The
+ * camera is free flight through that frozen cloud. Distant stars are
+ * 1px pinpricks; closer ones grow and brighten from luminosity and
+ * distance. The centre reticle on a grown point can set course.
+ * Tap still mints the catalog row. Fly far out (or the breadcrumb)
+ * to return to the map.
  *
  * Nothing in either mode queries or rebuilds the catalog per camera
  * move — the blink / cluster / stutter / re-roll failure class of the
@@ -37,32 +36,28 @@ import {
 import { classifyStar } from '../world/stellar';
 import { systemAt } from '../world/systemgen';
 import {
-  sectorCenter,
-  sectorName,
-  sectorOfPos,
-  sectorSpan,
   systemsOfInterest,
-  buildArcCloud,
+  buildRegionCloud,
+  regionName,
   sketchMatches,
   MK_LETTER,
   BIT_REMNANT,
-  type ArcCloud,
-  type SectorId,
+  type StarCloud,
 } from '../world/sectors';
 
 /** Map-orbit radius range (kpc). */
 const MAP_R_MIN = 9;
 const MAP_R_MAX = 46;
 const MAP_R_HOME = 34;
-/** Arc-orbit radius, in units of the arc's own span. */
-const ARC_R_FRAME = 1.7;
-const ARC_R_EXIT = 4.2;
+/** Region camera: frame the ball, leave when you have left it. */
+const REGION_R_FRAME = 2.4;
+const REGION_R_EXIT = 7;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
 const ZOOM_GESTURE_SPAN = 2.6;
 
-export type GalaxyMode = 'map' | 'arc';
+export type GalaxyMode = 'map' | 'region';
 export type GalaxyFilter = 'all' | 'hot' | 'sunlike' | 'cool' | 'remnant' | 'nebula' | 'halo' | 'arm';
 export type GalaxyPreset = 'face' | 'edge' | 'home' | 'arm';
 
@@ -175,24 +170,26 @@ export interface GalaxyFrame {
   theta: number;
   phi: number;
   radius: number;
-  /** True in arc mode (stars are tappable there). */
+  /** True in region mode (stars are tappable there). */
   pickable: boolean;
-  /** Loaded arc stars (0 on the map). */
+  /** Loaded region stars (0 on the map). */
   resolved: number;
   /** Stars grown past the reticle lock angle — no cap. */
   grown: number;
-  /** Arc label, e.g. "S37·R12" — null on the map. */
+  /** Region label, e.g. "8.2 kpc · 57°" — null on the map. */
   sector: string | null;
-  /** Exact occupied-slot population of the open arc (0 on the map). */
+  /** Exact occupied-slot population of the open region (0 on the map). */
   population: number;
   /** Most-centred star in the sight, when close enough. */
   focus: GalaxyFocus | null;
 }
 
-export interface SectorSelection {
-  id: SectorId;
+export interface RegionSelection {
   name: string;
   population: number;
+  x: number;
+  y: number;
+  z: number;
 }
 
 interface Callbacks {
@@ -210,7 +207,7 @@ interface MarkerSet {
 }
 
 export class GalaxyView {
-  /** Stars loaded for the open arc (empty on the map). */
+  /** Stars loaded for the open region (empty on the map). */
   objects: GalaxyObject[] = [];
   readonly home: GalaxyObject | null;
   lastEnterMs = 0;
@@ -225,7 +222,7 @@ export class GalaxyView {
   private raf = 0;
 
   private mode: GalaxyMode = 'map';
-  private sectorSel: SectorId | null = null;
+  private regionLabel: string | null = null;
   private sectorPop = 0;
   private sectors: SectorMap;
   private lastSightAt = 0;
@@ -238,7 +235,7 @@ export class GalaxyView {
   private starGeo: THREE.BufferGeometry | null = null;
   private starMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
-  private cloud: ArcCloud | null = null;
+  private cloud: StarCloud | null = null;
 
   private visitedMk: MarkerSet | null = null;
   private interestMk: MarkerSet | null = null;
@@ -420,34 +417,34 @@ export class GalaxyView {
     this.scene.add(this.visitedMk.pts);
   }
 
-  // ------------------------------------------------------------- arc mode
+  // ------------------------------------------------------------- region mode
 
-  /** Open one thick arc: draw every occupied slot, dive the camera. */
-  enterArc(id: SectorId, select: GalaxyObject | null = null): void {
+  /**
+   * Open a fixed-radius ball around a world point. `select` is pinned
+   * when the dive is a star (home, marker); a saucer tap leaves it null.
+   */
+  enterRegion(x: number, y: number, z: number, select: GalaxyObject | null = null): void {
     this.disposeArcStars();
-    this.mode = 'arc';
-    this.sectorSel = id;
-    this.sectors.setSelected(id);
-    const cloud = buildArcCloud(this.seed, id);
+    this.mode = 'region';
+    const cloud = buildRegionCloud(this.seed, x, y, z, UNIVERSE.GALAXY_REGION_R);
     this.cloud = cloud;
     this.sectorPop = cloud.n;
+    this.regionLabel = regionName(x, y, z);
     this.lastEnterMs = cloud.ms;
     this.objects = [];
     this.buildArcStars();
     this.censusMemo = {};
 
-    const c = galToCart(sectorCenter(id));
-    const span = sectorSpan(id);
-    this.arcCenter.set(c.x, c.y, c.z);
-    const r = span * ARC_R_FRAME;
+    this.arcCenter.set(x, y, z);
+    const r = UNIVERSE.GALAXY_REGION_R * REGION_R_FRAME;
     const phi = 0.9;
     const th = this.tgtTheta;
     this.arcPos.set(
-      c.x + r * Math.sin(phi) * Math.cos(th),
-      c.y + r * Math.cos(phi),
-      c.z + r * Math.sin(phi) * Math.sin(th),
+      x + r * Math.sin(phi) * Math.cos(th),
+      y + r * Math.cos(phi),
+      z + r * Math.sin(phi) * Math.sin(th),
     );
-    const aim = select ? galToCart(select.pos) : c;
+    const aim = select ? galToCart(select.pos) : { x, y, z };
     this.aimAt(aim.x, aim.y, aim.z);
     this.enteredAt = performance.now();
     this.idle = 0;
@@ -461,14 +458,15 @@ export class GalaxyView {
     this.updateSight(true);
   }
 
-  /** Back to the saucer. The arc's stars are dropped; the map is static. */
-  exitArc(): void {
-    if (this.mode !== 'arc') return;
+  /** Back to the saucer. The region's stars are dropped; the map is static. */
+  exitRegion(): void {
+    if (this.mode !== 'region') return;
     this.mode = 'map';
     this.disposeArcStars();
     this.objects = [];
     this.cloud = null;
     this.sectorPop = 0;
+    this.regionLabel = null;
     this.focusObj = null;
     this.focusHud = null;
     this.censusMemo = {};
@@ -486,7 +484,7 @@ export class GalaxyView {
     this.gestureR = this.tgtRadius;
     this.camera.near = 0.02;
     this.camera.updateProjectionMatrix();
-    // Keep the last arc highlighted as a breadcrumb on the map.
+    // The saucer is a chart again; the last dive is not a tile.
   }
 
   private disposeArcStars(): void {
@@ -550,7 +548,7 @@ export class GalaxyView {
     this.filter = f;
     this.censusMemo = {};
     this.applyStarVis();
-    if (this.mode === 'arc') this.updateSight(true);
+    if (this.mode === 'region') this.updateSight(true);
   }
 
   dismiss(): void {
@@ -558,23 +556,29 @@ export class GalaxyView {
   }
 
   canPick(): boolean {
-    return this.mode === 'arc';
+    return this.mode === 'region';
   }
 
   currentMode(): GalaxyMode {
     return this.mode;
   }
 
-  currentSector(): SectorSelection | null {
-    if (!this.sectorSel) return null;
-    return { id: this.sectorSel, name: sectorName(this.sectorSel), population: this.sectorPop };
+  currentRegion(): RegionSelection | null {
+    if (!this.regionLabel) return null;
+    return {
+      name: this.regionLabel,
+      population: this.sectorPop,
+      x: this.arcCenter.x,
+      y: this.arcCenter.y,
+      z: this.arcCenter.z,
+    };
   }
 
   selectedObject(): GalaxyObject | null {
     return this.selected;
   }
 
-  /** Class census of the open arc (cheap MK from the birth clock). */
+  /** Class census of the open region (cheap MK from the birth clock). */
   census(): Record<string, number> {
     if (Object.keys(this.censusMemo).length > 0) return this.censusMemo;
     const c: Record<string, number> = {};
@@ -606,13 +610,31 @@ export class GalaxyView {
     return this.grownCount;
   }
 
+  /** True if every loaded point sits inside the region ball. */
+  cloudFitsRegion(): boolean {
+    const cloud = this.cloud;
+    if (!cloud || cloud.n <= 0) return false;
+    const r = UNIVERSE.GALAXY_REGION_R + 1e-5;
+    const r2 = r * r;
+    const cx = this.arcCenter.x;
+    const cy = this.arcCenter.y;
+    const cz = this.arcCenter.z;
+    for (let i = 0; i < cloud.n; i++) {
+      const dx = cloud.pos[i * 3] - cx;
+      const dy = cloud.pos[i * 3 + 1] - cy;
+      const dz = cloud.pos[i * 3 + 2] - cz;
+      if (dx * dx + dy * dy + dz * dz > r2) return false;
+    }
+    return true;
+  }
+
   setPreset(p: GalaxyPreset): void {
     if (p === 'home') {
       const obj = this.hereObj ?? this.home;
       if (obj) this.focus(obj);
       return;
     }
-    this.exitArc();
+    this.exitRegion();
     if (p === 'face') {
       this.tgtTheta = 0.25;
       this.tgtPhi = 0.16;
@@ -634,9 +656,10 @@ export class GalaxyView {
     this.idle = 0;
   }
 
-  /** Open the arc containing a star and select it. */
+  /** Open the region around a star and select it. */
   focus(obj: GalaxyObject): void {
-    this.enterArc(sectorOfPos(obj.pos), obj);
+    const c = galToCart(obj.pos);
+    this.enterRegion(c.x, c.y, c.z, obj);
   }
 
   /**
@@ -661,7 +684,7 @@ export class GalaxyView {
 
   /** Refresh sight uniforms — smoke / tests. */
   syncArc(): void {
-    if (this.mode === 'arc') this.updateSight(true);
+    if (this.mode === 'region') this.updateSight(true);
   }
 
   /** Apparent angle (rad) of a cloud star — smoke proves points grow. */
@@ -721,7 +744,7 @@ export class GalaxyView {
    * Rotate the look in place. Smoke uses this to prove free look.
    */
   orbitBy(dTheta: number, dPhi = 0): void {
-    if (this.mode === 'arc') {
+    if (this.mode === 'region') {
       this.arcYaw += dTheta;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dPhi, -1.45, 1.45);
       this.applyCam();
@@ -735,7 +758,7 @@ export class GalaxyView {
 
   /** Translate along the current look. Smoke / WASD. */
   flyAlong(kpc: number): void {
-    if (this.mode !== 'arc') return;
+    if (this.mode !== 'region') return;
     this.orientArc();
     this.arcPos.addScaledVector(this.arcFwd, kpc);
     this.applyCam();
@@ -744,7 +767,7 @@ export class GalaxyView {
 
   /** Translate along camera right. Smoke: proves we are not on a radial lock. */
   flyStrafe(kpc: number): void {
-    if (this.mode !== 'arc') return;
+    if (this.mode !== 'region') return;
     this.orientArc();
     this.arcPos.addScaledVector(this.arcRight, kpc);
     this.applyCam();
@@ -822,7 +845,7 @@ export class GalaxyView {
   }
 
   private applyCam(): void {
-    if (this.mode === 'arc') {
+    if (this.mode === 'region') {
       this.orientArc();
       this.camera.position.copy(this.arcPos);
       this.camera.up.copy(this.arcUp);
@@ -874,10 +897,10 @@ export class GalaxyView {
   }
 
   private maybeExitArc(): void {
-    if (this.mode !== 'arc' || !this.sectorSel) return;
+    if (this.mode !== 'region') return;
     if (performance.now() - this.enteredAt < 250) return;
-    if (this.arcPos.distanceTo(this.arcCenter) > sectorSpan(this.sectorSel) * ARC_R_EXIT) {
-      this.exitArc();
+    if (this.arcPos.distanceTo(this.arcCenter) > UNIVERSE.GALAXY_REGION_R * REGION_R_EXIT) {
+      this.exitRegion();
     }
   }
 
@@ -888,7 +911,7 @@ export class GalaxyView {
   private zoom(factor: number): void {
     const now = performance.now();
     this.idle = 0;
-    if (this.mode === 'arc') {
+    if (this.mode === 'region') {
       this.orientArc();
       const pace = this.arcPace();
       this.arcPos.addScaledVector(this.arcFwd, -Math.log(Math.max(1e-4, factor)) * pace * 2.2);
@@ -957,8 +980,8 @@ export class GalaxyView {
         this.focus(mk);
         return;
       }
-      const arc = this.sectors.pick(this.raycaster);
-      if (arc) this.enterArc(arc);
+      const hit = this.sectors.pick(this.raycaster);
+      if (hit) this.enterRegion(hit.x, 0, hit.z);
       return;
     }
     const picked = this.pickCloud(cx, cy);
@@ -1049,7 +1072,7 @@ export class GalaxyView {
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
       }
-      if (this.mode === 'arc') {
+      if (this.mode === 'region') {
         this.strafePixels(mx - this.pinchMidX, my - this.pinchMidY);
       }
       this.pinch0 = d;
@@ -1066,12 +1089,12 @@ export class GalaxyView {
     this.lastY = e.clientY;
     this.moved += Math.hypot(dx, dy);
     this.idle = 0;
-    const strafe = this.mode === 'arc' && (this.panBtn === 1 || this.panBtn === 2 || e.shiftKey);
+    const strafe = this.mode === 'region' && (this.panBtn === 1 || this.panBtn === 2 || e.shiftKey);
     if (strafe) {
       this.strafePixels(dx, dy);
       return;
     }
-    if (this.mode === 'arc') {
+    if (this.mode === 'region') {
       this.arcYaw -= dx * 0.005;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
       this.applyCam();
@@ -1084,7 +1107,7 @@ export class GalaxyView {
   };
 
   private strafePixels(dx: number, dy: number): void {
-    if (this.mode !== 'arc') return;
+    if (this.mode !== 'region') return;
     this.orientArc();
     const dist = Math.max(0.02, this.arcPace() * 8);
     const worldH = 2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5);
@@ -1129,7 +1152,7 @@ export class GalaxyView {
       e.code === 'ArrowDown' ||
       e.code === 'ArrowLeft' ||
       e.code === 'ArrowRight';
-    if (fly && this.mode === 'arc') e.preventDefault();
+    if (fly && this.mode === 'region') e.preventDefault();
     this.keys.add(e.code);
   };
 
@@ -1165,7 +1188,7 @@ export class GalaxyView {
    * Every star may grow; there is no mesh roster.
    */
   private updateSight(force = false): void {
-    if (this.mode !== 'arc') return;
+    if (this.mode !== 'region') return;
     const now = performance.now();
     if (!force && now - this.lastSightAt < 50) return;
     this.lastSightAt = now;
@@ -1174,7 +1197,7 @@ export class GalaxyView {
 
   /** Centre reticle vs grown cloud points. A hit can be flown to now. */
   private aimReticle(): void {
-    if (this.mode !== 'arc') {
+    if (this.mode !== 'region') {
       this.focusObj = null;
       this.focusHud = null;
       this.grownCount = 0;
@@ -1305,7 +1328,7 @@ export class GalaxyView {
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
     this.idle += dt;
-    if (this.mode === 'arc') {
+    if (this.mode === 'region') {
       this.steerArc(dt);
       this.applyCam();
       this.updateSight();
@@ -1331,7 +1354,7 @@ export class GalaxyView {
       const d = cam.distanceTo(mesh.position);
       mesh.scale.setScalar(Math.max(lo, Math.min(hi, d * k)));
     };
-    if (this.mode === 'arc') {
+    if (this.mode === 'region') {
       ringFor(this.pickRing, 0.00035, 0.03, 0.045);
       ringFor(this.homeRing, 0.00035, 0.03, 0.045);
       ringFor(this.hereRing, 0.00035, 0.03, 0.04);
@@ -1351,12 +1374,12 @@ export class GalaxyView {
       theta: this.theta,
       phi: this.phi,
       radius: this.radius,
-      pickable: this.mode === 'arc',
+      pickable: this.mode === 'region',
       resolved: this.cloud?.n ?? 0,
       grown: this.grownCount,
-      sector: this.sectorSel ? sectorName(this.sectorSel) : null,
+      sector: this.regionLabel,
       population: this.sectorPop,
-      focus: this.mode === 'arc' ? this.focusHud : null,
+      focus: this.mode === 'region' ? this.focusHud : null,
     });
     this.raf = requestAnimationFrame(this.frame);
   };

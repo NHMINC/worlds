@@ -85,15 +85,17 @@ if (await galaxyBtn.count()) {
   }
   const arc = await page.evaluate(() => ({
     mode: window.__galaxyView?.currentMode?.() ?? null,
-    sector: window.__galaxyView?.currentSector?.() ?? null,
+    region: window.__galaxyView?.currentRegion?.() ?? null,
     stars: window.__galaxyView?.beaconCount?.() ?? 0,
+    inBall: window.__galaxyView?.cloudFitsRegion?.() ?? false,
     dossier: document.querySelector('.gd-class')?.textContent ?? null,
     crumb: Boolean(document.querySelector('.gx-crumb')),
   }));
-  console.log('ARC', JSON.stringify(arc));
+  console.log('REGION', JSON.stringify(arc));
   await page.screenshot({ path: 'previews/galaxy-2-arc.png' });
-  if (arc.mode !== 'arc') errors.push('tapping home marker did not enter its arc');
-  if (!arc.stars || arc.stars < 80_000) errors.push(`arc loaded only ${arc.stars} stars (want the whole population)`);
+  if (arc.mode !== 'region') errors.push('tapping home marker did not enter its region');
+  if (!arc.stars || arc.stars < 8_000) errors.push(`region loaded only ${arc.stars} stars`);
+  if (!arc.inBall) errors.push('region cloud has stars outside the ball');
   if (!arc.dossier) errors.push('home marker tap did not open a dossier');
 
   const survey = await page.evaluate(() => {
@@ -107,7 +109,7 @@ if (await galaxyBtn.count()) {
     };
   });
   console.log('CLOUD', JSON.stringify(survey));
-  if (survey.n < 80_000) errors.push(`cloud ${survey.n} is not the full arc`);
+  if (survey.n < 8_000) errors.push(`cloud ${survey.n} is not the region`);
 
   // A point star must open the dossier, not set course.
   if (survey.point) {
@@ -194,7 +196,7 @@ if (await galaxyBtn.count()) {
   if (grow && grow.a1 <= grow.a0 * 1.02) errors.push(`star did not grow on approach ${grow.a0} → ${grow.a1}`);
   if (grow && !grow.plate) errors.push('no compact sight HUD after approaching a star');
 
-  // Back out to the map via the breadcrumb, then re-enter by tapping a tile.
+  // Back out to the map via the breadcrumb, then re-enter by tapping the saucer.
   await page.click('.gx-crumb');
   await page.waitForTimeout(1200);
   const backOut = await page.evaluate(() => window.__galaxyView?.currentMode?.() ?? null);
@@ -205,12 +207,15 @@ if (await galaxyBtn.count()) {
   await page.waitForTimeout(2000);
   const arc2 = await page.evaluate(() => ({
     mode: window.__galaxyView?.currentMode?.() ?? null,
-    sector: window.__galaxyView?.currentSector?.()?.name ?? null,
+    region: window.__galaxyView?.currentRegion?.()?.name ?? null,
     stars: window.__galaxyView?.beaconCount?.() ?? 0,
+    inBall: window.__galaxyView?.cloudFitsRegion?.() ?? false,
   }));
-  console.log('ARC 2', JSON.stringify(arc2));
+  console.log('REGION 2', JSON.stringify(arc2));
   await page.screenshot({ path: 'previews/galaxy-4-arc2.png' });
-  if (arc2.mode !== 'arc') errors.push('tapping a tile did not enter an arc');
+  if (arc2.mode !== 'region') errors.push('tapping the saucer did not enter a region');
+  if (arc2.stars < 1_000) errors.push(`saucer tap loaded only ${arc2.stars} stars`);
+  if (!arc2.inBall) errors.push('saucer-tap cloud has stars outside the ball');
 
   // Set course is the dossier button — a star tap only selects.
   const goBack = await page.evaluate(() => {

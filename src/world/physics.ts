@@ -392,19 +392,18 @@ export const UNIVERSE = {
   GALAXY_POPULATION: 1_000_000_000,
 
   /**
-   * The sector map: the explorer's projection of the catalog grid.
-   * SECTORS pizza slices × SECTOR_RINGS annuli, ring boundaries placed
-   * by EQUAL ENCLOSED MASS (inverse CDF of the same density law), so
-   * inner arcs are thin, outer arcs are wide, and every arc holds
-   * roughly the same number of stars. Each arc is an exact block of
-   * catalog cells — the address system is untouched. Real stars are
-   * drawn only INSIDE an arc (every occupied slot, cheap birth then
-   * `evolve` on tap); the map itself draws no stars at all. Every
-   * drawn star is tappable.
+   * The saucer mesh is still cut into SECTORS × SECTOR_RINGS tiles
+   * (equal-mass rings) so the dome tessellates cleanly. That grid is
+   * chart fabric, not a play verb. A tap is a coordinate; the region
+   * is a ball of radius GALAXY_REGION_R around that point. The radius
+   * is sized so a midplane ball at the outer disk holds ~10⁴ occupied
+   * slots. Count is an outcome: the bulge is crowded because it is.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,
   GALAXY_SECTOR_STARS: 2500,
+  /** Fixed region radius (kpc). One length; density fills it. */
+  GALAXY_REGION_R: 0.22,
 
   /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:

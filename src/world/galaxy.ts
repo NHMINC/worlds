@@ -168,6 +168,50 @@ export function packId(cell: number, slot: number): number {
   return cell * UNIVERSE.GALAXY_MAX_SLOT + slot;
 }
 
+/** Half-diagonal of the slot scatter cube (kpc). A star may sit this far from its cell centre. */
+export function slotScatterKpc(): number {
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
+  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
+  return 0.5 * dz * Math.sqrt(3);
+}
+
+/**
+ * Catalog cells whose scatter cubes may meet a Cartesian ball
+ * (disk in XZ, Y is height). Occupants are still filtered by
+ * |p − centre| ≤ r. When the ball covers the origin we take every
+ * spoke of the inner rings — a θ-wedge would miss the far side.
+ */
+export function cellsOverlappingBall(x: number, y: number, z: number, r: number): number[] {
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
+  const p = cartToGal(x, y, z);
+  const reach = r + slotScatterKpc() + 0.02;
+  const ir0 = Math.max(0, Math.floor(((p.R - reach) / rMax) * nr));
+  const ir1 = Math.min(nr - 1, Math.floor(((p.R + reach) / rMax) * nr));
+  const coversCore = p.R <= reach;
+  const dTh = coversCore ? Math.PI : reach / Math.max(0.35, p.R);
+  const itc = Math.floor(((((p.theta % TAU) + TAU) % TAU) / TAU) * nth);
+  const dit = coversCore ? Math.ceil(nth / 2) : Math.max(1, Math.ceil((dTh / TAU) * nth));
+  const iz0 = Math.max(0, Math.floor((((p.z - reach) / zMax + 1) / 2) * nz));
+  const iz1 = Math.min(nz - 1, Math.floor((((p.z + reach) / zMax + 1) / 2) * nz));
+  const reach2 = reach * reach;
+  const out: number[] = [];
+  for (let ir = ir0; ir <= ir1; ir++) {
+    for (let dt = -dit; dt <= dit; dt++) {
+      const it = (itc + dt + nth * 16) % nth;
+      for (let iz = iz0; iz <= iz1; iz++) {
+        const cell = ir * nth * nz + it * nz + iz;
+        const mid = cellCenter(cell);
+        const mx = mid.R * Math.cos(mid.theta) - x;
+        const my = mid.z - y;
+        const mz = mid.R * Math.sin(mid.theta) - z;
+        if (mx * mx + my * my + mz * mz <= reach2) out.push(cell);
+      }
+    }
+  }
+  return out;
+}
+
 /** Inverse of imfMass — u in [0,1) for a given ZAMS mass. */
 export function imfQuantile(mass: number): number {
   let lo = 0;
@@ -276,6 +320,18 @@ export interface SlotBirth {
   ageGyr: number;
   massZams: number;
   rng: () => number;
+}
+
+/** Birth position only — same first three rng draws as `slotBirthRaw`. */
+export function slotBirthCart(seed: string, cell: number, slot: number): { x: number; y: number; z: number } {
+  const rng = rngFor(seed, cell, slot);
+  const mid = cellCenter(cell);
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
+  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
+  const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
+  const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
+  const z = mid.z + (rng() - 0.5) * dz;
+  return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
 }
 
 export function slotBirthRaw(seed: string, cell: number, slot: number, filled: number): SlotBirth {

@@ -19,9 +19,11 @@
 import { UNIVERSE } from './physics';
 import {
   cellCenter,
+  cellsOverlappingBall,
   density,
   galToCart,
   isSlotAlive,
+  slotBirthCart,
   objectAt,
   packId,
   slotBirthRaw,
@@ -202,10 +204,11 @@ export function sectorPopulation(seed: string, id: SectorId): number {
   return n;
 }
 
-/** GPU point cloud of every occupied slot in an arc. No evolve(). */
-export interface ArcCloud {
+/** GPU point cloud of every occupied slot in a query volume. No evolve(). */
+export interface StarCloud {
   n: number;
-  ids: Uint32Array;
+  /** Catalog ids. Float64 — a packed id exceeds 2³² at the outer disk. */
+  ids: Float64Array;
   pos: Float32Array;
   col: Float32Array;
   size: Float32Array;
@@ -220,6 +223,9 @@ export interface ArcCloud {
   lum: Float32Array;
   ms: number;
 }
+
+/** @deprecated use StarCloud — the play verb is a region, not an arc. */
+export type ArcCloud = StarCloud;
 
 const MK_IX: Record<string, number> = { O: 1, B: 2, A: 3, F: 4, G: 5, K: 6, M: 7, L: 8, T: 9 };
 
@@ -253,12 +259,58 @@ export function sketchMatches(bits: number, f: GalaxyFilterName): boolean {
   return (bits & BIT_ARM) !== 0;
 }
 
+function allocCloud(n: number): Omit<StarCloud, 'n' | 'ms'> {
+  return {
+    ids: new Float64Array(n),
+    pos: new Float32Array(n * 3),
+    col: new Float32Array(n * 3),
+    size: new Float32Array(n),
+    pulse: new Float32Array(n),
+    gain: new Float32Array(n),
+    bits: new Uint8Array(n),
+    mk: new Uint8Array(n),
+    lum: new Float32Array(n),
+  };
+}
+
+function writeBirth(seed: string, cell: number, slot: number, filled: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
+  const b = slotBirthRaw(seed, cell, slot, filled);
+  const cart = galToCart(b.pos);
+  const alive = isSlotAlive(b.massZams, b.ageGyr);
+  const L = alive ? slotMsLum(b.massZams) : 0.004;
+  const teff = alive ? slotMsTeff(b.massZams) : 9000;
+  const rgb = alive ? teffToRgb(teff) : ([0.62, 0.7, 0.88] as [number, number, number]);
+  c.ids[i] = packId(cell, slot);
+  c.pos[i * 3] = cart.x;
+  c.pos[i * 3 + 1] = cart.y;
+  c.pos[i * 3 + 2] = cart.z;
+  c.col[i * 3] = rgb[0];
+  c.col[i * 3 + 1] = rgb[1];
+  c.col[i * 3 + 2] = rgb[2];
+  c.size[i] = L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0);
+  c.gain[i] = 0.22 + 0.78 * (L / (L + 0.25));
+  c.pulse[i] = 0;
+  let bit = 0;
+  if (!alive) bit |= BIT_REMNANT;
+  else if (b.massZams > 1.4) bit |= BIT_HOT;
+  else if (b.massZams >= 0.7 && b.massZams <= 1.15) bit |= BIT_SUNLIKE;
+  else bit |= BIT_COOL;
+  if (b.pop === 'halo') bit |= BIT_HALO;
+  if (b.inArm) bit |= BIT_ARM;
+  c.bits[i] = bit;
+  c.mk[i] = alive ? (MK_IX[mkFromTeff(teff)] ?? 0) : 0;
+  c.lum[i] = L;
+}
+
+function finishCloud(c: Omit<StarCloud, 'n' | 'ms'>, n: number, t0: number): StarCloud {
+  return { n, ...c, ms: performance.now() - t0 };
+}
+
 /**
- * One point per occupied slot. Positions match `objectAt`. Colour and
- * size are the main-sequence clock (alive) or a dim remnant pin (dead)
- * — `evolve` runs when you tap. Timed so we can see the cost.
+ * One point per occupied slot in an arc tile. Kept for the saucer
+ * tessellation checks — play uses `buildRegionCloud`.
  */
-export function buildArcCloud(seed: string, id: SectorId): ArcCloud {
+export function buildArcCloud(seed: string, id: SectorId): StarCloud {
   const t0 = performance.now();
   const cells = sectorCells(id);
   let n = 0;
@@ -268,64 +320,54 @@ export function buildArcCloud(seed: string, id: SectorId): ArcCloud {
     filledOf[i] = f;
     n += f;
   }
-  const ids = new Uint32Array(n);
-  const pos = new Float32Array(n * 3);
-  const col = new Float32Array(n * 3);
-  const size = new Float32Array(n);
-  const pulse = new Float32Array(n);
-  const gain = new Float32Array(n);
-  const bits = new Uint8Array(n);
-  const mk = new Uint8Array(n);
-  const lum = new Float32Array(n);
-
+  const c = allocCloud(n);
   let i = 0;
   for (let ci = 0; ci < cells.length; ci++) {
     const cell = cells[ci];
     const filled = filledOf[ci];
+    for (let slot = 0; slot < filled; slot++) writeBirth(seed, cell, slot, filled, i++, c);
+  }
+  return finishCloud(c, n, t0);
+}
+
+/** Human label for a region centre: "14.2 kpc · 46°". */
+export function regionName(x: number, y: number, z: number): string {
+  const R = Math.hypot(x, z);
+  const deg = (((Math.atan2(z, x) * 180) / Math.PI) + 360) % 360;
+  return `${R.toFixed(1)} kpc · ${deg.toFixed(0)}°`;
+}
+
+/**
+ * Every occupied slot whose birth position falls inside a Cartesian
+ * ball. Cheap birth, no evolve. The radius is a law (`GALAXY_REGION_R`);
+ * the count is whatever density puts there.
+ */
+export function buildRegionCloud(seed: string, x: number, y: number, z: number, r = UNIVERSE.GALAXY_REGION_R): StarCloud {
+  const t0 = performance.now();
+  const cells = cellsOverlappingBall(x, y, z, r);
+  const filledOf = new Int32Array(cells.length);
+  let cap = 0;
+  for (let i = 0; i < cells.length; i++) {
+    const f = slotsInCell(seed, cells[i]);
+    filledOf[i] = f;
+    cap += f;
+  }
+  const c = allocCloud(cap);
+  const r2 = r * r;
+  let n = 0;
+  for (let ci = 0; ci < cells.length; ci++) {
+    const cell = cells[ci];
+    const filled = filledOf[ci];
     for (let slot = 0; slot < filled; slot++) {
-      const b = slotBirthRaw(seed, cell, slot, filled);
-      const sid = packId(cell, slot);
-      const c = galToCart(b.pos);
-      const alive = isSlotAlive(b.massZams, b.ageGyr);
-      const L = alive ? slotMsLum(b.massZams) : 0.004;
-      const teff = alive ? slotMsTeff(b.massZams) : 9000;
-      const rgb = alive ? teffToRgb(teff) : ([0.62, 0.7, 0.88] as [number, number, number]);
-      ids[i] = sid;
-      pos[i * 3] = c.x;
-      pos[i * 3 + 1] = c.y;
-      pos[i * 3 + 2] = c.z;
-      col[i * 3] = rgb[0];
-      col[i * 3 + 1] = rgb[1];
-      col[i * 3 + 2] = rgb[2];
-      size[i] = L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0);
-      gain[i] = 0.22 + 0.78 * (L / (L + 0.25));
-      pulse[i] = 0;
-      let bit = 0;
-      if (!alive) bit |= BIT_REMNANT;
-      else if (b.massZams > 1.4) bit |= BIT_HOT;
-      else if (b.massZams >= 0.7 && b.massZams <= 1.15) bit |= BIT_SUNLIKE;
-      else bit |= BIT_COOL;
-      if (b.pop === 'halo') bit |= BIT_HALO;
-      if (b.inArm) bit |= BIT_ARM;
-      bits[i] = bit;
-      mk[i] = alive ? (MK_IX[mkFromTeff(teff)] ?? 0) : 0;
-      lum[i] = L;
-      i++;
+      const p = slotBirthCart(seed, cell, slot);
+      const dx = p.x - x;
+      const dy = p.y - y;
+      const dz = p.z - z;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      writeBirth(seed, cell, slot, filled, n++, c);
     }
   }
-  return {
-    n,
-    ids,
-    pos,
-    col,
-    size,
-    pulse,
-    gain,
-    bits,
-    mk,
-    lum,
-    ms: performance.now() - t0,
-  };
+  return finishCloud(c, n, t0);
 }
 
 /**
@@ -416,14 +458,14 @@ export function systemsOfInterest(seed: string, n = 100): GalaxyObject[] {
   }
   picks.sort((a, b) => b.score - a.score);
   const out: GalaxyObject[] = [];
-  const perSector = new Map<string, number>();
+  const perBin = new Map<string, number>();
   for (const p of picks) {
     if (out.length >= n) break;
-    // Spread the wonder: at most two picks per arc.
-    const key = sectorName(sectorOfPos(p.o.pos));
-    const used = perSector.get(key) ?? 0;
+    // Spread the wonder across the disk, not along old arc tiles.
+    const key = `${Math.floor(p.o.pos.R / 1.6)}:${Math.floor(((((p.o.pos.theta % TAU) + TAU) % TAU) / TAU) * 24)}`;
+    const used = perBin.get(key) ?? 0;
     if (used >= 2) continue;
-    perSector.set(key, used + 1);
+    perBin.set(key, used + 1);
     out.push(p.o);
   }
   return out;

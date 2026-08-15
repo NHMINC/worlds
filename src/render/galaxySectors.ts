@@ -1,18 +1,13 @@
 /**
- * The sector map mesh: the saucer, built from annular-sector tiles.
- *
- * Every tile is one "thick arc" of the catalog (sectors.ts). Vertex
- * colours evaluate the SAME density law the catalog runs on — golden
- * bulge and bar, warm disk sheet, blue arm crests, brown dust lanes —
- * so the saucer still reads as the galaxy without marching a single
- * ray or drawing a single fake star. Thin seams mark the arc grid so
- * every tap target is visible. Static: built once, never touches the
- * camera.
+ * The saucer: a static mesh of annular tiles coloured by the density
+ * law (golden bulge/bar, blue crests, brown lanes). Chart fabric, not
+ * a catalog and not a tap grid — a tap is a coordinate on this shape.
+ * Built once; never touches the camera.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
-import { armPhase, cartToGal, densityParts } from '../world/galaxy';
-import { ringRadii, sectorOfPos, spokeBounds, type SectorId } from '../world/sectors';
+import { armPhase, densityParts } from '../world/galaxy';
+import { ringRadii, spokeBounds } from '../world/sectors';
 
 const TAU = Math.PI * 2;
 
@@ -46,7 +41,6 @@ const VERT = /* glsl */ `
 
 const FRAG = /* glsl */ `
   precision mediump float;
-  uniform float uSel;
   varying vec3 vColor;
   varying vec2 vUv;
   varying float vTile;
@@ -59,17 +53,9 @@ const FRAG = /* glsl */ `
 
   void main() {
     vec3 c = vColor;
-    // Map speckle: static grain in the tile fabric — decoration of a
-    // chart, not a painted sky. Brightness follows the tile's own light.
+    // Map speckle: static grain in the chart fabric, not a painted sky.
     float g = hash21(floor(vUv * 26.0) + vTile);
     c *= 0.92 + 0.16 * g * smoothstep(0.02, 0.3, dot(vColor, vec3(0.33)));
-    // Seams: the arc grid is the interface — keep it faintly visible.
-    float edge = min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y));
-    c *= 0.55 + 0.45 * smoothstep(0.0, 0.06, edge);
-    // Selection: the tapped arc lifts toward white.
-    if (abs(vTile - uSel) < 0.5) {
-      c = mix(c, vec3(0.95, 0.97, 1.0), 0.45);
-    }
     gl_FragColor = vec4(c, 1.0);
   }
 `;
@@ -97,9 +83,8 @@ function tileColor(R: number, theta: number): [number, number, number] {
 
 export interface SectorMap {
   group: THREE.Group;
-  setSelected(id: SectorId | null): void;
-  /** Raycast the saucer; returns the arc under the ray, or null. */
-  pick(raycaster: THREE.Raycaster): SectorId | null;
+  /** Raycast the saucer; returns the hit point, or null. */
+  pick(raycaster: THREE.Raycaster): THREE.Vector3 | null;
   dispose(): void;
 }
 
@@ -182,7 +167,6 @@ export function createSectorMap(): SectorMap {
   const mat = new THREE.ShaderMaterial({
     vertexShader: VERT,
     fragmentShader: FRAG,
-    uniforms: { uSel: { value: -1 } },
     side: THREE.DoubleSide,
   });
 
@@ -192,14 +176,10 @@ export function createSectorMap(): SectorMap {
 
   return {
     group,
-    setSelected(id: SectorId | null): void {
-      mat.uniforms.uSel.value = id ? id.ring * S + id.sector : -1;
-    },
-    pick(raycaster: THREE.Raycaster): SectorId | null {
+    pick(raycaster: THREE.Raycaster): THREE.Vector3 | null {
       const hits = raycaster.intersectObject(mesh, false);
       if (!hits.length) return null;
-      const p = hits[0].point;
-      return sectorOfPos(cartToGal(p.x, p.y, p.z));
+      return hits[0].point.clone();
     },
     dispose(): void {
       geo.dispose();

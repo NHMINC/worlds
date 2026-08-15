@@ -114,7 +114,7 @@ export function GalaxyExplorer(props: Props) {
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !ready) return;
-    setCensus(frame.mode === 'arc' ? view.census() : {});
+    setCensus(frame.mode === 'region' ? view.census() : {});
   }, [frame.mode, frame.sector, filter, ready]);
 
   function applyFilter(f: GalaxyFilter): void {
@@ -128,15 +128,15 @@ export function GalaxyExplorer(props: Props) {
   const incDeg = (frame.phi * 180) / Math.PI;
   const censusKeys = Object.keys(census).sort((a, b) => (census[b] ?? 0) - (census[a] ?? 0));
   const censusMax = Math.max(1, ...censusKeys.map((k) => census[k] ?? 0));
-  const inArc = frame.mode === 'arc';
+  const inRegion = frame.mode === 'region';
 
   return (
     <div className="galaxy-explorer">
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
         {!ready && <div className="galaxy-loading">Charting the sectors…</div>}
-        {inArc && <div className="gx-pip" aria-hidden />}
-        {inArc && frame.focus && (
+        {inRegion && <div className="gx-pip" aria-hidden />}
+        {inRegion && frame.focus && (
           <div className="gx-plate">
             <b>{frame.focus.name}</b>
             <em>
@@ -164,9 +164,9 @@ export function GalaxyExplorer(props: Props) {
       <header className="galaxy-top">
         <div className="galaxy-brand">
           <div className="galaxy-title">
-            {inArc ? (
+            {inRegion ? (
               <>
-                <button className="gx-chip gx-crumb" onClick={() => viewRef.current?.exitArc()}>
+                <button className="gx-chip gx-crumb" onClick={() => viewRef.current?.exitRegion()}>
                   Helix
                 </button>
                 <span className="gx-crumb-sep"> › </span>
@@ -177,9 +177,9 @@ export function GalaxyExplorer(props: Props) {
             )}
           </div>
           <div className="galaxy-sub">
-            {inArc
-              ? `${frame.population.toLocaleString()} systems in this arc · all drawn`
-              : `SBbc · ${UNIVERSE.GALAXY_POPULATION.toExponential(0)} addressable systems · tap an arc`}
+            {inRegion
+              ? `${frame.population.toLocaleString()} systems in this volume · all drawn`
+              : `SBbc · ${UNIVERSE.GALAXY_POPULATION.toExponential(0)} addressable systems · tap the galaxy`}
           </div>
         </div>
         <div className="galaxy-presets">
@@ -230,9 +230,9 @@ export function GalaxyExplorer(props: Props) {
         </aside>
       )}
 
-      {inArc && censusKeys.length > 0 && (
+      {inRegion && censusKeys.length > 0 && (
         <aside className="galaxy-census">
-          <div className="gx-kicker">In this arc</div>
+          <div className="gx-kicker">In this volume</div>
           {censusKeys.slice(0, 8).map((k) => (
             <div key={k} className="gx-bar-row">
               <span>{k}</span>
@@ -244,7 +244,7 @@ export function GalaxyExplorer(props: Props) {
       )}
 
       <footer className="galaxy-bottom">
-        {inArc && (
+        {inRegion && (
           <div className="galaxy-filters">
             {FILTERS.map((f) => (
               <button
@@ -259,9 +259,9 @@ export function GalaxyExplorer(props: Props) {
         )}
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
-          {inArc
+          {inRegion
             ? ' · fly through · sight names the star · Set course to go'
-            : ' · tap an arc to enter · markers are worlds'}
+            : ' · tap the galaxy to enter a volume · markers are worlds'}
         </div>
       </footer>
     </div>
