@@ -8,8 +8,9 @@
  *
  * REGION mode is a magnification sphere in catalog space. The
  * camera sits at the centre — it does not fly around inside the
- * ball. Gestures slide the sphere: the vertex shader follows the
- * centre every frame; a worker mints and drops the rim. Space is
+ * ball. Look-drag slides the heading. Warp (↑ / Warp button) latches
+ * acceleration; ↓ / Stop brakes at the same rate. The vertex shader
+ * follows the centre; a worker mints and drops the rim. Space is
  * magnified (VIEW_R / REGION_R); star size is not. Distant stars
  * are 1px pinpricks; closer ones grow. The breadcrumb returns
  * to the map.
@@ -49,15 +50,9 @@ const MAP_R_HOME = 34;
 const MAG_SLIDE = 0.01;
 /** A jump bigger than this remints instead of walking the rim. */
 const MAG_REBUILD = 0.45;
-/** Double-tap window (ms) and slack (px). Mouse and touch share this. */
-const TAP_MS = 340;
-const TAP_SLACK = 42;
-/** Hold-to-cruise in the magnified frame (view kpc / s). */
+/** Latched warp in the magnified frame (view kpc / s). Accel = brake. */
 const THRUST_MAX = 0.36;
-const THRUST_ACCEL = 0.048;
-const THRUST_BRAKE = 0.42;
-/** Second tap must be held this long before cruise starts. */
-const THRUST_HOLD_MS = 140;
+const THRUST_RATE = 0.42;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
@@ -193,6 +188,8 @@ export interface GalaxyFrame {
   population: number;
   /** Most-centred star in the sight, when close enough. */
   focus: GalaxyFocus | null;
+  /** True while warp is latched on (Stop). */
+  warp: boolean;
 }
 
 export interface RegionSelection {
@@ -296,14 +293,7 @@ export class GalaxyView {
   private pinch0 = 0;
   private gestureR = 0;
   private lastZoomAt = 0;
-  private lastTapAt = 0;
-  private lastTapX = 0;
-  private lastTapY = 0;
-  private pendingPick: { x: number; y: number; at: number } | null = null;
-  private pickTimer: ReturnType<typeof setTimeout> | null = null;
-  private thrustHeld = false;
-  private thrustArmed = false;
-  private thrustArmAt = 0;
+  private thrustOn = false;
   private thrustSpeed = 0;
   private idle = 0;
   private lastT = performance.now();
@@ -903,7 +893,6 @@ export class GalaxyView {
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('pointerup', this.onUp);
     this.canvas.removeEventListener('pointercancel', this.onUp);
-    this.clearPendingPick();
     this.canvas.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -926,18 +915,19 @@ export class GalaxyView {
   }
 
   private resetThrust(): void {
-    this.thrustHeld = false;
-    this.thrustArmed = false;
-    this.thrustArmAt = 0;
+    this.thrustOn = false;
     this.thrustSpeed = 0;
-    this.lastTapAt = 0;
-    this.clearPendingPick();
   }
 
-  private clearPendingPick(): void {
-    if (this.pickTimer != null) clearTimeout(this.pickTimer);
-    this.pickTimer = null;
-    this.pendingPick = null;
+  /** Latch warp on (accel to cap) or off (brake to stop). A tap, not a hold. */
+  setWarp(on: boolean): void {
+    if (this.mode !== 'region') return;
+    this.thrustOn = on;
+    this.idle = 0;
+  }
+
+  warping(): boolean {
+    return this.thrustOn;
   }
 
   private select(obj: GalaxyObject | null): void {
@@ -1194,7 +1184,7 @@ export class GalaxyView {
 
   /**
    * Map: scale the orbit radius toward what is already framed.
-   * Region: zoom does not fly — hold-to-cruise does.
+   * Region: zoom does not fly — latched warp does.
    */
   private zoom(factor: number): void {
     const now = performance.now();
@@ -1335,22 +1325,7 @@ export class GalaxyView {
       this.lastY = e.clientY;
       this.moved = 0;
       this.idle = 0;
-      if (this.mode === 'region') {
-        const now = performance.now();
-        const dtap =
-          now - this.lastTapAt < TAP_MS &&
-          Math.hypot(e.clientX - this.lastTapX, e.clientY - this.lastTapY) < TAP_SLACK;
-        if (dtap) {
-          this.clearPendingPick();
-          this.thrustArmed = true;
-          this.thrustArmAt = now;
-          this.lastTapAt = 0;
-        }
-      }
     } else if (this.pointers.size === 2) {
-      this.thrustHeld = false;
-      this.thrustArmed = false;
-      this.clearPendingPick();
       this.dragging = false;
       const pts = [...this.pointers.values()];
       this.pinch0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
@@ -1412,32 +1387,7 @@ export class GalaxyView {
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch0 = 0;
     if (this.pointers.size === 0) {
-      if (this.thrustHeld || this.thrustArmed) {
-        this.thrustHeld = false;
-        this.thrustArmed = false;
-        this.thrustArmAt = 0;
-      } else if (this.dragging && this.moved < 22) {
-        if (this.mode === 'region') {
-          const at = performance.now();
-          this.lastTapAt = at;
-          this.lastTapX = e.clientX;
-          this.lastTapY = e.clientY;
-          this.clearPendingPick();
-          this.pendingPick = { x: e.clientX, y: e.clientY, at };
-          this.pickTimer = setTimeout(() => {
-            const pending = this.pendingPick;
-            if (!pending || pending.at !== at) return;
-            if (this.thrustHeld || this.thrustArmed) return;
-            this.pendingPick = null;
-            this.pickTimer = null;
-            this.pick(pending.x, pending.y);
-          }, TAP_MS);
-        } else {
-          this.pick(e.clientX, e.clientY);
-        }
-      } else {
-        this.lastTapAt = 0;
-      }
+      if (this.dragging && this.moved < 22) this.pick(e.clientX, e.clientY);
       this.dragging = false;
     } else {
       // One pinch finger lifted: the survivor is NOT a drag. Rotation
@@ -1454,17 +1404,25 @@ export class GalaxyView {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (this.mode === 'region' && !e.repeat) {
+      if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+        e.preventDefault();
+        this.setWarp(true);
+        return;
+      }
+      if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        this.setWarp(false);
+        return;
+      }
+    }
     const fly =
-      e.code === 'KeyW' ||
       e.code === 'KeyA' ||
-      e.code === 'KeyS' ||
       e.code === 'KeyD' ||
       e.code === 'KeyQ' ||
       e.code === 'KeyE' ||
       e.code === 'Space' ||
       e.code === 'KeyC' ||
-      e.code === 'ArrowUp' ||
-      e.code === 'ArrowDown' ||
       e.code === 'ArrowLeft' ||
       e.code === 'ArrowRight';
     if (fly && this.mode === 'region') e.preventDefault();
@@ -1475,18 +1433,15 @@ export class GalaxyView {
     this.keys.delete(e.code);
   };
 
-  /** Double-tap-and-hold cruise. Same path for mouse and touch. */
+  /** Latched warp: ↑ / Warp accel, ↓ / Stop brake, same rate. */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
-      this.thrustHeld = false;
+      this.thrustOn = false;
       this.thrustSpeed = 0;
       return;
     }
-    if (this.thrustArmed && !this.thrustHeld && performance.now() - this.thrustArmAt >= THRUST_HOLD_MS) {
-      this.thrustHeld = true;
-    }
-    if (this.thrustHeld) this.thrustSpeed = Math.min(THRUST_MAX, this.thrustSpeed + THRUST_ACCEL * dt);
-    else this.thrustSpeed = Math.max(0, this.thrustSpeed - THRUST_BRAKE * dt);
+    if (this.thrustOn) this.thrustSpeed = Math.min(THRUST_MAX, this.thrustSpeed + THRUST_RATE * dt);
+    else this.thrustSpeed = Math.max(0, this.thrustSpeed - THRUST_RATE * dt);
     if (this.thrustSpeed <= 1e-5) {
       this.thrustSpeed = 0;
       return;
@@ -1500,8 +1455,6 @@ export class GalaxyView {
     let mx = 0;
     let my = 0;
     let mz = 0;
-    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) mz += 1;
-    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) mz -= 1;
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mx += 1;
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mx -= 1;
     if (this.keys.has('KeyE') || this.keys.has('Space')) my += 1;
@@ -1724,6 +1677,7 @@ export class GalaxyView {
       sector: this.regionLabel,
       population: this.sectorPop,
       focus: this.mode === 'region' ? this.focusHud : null,
+      warp: this.mode === 'region' && this.thrustOn,
     });
     this.raf = requestAnimationFrame(this.frame);
   };

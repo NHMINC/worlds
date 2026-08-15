@@ -988,6 +988,32 @@ body,
   touch-action: none;
 }
 
+.gx-warp {
+  position: absolute;
+  right: calc(16px + env(safe-area-inset-right));
+  bottom: calc(78px + env(safe-area-inset-bottom));
+  z-index: 3;
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: var(--shadow);
+}
+
+.gx-warp.stop {
+  border-color: #e8b4a2;
+  background: rgba(180, 70, 50, 0.35);
+}
+
 .galaxy-loading {
   position: absolute;
   inset: 0;
