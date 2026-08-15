@@ -463,12 +463,13 @@ are overlays. See **Player layer**.
    older files.
 5. **Do not commit secrets.** Do not drive-by refactors. Update this file
    when the contract changes.
-6. **Ship on `main`.** Commit and push directly to `main`. Do not open a
-   feature-branch PR and wait. The live site (GitHub Pages) is how we
-   hear and see a change; Pages only builds from `main`. A draft PR is
-   an unpublished universe — that is how “the music didn’t change”
-   happened. After a Pages deploy, **hard-refresh once** so the PWA
-   picks up the new build.
+6. **Ship on `main`.** One person works on this universe, and they can
+   only test the live app when `main` changes (GitHub Pages builds from
+   `main` only). Always **commit, push, and merge onto `main`** in the
+   same session. Do not leave work sitting on a feature-branch PR. A
+   draft PR is an unpublished universe — that is how “the music didn’t
+   change” happened. After a Pages deploy, **hard-refresh once** so the
+   PWA picks up the new build.
 
 Code map (start here):
 
