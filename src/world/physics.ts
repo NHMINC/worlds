@@ -425,6 +425,15 @@ export const UNIVERSE = {
   GALAXY_REGION_R: 2.0,
   /** Flight / viewing ball (kpc). Same stars, expanded around the tap. */
   GALAXY_REGION_VIEW_R: 40,
+  /**
+   * Latched warp (catalog kpc / s). Independent of VIEW_R / REGION_R —
+   * the photograph cannot throttle the ship. 0.25 crosses a 2 kpc
+   * neighbourhood in ~8 s and the solar circle to the core in ~32 s.
+   * Accel reaches the cap in under a second; Stop brakes at the same
+   * rate. WASD stays the slow look-around pace (arcPace).
+   */
+  GALAXY_WARP: 0.25,
+  GALAXY_WARP_ACCEL: 0.4,
   /** Within this of the tap, every occupied slot is drawn. */
   GALAXY_REGION_FULL_R: 0.12,
   /** Distance over which the IMF cut ramps to U_FAR. */

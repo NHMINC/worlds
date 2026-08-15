@@ -70,9 +70,7 @@ const MAP_R_HOME = 34;
 const MAG_SLIDE = 0.01;
 /** A jump bigger than this remints instead of walking the rim. */
 const MAG_REBUILD = 0.45;
-/** Latched warp in the magnified frame (view kpc / s). Accel = brake. */
-const THRUST_MAX = 0.36;
-const THRUST_RATE = 0.42;
+/** Latched warp. Speed is catalog kpc / s — see UNIVERSE.GALAXY_WARP. */
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
@@ -2011,14 +2009,17 @@ export class GalaxyView {
       this.thrustSpeed = 0;
       return;
     }
-    if (this.thrustOn) this.thrustSpeed = Math.min(THRUST_MAX, this.thrustSpeed + THRUST_RATE * dt);
-    else this.thrustSpeed = Math.max(0, this.thrustSpeed - THRUST_RATE * dt);
+    const cap = UNIVERSE.GALAXY_WARP;
+    const rate = UNIVERSE.GALAXY_WARP_ACCEL;
+    if (this.thrustOn) this.thrustSpeed = Math.min(cap, this.thrustSpeed + rate * dt);
+    else this.thrustSpeed = Math.max(0, this.thrustSpeed - rate * dt);
     if (this.thrustSpeed <= 1e-5) {
       this.thrustSpeed = 0;
       return;
     }
     this.orientArc();
-    const step = this.thrustSpeed * dt;
+    // thrustSpeed is catalog kpc/s; moveBubble takes the magnified frame.
+    const step = this.thrustSpeed * this.magScale() * dt;
     this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
   }
 
