@@ -140,23 +140,20 @@ if (await galaxyBtn.count()) {
 
   const strafe = await page.evaluate(() => {
     const v = window.__galaxyView;
-    const c = v.arcCenter.clone();
+    const c0 = v.arcCenter.clone();
     const p0 = v.camera.position.clone();
     v.flyStrafe?.(0.45);
+    const c1 = v.arcCenter;
     const p1 = v.camera.position;
-    const ax = p0.x - c.x, ay = p0.y - c.y, az = p0.z - c.z;
-    const bx = p1.x - c.x, by = p1.y - c.y, bz = p1.z - c.z;
-    const na = Math.hypot(ax, ay, az);
-    const nb = Math.hypot(bx, by, bz);
-    const dot = (ax * bx + ay * by + az * bz) / Math.max(1e-9, na * nb);
     return {
-      moved: Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z),
-      cos: dot,
+      camMoved: Math.hypot(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z),
+      bubbleMoved: Math.hypot(c1.x - c0.x, c1.y - c0.y, c1.z - c0.z),
+      camAtOrigin: Math.hypot(p1.x, p1.y, p1.z),
     };
   });
   console.log('STRAFE', JSON.stringify(strafe));
-  if (!strafe || strafe.moved < 0.03) errors.push('strafe did not fly off the orbit lock');
-  if (strafe && strafe.cos > 0.995) errors.push('strafe stayed on a radial from the arc centre (orbit lock still on)');
+  if (!strafe || strafe.bubbleMoved < 0.02) errors.push('strafe did not slide the magnification sphere');
+  if (strafe && strafe.camAtOrigin > 1e-4) errors.push('camera left the bubble centre');
 
   // Approach: park next to the selected star; its point must grow.
   const approached = await page.evaluate(() => {

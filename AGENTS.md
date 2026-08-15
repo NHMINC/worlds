@@ -191,9 +191,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   - **Region**: a magnification sphere of radius `GALAXY_REGION_R`
     (~4 kpc) in catalog space. Near the centre (`GALAXY_REGION_FULL_R`)
     every occupied slot is a point. Farther cells keep only the
-    massive tail of their IMF.     Flying **moves the sphere** — stars
-    that cross in are minted, stars that leave drop out. The same
-    stars are drawn in a `GALAXY_REGION_VIEW_R` (40 kpc) ball
+    massive tail of their IMF.     The camera sits at the sphere centre — it does not tour the
+    ball. Gestures **slide the sphere** through the catalog: stars
+    that cross in are minted, stars that leave drop out. Space
+    inside is drawn in a `GALAXY_REGION_VIEW_R` (40 kpc) ball
     (offsets × VIEW_R/REGION_R); star size is not scaled. Cheap
     birth, no `evolve` until you tap. Distant stars are **1px
     pinpricks**. Closer ones grow from luminosity and distance.
@@ -211,9 +212,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   point never moves on a zoom. One continuous motion crosses at most
   `ZOOM_GESTURE_SPAN` (~2.6×); a ~0.6 s pause starts the next motion.
   After a pinch, the surviving finger is NOT a drag — rotation resumes
-  only with a fresh single-finger touch. In **arc** mode the camera is
-  not an orbit: wheel/pinch move you along the look, drag turns the
-  view, and flying out past the arc's span returns to the map.
+  only with a fresh single-finger touch. In **region** mode the camera
+  stays at the bubble centre: wheel/pinch and WASD slide the sphere
+  through the catalog, drag turns the look in place, and the
+  breadcrumb returns to the map.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper

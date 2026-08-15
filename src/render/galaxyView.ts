@@ -6,13 +6,12 @@
  * visited systems, and ~100 deterministic systems of interest. No
  * stars are drawn on the map. The map camera orbits the origin.
  *
- * REGION mode is a magnification sphere in catalog space. A tap
- * opens the ball around that point. Flying moves the sphere: stars
- * that cross the border in are minted, stars that leave drop out
- * (faint ones vanish; only the bright IMF tail stays at the rim).
- * Positions are catalog-true. Distant stars are 1px pinpricks;
- * closer ones grow. The centre reticle on a grown point can set
- * course. The breadcrumb returns to the map.
+ * REGION mode is a magnification sphere in catalog space. The
+ * camera sits at the centre — it does not fly around inside the
+ * ball. Gestures slide the sphere: stars that cross in are minted,
+ * stars that leave drop out. Space is magnified (VIEW_R / REGION_R);
+ * star size is not. Distant stars are 1px pinpricks; closer ones
+ * grow. The breadcrumb returns to the map.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -45,10 +44,7 @@ import {
 const MAP_R_MIN = 9;
 const MAP_R_MAX = 46;
 const MAP_R_HOME = 34;
-/** Start near the tap, looking out through the magnified ball. */
-const REGION_START_IN = 0.09;
-const REGION_LOOK = 16;
-/** Slide the catalog centre after the camera has moved this far (catalog kpc). */
+/** Slide the catalog centre after it has moved this far (catalog kpc). */
 const MAG_SLIDE = 0.01;
 /** A jump bigger than this remints instead of walking the rim. */
 const MAG_REBUILD = 0.45;
@@ -261,11 +257,14 @@ export class GalaxyView {
   private look = new THREE.Vector3();
   private tgtLook = new THREE.Vector3();
 
-  /** Arc free-flight pose (world kpc). Unused on the map. */
+  /** Camera stays at the origin in region mode. Unused on the map. */
   private arcPos = new THREE.Vector3();
   private arcYaw = 0;
   private arcPitch = -0.6;
+  /** Magnification-sphere centre in catalog cartesian (kpc). */
   private arcCenter = new THREE.Vector3();
+  /** Last centre we minted / advanced to. */
+  private mintAt = new THREE.Vector3();
   private arcFwd = new THREE.Vector3();
   private arcRight = new THREE.Vector3();
   private arcUp = new THREE.Vector3();
@@ -427,17 +426,14 @@ export class GalaxyView {
     return UNIVERSE.GALAXY_REGION_VIEW_R / Math.max(1e-6, UNIVERSE.GALAXY_REGION_R);
   }
 
-  /** Catalog cartesian → magnified flight space. */
+  /** Catalog cartesian → magnified frame (camera at the origin). */
   private toView(x: number, y: number, z: number): { x: number; y: number; z: number } {
     if (this.mode !== 'region') return { x, y, z };
     const s = this.magScale();
-    const cx = this.arcCenter.x;
-    const cy = this.arcCenter.y;
-    const cz = this.arcCenter.z;
     return {
-      x: cx + (x - cx) * s,
-      y: cy + (y - cy) * s,
-      z: cz + (z - cz) * s,
+      x: (x - this.arcCenter.x) * s,
+      y: (y - this.arcCenter.y) * s,
+      z: (z - this.arcCenter.z) * s,
     };
   }
 
@@ -455,9 +451,9 @@ export class GalaxyView {
     const pos = new Float32Array(cloud.n * 3);
     for (let i = 0; i < cloud.n; i++) {
       const i3 = i * 3;
-      pos[i3] = cx + (src[i3] - cx) * s;
-      pos[i3 + 1] = cy + (src[i3 + 1] - cy) * s;
-      pos[i3 + 2] = cz + (src[i3 + 2] - cz) * s;
+      pos[i3] = (src[i3] - cx) * s;
+      pos[i3 + 1] = (src[i3 + 1] - cy) * s;
+      pos[i3 + 2] = (src[i3 + 2] - cz) * s;
     }
     this.viewPos = pos;
     return pos;
@@ -472,6 +468,7 @@ export class GalaxyView {
     this.disposeArcStars();
     this.mode = 'region';
     this.arcCenter.set(x, y, z);
+    this.mintAt.set(x, y, z);
     const cloud = buildRegionCloud(this.seed, x, y, z, UNIVERSE.GALAXY_REGION_R);
     this.cloud = cloud;
     this.sectorPop = cloud.n;
@@ -481,16 +478,11 @@ export class GalaxyView {
     this.buildArcStars();
     this.censusMemo = {};
 
+    this.arcPos.set(0, 0, 0);
     const glen = Math.hypot(x, z);
     const ox = glen > 1e-4 ? x / glen : 1;
     const oz = glen > 1e-4 ? z / glen : 0;
-    this.arcPos.set(x + ox * REGION_START_IN, y, z + oz * REGION_START_IN);
-    if (select) {
-      const s = this.viewCart(select);
-      this.aimAt(s.x + ox * REGION_LOOK, s.y, s.z + oz * REGION_LOOK);
-    } else {
-      this.aimAt(x + ox * REGION_LOOK, y, z + oz * REGION_LOOK);
-    }
+    this.aimAt(ox, 0, oz);
     this.idle = 0;
     this.camera.near = 0.001;
     this.camera.far = 400;
@@ -708,38 +700,24 @@ export class GalaxyView {
   }
 
   /**
-   * Jump next to a pinned star (selected, here, or home) inside the
-   * open region, close enough that the point grows. Smoke / tests.
-   * Does not remint — the cloud is frozen; we fly to the star in it.
+   * Slide the bubble so a pinned star sits just ahead of the camera
+   * (still at the centre). Smoke / tests.
    */
   approachNearest(): GalaxyObject | null {
     const best = this.selected ?? this.hereObj ?? this.home;
     if (!best) return null;
     if (this.mode !== 'region') this.focus(best);
-    let x = 0;
-    let y = 0;
-    let z = 0;
-    const cloud = this.cloud;
-    let found = false;
-    if (cloud) {
-      const pos = this.viewPos ?? cloud.pos;
-      for (let i = 0; i < cloud.n; i++) {
-        if (cloud.ids[i] !== best.id) continue;
-        x = pos[i * 3];
-        y = pos[i * 3 + 1];
-        z = pos[i * 3 + 2];
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
-      const c = this.viewCart(best);
-      x = c.x;
-      y = c.y;
-      z = c.z;
-    }
-    this.arcPos.set(x + 0.028, y + 0.018, z + 0.012);
-    this.aimAt(x, y, z);
+    const cat = galToCart(best.pos);
+    this.orientArc();
+    const off = 0.028 / this.magScale();
+    this.arcCenter.set(
+      cat.x - this.arcFwd.x * off,
+      cat.y - this.arcFwd.y * off,
+      cat.z - this.arcFwd.z * off,
+    );
+    this.moveBubble(0, 0, 0, true);
+    const v = this.viewCart(best);
+    this.aimAt(v.x, v.y, v.z);
     this.applyCam();
     this.updateSight(true);
     return best;
@@ -761,17 +739,14 @@ export class GalaxyView {
     for (let i = 0; i < cloud.n; i++) {
       if (cloud.ids[i] !== id) continue;
       const pos = this.viewPos ?? cloud.pos;
-      const dx = pos[i * 3] - this.arcPos.x;
-      const dy = pos[i * 3 + 1] - this.arcPos.y;
-      const dz = pos[i * 3 + 2] - this.arcPos.z;
-      const dist = Math.hypot(dx, dy, dz);
+      const dist = Math.hypot(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
       const dim = (cloud.bits[i] & BIT_REMNANT) !== 0 || cloud.lum[i] < 0.05;
       return glowRadiusKpc(cloud.lum[i], dim) / Math.max(1e-5, dist);
     }
     const o = objectAt(this.seed, id);
     if (!o) return 0;
     const c = this.viewCart(o);
-    const dist = Math.hypot(c.x - this.arcPos.x, c.y - this.arcPos.y, c.z - this.arcPos.z);
+    const dist = Math.hypot(c.x, c.y, c.z);
     return glowRadiusKpc(o.star.luminosity, o.star.luminosity < 0.05) / Math.max(1e-5, dist);
   }
 
@@ -825,21 +800,19 @@ export class GalaxyView {
     this.idle = 0;
   }
 
-  /** Translate along the current look. Smoke / WASD. */
+  /** Slide the bubble along the look. Smoke / WASD. */
   flyAlong(kpc: number): void {
     if (this.mode !== 'region') return;
     this.orientArc();
-    this.arcPos.addScaledVector(this.arcFwd, kpc);
-    this.slideSphere();
+    this.moveBubble(this.arcFwd.x * kpc, this.arcFwd.y * kpc, this.arcFwd.z * kpc);
     this.applyCam();
   }
 
-  /** Translate along camera right. Smoke: proves we are not on a radial lock. */
+  /** Slide the bubble along camera right. */
   flyStrafe(kpc: number): void {
     if (this.mode !== 'region') return;
     this.orientArc();
-    this.arcPos.addScaledVector(this.arcRight, kpc);
-    this.slideSphere();
+    this.moveBubble(this.arcRight.x * kpc, this.arcRight.y * kpc, this.arcRight.z * kpc);
     this.applyCam();
   }
 
@@ -890,9 +863,9 @@ export class GalaxyView {
   // ------------------------------------------------------------- camera
 
   private aimAt(x: number, y: number, z: number): void {
-    const dx = x - this.arcPos.x;
-    const dy = y - this.arcPos.y;
-    const dz = z - this.arcPos.z;
+    const dx = x;
+    const dy = y;
+    const dz = z;
     const len = Math.max(1e-8, Math.hypot(dx, dy, dz));
     this.arcPitch = Math.asin(THREE.MathUtils.clamp(dy / len, -1, 1));
     this.arcYaw = Math.atan2(dx, dz);
@@ -916,11 +889,11 @@ export class GalaxyView {
   private applyCam(): void {
     if (this.mode === 'region') {
       this.orientArc();
-      this.camera.position.copy(this.arcPos);
+      this.camera.position.set(0, 0, 0);
       this.camera.up.copy(this.arcUp);
-      this.arcLook.copy(this.arcPos).add(this.arcFwd);
+      this.arcLook.copy(this.arcFwd);
       this.camera.lookAt(this.arcLook);
-      this.radius = this.arcPos.distanceTo(this.arcCenter);
+      this.radius = 0;
       this.theta = this.arcYaw;
       this.phi = Math.PI / 2 - this.arcPitch;
       this.look.copy(this.arcLook);
@@ -951,58 +924,70 @@ export class GalaxyView {
    */
   private arcPace(): number {
     const cloud = this.cloud;
-    const cx = this.arcPos.x;
-    const cy = this.arcPos.y;
-    const cz = this.arcPos.z;
-    let minD = this.arcPos.distanceTo(this.arcCenter);
+    let minD = 8;
     if (cloud) {
       const step = Math.max(1, Math.floor(cloud.n / 6000));
       const pos = this.viewPos ?? cloud.pos;
       for (let i = 0; i < cloud.n; i += step) {
-        const d = Math.hypot(pos[i * 3] - cx, pos[i * 3 + 1] - cy, pos[i * 3 + 2] - cz);
-        if (d < minD) minD = d;
+        const d = Math.hypot(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+        if (d > 1e-4 && d < minD) minD = d;
       }
     }
     if (this.selected) {
       const c = this.viewCart(this.selected);
-      minD = Math.min(minD, Math.hypot(c.x - cx, c.y - cy, c.z - cz));
+      const d = Math.hypot(c.x, c.y, c.z);
+      if (d > 1e-4) minD = Math.min(minD, d);
     }
     return THREE.MathUtils.clamp(0.42 * minD, 0.004, 0.025);
   }
 
   /**
-   * The sphere follows the camera in catalog space. Fly is in the
-   * magnified frame; the centre moves by dView / scale. Re-expand
-   * plus a camera correction of (1-s)·dC keeps the field from
-   * swimming — only the rim membership changes.
+   * Gestures are in the magnified frame. The camera stays at the
+   * origin; the sphere centre moves by dView / scale. View positions
+   * always update so the field streams. Membership is a border
+   * monitor once the centre has moved MAG_SLIDE.
    */
-  private slideSphere(force = false): void {
+  private moveBubble(vx: number, vy: number, vz: number, force = false): void {
     if (this.mode !== 'region' || !this.cloud) return;
     const s = this.magScale();
-    const x0 = this.arcCenter.x;
-    const y0 = this.arcCenter.y;
-    const z0 = this.arcCenter.z;
-    const x1 = x0 + (this.arcPos.x - x0) / s;
-    const y1 = y0 + (this.arcPos.y - y0) / s;
-    const z1 = z0 + (this.arcPos.z - z0) / s;
-    const d = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
-    if (!force && d < MAG_SLIDE) return;
-    const cloud =
-      d > MAG_REBUILD
-        ? buildRegionCloud(this.seed, x1, y1, z1)
-        : advanceRegionCloud(this.seed, this.cloud, x0, y0, z0, x1, y1, z1);
-    this.cloud = cloud;
-    const k = 1 - s;
-    this.arcPos.x += k * (x1 - x0);
-    this.arcPos.y += k * (y1 - y0);
-    this.arcPos.z += k * (z1 - z0);
-    this.arcCenter.set(x1, y1, z1);
-    this.sectorPop = cloud.n;
-    this.regionLabel = regionName(x1, y1, z1);
-    this.censusMemo = {};
-    this.disposeArcStars();
-    this.buildArcStars();
-    this.applyStarVis();
+    this.arcCenter.x += vx / s;
+    this.arcCenter.y += vy / s;
+    this.arcCenter.z += vz / s;
+    const d = this.arcCenter.distanceTo(this.mintAt);
+    if (force || d >= MAG_SLIDE) {
+      const x0 = this.mintAt.x;
+      const y0 = this.mintAt.y;
+      const z0 = this.mintAt.z;
+      const x1 = this.arcCenter.x;
+      const y1 = this.arcCenter.y;
+      const z1 = this.arcCenter.z;
+      this.cloud =
+        d > MAG_REBUILD
+          ? buildRegionCloud(this.seed, x1, y1, z1)
+          : advanceRegionCloud(this.seed, this.cloud, x0, y0, z0, x1, y1, z1);
+      this.mintAt.copy(this.arcCenter);
+      this.sectorPop = this.cloud.n;
+      this.regionLabel = regionName(x1, y1, z1);
+      this.censusMemo = {};
+      this.disposeArcStars();
+      this.buildArcStars();
+      this.applyStarVis();
+    } else {
+      this.refreshViewPos();
+    }
+    if (this.selected) {
+      const c = this.viewCart(this.selected);
+      this.pickRing.position.set(c.x, c.y, c.z);
+    }
+  }
+
+  private refreshViewPos(): void {
+    if (!this.cloud || !this.starGeo) return;
+    const pos = this.fillViewPos(this.cloud);
+    const attr = this.starGeo.getAttribute('position') as THREE.BufferAttribute;
+    if (attr.count !== this.cloud.n) return;
+    (attr.array as Float32Array).set(pos);
+    attr.needsUpdate = true;
   }
 
   /**
@@ -1015,8 +1000,8 @@ export class GalaxyView {
     if (this.mode === 'region') {
       this.orientArc();
       const pace = this.arcPace();
-      this.arcPos.addScaledVector(this.arcFwd, -Math.log(Math.max(1e-4, factor)) * pace * 2.2);
-      this.slideSphere();
+      const step = -Math.log(Math.max(1e-4, factor)) * pace * 2.2;
+      this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
       this.applyCam();
       this.lastZoomAt = now;
       return;
@@ -1213,9 +1198,7 @@ export class GalaxyView {
     const dist = Math.max(0.02, this.arcPace() * 8);
     const worldH = 2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5);
     const wpp = worldH / Math.max(1, this.canvas.clientHeight);
-    this.arcPos.addScaledVector(this.arcRight, -dx * wpp);
-    this.arcPos.addScaledVector(this.arcUp, dy * wpp);
-    this.slideSphere();
+    this.moveBubble(this.arcRight.x * -dx * wpp + this.arcUp.x * dy * wpp, this.arcRight.y * -dx * wpp + this.arcUp.y * dy * wpp, this.arcRight.z * -dx * wpp + this.arcUp.z * dy * wpp);
     this.applyCam();
   }
 
@@ -1275,10 +1258,11 @@ export class GalaxyView {
     this.orientArc();
     const boost = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 3 : 1;
     const pace = this.arcPace() * boost;
-    this.arcPos.addScaledVector(this.arcRight, mx * pace * dt);
-    this.arcPos.addScaledVector(this.arcUp, my * pace * dt);
-    this.arcPos.addScaledVector(this.arcFwd, mz * pace * dt);
-    this.slideSphere();
+    this.moveBubble(
+      (this.arcRight.x * mx + this.arcUp.x * my + this.arcFwd.x * mz) * pace * dt,
+      (this.arcRight.y * mx + this.arcUp.y * my + this.arcFwd.y * mz) * pace * dt,
+      (this.arcRight.z * mx + this.arcUp.z * my + this.arcFwd.z * mz) * pace * dt,
+    );
     this.idle = 0;
   }
 
@@ -1315,9 +1299,9 @@ export class GalaxyView {
     const lx = this.arcFwd.x;
     const ly = this.arcFwd.y;
     const lz = this.arcFwd.z;
-    const cx = this.arcPos.x;
-    const cy = this.arcPos.y;
-    const cz = this.arcPos.z;
+    const cx = 0;
+    const cy = 0;
+    const cz = 0;
     const cosCone = Math.cos(0.028);
     const pos = this.viewPos ?? cloud.pos;
     const lum = cloud.lum;
