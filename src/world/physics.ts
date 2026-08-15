@@ -464,14 +464,14 @@ export const UNIVERSE = {
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX / DUST_PX as pixel floors so far sources stay
    * findable; sprites under DUST_MINPX skip the march (a disc).
-   * STAR_PX is one framebuffer pixel — a point source has no
-   * diameter. We do not circularize the sprite (that was the disc).
-   * Intensity is inverse-square flux through a photograph stretch
-   * — luminosity and distance, not a shared white. SUPER_GAIN is
-   * exposure. Optical approximations, like AIR_LINE. Not pickable.
+   * STAR_PX is the glare sprite that holds a 1/r² bloom around a
+   * one-pixel core. The core is the star; the glow is flux, not a
+   * filled disc. Intensity is L / d² through a photograph stretch.
+   * SUPER_GAIN is exposure. Optical approximations, like AIR_LINE.
+   * Not pickable.
    */
   GALAXY_SILHOUETTE_M: 5,
-  SILHOUETTE_STAR_PX: 1,
+  SILHOUETTE_STAR_PX: 26,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_DUST_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,

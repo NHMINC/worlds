@@ -1,10 +1,10 @@
 /**
  * Arc stars are GL_POINTS that pretend to be the photosphere.
  * At explorer distance a star is a point source — one pixel of
- * light, no diameter, no disc. Brightness is inverse-square flux
- * (L / d²) through a photograph stretch that keeps rank: a 200 L☉
- * star outshines a 5 L☉ star at the same distance. A pixel cap is
- * hardware, not a census. objectAt is still O(1) on tap.
+ * light — with a serious glare. The core is a pin; the glow is
+ * 1/r² from flux (same family as the in-system glare). There is
+ * no filled disc. Brightness is L / d² through a photograph
+ * stretch that keeps rank. objectAt is still O(1) on tap.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
@@ -27,6 +27,8 @@ export const POINT_MAX_PX = 56;
  */
 export const SHINE_FLUX_K = 2800;
 export const SHINE_FLUX_GAIN = 0.48;
+/** 1/r² glare strength. Dim pins stay pins; bright ones throw a glow. */
+export const SHINE_TAIL = 1.15;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). */
