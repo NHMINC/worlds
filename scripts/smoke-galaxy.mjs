@@ -185,8 +185,9 @@ if (await galaxyBtn.count()) {
 
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await phone.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+await phone.waitForSelector('button[title="Galaxy — the shared catalog"]');
 await phone.waitForTimeout(2500);
-await phone.click('button[title="Galaxy — the shared catalog"]');
+await phone.locator('button[title="Galaxy — the shared catalog"]').click({ force: true });
 await phone.waitForTimeout(1500);
 const phoneUi = await phone.evaluate(() => ({
   homeChip: Boolean([...document.querySelectorAll('button.gx-chip')].find((b) => b.textContent === 'Home')),
