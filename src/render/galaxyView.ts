@@ -740,7 +740,6 @@ export class GalaxyView {
     }
     this.arcPos.set(x + 0.028, y + 0.018, z + 0.012);
     this.aimAt(x, y, z);
-    this.slideSphere(true);
     this.applyCam();
     this.updateSight(true);
     return best;
