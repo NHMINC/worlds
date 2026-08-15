@@ -8,6 +8,9 @@ mkdirSync('previews', { recursive: true });
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+// SwiftShader rasterizes the cloud march on the CPU; a single busy
+// frame can take tens of seconds. Real GPUs do not.
+page.setDefaultTimeout(120000);
 const errors = [];
 page.on('pageerror', (e) => {
   errors.push(e.message);
@@ -162,7 +165,7 @@ if (await galaxyBtn.count()) {
     return o ? { id: o.id, phase: o.star.phase } : null;
   });
   console.log('APPROACH', JSON.stringify(approached));
-  await page.waitForSelector('.gx-plate', { timeout: 8000 });
+  await page.waitForSelector('.gx-plate', { timeout: 60000 });
   const close = await page.evaluate(() => {
     const v = window.__galaxyView;
     const id = v.selectedObject?.()?.id ?? v.focusedObject?.()?.id;

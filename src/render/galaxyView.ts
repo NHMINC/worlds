@@ -273,12 +273,15 @@ const STAR_FRAG = /* glsl */ `
       float t1 = b + h;
       if (t1 <= t0) discard;
       float radiusCat = vRadiusView / uScale;
+      // Steps scale with on-screen size: small sprites cannot show
+      // structure, so they do not pay for it.
+      float steps = clamp(floor(vPx / 24.0) + 2.0, 2.0, uDustSteps);
       float tau = 0.0;
       vec3 meanRel = vec3(0.0);
       float wSum = 0.0;
       for (int i = 0; i < 16; i++) {
-        if (float(i) >= uDustSteps - 0.5) break;
-        float t = mix(t0, t1, (float(i) + 0.5) / uDustSteps);
+        if (float(i) >= steps - 0.5) break;
+        float t = mix(t0, t1, (float(i) + 0.5) / steps);
         vec3 relCat = (uCamRotInv * (rd * t - vCenterView)) / uScale;
         float rho = dustRho(vCenterCat + relCat, relCat, radiusCat, vVis, uDustFreq);
         tau += rho;
@@ -286,7 +289,7 @@ const STAR_FRAG = /* glsl */ `
         wSum += rho;
       }
       float segCat = (t1 - t0) / uScale;
-      tau *= uDustTauK * segCat / uDustSteps;
+      tau *= uDustTauK * segCat / steps;
       if (tau < 0.012) discard;
       float trans = exp(-tau);
       // Extinction: the thick core silhouettes; thin edges keep grain colour.
@@ -328,16 +331,17 @@ const STAR_FRAG = /* glsl */ `
     float t1 = b + h;
     if (t1 <= t0) discard;
     float radiusCat = vRadiusView / uScale;
+    float steps = clamp(floor(vPx / 24.0) + 2.0, 2.0, uDustSteps);
     float em = 0.0;
     for (int i = 0; i < 16; i++) {
-      if (float(i) >= uDustSteps - 0.5) break;
-      float t = mix(t0, t1, (float(i) + 0.5) / uDustSteps);
+      if (float(i) >= steps - 0.5) break;
+      float t = mix(t0, t1, (float(i) + 0.5) / steps);
       vec3 relCat = (uCamRotInv * (rd * t - vCenterView)) / uScale;
       float rho = nebRho(vKind, vCenterCat + relCat, relCat, radiusCat, vVis, uDustFreq, vSeed);
       em += rho * rho;
     }
     float segCat = (t1 - t0) / uScale;
-    em *= uNebGain * vVis * segCat / (uDustSteps * max(radiusCat, 1e-4));
+    em *= uNebGain * vVis * segCat / (steps * max(radiusCat, 1e-4));
     if (em < 0.012) discard;
     // Line saturation: the hottest rims bleach toward white.
     vec3 col = mix(vColor, vec3(1.0), min(0.45, 0.22 * em));

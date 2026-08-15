@@ -209,6 +209,13 @@ float nebShell(float r, float mid, float w) {
   return exp(-x * x);
 }
 
+/** Cheaper 2-octave field (no domain warp) for shell texture. */
+float nebField(vec3 q, float freq) {
+  float a = dustVnoise(q * freq);
+  a += 0.5 * dustVnoise(q * freq * 2.17 + 39.7);
+  return a / 1.5;
+}
+
 /**
  * Emission density by kind. relCat is the offset from the host
  * (catalog kpc), qCat the absolute point (the shared ISM anchor).
@@ -219,14 +226,14 @@ float nebRho(float kind, vec3 qCat, vec3 relCat, float radiusCat, float meanD, f
   if (kind > 2.5) {
     // SNR: a thin blast shell shredded into filaments (shock corrugation).
     float shell = nebShell(r, 0.82, 0.07 + 0.04 * fract(seed * 5.17));
-    float f = dustField(qCat * 1.9 + 31.0, freq * 2.4);
+    float f = nebField(qCat * 1.9 + 31.0, freq * 2.4);
     float fil = pow(max(0.0, f + 0.3), 1.6);
     return shell * fil * 1.6;
   }
   if (kind > 1.5) {
     // PN: the ejected envelope — clumpy shell, hash picks bipolar lobes.
     float shell = nebShell(r, 0.7, 0.1 + 0.08 * fract(seed * 7.31));
-    float knots = 0.6 + 0.8 * dustField(qCat * 3.1 + 57.0, freq * 3.2);
+    float knots = 0.6 + 0.8 * nebField(qCat * 3.1 + 57.0, freq * 3.2);
     float rho = shell * max(0.12, knots);
     if (seed > 0.5) {
       vec3 ax = normalize(vec3(fract(seed * 13.7) - 0.5, fract(seed * 29.3) - 0.5, fract(seed * 53.1) - 0.5) + 1e-3);
