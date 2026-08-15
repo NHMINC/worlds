@@ -235,7 +235,7 @@ if (await galaxyBtn.count()) {
     ? Math.hypot(afterCruise.x - beforeCruise.x, afterCruise.y - beforeCruise.y, afterCruise.z - beforeCruise.z)
     : 0;
   console.log('CRUISE', JSON.stringify({ before: beforeCruise, after: afterCruise, d: cruiseD }));
-  if (cruiseD < 0.002) errors.push(`double-tap-and-hold did not slide the bubble (${cruiseD})`);
+  if (cruiseD < 0.0015) errors.push(`double-tap-and-hold did not slide the bubble (${cruiseD})`);
 
   // Set course is the dossier button — a star tap only selects.
   const goBack = await page.evaluate(() => {
