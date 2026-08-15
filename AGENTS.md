@@ -210,7 +210,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     stretch is a flight ruler, not a photometric one: inverse-
     square uses `SILHOUETTE_D` + `FADE` × extra catalog kpc, so
     crossing the disk does not dump them down the magnified
-    1/d² hole. The galactic plane reads as a band in the
+    1/d² hole. `SILHOUETTE_GAIN` then lifts the most remote
+    (×10 at `R_MAX`, 1× at the bubble, smoothstep in between).
+    The galactic plane reads as a band in the
     midplane and as a face above it. The sphere itself is
     untouched; the map saucer stays hidden. The breadcrumb
     returns to the map.

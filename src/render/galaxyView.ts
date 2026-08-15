@@ -141,8 +141,10 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uNearBoost;
   uniform float uFluxEps;
   uniform float uRegionR;
+  uniform float uRMax;
   uniform float uPhotD;
   uniform float uFade;
+  uniform float uGain;
   varying vec3 vColor;
   varying float vVis;
   void main() {
@@ -168,7 +170,9 @@ const SILHOUETTE_VERT = /* glsl */ `
     gl_PointSize = clamp(max(uPixel, px), 1.0, uMaxPx);
     float flux = L / (d * d + uFluxEps);
     float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
-    vColor = aColor;
+    // Most remote = GAIN; just outside the bubble = 1. Work backwards.
+    float far = mix(1.0, uGain, smoothstep(uRegionR, uRMax, dCat));
+    vColor = aColor * far;
     vVis = min(aVis * punch, 8.0);
     gl_Position = projectionMatrix * mv;
   }
@@ -689,8 +693,10 @@ export class GalaxyView {
         uNearBoost: { value: POINT_NEAR_BOOST },
         uFluxEps: { value: POINT_FLUX_EPS },
         uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
+        uRMax: { value: UNIVERSE.GALAXY_R_MAX },
         uPhotD: { value: UNIVERSE.GALAXY_SILHOUETTE_D },
         uFade: { value: UNIVERSE.GALAXY_SILHOUETTE_FADE },
+        uGain: { value: UNIVERSE.GALAXY_SILHOUETTE_GAIN },
       },
       transparent: true,
       depthWrite: false,

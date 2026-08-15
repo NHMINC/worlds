@@ -428,10 +428,15 @@ export const UNIVERSE = {
    * instead of the magnified view metres. FADE = 0 keeps a star as
    * bright at the far rim as it is just outside the bubble; 20 would
    * be the old “apply the magnifier to light” law that swallowed
-   * them. Optical approximation, like AIR_LINE. Not pickable.
+   * them. GAIN is extra light at the far rim of the disk
+   * (smoothstep REGION_R → R_MAX): 1 at the bubble, GAIN at
+   * R_MAX, so the most remote are brighter and nearer ones
+   * work backwards. Optical approximation, like AIR_LINE.
+   * Not pickable.
    */
   GALAXY_SILHOUETTE_D: 6,
   GALAXY_SILHOUETTE_FADE: 0.12,
+  GALAXY_SILHOUETTE_GAIN: 10,
   GALAXY_SILHOUETTE_M: 5,
 
   /**
