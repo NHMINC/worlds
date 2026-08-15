@@ -198,61 +198,63 @@ export function sectorPopulation(seed: string, id: SectorId): number {
 
 /**
  * The brightest ~n REAL stars of an arc — a magnitude-limited survey.
- * Deterministic: high slots are the massive end of each cell's
- * stratified IMF, so we harvest each cell's top slots, rank everything
- * by present-day luminosity, and keep n. Every entry is a real
- * catalog id you can set course to.
+ * Unique catalog ids, ranked by present-day light. The harvest is the
+ * LIVING field (K/G/F that still burn at disk ages) plus a short
+ * giant/hot tail and one massive-tip slot per cell (O/B while they
+ * live, nebulae when they die). A quadratic walk of 0.8–2.4 M☉ is a
+ * graveyard in an old population and must not fill the sky with WD
+ * speckle. Every entry is a real catalog id you can set course to.
  */
 export function sectorSample(seed: string, id: SectorId, n = UNIVERSE.GALAXY_SECTOR_STARS): GalaxyObject[] {
   const cells = sectorCells(id);
+  const seen = new Set<number>();
   const out: GalaxyObject[] = [];
-  // Enough per-cell depth to overfill n, so the global cut is by
-  // luminosity rather than by which cell was visited first. Two bands
-  // per cell: a small massive-tip take (remnants, O/B while they live,
-  // supergiants) and the TURNOFF band (~0.9–2.4 M☉) walked from its
-  // massive end — where the luminous LIVING stars are: giants,
-  // subgiants, hot dwarfs. In an old population everything far above
-  // the turnoff is dead, so a wide band surveys a graveyard.
-  const perCell = Math.max(3, Math.ceil((n * 4) / Math.max(1, cells.length)));
-  const tipTake = 1;
+  const add = (cell: number, slot: number, filled: number): void => {
+    if (slot < 0 || slot >= filled) return;
+    const sid = packId(cell, slot);
+    if (seen.has(sid)) return;
+    const o = objectAt(seed, sid);
+    if (!o) return;
+    seen.add(sid);
+    out.push(o);
+  };
+  const spread = (cell: number, filled: number, mLo: number, mHi: number, want: number): void => {
+    const [bLo, bHi] = slotRangeForMass(filled, mLo, mHi);
+    const bandN = Math.max(0, bHi - bLo);
+    const take = Math.min(want, bandN);
+    for (let j = 0; j < take; j++) {
+      const slot = bLo + Math.floor(((j + 0.5) / take) * bandN);
+      add(cell, Math.min(slot, bHi - 1), filled);
+    }
+  };
+  // Overfill so the luminosity cut is global, not first-come.
+  const livingTake = Math.max(4, Math.ceil((n * 3) / Math.max(1, cells.length)));
   for (const cell of cells) {
     const filled = slotsInCell(seed, cell);
     if (filled <= 0) continue;
-    for (let k = 0; k < Math.min(tipTake, filled); k++) {
-      const o = objectAt(seed, packId(cell, filled - 1 - k));
-      if (o) out.push(o);
-    }
-    // Draws bias QUADRATICALLY toward the band's low-mass end: above
-    // the turnoff the band is dead (white dwarfs), at the turnoff it
-    // is giants and subgiants, below it the living F/G/K field. The
-    // massive end still gets a look — that is where young cells keep
-    // their A/B stars — the luminosity cut sorts the rest.
-    const [bLo, bHi] = slotRangeForMass(filled, 0.82, 2.4);
-    const bandN = Math.max(0, bHi - bLo);
-    const bandTake = Math.min(perCell - tipTake, bandN);
-    for (let j = 0; j < bandTake; j++) {
-      const u = (j + 0.5) / bandTake;
-      const s = bLo + Math.floor(u * u * bandN);
-      const o = objectAt(seed, packId(cell, Math.min(s, bHi - 1)));
-      if (o) out.push(o);
-    }
+    add(cell, filled - 1, filled);
+    spread(cell, filled, 0.55, 1.05, livingTake);
+    spread(cell, filled, 1.05, 3.0, 2);
   }
   out.sort((a, b) => starGlow(b) - starGlow(a));
   return out.slice(0, n);
 }
 
 /**
- * Display ranking: a magnitude-limited survey ranks by LIGHT. Nebulae
- * genuinely outshine stars. Pulsars and black holes keep a small
- * findability nudge (both are rare and have their own filter); plain
- * neutron stars sink or swim on their real luminosity, or the sky
- * reads as a graveyard.
+ * Display ranking: a magnitude-limited SKY ranks photospheres and
+ * nebulae. Toy WD luminosities are stretched (the cooling clock is
+ * compressed like TIME_SCALE); left raw they outshine K dwarfs and
+ * the field reads as speckle. Bare remnants stay in the harvest and
+ * the Remnants filter, but they do not fill the cut. Pulsars keep a
+ * small findability nudge.
  */
 function starGlow(o: GalaxyObject): number {
   const st = o.star;
   if (st.nebula !== 'none') return 15 + st.luminosity;
-  if (st.phase === 'black_hole') return 1.2;
-  if (st.phase === 'pulsar') return Math.max(1.2, st.luminosity);
+  if (st.phase === 'white_dwarf' || st.phase === 'neutron_star' || st.phase === 'black_hole') {
+    return 0.02 * Math.max(st.luminosity, 1e-4);
+  }
+  if (st.phase === 'pulsar') return Math.max(0.8, st.luminosity);
   return st.luminosity;
 }
 

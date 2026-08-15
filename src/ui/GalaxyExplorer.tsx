@@ -231,9 +231,7 @@ export function GalaxyExplorer(props: Props) {
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
           {inArc
-            ? frame.discs > 0
-              ? ' · tap a star to go · zoom out for the map'
-              : ' · tap a star'
+            ? ' · tap a star · Set course to go · zoom out for the map'
             : ' · tap an arc to enter · markers are worlds'}
         </div>
       </footer>

@@ -229,17 +229,19 @@ export function createStarDiscs(): StarDiscs {
       const c = galToCart(o.pos);
       const p = new THREE.Vector3(c.x, c.y, c.z);
       worlds.push(p);
-      // One-shot world-space size from the camera passed in (the arc's
-      // framing camera). Photographic bloom: apparent radius goes with
-      // received flux, ang ∝ (L/d²)^¼ — a supergiant blooms, a G dwarf
-      // stays a bead, a white dwarf a pin. Angular clamp so nothing
-      // walls the frame at that distance; later orbits do not resize.
+      // One-shot world-space size from the arc's framing camera. A few
+      // milliradians: rounder than a GL_POINT, smaller than neighbour
+      // spacing, so the brightest N are beads not planets. Later orbits
+      // do not resize.
       const dist = p.distanceTo(cam);
       const L = Math.max(o.star.luminosity, 1e-4);
-      let ang = 0.011 * Math.pow(L / Math.max(dist * dist, 1e-4), 0.25);
-      if (o.star.nebula !== 'none') ang *= 2.6;
-      if (o.star.phase === 'black_hole') ang = 0.012;
-      ang = THREE.MathUtils.clamp(ang, 0.0035, 0.042);
+      // Beads, not planets: inside a ~1 kpc arc a 0.04 rad disc covers
+      // neighbours and the sky reads as 28 suns plus speckle. A few
+      // milliradians is rounder than a GL_POINT and smaller than spacing.
+      let ang = 0.0032 * Math.pow(L, 0.12);
+      if (o.star.nebula !== 'none') ang *= 1.8;
+      if (o.star.phase === 'black_hole') ang = 0.003;
+      ang = THREE.MathUtils.clamp(ang, 0.0024, 0.007);
       const rad = ang * dist;
       radii.push(rad);
       slot.mesh.position.copy(p);

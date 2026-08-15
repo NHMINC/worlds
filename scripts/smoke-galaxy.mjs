@@ -93,8 +93,48 @@ if (await galaxyBtn.count()) {
   console.log('ARC', JSON.stringify(arc));
   await page.screenshot({ path: 'previews/galaxy-2-arc.png' });
   if (arc.mode !== 'arc') errors.push('tapping home marker did not enter its arc');
-  if (!arc.stars || arc.stars < 100) errors.push(`arc loaded only ${arc.stars} stars`);
+  if (!arc.stars || arc.stars < 2000) errors.push(`arc loaded only ${arc.stars} stars`);
   if (!arc.dossier) errors.push('home marker tap did not open a dossier');
+
+  const survey = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    const rows = v.surveyStars?.() ?? [];
+    const discs = new Set((v.resolvedStars?.() ?? []).map((o) => o.id));
+    const ids = rows.map((o) => o.id);
+    const uniq = new Set(ids).size;
+    const discPts = [];
+    for (const o of v.resolvedStars?.() ?? []) {
+      const p = v.projectClient(o);
+      if (p) discPts.push(p);
+    }
+    let point = null;
+    for (const o of rows) {
+      if (discs.has(o.id)) continue;
+      const p = v.projectClient(o);
+      if (!p || p.x < 80 || p.x > 1200 || p.y < 80 || p.y > 720) continue;
+      if (discPts.some((d) => Math.hypot(d.x - p.x, d.y - p.y) < 36)) continue;
+      point = { id: o.id, x: p.x, y: p.y };
+      break;
+    }
+    return { n: rows.length, uniq, point };
+  });
+  console.log('SURVEY', JSON.stringify(survey));
+  if (survey.uniq !== survey.n) errors.push(`survey has duplicate ids (${survey.uniq} unique of ${survey.n})`);
+
+  // A point star (not one of the 28 discs) must open the dossier, not set course.
+  if (survey.point) {
+    await page.mouse.click(survey.point.x, survey.point.y);
+    await page.waitForTimeout(600);
+    const pointTap = await page.evaluate(() => ({
+      explorer: Boolean(document.querySelector('.galaxy-explorer')),
+      id: window.__galaxyView?.selectedObject?.()?.id ?? null,
+    }));
+    console.log('POINT TAP', JSON.stringify(pointTap));
+    if (!pointTap.explorer) errors.push('tapping a survey star set course instead of selecting');
+    if (pointTap.id !== survey.point.id) errors.push('tapping a survey star did not select it');
+  } else {
+    errors.push('no on-screen survey star outside the disc roster');
+  }
 
   // Disc roster is frozen at entry: orbiting must not join or drop members.
   const roster0 = await page.evaluate(() =>
@@ -146,7 +186,7 @@ if (await galaxyBtn.count()) {
   await page.screenshot({ path: 'previews/galaxy-4-arc2.png' });
   if (arc2.mode !== 'arc') errors.push('tapping a tile did not enter an arc');
 
-  // Set course from a disc: tap it and the explorer should close.
+  // Set course is the dossier button — a star tap only selects.
   const goBack = await page.evaluate(() => {
     const v = window.__galaxyView;
     v.setPreset('home');
@@ -156,21 +196,17 @@ if (await galaxyBtn.count()) {
   await page.waitForTimeout(1500);
   await page.evaluate(() => window.__galaxyView?.approachNearest?.());
   await page.waitForTimeout(800);
-  const tapPos = await page.evaluate(() => {
-    const v = window.__galaxyView;
-    const discs = v.resolvedStars?.() ?? [];
-    const target = discs.find((o) => o.id === v.selectedObject?.()?.id) ?? discs[0];
-    return target ? v.projectClient(target) : null;
-  });
-  const tap = tapPos && tapPos.x > 40 && tapPos.x < 1240 && tapPos.y > 40 && tapPos.y < 760
-    ? tapPos
-    : { x: 640, y: 400 };
-  await page.mouse.click(tap.x, tap.y);
+  const goBtn = page.locator('button.gd-go');
+  if (await goBtn.count()) {
+    await goBtn.click();
+  } else {
+    errors.push('Set course button missing after selecting a star');
+  }
   try {
     await page.waitForFunction(() => !document.querySelector('.galaxy-explorer'), { timeout: 20000 });
   } catch {
-    console.error('FAIL: tapping a rendered star did not set course');
-    errors.push('rendered star tap did not set course');
+    console.error('FAIL: Set course did not leave the explorer');
+    errors.push('Set course did not leave the explorer');
   }
   const afterGo = await page.evaluate(() => ({
     explorer: Boolean(document.querySelector('.galaxy-explorer')),
