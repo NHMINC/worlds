@@ -6,17 +6,13 @@
  * visited systems, and ~100 deterministic systems of interest. No
  * stars are drawn on the map. The map camera orbits the origin.
  *
- * REGION mode is a tap on that shape: a catalog neighbourhood around
- * the hit (midplane) or a pinned star, flown in a larger viewing
- * ball (VIEW_R). Same stars; offsets from the tap are scaled. Distant
- * stars are 1px pinpricks; closer ones grow and brighten from
- * luminosity and distance. The centre reticle on a grown point can
- * set course. Tap still mints the catalog row. Fly far out (or the
- * breadcrumb) to return to the map.
- *
- * Nothing in either mode queries or rebuilds the catalog per camera
- * move — the blink / cluster / stutter / re-roll failure class of the
- * old free-flight explorer is structurally impossible here.
+ * REGION mode is a magnification sphere in catalog space. A tap
+ * opens the ball around that point. Flying moves the sphere: stars
+ * that cross the border in are minted, stars that leave drop out
+ * (faint ones vanish; only the bright IMF tail stays at the rim).
+ * Positions are catalog-true. Distant stars are 1px pinpricks;
+ * closer ones grow. The centre reticle on a grown point can set
+ * course. The breadcrumb returns to the map.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -37,6 +33,7 @@ import { systemAt } from '../world/systemgen';
 import {
   systemsOfInterest,
   buildRegionCloud,
+  advanceRegionCloud,
   regionName,
   sketchMatches,
   MK_LETTER,
@@ -48,11 +45,13 @@ import {
 const MAP_R_MIN = 9;
 const MAP_R_MAX = 46;
 const MAP_R_HOME = 34;
-/** Start near the tap, looking out through the expanded ball. */
+/** Start near the tap, looking out through the ball. */
 const REGION_START_IN = 0.09;
-const REGION_LOOK = 16;
-/** Leave once you have flown out of the viewing ball. */
-const REGION_R_EXIT = 1.18;
+const REGION_LOOK = 2.4;
+/** Slide the sphere after the camera has moved this far (kpc). */
+const MAG_SLIDE = 0.01;
+/** A jump bigger than this remints instead of walking the rim. */
+const MAG_REBUILD = 0.45;
 /** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
@@ -274,7 +273,6 @@ export class GalaxyView {
   private panBtn = 0;
   private pinchMidX = 0;
   private pinchMidY = 0;
-  private enteredAt = 0;
 
   private dragging = false;
   private lastX = 0;
@@ -422,71 +420,39 @@ export class GalaxyView {
 
   // ------------------------------------------------------------- region mode
 
-  /** VIEW_R / REGION_R — same stars, larger flight ball. */
-  private regionViewScale(): number {
-    return UNIVERSE.GALAXY_REGION_VIEW_R / Math.max(1e-6, UNIVERSE.GALAXY_REGION_R);
-  }
-
-  /** Catalog cartesian → region flight space (identity on the map). */
+  /** Catalog cartesian — the sphere no longer stretches the field. */
   private viewCart(obj: GalaxyObject): { x: number; y: number; z: number } {
-    const c = galToCart(obj.pos);
-    if (this.mode !== 'region') return c;
-    const s = this.regionViewScale();
-    const cx = this.arcCenter.x;
-    const cy = this.arcCenter.y;
-    const cz = this.arcCenter.z;
-    return {
-      x: cx + (c.x - cx) * s,
-      y: cy + (c.y - cy) * s,
-      z: cz + (c.z - cz) * s,
-    };
-  }
-
-  /** Spread the minted neighbourhood through the viewing ball. */
-  private expandCloudToView(cloud: StarCloud): void {
-    const s = this.regionViewScale();
-    if (Math.abs(s - 1) < 1e-9) return;
-    const cx = this.arcCenter.x;
-    const cy = this.arcCenter.y;
-    const cz = this.arcCenter.z;
-    const pos = cloud.pos;
-    for (let i = 0; i < cloud.n; i++) {
-      const i3 = i * 3;
-      pos[i3] = cx + (pos[i3] - cx) * s;
-      pos[i3 + 1] = cy + (pos[i3 + 1] - cy) * s;
-      pos[i3 + 2] = cz + (pos[i3 + 2] - cz) * s;
-    }
+    return galToCart(obj.pos);
   }
 
   /**
-   * Open a fixed-radius ball around a world point. `select` is pinned
-   * when the dive is a star (home, marker); a saucer tap leaves it null.
+   * Open the magnification sphere around a world point. `select` is
+   * pinned when the dive is a star (home, marker); a saucer tap
+   * leaves it null. Flying slides this ball through the catalog.
    */
   enterRegion(x: number, y: number, z: number, select: GalaxyObject | null = null): void {
     this.disposeArcStars();
     this.mode = 'region';
-    const cloud = buildRegionCloud(this.seed, x, y, z, UNIVERSE.GALAXY_REGION_R);
-    this.arcCenter.set(x, y, z);
-    this.expandCloudToView(cloud);
+    const glen = Math.hypot(x, z);
+    const ox = glen > 1e-4 ? x / glen : 1;
+    const oz = glen > 1e-4 ? z / glen : 0;
+    this.arcPos.set(x + ox * REGION_START_IN, y, z + oz * REGION_START_IN);
+    this.arcCenter.copy(this.arcPos);
+    const cloud = buildRegionCloud(this.seed, this.arcPos.x, this.arcPos.y, this.arcPos.z, UNIVERSE.GALAXY_REGION_R);
     this.cloud = cloud;
     this.sectorPop = cloud.n;
-    this.regionLabel = regionName(x, y, z);
+    this.regionLabel = regionName(this.arcPos.x, this.arcPos.y, this.arcPos.z);
     this.lastEnterMs = cloud.ms;
     this.objects = [];
     this.buildArcStars();
     this.censusMemo = {};
 
-    const glen = Math.hypot(x, z);
-    const ox = glen > 1e-4 ? x / glen : 1;
-    const oz = glen > 1e-4 ? z / glen : 0;
-    this.arcPos.set(x + ox * REGION_START_IN, y, z + oz * REGION_START_IN);
     if (select) {
       const s = this.viewCart(select);
       this.aimAt(s.x + ox * REGION_LOOK, s.y, s.z + oz * REGION_LOOK);
     } else {
       this.aimAt(x + ox * REGION_LOOK, y, z + oz * REGION_LOOK);
     }
-    this.enteredAt = performance.now();
     this.idle = 0;
     this.camera.near = 0.001;
     this.camera.far = 400;
@@ -655,7 +621,7 @@ export class GalaxyView {
   cloudFitsRegion(): boolean {
     const cloud = this.cloud;
     if (!cloud || cloud.n <= 0) return false;
-    const r = UNIVERSE.GALAXY_REGION_VIEW_R + 1e-5;
+    const r = UNIVERSE.GALAXY_REGION_R + 1e-5;
     const r2 = r * r;
     const cx = this.arcCenter.x;
     const cy = this.arcCenter.y;
@@ -735,6 +701,7 @@ export class GalaxyView {
     }
     this.arcPos.set(x + 0.028, y + 0.018, z + 0.012);
     this.aimAt(x, y, z);
+    this.slideSphere(true);
     this.applyCam();
     this.updateSight(true);
     return best;
@@ -823,8 +790,8 @@ export class GalaxyView {
     if (this.mode !== 'region') return;
     this.orientArc();
     this.arcPos.addScaledVector(this.arcFwd, kpc);
+    this.slideSphere();
     this.applyCam();
-    this.maybeExitArc();
   }
 
   /** Translate along camera right. Smoke: proves we are not on a radial lock. */
@@ -832,8 +799,8 @@ export class GalaxyView {
     if (this.mode !== 'region') return;
     this.orientArc();
     this.arcPos.addScaledVector(this.arcRight, kpc);
+    this.slideSphere();
     this.applyCam();
-    this.maybeExitArc();
   }
 
   resize(w: number, h: number): void {
@@ -963,12 +930,35 @@ export class GalaxyView {
     return THREE.MathUtils.clamp(0.42 * minD, 0.004, 0.025);
   }
 
-  private maybeExitArc(): void {
-    if (this.mode !== 'region') return;
-    if (performance.now() - this.enteredAt < 250) return;
-    if (this.arcPos.distanceTo(this.arcCenter) > UNIVERSE.GALAXY_REGION_VIEW_R * REGION_R_EXIT) {
-      this.exitRegion();
-    }
+  /**
+   * The sphere follows the camera. Rim in / rim out. A large jump
+   * remints; a small step only walks the border.
+   */
+  private slideSphere(force = false): void {
+    if (this.mode !== 'region' || !this.cloud) return;
+    const dx = this.arcPos.x - this.arcCenter.x;
+    const dy = this.arcPos.y - this.arcCenter.y;
+    const dz = this.arcPos.z - this.arcCenter.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (!force && d < MAG_SLIDE) return;
+    const x0 = this.arcCenter.x;
+    const y0 = this.arcCenter.y;
+    const z0 = this.arcCenter.z;
+    const x1 = this.arcPos.x;
+    const y1 = this.arcPos.y;
+    const z1 = this.arcPos.z;
+    const cloud =
+      d > MAG_REBUILD
+        ? buildRegionCloud(this.seed, x1, y1, z1)
+        : advanceRegionCloud(this.seed, this.cloud, x0, y0, z0, x1, y1, z1);
+    this.cloud = cloud;
+    this.arcCenter.set(x1, y1, z1);
+    this.sectorPop = cloud.n;
+    this.regionLabel = regionName(x1, y1, z1);
+    this.censusMemo = {};
+    this.disposeArcStars();
+    this.buildArcStars();
+    this.applyStarVis();
   }
 
   /**
@@ -982,8 +972,8 @@ export class GalaxyView {
       this.orientArc();
       const pace = this.arcPace();
       this.arcPos.addScaledVector(this.arcFwd, -Math.log(Math.max(1e-4, factor)) * pace * 2.2);
+      this.slideSphere();
       this.applyCam();
-      this.maybeExitArc();
       this.lastZoomAt = now;
       return;
     }
@@ -1181,8 +1171,8 @@ export class GalaxyView {
     const wpp = worldH / Math.max(1, this.canvas.clientHeight);
     this.arcPos.addScaledVector(this.arcRight, -dx * wpp);
     this.arcPos.addScaledVector(this.arcUp, dy * wpp);
+    this.slideSphere();
     this.applyCam();
-    this.maybeExitArc();
   }
 
   private onUp = (e: PointerEvent): void => {
@@ -1244,7 +1234,7 @@ export class GalaxyView {
     this.arcPos.addScaledVector(this.arcRight, mx * pace * dt);
     this.arcPos.addScaledVector(this.arcUp, my * pace * dt);
     this.arcPos.addScaledVector(this.arcFwd, mz * pace * dt);
-    this.maybeExitArc();
+    this.slideSphere();
     this.idle = 0;
   }
 

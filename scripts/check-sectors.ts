@@ -20,6 +20,7 @@ import {
   systemsOfInterest,
   buildArcCloud,
   buildRegionCloud,
+  advanceRegionCloud,
   regionImfFloor,
 } from '../src/world/sectors';
 
@@ -180,6 +181,16 @@ const check = (cond: boolean, msg: string) => {
   const homeCloud = buildRegionCloud(seed, homeC.x, homeC.y, homeC.z, r);
   check(homeCloud.n > a.n, `home region ${homeCloud.n} should outnumber the rim ${a.n}`);
   console.log(`  outer region: ${a.n} slots in ${a.ms.toFixed(0)} ms; home-like ${homeCloud.n} in ${homeCloud.ms.toFixed(0)} ms`);
+  const nudged = { x: rim.x + 0.08, y: rim.y, z: rim.z };
+  const slid = advanceRegionCloud(seed, a, rim.x, rim.y, rim.z, nudged.x, nudged.y, nudged.z, r);
+  const fresh = buildRegionCloud(seed, nudged.x, nudged.y, nudged.z, r);
+  const slidIds = new Set(Array.from(slid.ids.subarray(0, slid.n)));
+  const freshIds = new Set(Array.from(fresh.ids.subarray(0, fresh.n)));
+  check(slidIds.size === freshIds.size, `slide n ${slidIds.size} != remint ${freshIds.size}`);
+  let miss = 0;
+  for (const id of freshIds) if (!slidIds.has(id)) miss++;
+  check(miss === 0, `slide missed ${miss} stars a remint has`);
+  check(slid.n !== a.n, 'sliding the sphere did not change membership');
 }
 
 // --- systems of interest: deterministic, spectacular, spread out ---

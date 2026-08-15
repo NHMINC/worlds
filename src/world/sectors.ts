@@ -26,6 +26,8 @@ import {
   slotBirthCart,
   objectAt,
   packId,
+  splitId,
+  slotScatterKpc,
   slotBirthRaw,
   slotMsLum,
   slotMsTeff,
@@ -400,6 +402,104 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     }
   }
   return finishCloud(c, n, t0);
+}
+
+function cellDist(cell: number, x: number, y: number, z: number): number {
+  const mid = cellCenter(cell);
+  return Math.hypot(
+    mid.R * Math.cos(mid.theta) - x,
+    mid.z - y,
+    mid.R * Math.sin(mid.theta) - z,
+  );
+}
+
+function copyStar(src: Omit<StarCloud, 'n' | 'ms'> | StarCloud, i: number, dst: Omit<StarCloud, 'n' | 'ms'>, j: number): void {
+  dst.ids[j] = src.ids[i];
+  dst.pos[j * 3] = src.pos[i * 3];
+  dst.pos[j * 3 + 1] = src.pos[i * 3 + 1];
+  dst.pos[j * 3 + 2] = src.pos[i * 3 + 2];
+  dst.col[j * 3] = src.col[i * 3];
+  dst.col[j * 3 + 1] = src.col[i * 3 + 1];
+  dst.col[j * 3 + 2] = src.col[i * 3 + 2];
+  dst.size[j] = src.size[i];
+  dst.pulse[j] = src.pulse[i];
+  dst.gain[j] = src.gain[i];
+  dst.bits[j] = src.bits[i];
+  dst.mk[j] = src.mk[i];
+  dst.lum[j] = src.lum[i];
+}
+
+function ensureCloudCap(c: Omit<StarCloud, 'n' | 'ms'>, n: number, need: number): Omit<StarCloud, 'n' | 'ms'> {
+  if (need <= c.ids.length) return c;
+  const grown = allocCloud(Math.max(need, c.ids.length * 2));
+  for (let k = 0; k < n; k++) copyStar(c, k, grown, k);
+  return grown;
+}
+
+/**
+ * Slide the magnification ball from (x0,y0,z0) to (x1,y1,z1).
+ * Stars that leave the ball (or fall below the IMF floor) drop out.
+ * Stars that enter are minted. Same membership as buildRegionCloud
+ * at the new centre — a border monitor, not a rebuild of the galaxy.
+ */
+export function advanceRegionCloud(
+  seed: string,
+  cloud: StarCloud,
+  x0: number,
+  y0: number,
+  z0: number,
+  x1: number,
+  y1: number,
+  z1: number,
+  r = UNIVERSE.GALAXY_REGION_R,
+): StarCloud {
+  const t0 = performance.now();
+  const r2 = r * r;
+  const scatter = slotScatterKpc() + 0.02;
+  const have = new Set<number>();
+  let keep = allocCloud(cloud.n + 4096);
+  let n = 0;
+  for (let i = 0; i < cloud.n; i++) {
+    const dx = cloud.pos[i * 3] - x1;
+    const dy = cloud.pos[i * 3 + 1] - y1;
+    const dz = cloud.pos[i * 3 + 2] - z1;
+    if (dx * dx + dy * dy + dz * dz > r2) continue;
+    const id = cloud.ids[i];
+    const { cell, slot } = splitId(id);
+    const filled = slotsInCell(seed, cell);
+    if (slot < Math.floor(regionImfFloor(cellDist(cell, x1, y1, z1)) * filled)) continue;
+    keep = ensureCloudCap(keep, n, n + 1);
+    copyStar(cloud, i, keep, n);
+    have.add(id);
+    n++;
+  }
+  const cells = cellsOverlappingBall(x1, y1, z1, r);
+  for (const cell of cells) {
+    const filled = slotsInCell(seed, cell);
+    if (filled <= 0) continue;
+    const d1 = cellDist(cell, x1, y1, z1);
+    const d0 = cellDist(cell, x0, y0, z0);
+    const s1 = Math.floor(regionImfFloor(d1) * filled);
+    const s0 = Math.floor(regionImfFloor(d0) * filled);
+    const wellInsideOld = d0 + scatter < r && d1 + scatter < r;
+    if (wellInsideOld && s1 >= s0) continue;
+    const from = s1;
+    const to = wellInsideOld ? s0 : filled;
+    for (let slot = from; slot < to; slot++) {
+      const id = packId(cell, slot);
+      if (have.has(id)) continue;
+      const p = slotBirthCart(seed, cell, slot);
+      const dx = p.x - x1;
+      const dy = p.y - y1;
+      const dz = p.z - z1;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      keep = ensureCloudCap(keep, n, n + 1);
+      writeBirth(seed, cell, slot, filled, n, keep);
+      have.add(id);
+      n++;
+    }
+  }
+  return finishCloud(keep, n, t0);
 }
 
 /**

@@ -400,8 +400,8 @@ export const UNIVERSE = {
    * tap (FULL_R). Farther cells keep only the massive tail of their
    * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
    * you can fly. Count is still an outcome — the bulge is denser.
-   * The camera flies a larger ball (VIEW_R): the same stars, offsets
-   * from the tap scaled by VIEW_R / REGION_R. We do not mint more.
+   * Flying slides that ball through the catalog (border in / out).
+   * Positions stay catalog-true.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,
