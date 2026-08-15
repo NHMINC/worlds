@@ -20,6 +20,7 @@ import {
   systemsOfInterest,
   buildArcCloud,
   buildRegionCloud,
+  buildSilhouetteCloud,
   advanceRegionCloud,
   regionImfFloor,
 } from '../src/world/sectors';
@@ -192,6 +193,39 @@ const check = (cond: boolean, msg: string) => {
   check(miss === 0, `slide missed ${miss} stars a remint has`);
   check(slid.n !== a.n, 'sliding the sphere did not change membership');
   console.log(`  slide ${slid.ms.toFixed(1)} ms vs remint ${fresh.ms.toFixed(0)} ms`);
+}
+
+// --- luminous backdrop: whole-disk tail, real ids, not a dwarf cloud ---
+{
+  const a = buildSilhouetteCloud(seed);
+  const b5 = buildSilhouetteCloud(seed);
+  check(a === b5, 'silhouette must be cached per seed');
+  check(a.n === b5.n && a.ids[0] === b5.ids[0], 'silhouette not deterministic');
+  check(a.n > 20_000 && a.n < 400_000, `silhouette ${a.n} is not a luminous tail`);
+  const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
+  const r = UNIVERSE.GALAXY_REGION_R;
+  let inside = 0;
+  let minL = Infinity;
+  for (let i = 0; i < a.n; i++) {
+    const d = Math.hypot(a.pos[i * 3] - homeC.x, a.pos[i * 3 + 1] - homeC.y, a.pos[i * 3 + 2] - homeC.z);
+    if (d < r) inside++;
+    if (a.lum[i] < minL) minL = a.lum[i];
+  }
+  check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
+  check(inside < a.n, 'silhouette must reach past the sample ball');
+  check(minL > 8, `silhouette includes a dim star L=${minL}`);
+  for (const i of [0, 17, Math.floor(a.n / 2), a.n - 1]) {
+    const id = a.ids[i];
+    const o = objectAt(seed, id);
+    check(!!o && o.id === id, `silhouette id ${id} is not a catalog row`);
+    const { cell, slot } = splitId(id);
+    const filled = slotsInCell(seed, cell);
+    const birth = slotBirthRaw(seed, cell, slot, filled);
+    check(birth.massZams + 1e-6 >= UNIVERSE.GALAXY_SILHOUETTE_M, `silhouette mass ${birth.massZams} below floor`);
+    const cart = slotBirthCart(seed, cell, slot);
+    check(Math.abs(cart.x - a.pos[i * 3]) < 1e-5 && Math.abs(cart.y - a.pos[i * 3 + 1]) < 1e-5, 'silhouette pose != slotBirthCart');
+  }
+  console.log(`  silhouette: ${a.n} living tail in ${a.ms.toFixed(0)} ms`);
 }
 
 // --- systems of interest: deterministic, spectacular, spread out ---

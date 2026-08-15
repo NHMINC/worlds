@@ -32,6 +32,7 @@ import {
   slotBirthRaw,
   slotMsLum,
   slotMsTeff,
+  imfQuantile,
   slotRangeForMass,
   slotsInCell,
   type GalPos,
@@ -398,6 +399,80 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     }
   }
   return { n, ...c, ms: performance.now() - t0 };
+}
+
+/**
+ * Upper bound on cell-centre density (arm crest + bar if the ring
+ * can touch it). Used to skip empty (ring, z) bands before asking
+ * slotsInCell — the silhouette is the luminous tail, not every slot.
+ */
+function densityCeil(R: number, z: number): number {
+  const U = UNIVERSE;
+  const r = Math.hypot(R, z);
+  const e = Math.exp(z / U.GALAXY_ZD);
+  const sech2z = (2 / (e + 1 / e)) ** 2;
+  const et = Math.exp(z / U.GALAXY_Z_THICK);
+  const sech2t = (2 / (et + 1 / et)) ** 2;
+  const thin = Math.exp(-R / U.GALAXY_RD) * sech2z * (1 + U.GALAXY_ARM_A);
+  const thick = 0.14 * Math.exp(-R / U.GALAXY_RD_THICK) * sech2t;
+  const bulge = 4.2 * Math.exp(-3.5 * (r / U.GALAXY_RE_BULGE));
+  const bar = R < U.GALAXY_BAR_A + 0.25 ? 3.4 : 0;
+  const halo = 0.03 / (1 + r / U.GALAXY_HALO_A) ** 3.2;
+  return thin + thick + bulge + bar + halo;
+}
+
+function catalogCellVolume(ir: number): number {
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
+  const R0 = (ir / nr) * rMax;
+  const R1 = ((ir + 1) / nr) * rMax;
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
+  const dz = (2 * zMax) / nz;
+  return 0.5 * (R1 * R1 - R0 * R0) * (TAU / nth) * dz;
+}
+
+let silhouetteMemo: { seed: string; cloud: StarCloud } | null = null;
+
+/**
+ * Magnitude-limited luminous tail of the whole disk. Living stars
+ * above GALAXY_SILHOUETTE_M only — sparse cells do not emit an M
+ * dwarf. Minted once per seed; the GPU keeps every point and the
+ * shader hides the sample ball. Not pickable.
+ */
+export function buildSilhouetteCloud(seed: string): StarCloud {
+  if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
+  const t0 = performance.now();
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
+    UNIVERSE;
+  const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
+  const mLo = UNIVERSE.GALAXY_SILHOUETTE_M;
+  const uCut = imfQuantile(mLo);
+  const sMin = 1 / Math.max(1e-6, 1 - uCut);
+  let c = allocCloud(160_000);
+  let n = 0;
+  for (let ir = 0; ir < nr; ir++) {
+    const vol = catalogCellVolume(ir);
+    const R = ((ir + 0.5) / nr) * rMax;
+    for (let iz = 0; iz < nz; iz++) {
+      const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
+      if (densityCeil(R, z) * vol * nK < sMin - 1) continue;
+      for (let it = 0; it < nth; it++) {
+        const cell = ir * nth * nz + it * nz + iz;
+        const filled = slotsInCell(seed, cell);
+        if (filled * (1 - uCut) < 1) continue;
+        const [a, b] = slotRangeForMass(filled, mLo, UNIVERSE.IMF_MAX);
+        const s0 = Math.max(a, Math.ceil(uCut * filled));
+        for (let slot = s0; slot < b; slot++) {
+          const birth = slotBirthRaw(seed, cell, slot, filled);
+          if (!isSlotAlive(birth.massZams, birth.ageGyr)) continue;
+          if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+          writeBirth(seed, cell, slot, filled, n++, c);
+        }
+      }
+    }
+  }
+  const cloud = finishCloud(c, n, t0);
+  silhouetteMemo = { seed, cloud };
+  return cloud;
 }
 
 function cellDist(cell: number, x: number, y: number, z: number): number {

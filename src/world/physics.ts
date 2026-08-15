@@ -418,6 +418,18 @@ export const UNIVERSE = {
   GALAXY_REGION_U_RAMP: 0.15,
   /** Far cells: keep only this upper quantile of the IMF. */
   GALAXY_REGION_U_FAR: 0.9985,
+  /**
+   * Distant luminous backdrop (region dive). The flyable ball does
+   * not change. Outside it, a magnitude-limited harvest of the rest
+   * of the disk — living stars above SILHOUETTE_M (B and hotter) —
+   * is drawn with the same magnifier. Boost grows with catalog
+   * distance from the bubble (smoothstep REGION_R → R_MAX): pinpricks
+   * just outside the rim, more light farther out, so the SBbc reads
+   * behind you. Optical approximation, like AIR_LINE — we add light
+   * with distance instead of fading it. Not pickable. Cached per seed.
+   */
+  GALAXY_SILHOUETTE: 6,
+  GALAXY_SILHOUETTE_M: 5,
 
   /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:

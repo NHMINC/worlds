@@ -203,7 +203,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     (offsets × VIEW_R/REGION_R); star size is not scaled. Cheap
     birth, no `evolve` until you tap. Distant stars are **1px
     pinpricks**. Closer ones grow from luminosity and distance.
-    The breadcrumb returns to the map.
+    Behind the ball a **magnitude-limited backdrop**
+    (`buildSilhouetteCloud`) draws the luminous tail of the rest
+    of the disk — living B-and-hotter stars, cached per seed —
+    with the same magnifier. Boost grows with catalog distance
+    from the bubble so the galactic plane reads as a band in the
+    midplane and as a face above it. The sphere itself is
+    untouched; the map saucer stays hidden. The breadcrumb
+    returns to the map.
   Nothing queries or rebuilds the catalog per camera move in either
   mode — the old free-flight explorer's blink / cluster / stutter /
   re-roll bug class was structural, and it is retired along with the

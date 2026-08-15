@@ -12,8 +12,9 @@
  * acceleration; ↓ / Stop brakes at the same rate. The vertex shader
  * follows the centre; a worker mints and drops the rim. Space is
  * magnified (VIEW_R / REGION_R); star size is not. Distant stars
- * are 1px pinpricks; closer ones grow. The breadcrumb returns
- * to the map.
+ * are 1px pinpricks; closer ones grow. Behind the ball a
+ * magnitude-limited backdrop sketches the rest of the disk.
+ * The breadcrumb returns to the map.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -34,6 +35,7 @@ import { systemAt } from '../world/systemgen';
 import {
   systemsOfInterest,
   buildRegionCloud,
+  buildSilhouetteCloud,
   advanceRegionCloud,
   regionName,
   sketchMatches,
@@ -110,6 +112,61 @@ const STAR_VERT = /* glsl */ `
     float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
     vColor = aColor;
     vVis = min(aVis * punch, 8.0);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+/** Catalog diameter × magnifier — far-disk stars must stay in the frustum. */
+function regionCamFar(): number {
+  const mag = UNIVERSE.GALAXY_REGION_VIEW_R / Math.max(1e-6, UNIVERSE.GALAXY_REGION_R);
+  return UNIVERSE.GALAXY_R_MAX * 2 * mag + 40;
+}
+
+const SILHOUETTE_VERT = /* glsl */ `
+  attribute vec3 aColor;
+  attribute float aVis;
+  attribute float aLum;
+  uniform vec3 uCenter;
+  uniform float uScale;
+  uniform float uPixel;
+  uniform float uPxPerRad;
+  uniform float uGlowK;
+  uniform float uGlowP;
+  uniform float uGlowMin;
+  uniform float uGlowDim;
+  uniform float uMaxPx;
+  uniform float uNearBoost;
+  uniform float uFluxEps;
+  uniform float uSilhouette;
+  uniform float uRegionR;
+  uniform float uRMax;
+  varying vec3 vColor;
+  varying float vVis;
+  void main() {
+    float dCat = length(position - uCenter);
+    if (dCat < uRegionR) {
+      vColor = aColor;
+      vVis = 0.0;
+      gl_PointSize = 0.0;
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      return;
+    }
+    vec3 view = (position - uCenter) * uScale;
+    vec4 mv = modelViewMatrix * vec4(view, 1.0);
+    float d = max(length(mv.xyz), 0.001);
+    float L = max(aLum, 1e-4);
+    float rMin = aLum < 0.05 ? uGlowDim : uGlowMin;
+    float r = max(rMin, uGlowK * pow(L, uGlowP));
+    r = min(r, 0.012);
+    float ang = r / d;
+    float px = 2.0 * ang * uPxPerRad;
+    float fL = smoothstep(8.0, 80.0, L);
+    float boost = uSilhouette * fL * smoothstep(uRegionR, uRMax, dCat);
+    gl_PointSize = clamp(max(uPixel, px) * (1.0 + 0.35 * boost), 1.0, uMaxPx);
+    float flux = L / (d * d + uFluxEps);
+    float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
+    vColor = aColor;
+    vVis = min(aVis * punch * (1.0 + boost), 8.0);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -243,6 +300,9 @@ export class GalaxyView {
   private starGeo: THREE.BufferGeometry | null = null;
   private starMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
+  private silPts: THREE.Points | null = null;
+  private silGeo: THREE.BufferGeometry | null = null;
+  private silMat: THREE.ShaderMaterial | null = null;
   /** Catalog positions (the vertex shader applies the magnifier). */
   private cloud: StarCloud | null = null;
   private borderWorker: Worker | null = null;
@@ -337,6 +397,11 @@ export class GalaxyView {
       this.interestMk = this.makeMarkers(systemsOfInterest(this.seed, 100), [0.95, 0.85, 0.55], 9);
       this.scene.add(this.interestMk.pts);
     }, 60);
+    // Warm the disk silhouette so the first dive is not a hitch.
+    window.setTimeout(() => {
+      if (this.disposed) return;
+      buildSilhouetteCloud(this.seed);
+    }, 80);
 
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown, { passive: false });
@@ -472,6 +537,7 @@ export class GalaxyView {
     this.lastEnterMs = cloud.ms;
     this.objects = [];
     this.buildArcStars();
+    this.buildSilhouetteStars();
     this.censusMemo = {};
     this.resetThrust();
     this.borderGen++;
@@ -485,7 +551,7 @@ export class GalaxyView {
     this.aimAt(ox, 0, oz);
     this.idle = 0;
     this.camera.near = 0.001;
-    this.camera.far = 400;
+    this.camera.far = regionCamFar();
     this.camera.updateProjectionMatrix();
     this.sectors.group.visible = false;
     if (this.visitedMk) this.visitedMk.pts.visible = false;
@@ -524,6 +590,7 @@ export class GalaxyView {
     this.tgtRadius = MAP_R_HOME;
     this.gestureR = this.tgtRadius;
     this.camera.near = 0.02;
+    this.camera.far = 400;
     this.camera.updateProjectionMatrix();
     // The saucer is a chart again; the last dive is not a tile.
   }
@@ -537,6 +604,14 @@ export class GalaxyView {
       this.starGeo = null;
       this.starMat = null;
       this.starVis = null;
+    }
+    if (this.silPts) {
+      this.scene.remove(this.silPts);
+      this.silGeo?.dispose();
+      this.silMat?.dispose();
+      this.silPts = null;
+      this.silGeo = null;
+      this.silMat = null;
     }
   }
 
@@ -589,11 +664,60 @@ export class GalaxyView {
     this.applyStarVis();
   }
 
+  private buildSilhouetteStars(): void {
+    const cloud = buildSilhouetteCloud(this.seed);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
+    geo.setAttribute('aVis', new THREE.BufferAttribute(cloud.gain, 1));
+    geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
+    geo.setDrawRange(0, cloud.n);
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: SILHOUETTE_VERT,
+      fragmentShader: STAR_FRAG,
+      uniforms: {
+        uCenter: { value: new THREE.Vector3() },
+        uScale: { value: 1 },
+        uPixel: { value: this.renderer.getPixelRatio() },
+        uPxPerRad: { value: this.pxPerRad() },
+        uGlowK: { value: GLOW_K },
+        uGlowP: { value: GLOW_P },
+        uGlowMin: { value: 0.0007 },
+        uGlowDim: { value: GLOW_DIM },
+        uMaxPx: { value: POINT_MAX_PX },
+        uNearBoost: { value: POINT_NEAR_BOOST },
+        uFluxEps: { value: POINT_FLUX_EPS },
+        uSilhouette: { value: UNIVERSE.GALAXY_SILHOUETTE },
+        uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
+        uRMax: { value: UNIVERSE.GALAXY_R_MAX },
+      },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    this.scene.add(pts);
+    this.silPts = pts;
+    this.silGeo = geo;
+    this.silMat = mat;
+    this.pushMagUniforms();
+  }
+
   /** Catalog positions stay on the GPU; only the magnifier uniforms move. */
   private pushMagUniforms(): void {
-    if (!this.starMat) return;
-    this.starMat.uniforms.uCenter.value.set(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
-    this.starMat.uniforms.uScale.value = this.magScale();
+    const cx = this.arcCenter.x;
+    const cy = this.arcCenter.y;
+    const cz = this.arcCenter.z;
+    const s = this.magScale();
+    if (this.starMat) {
+      this.starMat.uniforms.uCenter.value.set(cx, cy, cz);
+      this.starMat.uniforms.uScale.value = s;
+    }
+    if (this.silMat) {
+      this.silMat.uniforms.uCenter.value.set(cx, cy, cz);
+      this.silMat.uniforms.uScale.value = s;
+    }
   }
 
   /**
@@ -1641,9 +1765,14 @@ export class GalaxyView {
 
     const t = now * 0.001;
     const px = this.renderer.getPixelRatio();
+    const pxPer = this.pxPerRad();
     if (this.starMat) {
       this.starMat.uniforms.uPixel.value = px;
-      this.starMat.uniforms.uPxPerRad.value = this.pxPerRad();
+      this.starMat.uniforms.uPxPerRad.value = pxPer;
+    }
+    if (this.silMat) {
+      this.silMat.uniforms.uPixel.value = px;
+      this.silMat.uniforms.uPxPerRad.value = pxPer;
     }
 
     const cam = this.camera.position;
