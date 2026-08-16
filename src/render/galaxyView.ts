@@ -13,9 +13,7 @@ import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galax
 import {
   aimLocks,
   harvestGlowPx,
-  HARVEST_FLUX0,
   HARVEST_FLUX_EPS,
-  HARVEST_GLOW_MAX,
   HARVEST_L_REF,
   HARVEST_PSF_CORE,
   HARVEST_PSF_SIG2,
@@ -24,6 +22,7 @@ import {
   HARVEST_PSF_WING_P,
   HARVEST_SHINE_DIST_REF,
   HARVEST_SHINE_GAIN,
+  HARVEST_SHINE_P,
   HARVEST_SHINE_SAT,
   glowRadiusKpc,
 } from './galaxyStar';
@@ -145,15 +144,14 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uSuper;
   uniform float uFluxEps;
   uniform float uLRef;
-  uniform float uGlowMax;
   uniform float uPsfCore;
   uniform float uPsfWingK;
   uniform float uPsfWingP;
   uniform float uPsfSig2;
   uniform float uPsfThresh;
   uniform float uShineLGain;
+  uniform float uShineP;
   uniform float uShineDistRef;
-  uniform float uFlux0;
   uniform float uShineSat;
   varying vec3 vColor;
   varying float vVis;
@@ -163,10 +161,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
-
-  float harvestAsinh(float x) {
-    return log(x + sqrt(x * x + 1.0));
-  }
 
   void main() {
     vColor = aColor;
@@ -203,19 +197,18 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Apparent magnitude: asinh(L / d²). Sprite is wing room.
+      // Apparent magnitude: (L / d²)^P. No bright-end cap.
       float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
       float flux = L / (d * d + uFluxEps);
       float fluxRef = uLRef / (uShineDistRef * uShineDistRef + uFluxEps);
-      float shine = uShineLGain * harvestAsinh(flux / max(uFlux0, 1e-6))
-        / harvestAsinh(fluxRef / max(uFlux0, 1e-6));
+      float shine = uShineLGain * pow(flux / max(fluxRef, 1e-8), uShineP);
       float wingPeak = uPsfWingK * pow(max(shine, 0.0), uPsfWingP);
       float rCss = 0.0;
       if (wingPeak > uPsfThresh) {
         rCss = sqrt(uPsfSig2 * (wingPeak / max(uPsfThresh, 1e-5) - 1.0));
       }
-      float css = min(uGlowMax, max(1.0, 1.0 + 2.0 * rCss));
+      float css = max(1.0, 1.0 + 2.0 * rCss);
       gl_PointSize = max(uPixel, css * uPixel);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
@@ -633,15 +626,14 @@ export class GalaxyView {
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
       uLRef: { value: HARVEST_L_REF },
-      uGlowMax: { value: HARVEST_GLOW_MAX },
       uPsfCore: { value: HARVEST_PSF_CORE },
       uPsfWingK: { value: HARVEST_PSF_WING_K },
       uPsfWingP: { value: HARVEST_PSF_WING_P },
       uPsfSig2: { value: HARVEST_PSF_SIG2 },
       uPsfThresh: { value: HARVEST_PSF_THRESH },
       uShineLGain: { value: HARVEST_SHINE_GAIN },
+      uShineP: { value: HARVEST_SHINE_P },
       uShineDistRef: { value: HARVEST_SHINE_DIST_REF },
-      uFlux0: { value: HARVEST_FLUX0 },
       uShineSat: { value: HARVEST_SHINE_SAT },
       uFluxEps: { value: HARVEST_FLUX_EPS },
     };

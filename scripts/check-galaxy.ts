@@ -19,7 +19,6 @@ import {
   harvestPsf,
   harvestShine,
   harvestStarPx,
-  HARVEST_GLOW_MAX,
   HARVEST_L_REF,
   shineDisplay,
   starKind,
@@ -274,17 +273,18 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const pin = harvestGlowPx(HARVEST_L_REF, 1);
   const midL = harvestGlowPx(1000, 1);
   const hotL = harvestGlowPx(8000, 1);
-  const cap = harvestGlowPx(1e6, 1);
+  const giant = harvestGlowPx(1e6, 1);
   check(pin <= 1.05, `harvest-floor star must stay a pin, got ${pin.toFixed(2)}px`);
   check(hotL > midL && midL >= pin, `glow room must rank L: ${pin.toFixed(1)} / ${midL.toFixed(1)} / ${hotL.toFixed(1)}`);
-  check(cap <= HARVEST_GLOW_MAX + 1e-6, `glow cap ${cap} exceeded ${HARVEST_GLOW_MAX}`);
+  check(giant > hotL * 1.4, `hypergiant must outgrow an O (no bright-end cap): ${giant.toFixed(1)} vs ${hotL.toFixed(1)}`);
   const shineFloor = harvestShine(HARVEST_L_REF, 8);
   const shineMid = harvestShine(1000, 8);
   const shineO = harvestShine(8000, 8);
-  check(shineFloor < 0.4, `floor core must stay a dim pin, got ${shineFloor.toFixed(2)}`);
-  check(shineMid > shineFloor * 1.8, `1e3 Lsun (${shineMid.toFixed(2)}) must outshine the floor (${shineFloor.toFixed(2)})`);
-  check(shineO > shineFloor * 6, `O shine ${shineO.toFixed(2)} must beat floor ${shineFloor.toFixed(2)}`);
-  check(shineO > 1.1, `O core must reach a bright point, got ${shineO.toFixed(2)}`);
+  const shineGiant = harvestShine(1e5, 8);
+  check(shineFloor < 0.2, `floor core must stay a dim pin, got ${shineFloor.toFixed(2)}`);
+  check(shineMid > shineFloor * 1.5, `1e3 Lsun (${shineMid.toFixed(2)}) must outshine the floor (${shineFloor.toFixed(2)})`);
+  check(shineO > shineFloor * 4, `O shine ${shineO.toFixed(2)} must beat floor ${shineFloor.toFixed(2)}`);
+  check(shineGiant > shineO * 2, `1e5 Lsun must keep climbing, got ${shineGiant.toFixed(2)} vs O ${shineO.toFixed(2)}`);
   check(harvestShine(400, 2) > harvestShine(400, 12) * 2, 'same L must dim with distance (apparent mag)');
   const floorCore = harvestPsf(shineFloor, 0);
   const floorWing = harvestPsf(shineFloor, 2.4);

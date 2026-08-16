@@ -196,11 +196,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   sits at the viewpoint centre. Gestures **slide** through
   catalog space (1:1, no `VIEW_R` stretch). Harvest stars are
   **point sources**: a 1px Teff core plus the eye’s PSF.
-  Apparent magnitude is `asinh(L / d²)` (Lupton) so a harvest-
-  floor pin stays dim and an O can glow — cores must not all
-  clip to the same white pixel. Magnitude lifts the wings; it
-  does not stamp a larger disc. Colour stays in the glow; only
-  the photocentre of a very bright row bleaches. r/d grow is a
+  Apparent magnitude is `(L / d²)^P` with no bright-end cap —
+  a harvest-floor pin stays dim, an O glows, a hypergiant keeps
+  growing. Magnitude lifts the wings; it does not stamp a
+  larger disc. Colour stays in the glow; only the photocentre
+  of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`). A harvest star is visitable
   when you pick it; here / POIs are always pickable.

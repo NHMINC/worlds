@@ -66,21 +66,17 @@ export const HARVEST_PSF_WING_K = 0.28;
 export const HARVEST_PSF_WING_P = 1.25;
 /** Wing scale² (CSS px²). */
 export const HARVEST_PSF_SIG2 = 1.6;
-export const HARVEST_PSF_THRESH = 0.055;
-/** Sprite cap (CSS px). Room for wings, not a disc radius. */
-export const HARVEST_GLOW_MAX = 22;
+export const HARVEST_PSF_THRESH = 0.045;
 /**
  * Apparent magnitude. Flux is L / (d² + ε); display is
- * GAIN · asinh(flux / F0) / asinh(fluxRef / F0) — Lupton
- * compression, so a floor pin stays dim and an O can still
- * glow without everyone clipping to the same white.
+ * GAIN · (flux / fluxRef)^P. No bright-end cap — a hypergiant
+ * keeps growing. Exposure is a quarter of the first asinh pass
+ * so the field stays quiet and the rare giants still shout.
  */
-/** Photograph exposure. 0.13 is half the first asinh pass. */
-export const HARVEST_SHINE_GAIN = 0.13;
+export const HARVEST_SHINE_GAIN = 0.065;
+export const HARVEST_SHINE_P = 0.55;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_FLUX_EPS = 0.16;
-/** Knee: ~6× a harvest-floor star at DREF. Linear below, log above. */
-export const HARVEST_FLUX0 = (HARVEST_L_REF / (HARVEST_SHINE_DIST_REF * HARVEST_SHINE_DIST_REF)) * 6;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). Unused on harvest pins. */
@@ -113,10 +109,10 @@ export function harvestPsfRadiusCss(I: number): number {
   return Math.sqrt(HARVEST_PSF_SIG2 * (peak / HARVEST_PSF_THRESH - 1));
 }
 
-/** Sprite size (device px): room for visible wings. Not a filled disc. */
+/** Sprite size (device px): room for visible wings. No bright-end cap. */
 export function harvestGlowPx(L: number, pixelRatio = 1): number {
   const I = harvestShine(L, HARVEST_SHINE_DIST_REF);
-  const css = Math.min(HARVEST_GLOW_MAX, Math.max(1, 1 + 2 * harvestPsfRadiusCss(I)));
+  const css = Math.max(1, 1 + 2 * harvestPsfRadiusCss(I));
   return Math.max(harvestStarPx(pixelRatio), css * pixelRatio);
 }
 
@@ -124,11 +120,7 @@ export function harvestGlowPx(L: number, pixelRatio = 1): number {
 export function harvestShine(L: number, d: number): number {
   const flux = Math.max(L, 1e-4) / (d * d + HARVEST_FLUX_EPS);
   const fluxRef = HARVEST_L_REF / (HARVEST_SHINE_DIST_REF * HARVEST_SHINE_DIST_REF + HARVEST_FLUX_EPS);
-  return (
-    HARVEST_SHINE_GAIN *
-    Math.asinh(flux / HARVEST_FLUX0) /
-    Math.asinh(fluxRef / HARVEST_FLUX0)
-  );
+  return HARVEST_SHINE_GAIN * Math.pow(flux / Math.max(fluxRef, 1e-12), HARVEST_SHINE_P);
 }
 
 /** Teff RGB pushed off grey. Same mix the harvest vertex uses. */
