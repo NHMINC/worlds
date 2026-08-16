@@ -200,10 +200,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   the in-system sun). Magnitude lifts the wings with no
   bright-end cap; it does not stamp a larger disc. Above
   `HARVEST_SUPER_L` leftover luminosity adds extra I — super-suns
-  only; every fainter harvest row is unchanged. That same tail
-  (~650 stars on helix) also wears a camera-facing glare sprite
-  (Lorentzian halo + diffraction spikes) so the GPU point cap
-  cannot clip them. The 1px pin stays the photocentre. Colour stays in the glow; only the
+  only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`). A harvest star is visitable
