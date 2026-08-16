@@ -447,8 +447,9 @@ export const UNIVERSE = {
    * of the disk — living stars above SILHOUETTE_L (bright B, O,
    * giants, WR; SILHOUETTE_M is only the IMF slot gate), the
    * youngest / brightest nebula hosts (gain ≥ SILHOUETTE_NEB_GAIN),
-   * and dust envelopes larger than SILHOUETTE_DUST_R (wisps stay
-   * home) — is placed with the same magnifier. Distant discs are toy angular
+   * and the full dust-clump census (SILHOUETTE_DUST_R = 0; the rows
+   * are never drawn — dust reaches the eye as sightline extinction)
+   * — is placed with the same magnifier. Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
    * so rings and filament crossings are geometry. Colour is a LINE
@@ -497,9 +498,11 @@ export const UNIVERSE = {
    *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
    *  Three median halvings from 0.65: the top eighth — showpieces. */
   GALAXY_SILHOUETTE_NEB_GAIN: 0.932,
-  /** Backdrop dust: envelope radius (kpc). The wisp floor is 0.05;
-   *  three median halvings from 0.06 — only the greatest complexes. */
-  GALAXY_SILHOUETTE_DUST_R: 0.093,
+  /** Backdrop dust: envelope radius (kpc) census gate. 0 keeps every
+   *  clump (~81k rows). The old halvings existed to cut sprite
+   *  overdraw; dust is census + sightline extinction now — rows are
+   *  never drawn, so the full population is free. */
+  GALAXY_SILHOUETTE_DUST_R: 0,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
