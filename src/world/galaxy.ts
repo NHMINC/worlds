@@ -224,16 +224,10 @@ export function dustPhysics(seed: string, cell: number): DustPhysics {
   return { field, feh, carbon, iceFrac, carbonFrac };
 }
 
-/** Clump position: the same isotropic scatter cube stars use. No lattice. */
+/** Clump position: the same tent-kernel scatter stars use. No lattice. */
 export function dustBirthCart(seed: string, cell: number, k: number): { x: number; y: number; z: number } {
   const rng = rngFor(seed, 'dustPos', cell, k);
-  const mid = cellCenter(cell);
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
-  const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
-  const z = mid.z + (rng() - 0.5) * dz;
-  return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
+  return birthCart(rng, cell);
 }
 
 function pickPop(d: Record<Population, number>, u: number): Population {
@@ -323,11 +317,39 @@ export function packId(cell: number, slot: number): number {
   return cell * UNIVERSE.GALAXY_MAX_SLOT + slot;
 }
 
-/** Half-diagonal of the slot scatter cube (kpc). A star may sit this far from its cell centre. */
-export function slotScatterKpc(): number {
+/**
+ * Scatter kernel half-width (kpc). The cell is an ADDRESS BIN, not a
+ * physical box: placement scatters each slot with a Cartesian tent
+ * kernel (sum of two uniforms — a linear B-spline). Overlapping tents
+ * between neighbouring cells interpolate the occupancy histogram into
+ * a piecewise-linear density, so the lattice, its slab stripes and
+ * its hard cube edges all dissolve. Cartesian, because the old polar
+ * jitter (R clamped at 0.05, θ divided by max(0.4, R)) piled every
+ * inner-ring star onto one cylinder — the "axle" through the core.
+ */
+export function scatterKernelKpc(): number {
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  return 0.5 * dz * Math.sqrt(3);
+  return 0.75 * dz;
+}
+
+/** Farthest a slot may sit from its cell centre (membership slack). */
+export function slotScatterKpc(): number {
+  return scatterKernelKpc() * Math.sqrt(3);
+}
+
+/** Tent draw in [-w, w] (triangular, zero-mean). */
+const tent = (rng: () => number, w: number): number => (rng() + rng() - 1) * w;
+
+/** One placement law for stars and dust: cell centre + Cartesian tent. */
+function birthCart(rng: () => number, cell: number): { x: number; y: number; z: number } {
+  const mid = cellCenter(cell);
+  const w = scatterKernelKpc();
+  return {
+    x: mid.R * Math.cos(mid.theta) + tent(rng, w),
+    y: mid.z + tent(rng, w),
+    z: mid.R * Math.sin(mid.theta) + tent(rng, w),
+  };
 }
 
 /**
@@ -512,35 +534,18 @@ export interface SlotBirth {
   rng: () => number;
 }
 
-/** Birth position only — same first three rng draws as `slotBirthRaw`. */
+/** Birth position only — same first six rng draws as `slotBirthRaw`. */
 export function slotBirthCart(seed: string, cell: number, slot: number): { x: number; y: number; z: number } {
-  const rng = rngFor(seed, cell, slot);
-  const mid = cellCenter(cell);
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
-  const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
-  const z = mid.z + (rng() - 0.5) * dz;
-  return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
+  return birthCart(rngFor(seed, cell, slot), cell);
 }
 
 export function slotBirthRaw(seed: string, cell: number, slot: number, filled: number): SlotBirth {
   const rng = rngFor(seed, cell, slot);
-  const mid = cellCenter(cell);
-  const { GALAXY_NZ: nz } = UNIVERSE;
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const dz = (2 * zMax) / nz;
-  // Scatter ISOTROPICALLY over the largest bin dimension. The cell is an
-  // address bin, not a physical box: cells are needles (fine in R and θ,
-  // 0.4 kpc tall), and confining slots to their own needle printed the
-  // lattice as vertical chains of stars. One cube of side dz for all
-  // three axes dissolves the grid; occupancy still carries the density
-  // law, and a star's id (cell, slot) never moves.
-  const pos: GalPos = {
-    R: Math.max(0.05, mid.R + (rng() - 0.5) * dz),
-    theta: mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R),
-    z: mid.z + (rng() - 0.5) * dz,
-  };
+  // Placement: cell centre + Cartesian tent (see scatterKernelKpc).
+  // Occupancy still carries the density law; the id (cell, slot)
+  // never moves.
+  const c = birthCart(rng, cell);
+  const pos: GalPos = cartToGal(c.x, c.y, c.z);
   const parts = densityParts(pos);
   const pop = pickPop(parts, rng());
   const [ageLo, ageHi] = ageWindow(pop, pos.R);
