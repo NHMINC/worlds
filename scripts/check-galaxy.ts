@@ -102,7 +102,48 @@ for (let i = 0; i < 120; i++) {
 }
 const armMean = armD / Math.max(1, nArm);
 const gapMean = gapD / Math.max(1, nGap);
-check(armMean > gapMean * 1.15, `arms not overdense: ${armMean.toFixed(3)} vs ${gapMean.toFixed(3)}`);
+check(armMean > gapMean * 1.08, `arms not overdense: ${armMean.toFixed(3)} vs ${gapMean.toFixed(3)}`);
+check(gapMean > 0.02, `inter-arm emptied (ribbons, not a disc): ${gapMean.toFixed(3)}`);
+
+// Axle: the inner polar column at high |z| must be empty. A peanut
+// does not reach 2 kpc; a halo that still occupies those cells is a needle.
+{
+  let axleSlots = 0;
+  let axleCells = 0;
+  const nth = UNIVERSE.GALAXY_NTH;
+  const nz = UNIVERSE.GALAXY_NZ;
+  for (let it = 0; it < nth; it += 17) {
+    for (const iz of [0, 1, nz - 2, nz - 1]) {
+      const cell = 0 * nth * nz + it * nz + iz;
+      axleSlots += slotsInCell(seed, cell);
+      axleCells++;
+    }
+  }
+  check(axleSlots / Math.max(1, axleCells) < 0.4, `axle through the core: ${axleSlots} slots in ${axleCells} high-|z| inner cells`);
+}
+
+// Quota sample is a cloud, not a ring or a point.
+{
+  let cell = -1;
+  for (let c = 0; c < 400 && cell < 0; c++) {
+    const mid = (UNIVERSE.GALAXY_NR >> 1) * UNIVERSE.GALAXY_NTH * UNIVERSE.GALAXY_NZ + (c % UNIVERSE.GALAXY_NTH) * UNIVERSE.GALAXY_NZ + (UNIVERSE.GALAXY_NZ >> 1);
+    if (slotsInCell(seed, mid) >= 8) cell = mid;
+  }
+  if (cell >= 0) {
+    const n = Math.min(12, slotsInCell(seed, cell));
+    const xs: number[] = [];
+    const zs: number[] = [];
+    for (let s = 0; s < n; s++) {
+      const p = objectAt(seed, packId(cell, s))!.pos;
+      xs.push(p.R * Math.cos(p.theta));
+      zs.push(p.R * Math.sin(p.theta));
+    }
+    const mx = xs.reduce((a, b) => a + b, 0) / n;
+    const mz = zs.reduce((a, b) => a + b, 0) / n;
+    const varP = xs.reduce((a, x, i) => a + (x - mx) ** 2 + (zs[i] - mz) ** 2, 0) / n;
+    check(varP > 0.02, `quota sample collapsed onto a point/ring: var=${varP.toFixed(4)}`);
+  }
+}
 
 // Census — sample cells. Never walk the address space.
 const counts: Record<string, number> = {};

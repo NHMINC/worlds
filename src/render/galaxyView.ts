@@ -68,7 +68,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   uniform vec3 uDustRgb;
   float extinctRho(vec3 p) {
     float R = length(p.xz);
-    float ez = exp(min(abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_ZD)}, 12.0));
+    float ez = exp(min(abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_ZD_GAS)}, 12.0));
     float sech = 2.0 / (ez + 1.0 / ez);
     float gas = exp(-R / ${glslFloat(UNIVERSE.GALAXY_RD * UNIVERSE.GALAXY_RD_GAS)}) * sech * sech;
     // 0.3 is the rift threshold: only above-average turbulence

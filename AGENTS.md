@@ -9,12 +9,12 @@ win** — the README still describes an earlier realistic-globe era.
 
 ## What this is
 
-A **procedural galaxy in a bottle**. One canonical seed unfolds into a
-single **grand-design barred spiral** (Hubble SBbc — two long arms, a
-bar, a bulge: the accepted beautiful galaxy, and our own Milky Way’s
-class). Stars, remnants, and nebulae are a cheap function of that seed
-plus laws. You **discover** a star system by going there; you do not
-mint one. The stars in the sky **are** that catalog.
+A **procedural galaxy in a bottle**. One canonical seed unfolds into
+the **Milky Way’s mass model** (Hubble SBbc — a thin disc, a long bar,
+a boxy/peanut bulge, four mild stellar arms). Stars, remnants, and
+nebulae are a cheap function of that seed plus laws. You **discover**
+a star system by going there; you do not mint one. The stars in the
+sky **are** that catalog.
 
 Worlds stay small Goldberg-hex globes with layered strata (Godus-like
 onion rings) in Caribbean / cel-shaded tones. The feeling: a perfect
@@ -63,12 +63,14 @@ types or star types.
   carbon stars, H II, planetary nebulae, and SN remnants are
   `evolve(mass, age, Z)` plus a short-lived nebula window. We do not
   store the galaxy. A star is an address: `objectAt(seed, id)` is O(1)
-  at a billion ids the same as at ten. Occupancy is
+  at a billion ids the same as at ten.   Occupancy is
   `density × volume × GALAXY_N_K` — that *is* the population
-  (~`GALAXY_POPULATION`). We never `collectCatalog`. The explorer
-  asks `objectsNear` for the volume it occupies; within a cell the
-  IMF is stratified so zooming in is “include more slots,” not
-  “load a bigger array.”
+  (~`GALAXY_POPULATION`). A cell is a quota, not a box: birth
+  positions are an in-plane Gaussian around the cell (wider in the
+  core) so the polar lattice never prints as rings or an axle.
+  We never `collectCatalog`. The explorer asks `objectsNear` for
+  the volume it occupies; within a cell the IMF is stratified so
+  zooming in is “include more slots,” not “load a bigger array.”
 - **Toy constants live in `UNIVERSE` (`src/world/physics.ts`).** Compress
   mass, distance, and time so a whole system fits in a bottle and stays
   fun — but keep the compression **visible and named**, not scattered
@@ -77,7 +79,7 @@ types or star types.
   not a one-off `if (sunset) color = orange`.
 - **Documented simplifications** (decreed, not hidden): metallic core and
   spin-aligned dipole on every body (a compass works); orbits are stable
-  by fiat; we do not integrate an N-body galaxy for 10 Gyr (Lin–Shu
+  by fiat;   we do not integrate an N-body galaxy for 10 Gyr (Milky Way
   density field + IMF + closed-form stellar clock instead); interstellar
   travel is a deterministic set-course, not a real light-year cruise;
   short nebula phases are toy-stretched (`HII_GYR`, `PN_GYR`, `SNR_GYR`)
@@ -96,7 +98,7 @@ is the job.
 ## Causal chain (do not skip steps)
 
 ```
-CANONICAL_SEED + UNIVERSE mass model (SBbc)
+CANONICAL_SEED + UNIVERSE mass model (Milky Way)
   → density / rotation / population (thin, thick, halo, bulge, bar)
   → star at (R, θ, z): IMF mass, birth time, [Fe/H], C/O
   → evolve(mass, age, Z) → MK class / remnant / nebula
@@ -487,7 +489,7 @@ Code map (start here):
 | Area | Where |
 |------|--------|
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
-| Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
+| Galaxy (MW field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |

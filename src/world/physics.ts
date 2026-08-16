@@ -327,24 +327,55 @@ export const UNIVERSE = {
   GALAXY_AGE_GYR: 13.0,
 
   /**
-   * Toy-compressed SBbc mass model (lengths in kpc). Rd is the thin-disk
-   * scale length; the bar, bulge, thick disk and halo are ratios of it.
-   * ARM_M = 2 is the grand-design pair; PITCH is the logarithmic-spiral
-   * pitch (SBbc is open, ~18°). ARM_A is the density-wave contrast.
+   * Milky Way mass model (lengths in kpc). The density field is a
+   * SUGGESTION for how many stars a region gets — never a box they
+   * sit inside. Thin/thick discs, a long bar, a boxy bulge and an
+   * X/peanut (Ciambur+2017), a broken exponential disc (Lian+2024),
+   * a faint halo. Arms are a midplane overdensity only; they do not
+   * multiply the vertical law (that was the coiled-spring).
+   *
+   * Rd, zd: Bland-Hawthorn & Gerhard 2016. Bar ~4.2 kpc, peanut
+   * R=1.67 z=0.65. Four-arm stellar contrast is mild; gas carries
+   * the rest (GAS_ARM_A).
    */
-  GALAXY_RD: 3.5,
+  GALAXY_RD: 2.6,
   GALAXY_R_MAX: 16,
   GALAXY_ZD: 0.3,
   GALAXY_Z_THICK: 0.9,
-  GALAXY_RD_THICK: 4.2,
-  GALAXY_RE_BULGE: 0.7,
-  GALAXY_BAR_A: 3.2,
+  GALAXY_RD_THICK: 3.0,
+  GALAXY_RD_INNER: 8.0,
+  GALAXY_R_BREAK: 7.5,
+  GALAXY_R_BREAK_W: 1.1,
+  GALAXY_THIN_AMP: 1.15,
+  GALAXY_RE_BULGE: 1.15,
+  GALAXY_BAR_A: 4.2,
   GALAXY_BAR_B: 0.85,
-  GALAXY_BAR_C: 0.35,
-  GALAXY_ARM_M: 2,
-  GALAXY_PITCH: (18 * Math.PI) / 180,
-  GALAXY_ARM_A: 0.85,
+  GALAXY_BAR_C: 0.28,
+  GALAXY_BAR_AMP: 2.4,
+  GALAXY_BOX_A: 1.15,
+  GALAXY_BOX_B: 0.72,
+  GALAXY_BOX_C: 0.48,
+  GALAXY_BOX_AMP: 5.5,
+  GALAXY_PEANUT_R: 1.67,
+  GALAXY_PEANUT_Z: 0.65,
+  GALAXY_PEANUT_AMP: 3.8,
+  GALAXY_NUC_RD: 0.22,
+  GALAXY_NUC_ZD: 0.07,
+  GALAXY_NUC_AMP: 2.2,
+  GALAXY_ARM_M: 4,
+  GALAXY_PITCH: (13 * Math.PI) / 180,
+  GALAXY_ARM_A: 0.2,
+  GALAXY_ARM_M2: 2,
+  GALAXY_PITCH2: (18 * Math.PI) / 180,
+  GALAXY_ARM_A2: 0.1,
   GALAXY_HALO_A: 8,
+  GALAXY_HALO_AMP: 0.004,
+  /** In-plane scatter (kpc) when a cell spends its quota. Core is wider
+   *  so the polar origin cannot print an axle. */
+  GALAXY_SLOT_XY: 0.22,
+  GALAXY_SLOT_XY_CORE: 0.55,
+  GALAXY_SLOT_Z: 0.35,
+  GALAXY_CORE_R: 2.2,
 
   /**
    * Rotation. The halo makes the curve flat: v(R) ≈ V_ROT, so
@@ -379,9 +410,12 @@ export const UNIVERSE = {
   GALAXY_TURB_SIGMA: 1.35,
   GALAXY_TURB_FREQ: 0.85,
   GALAXY_RD_GAS: 1.6,
+  /** Molecular sheet: thinner than the stars, stronger arm contrast. */
+  GALAXY_ZD_GAS: 0.12,
+  GALAXY_GAS_ARM_A: 0.7,
   GALAXY_DUST_N_K: 6000,
   GALAXY_DUST_MAX: 8,
-  GALAXY_SFR_GAIN: 10,
+  GALAXY_SFR_GAIN: 18,
   GALAXY_CLOUD_HII: 0.1,
   GALAXY_DUST_RGB: [0.55, 1.0, 1.65] as [number, number, number],
 
