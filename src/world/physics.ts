@@ -372,8 +372,9 @@ export const UNIVERSE = {
    * (SFR_GAIN — Schmidt–Kennicutt-lite: dense gas births young
    * stars, i.e. nurseries), and the H II condition (CLOUD_HII —
    * a young massive star lights its natal cloud). Dust reddens:
-   * extinction per unit optical depth is DUST_RGB — blue dies
-   * first, which is why lanes look brown against the yellow bulge.
+   * extinction per unit optical depth is DUST_RGB (R, G, B) — blue
+   * dies first, so a sightline through dust goes warm before it
+   * goes dark.
    */
   GALAXY_TURB_SIGMA: 1.35,
   GALAXY_TURB_FREQ: 0.85,
@@ -382,7 +383,7 @@ export const UNIVERSE = {
   GALAXY_DUST_MAX: 8,
   GALAXY_SFR_GAIN: 10,
   GALAXY_CLOUD_HII: 0.1,
-  GALAXY_DUST_RGB: [1.65, 1.0, 0.55] as [number, number, number],
+  GALAXY_DUST_RGB: [0.55, 1.0, 1.65] as [number, number, number],
 
   /** Solar circle (kpc) — home-star search and the thin-disk yardstick. */
   R_SUN: 8.2,
@@ -460,18 +461,21 @@ export const UNIVERSE = {
    * PN grows over PN_GYR, SNR Sedov-ish (t^0.4) to SNR_R_MAX, H II
    * is Strömgren-ish (HII_R_K · L^⅓); NEB_EMISSION is the
    * photograph stretch. They screen-blend (they glow, they do not
-   * add to a white bar); dust draws after and obscures.
-   * DUST is a raymarched fractal cloud: a short march through one absolute
-   * sub-grid ISM field (domain-warped fBm, flattened to the disk so
-   * filaments lie in the plane; neighbouring clumps are windows onto
-   * the SAME field and join into complexes). Optical depth is
-   * Beer-Lambert — thin wisps barely tint, dense cores genuinely
-   * obscure up to DUST_ALPHA_MAX — and star-forming clumps get a
-   * warm lit rim (DUST_RIM, the Pillars look: nursery UV grazing
-   * the cloud edge). Composition (dustPhysics) colours the grains:
-   * silicate brown, sooty carbon where C/O is high, pale ice
-   * mantles on cold shielded outer clumps (DUST_ICE_WARM is the
-   * condensation threshold on the radiation-temperature proxy).
+   * add to a white bar).
+   * DUST IS NOT VISIBLE. In the backdrop it is never drawn — it is
+   * a filter on the light law: every star and nebula row marches
+   * the sightline from the bubble centre through the thin gas sheet
+   * × the same turbulence field (EXTINCT_K per unit column,
+   * EXTINCT_STEPS taps) and is dimmed by exp(−τ · DUST_RGB). Blue
+   * dies first, so rift-edge stars redden before they vanish; thick
+   * columns swallow stars whole and dust manifests the way Barnard
+   * found it — irregular star-poor holes, no sprite edges. The
+   * sheet's z-scale is ZD (razor thin), so bulge rows above the
+   * plane shine over the lane. EXTINCT_MAX caps the column — from
+   * inside the plane the real core is fully blocked; the cap keeps
+   * it glorious (a toy compression, like TIME_SCALE). The marched
+   * fractal-cloud shader (DUST_TAU, DUST_RIM, dustPhysics grain
+   * tints) remains for the local layer when it returns.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX / DUST_PX as pixel floors so far sources stay
    * findable; sprites under DUST_MINPX skip the march (a disc).
@@ -496,10 +500,14 @@ export const UNIVERSE = {
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
-  /** Density (optical depth) boost on backdrop dust — the survivors
-   *  read as real dark clouds, not faint smudges. Beer–Lambert, so
-   *  it deepens extinction; it never paints. */
-  SILHOUETTE_DUST_BOOST: 1.8,
+  /** Sightline extinction: optical depth per kpc of dense column.
+   *  Dust is a filter, not an object — see the DUST note above. */
+  GALAXY_EXTINCT_K: 4,
+  /** Column cap. Honest in-plane extinction blacks out the core
+   *  (the real Milky Way's is invisible); the cap keeps it bright. */
+  GALAXY_EXTINCT_MAX: 2.5,
+  /** Sightline march taps (vertex-shader cost, once per row). */
+  GALAXY_EXTINCT_STEPS: 12,
   SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_DUST_PX: 4,
