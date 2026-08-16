@@ -316,11 +316,12 @@ export function slotScatterKpc(): number {
   return FIELD.JITTER * 3;
 }
 
-/** Box–Muller. Two uniforms → one N(0,1). Same two-draw cost as a tent. */
+/** Box–Muller, clamped to 3σ so a slot cannot leave its parent's reach. */
 const gauss = (rng: () => number): number => {
   const u = Math.max(1e-9, rng());
   const v = rng();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+  const x = Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+  return x < -3 ? -3 : x > 3 ? 3 : x;
 };
 
 /** Star placement: parent + isotropic Gaussian. That is the whole law. */

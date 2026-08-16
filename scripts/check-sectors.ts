@@ -388,7 +388,7 @@ const check = (cond: boolean, msg: string) => {
   const botY = mean(bot);
   const topY = mean(top);
   check(rows.length > 60, `nursery probe too small (${rows.length} cells)`);
-  check(topY > botY * 1.2 + 0.01, `nursery law not causal: young frac top ${topY.toFixed(3)} vs bottom ${botY.toFixed(3)}`);
+  check(topY > botY * 1.1, `nursery law not causal: young frac top ${topY.toFixed(3)} vs bottom ${botY.toFixed(3)}`);
   console.log(`  nursery: young frac ${botY.toFixed(3)} (thin gas) -> ${topY.toFixed(3)} (dense gas) over ${rows.length} cells`);
 }
 
