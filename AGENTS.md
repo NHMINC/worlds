@@ -114,10 +114,10 @@ function. Every occupied slot is addressable, the way No Man’s Sky
 addresses a system: the id *is* the star, not an index into a stored
 list. The **galaxy explorer** is how you discover: the Hubble glow
 is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
-As you zoom and fly, `objectsNear` resolves the massive tail of
-nearby cells, then more of the IMF. You cannot pick a star until
-you are close enough that it has resolved. Set course loads that
-  star. We **store visits only** (overlays, camera, labels). We do
+The explorer shows the luminous harvest; a later survey will
+resolve the faint neighbours of a camp. Set course loads a
+picked harvest star (or the here / POI focus). We **store
+visits only** (overlays, camera, labels). We do
   not mint systems. App boot mints the whole-disk backdrop once
   (`prepareUniverse`) behind the HTML “Preparing the universe”
   splash — not a React overlay, so Strict Mode remounts cannot
@@ -182,26 +182,23 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   front only multiplies the same Chapman transmittance the sky already
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
-- **The explorer is one catalog bubble, not a saucer chart.**
-  App boot mints the whole-disk backdrop once (`prepareUniverse`)
-  and opens the region at the loaded star (`hereStarId`, else
-  `homeStar`) with that star on the reticle. The explorer canvas
-  stays alive after Return / set course; only the splash is
-  once-per-load. An empty save opens the same way on a discovered
-  living host. The camera sits at the
-  sphere centre — it does not tour the ball. Gestures **slide the
-  sphere** through the catalog: stars that cross in are minted,
-  stars that leave drop out. The GPU holds catalog positions; the
-  vertex shader subtracts `uCenter` (a sliding window, 1:1 with
-  the catalog — no `VIEW_R` stretch). Membership is a **shell
-  walk** (`advanceRegionCloud`) on a worker. The bubble’s only
-  job is membership: inside `GALAXY_REGION_R` every occupied slot
-  is drawn and visitable; outside, only the magnitude-limited
-  backdrop (`buildSilhouetteCloud`). Distant stars are **1px
-  pinpricks**; closer ones grow from luminosity and distance.
-  **Dust is never drawn — it is sightline extinction**
-  (`extinctGlsl`). A star is visitable only when the catalog
-  ball has resolved that id.
+- **The explorer is the luminous harvest, not a magnifier ball.**
+  App boot mints the bright catalog once (`prepareUniverse` /
+  `buildSilhouetteCloud`) — living stars above `SILHOUETTE_L`,
+  nebulae, and dust as sightline extinction. You steer by those
+  upper-magnitude objects. The faint 95% (adjacent dull stars
+  around a camp) is a later survey, not this sky. “Here” (the
+  loaded star, else `homeStar`) is a **focus highlight** parked
+  in front of the camera; visited samples can mark other points
+  of interest. The explorer canvas stays alive after Return /
+  set course; only the splash is once-per-load. An empty save
+  opens the same way on a discovered living host. The camera
+  sits at the viewpoint centre. Gestures **slide** through
+  catalog space (1:1, no `VIEW_R` stretch). Distant harvest
+  stars are **1px pinpricks**; closer ones grow from luminosity
+  and distance. **Dust is never drawn — it is sightline
+  extinction** (`extinctGlsl`). A harvest star is visitable
+  when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble far enough that the whole
   disk fits the screen (pole-on, or a few degrees above the plane)
   and look back at the origin. **Home** parks on the loaded star
@@ -498,7 +495,7 @@ Code map (start here):
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
-| Galaxy explorer (catalog bubble) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (luminous harvest) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |

@@ -1,43 +1,38 @@
 /**
- * Two layers, two laws. Inside the catalog bubble a star starts as
- * one CSS pixel at the rim and grows as 1/d when the camera closes.
- * Paint radius is a fraction of GALAXY_REGION_R so the rim stays a
- * pin if the ball changes. Brightness L/d², colour teff. Backdrop
- * stays 1px.
+ * The explorer sky is the luminous harvest. A star is one CSS
+ * pixel across the disk and grows as 1/d when you close on it.
+ * Paint radius is catalog kpc (view is 1:1). Brightness L/d²,
+ * colour teff. Dust is never drawn. The faint 95% is a later
+ * survey — not this photograph.
  */
 import * as THREE from 'three';
-import { UNIVERSE } from '../world/physics';
 import type { GalaxyObject } from '../world/galaxy';
 
 /**
- * Toy paint-pin radius (catalog kpc; view is 1:1). Real R☉ is
- * metres against kiloparsecs — unusable. Size is max(1px, 2 r/d).
- * GLOW_K = REGION_R / 2000 so 2 r / R × ~1000 px/rad ≈ 1 at the
- * rim — a pin on entry, a disc only when the bubble is on top.
- * This is the photograph, not the visit lock — see AIM_R_K.
+ * Toy paint-pin radius (catalog kpc). Real R☉ is metres against
+ * kiloparsecs — unusable. Size is max(1px, 2 r/d). A pin at
+ * several kpc; a disc when the camera is on the star. This is
+ * the photograph, not the visit lock — see AIM_R_K.
  */
-export const GLOW_K = UNIVERSE.GALAXY_REGION_R / 2000;
+export const GLOW_K = 0.0024;
 export const GLOW_P = 0.16;
-/** Dim / remnant floor for the paint pin. Below GLOW_K so remnants stay pins at the rim. */
-export const GLOW_DIM = GLOW_K * 0.67;
+/** Dim / remnant floor for the paint pin. */
+export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
-/** Paint radius — same body as the glow pin. */
 export const PHOTO_K = GLOW_K;
 export const PHOTO_P = GLOW_P;
-export const PHOTO_MIN = GLOW_K * 0.28;
-export const PHOTO_MAX = UNIVERSE.GALAXY_REGION_R * 0.05;
+export const PHOTO_MIN = 0.0007;
+export const PHOTO_MAX = 0.012;
 /**
  * Visit-lock body (catalog kpc). Independent of the 1px paint pin.
- * A local catalog star locks when aimR / d ≥ AIM_MIN_ANG — close
- * enough to set course, not "grown into a disc". Silhouette
- * backdrop rows are not in the cloud and never lock. Dust is
- * an ISM address, not a star.
+ * A luminous-harvest star locks when aimR / d ≥ AIM_MIN_ANG.
+ * Dust is an ISM address, not a star.
  */
-export const AIM_R_K = UNIVERSE.GALAXY_REGION_R * 0.0015;
+export const AIM_R_K = 0.052;
 export const AIM_R_P = GLOW_P;
-export const AIM_R_MIN = UNIVERSE.GALAXY_REGION_R * 0.0008;
-export const AIM_R_MAX = UNIVERSE.GALAXY_REGION_R * 0.004;
+export const AIM_R_MIN = 0.012;
+export const AIM_R_MAX = 0.22;
 /**
  * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
  * Steep in L so the luminous tail is not one white.

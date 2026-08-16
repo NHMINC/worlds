@@ -264,30 +264,24 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const far = shineDisplay(20, 240);
   check(near > far * 1.25, `same L at 80 kpc (${near.toFixed(2)}) must beat 240 kpc (${far.toFixed(2)})`);
   const pxPer = 1288;
-  const ball = UNIVERSE.GALAXY_REGION_R;
   const diskPx = photoApparentPx(1, 40, pxPer);
   const midDisk = photoApparentPx(1, 8, pxPer);
-  const rim = photoApparentPx(1, ball, pxPer);
-  const approach = photoApparentPx(1, ball * 0.4, pxPer);
-  const closePx = photoApparentPx(1, ball * 0.1, pxPer);
+  const close = photoApparentPx(1, 0.5, pxPer);
+  const focus = photoApparentPx(1, 0.35, pxPer);
   check(diskPx <= 1.5, `40 kpc must be a pin, got ${diskPx.toFixed(1)}px`);
-  check(midDisk <= 1.5, `8 kpc must still be a pin, got ${midDisk.toFixed(1)}px`);
-  check(rim <= 1.6, `bubble rim must be a pin, got ${rim.toFixed(1)}px`);
-  check(approach > rim, `approaching must grow (${rim.toFixed(1)} → ${approach.toFixed(1)})`);
-  check(closePx > approach * 1.4, `close photosphere ${closePx.toFixed(1)} must keep growing from ${approach.toFixed(1)}`);
-  // Visit lock is not the paint pin: entry is a pin; lock when close.
-  check(!aimLocks(1, ball), 'rim solar analog is a pin, not yet a visit');
-  check(aimLocks(1, ball * 0.4), 'approach park must lock the reticle');
-  check(!aimLocks(1, 8), 'solar analog at 8 kpc is backdrop');
-  check(!aimLocks(0.01, 8), 'faint M at 8 kpc must stay a backdrop speck');
+  check(midDisk <= 2.2, `8 kpc must still be a pin, got ${midDisk.toFixed(1)}px`);
+  check(close > 6, `close photosphere ${close.toFixed(1)} must grow off the pin`);
+  check(focus > close, `focus park ${focus.toFixed(1)} must read larger than 0.5 kpc`);
+  check(aimLocks(1, 20), 'solar analog at 20 kpc must lock the reticle');
+  check(aimLocks(1, 0.35), 'focus park must lock');
+  check(!aimLocks(0.01, 40), 'faint M at 40 kpc must stay a speck');
   check(!aimLocks(1, 40), 'solar analog at 40 kpc is not yet a visit');
 }
 
 {
-  // Warp is a fixed catalog kpc/s. 0.0025 crosses a 0.02 kpc
-  // neighbourhood in 8 s — a look, not a flash.
-  check(UNIVERSE.GALAXY_WARP >= 0.002, `warp ${UNIVERSE.GALAXY_WARP} is slower than the look-pace cruise`);
-  check(UNIVERSE.GALAXY_WARP <= 0.003, `warp ${UNIVERSE.GALAXY_WARP} still flashes past worlds`);
+  // Warp is a disk cruise on the luminous harvest.
+  check(UNIVERSE.GALAXY_WARP >= 0.2, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
+  check(UNIVERSE.GALAXY_WARP <= 0.4, `warp ${UNIVERSE.GALAXY_WARP} is faster than the harvest cruise`);
   // Dust is a filter: blue must die first or a rift edge goes cold
   // instead of warm, and the column cap must leave the core visible.
   const [dR, dG, dB] = UNIVERSE.GALAXY_DUST_RGB;

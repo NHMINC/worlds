@@ -691,9 +691,8 @@ function gasDensityCeil(R: number, z: number): number {
  * Magnitude-limited luminous tail of the whole disk. Living stars
  * above SILHOUETTE_L, young/bright nebula hosts, and dust envelopes
  * larger than SILHOUETTE_DUST_R. Sparse cells emit nothing. Minted
- * once per seed; the GPU keeps every point and the shader hides the
- * sample ball. Not pickable. Dust ids are (cell, clump), never
- * catalog stars.
+ * once per seed — this IS the explorer sky. Harvest stars are
+ * pickable. Dust ids are (cell, clump), never catalog stars.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;

@@ -55,7 +55,7 @@ export function GalaxyExplorer(props: Props) {
     mode: 'region',
     theta: 0,
     phi: 0,
-    radius: UNIVERSE.GALAXY_REGION_R,
+    radius: 8,
     pickable: false,
     resolved: 0,
     grown: 0,
@@ -216,7 +216,7 @@ export function GalaxyExplorer(props: Props) {
         <div className="galaxy-brand">
           <div className="galaxy-title">Helix{frame.sector ? ` · ${frame.sector}` : ''}</div>
           <div className="galaxy-sub">
-            {`${frame.population.toLocaleString()} in this volume · ${frame.backdrop.toLocaleString()} behind`}
+            {`${frame.population.toLocaleString()} luminous · dust is extinction`}
           </div>
         </div>
         <div className="galaxy-presets">
@@ -271,7 +271,7 @@ export function GalaxyExplorer(props: Props) {
 
       {inRegion && censusKeys.length > 0 && (
         <aside className="galaxy-census">
-          <div className="gx-kicker">In this volume</div>
+          <div className="gx-kicker">Luminous harvest</div>
           {censusKeys.slice(0, 8).map((k) => (
             <div key={k} className="gx-bar-row">
               <span>{k}</span>

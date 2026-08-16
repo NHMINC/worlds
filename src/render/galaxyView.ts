@@ -1,14 +1,11 @@
 /**
- * The galaxy explorer is one catalog bubble. Inside it every
- * occupied slot is drawn and visitable; outside, only the
- * magnitude-limited backdrop. View is 1:1 with the catalog —
- * the camera sits at the bubble centre. Look-drag slides the
- * heading. Warp latches a fixed cruise; Stop brakes. Face-on /
- * Edge-on slide the bubble far enough that the whole disk fits
- * the screen; Back restores the pose from before that overview;
- * Home parks on the loaded star (else the canonical home) and
- * pins that pose as Back. Dust is never drawn — it is sightline
- * extinction.
+ * The galaxy explorer is the luminous harvest: bright stars,
+ * nebulae, and dust-as-extinction. The camera sits at the
+ * viewpoint centre (1:1 catalog kpc). “Here” is a focus highlight
+ * parked in front of the camera; other samples can mark points
+ * of interest. The faint 95% is a later survey. Warp is a latched
+ * cruise; Face-on / Edge-on slide far enough that the disk fits;
+ * Home parks on the loaded star; Back restores the previous pose.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -16,8 +13,6 @@ import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galax
 import {
   aimLocks,
   GLOW_DIM,
-  GLOW_K,
-  GLOW_P,
   POINT_FLUX_EPS,
   POINT_MAX_PX,
   POINT_NEAR_BOOST,
@@ -35,9 +30,7 @@ import {
 import { classifyStar } from '../world/stellar';
 import { systemAt } from '../world/systemgen';
 import {
-  buildRegionCloud,
   silhouetteCloud,
-  advanceRegionCloud,
   regionName,
   sketchMatches,
   MK_LETTER,
@@ -94,11 +87,8 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   }
 `;
 
-/** Slide the catalog centre after it has moved this far (catalog kpc). */
-const MAG_SLIDE = 0.002;
-/** A jump bigger than this remints instead of walking the rim. */
-const MAG_REBUILD = 0.03;
-/** Latched warp. Speed is catalog kpc / s — see UNIVERSE.GALAXY_WARP. */
+/** Park “here” this far ahead of the camera (catalog kpc). */
+const FOCUS_PARK = 0.35;
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
 
@@ -130,101 +120,6 @@ export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
   return o.inArm;
 }
 
-const STAR_VERT = /* glsl */ `
-  ${SHAPE_GLSL}
-  ${extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS_LOCAL)}
-  attribute vec3 aColor;
-  attribute float aVis;
-  attribute float aLum;
-  attribute float aKind;
-  attribute float aSize;
-  attribute float aSeed;
-  uniform float uPass;
-  uniform vec3 uCenter;
-  uniform float uScale;
-  uniform float uPixel;
-  uniform float uPxPerRad;
-  uniform float uGlowK;
-  uniform float uGlowP;
-  uniform float uGlowMin;
-  uniform float uGlowDim;
-  uniform float uMaxPx;
-  uniform float uNearBoost;
-  uniform float uFluxEps;
-  uniform float uPhotoK;
-  uniform float uPhotoP;
-  uniform float uPhotoMin;
-  uniform float uPhotoMax;
-  uniform float uShineLGain;
-  uniform float uShineLP;
-  uniform float uShineDistRef;
-  uniform float uShineDistP;
-  uniform float uShineSat;
-  varying vec3 vColor;
-  varying float vVis;
-  varying float vKind;
-  varying float vSeed;
-  varying vec3 vCenterView;
-  varying float vRadiusView;
-  varying vec3 vCenterCat;
-  varying float vPx;
-  void main() {
-    // Cull for the pass HERE: the shared fragment discards the wrong
-    // kinds anyway, but a discarded sprite still rasterizes its whole
-    // quad. Toward the core that tripled the overdraw for nothing.
-    // Dust rows (kind > 3.5) are census-only — never drawn.
-    if ((uPass < 0.5 && aKind > 0.5) ||
-        (uPass > 0.5 && (aKind < 0.5 || aKind > 3.5))) {
-      vVis = 0.0;
-      gl_PointSize = 0.0;
-      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-      return;
-    }
-    vec3 view = (position - uCenter) * uScale;
-    vec4 mv = modelViewMatrix * vec4(view, 1.0);
-    float d = max(length(mv.xyz), 0.001);
-    vKind = aKind;
-    vSeed = aSeed;
-    vColor = aColor;
-    if (aKind > 0.5) {
-      // aSize is the envelope radius in catalog kpc. View is 1:1,
-      // so true angle = aSize * uScale / view distance (uScale = 1).
-      float ang = max(aSize, 0.005) * uScale / d;
-      gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, 512.0);
-      vVis = aVis;
-      vCenterView = mv.xyz;
-      vRadiusView = max(aSize, 0.005) * uScale;
-      vCenterCat = position;
-      vPx = gl_PointSize;
-    } else {
-      // Glow pin (GLOW_K). max(1px, 2 r/d) — a point at the rim;
-      // a disc only when the bubble is on top of it. Flux L/d²,
-      // colour teff. View is catalog kpc (1:1).
-      float L = max(aLum, 1e-4);
-      float r = max(L < 0.05 ? uGlowDim : uPhotoMin, uPhotoK * pow(L, uPhotoP));
-      r = min(r, uPhotoMax);
-      float ang = r / d;
-      gl_PointSize = clamp(max(uPixel, 2.0 * ang * uPxPerRad), 1.0, uMaxPx);
-      float flux = L / (d * d + uFluxEps);
-      float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
-      float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
-      vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
-      vVis = min(aVis * punch, 8.0);
-      vCenterView = vec3(0.0);
-      vRadiusView = 0.0;
-      vCenterCat = vec3(0.0);
-      vPx = gl_PointSize;
-    }
-    // Same dust law as the backdrop, over the short in-bubble
-    // column — a star does not brighten by crossing the bubble
-    // boundary, and local rifts line up with the backdrop's.
-    vec3 ext = extinctT(uCenter, position);
-    float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
-    vVis *= extLum;
-    vColor *= ext / max(extLum, 1e-3);
-    gl_Position = projectionMatrix * mv;
-  }
-`;
 
 /** Disk diameter with slack — Face-on sits several R_MAX out. */
 function regionCamFar(): number {
@@ -249,6 +144,13 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uStarPx;
   uniform float uNebulaPx;
   uniform float uSuper;
+  uniform float uGlowDim;
+  uniform float uPhotoK;
+  uniform float uPhotoP;
+  uniform float uPhotoMin;
+  uniform float uPhotoMax;
+  uniform float uMaxPx;
+  uniform float uNearBoost;
   uniform float uFluxEps;
   uniform float uShineLGain;
   uniform float uShineLP;
@@ -272,12 +174,11 @@ const SILHOUETTE_VERT = /* glsl */ `
     vRadiusView = 0.0;
     vCenterCat = vec3(0.0);
     vPx = 0.0;
-    float dCat = length(position - uCenter);
     // Cull wrong-kind sprites for the pass here — a fragment discard
     // still rasterizes the whole quad, tripling core overdraw. Dust
     // rows (kind > 3.5) are census-only and never pass either gate.
-    if (dCat < uRegionR ||
-        (uPass < 0.5 && aKind > 0.5) ||
+    // No membership ball: the harvest is the whole sky.
+    if ((uPass < 0.5 && aKind > 0.5) ||
         (uPass > 0.5 && (aKind < 0.5 || aKind > 3.5))) {
       vVis = 0.0;
       gl_PointSize = 0.0;
@@ -300,14 +201,20 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Same point law as the local layer: one CSS pixel, L^P
-      // intensity, teff colour. No glow sprite.
+      // Pin across the disk; disc when the camera closes. Same
+      // r/d photograph as the old local layer — the harvest is
+      // the only sky now.
       float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
-      vVis = aVis * uShineLGain * pow(L, uShineLP) * pow(uShineDistRef / d, uShineDistP);
+      float r = max(L < 0.05 ? uGlowDim : uPhotoMin, uPhotoK * pow(L, uPhotoP));
+      r = min(r, uPhotoMax);
+      float ang = r / d;
+      gl_PointSize = clamp(max(uPixel, 2.0 * ang * uPxPerRad), 1.0, uMaxPx);
+      float flux = L / (d * d + uFluxEps);
+      float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
-      gl_PointSize = max(1.0, uPixel);
+      vVis = min(aVis * punch, 8.0);
       vPx = gl_PointSize;
     }
     // Extinction: march the column from the bubble to this row.
@@ -510,11 +417,6 @@ export class GalaxyView {
   private grownCount = 0;
   private briefMemo = new Map<number, { name: string; planets: number; moons: number; life: boolean }>();
 
-  private starPts: THREE.Points | null = null;
-  private starGeo: THREE.BufferGeometry | null = null;
-  private starMat: THREE.ShaderMaterial | null = null;
-  private starEmisPts: THREE.Points | null = null;
-  private starEmisMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
   private silPts: THREE.Points | null = null;
   private silGeo: THREE.BufferGeometry | null = null;
@@ -523,14 +425,13 @@ export class GalaxyView {
   private silEmisMat: THREE.ShaderMaterial | null = null;
   /** Catalog positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
-  private borderWorker: Worker | null = null;
-  private borderGen = 0;
-  private borderBusy = false;
 
   private camRot3 = new THREE.Matrix3();
 
   private pickRing: THREE.Mesh;
+  private hereRing: THREE.Mesh;
   private hereObj: GalaxyObject | null = null;
+  private visitedIds: number[] = [];
 
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
@@ -588,7 +489,9 @@ export class GalaxyView {
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
 
     this.pickRing = this.makeRing(0xf4e4c1, 0.18);
+    this.hereRing = this.makeRing(0x7ec8e3, 0.22);
     this.scene.add(this.pickRing);
+    this.scene.add(this.hereRing);
 
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown, { passive: false });
@@ -599,7 +502,6 @@ export class GalaxyView {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
-    this.bootBorderWorker();
     this.attachSilhouette();
 
     this.setHere(hereStarId);
@@ -631,9 +533,12 @@ export class GalaxyView {
 
   setHere(id: number | null): void {
     this.hereObj = id != null ? objectAt(this.seed, id) : null;
+    this.placeHighlights();
   }
 
-  setVisited(_ids: number[]): void {}
+  setVisited(ids: number[]): void {
+    this.visitedIds = ids;
+  }
 
   // ------------------------------------------------------------- region mode
 
@@ -653,29 +558,19 @@ export class GalaxyView {
   }
 
   /**
-   * Open the catalog bubble around a world point. `select` is
-   * pinned when the dive is a star. Flying slides this ball through
-   * the catalog.
+   * Park the viewpoint at a catalog point. The sky is the once-per-
+   * load harvest — we do not remint a neighbourhood. `select` is
+   * pinned when the dive is a star.
    */
   enterRegion(x: number, y: number, z: number, select: GalaxyObject | null = null): void {
-    this.disposeArcStars();
     this.mode = 'region';
     this.arcCenter.set(x, y, z);
     this.mintAt.set(x, y, z);
-    const cloud = buildRegionCloud(this.seed, x, y, z, UNIVERSE.GALAXY_REGION_R);
-    this.cloud = cloud;
-    this.sectorPop = cloud.n;
+    this.bindSky();
     this.regionLabel = regionName(x, y, z);
-    this.lastEnterMs = cloud.ms;
     this.objects = [];
-    this.buildArcStars();
-    // Backdrop is once-per-seed. Attach if the cache is already warm.
-    this.buildSilhouetteStars();
     this.censusMemo = {};
     this.resetThrust();
-    this.borderGen++;
-    this.borderBusy = false;
-    this.syncWorkerCloud();
 
     this.arcPos.set(0, 0, 0);
     const glen = Math.hypot(x, z);
@@ -691,22 +586,15 @@ export class GalaxyView {
     this.updateSight(true);
   }
 
-  private disposeLocalStars(): void {
-    if (this.starEmisPts) {
-      this.scene.remove(this.starEmisPts);
-      this.starEmisMat?.dispose();
-      this.starEmisPts = null;
-      this.starEmisMat = null;
-    }
-    if (this.starPts) {
-      this.scene.remove(this.starPts);
-      this.starGeo?.dispose();
-      this.starMat?.dispose();
-      this.starPts = null;
-      this.starGeo = null;
-      this.starMat = null;
-      this.starVis = null;
-    }
+  /** Attach the luminous harvest if the cache is warm. */
+  private bindSky(): void {
+    const cloud = silhouetteCloud(this.seed);
+    if (!cloud) return;
+    this.cloud = cloud;
+    this.sectorPop = cloud.n;
+    this.lastEnterMs = cloud.ms;
+    if (!this.silPts) this.buildSilhouetteStars();
+    else this.pushMagUniforms();
   }
 
   private disposeSilhouette(): void {
@@ -727,53 +615,9 @@ export class GalaxyView {
   }
 
   private disposeArcStars(): void {
-    this.disposeLocalStars();
     this.disposeSilhouette();
   }
 
-  private bindCloudAttrs(geo: THREE.BufferGeometry, cloud: StarCloud | null, vis: Float32Array): THREE.BufferAttribute {
-    const pos = cloud ? cloud.pos : new Float32Array(3);
-    const col = cloud ? cloud.col : new Float32Array(3);
-    const posAttr = new THREE.BufferAttribute(pos, 3);
-    posAttr.setUsage(THREE.DynamicDrawUsage);
-    geo.setAttribute('position', posAttr);
-    geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
-    const visAttr = new THREE.BufferAttribute(vis, 1);
-    visAttr.setUsage(THREE.DynamicDrawUsage);
-    geo.setAttribute('aVis', visAttr);
-    geo.setAttribute('aLum', new THREE.BufferAttribute(cloud ? cloud.lum : new Float32Array(1), 1));
-    geo.setAttribute('aKind', new THREE.BufferAttribute(cloud ? cloud.kind : new Uint8Array(1), 1));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(cloud ? cloud.size : new Float32Array(1), 1));
-    geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud ? cloud.pulse : new Float32Array(1), 1));
-    geo.setDrawRange(0, cloud?.n ?? 0);
-    return visAttr;
-  }
-
-  private localGlowUniforms(): Record<string, THREE.IUniform> {
-    return {
-      uCenter: { value: new THREE.Vector3() },
-      uScale: { value: 1 },
-      uPixel: { value: this.renderer.getPixelRatio() },
-      uPxPerRad: { value: this.pxPerRad() },
-      uGlowK: { value: GLOW_K },
-      uGlowP: { value: GLOW_P },
-      uGlowMin: { value: PHOTO_MIN },
-      uGlowDim: { value: GLOW_DIM },
-      uMaxPx: { value: POINT_MAX_PX },
-      uNearBoost: { value: POINT_NEAR_BOOST },
-      uFluxEps: { value: POINT_FLUX_EPS },
-      uPhotoK: { value: PHOTO_K },
-      uPhotoP: { value: PHOTO_P },
-      uPhotoMin: { value: PHOTO_MIN },
-      uPhotoMax: { value: PHOTO_MAX },
-      uPass: { value: 0 },
-      ...this.shineUniforms(),
-      ...this.dustUniforms(),
-      ...this.extinctUniforms(),
-    };
-  }
-
-  /** Point-source shine — L and distance. Shared by both layers. */
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
       uShineLGain: { value: SHINE_L_GAIN },
@@ -832,43 +676,6 @@ export class GalaxyView {
     });
   }
 
-  private buildArcStars(): void {
-    const cloud = this.cloud;
-    const vis = new Float32Array(cloud ? cloud.gain.length : 1);
-    if (cloud) {
-      for (let i = 0; i < cloud.n; i++) vis[i] = cloud.gain[i];
-    }
-    const geo = new THREE.BufferGeometry();
-    const visAttr = this.bindCloudAttrs(geo, cloud, vis);
-    const mat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 0);
-    const pts = new THREE.Points(geo, mat);
-    pts.frustumCulled = false;
-    pts.renderOrder = 0;
-    this.scene.add(pts);
-    this.starPts = pts;
-    this.starGeo = geo;
-    this.starMat = mat;
-    this.starVis = visAttr;
-    // In-bubble NEBULA envelopes stay OFF for now: nearby shells
-    // rasterize hundreds of px each and every fragment marches the
-    // turbulence field — a measured majority of the core-facing frame
-    // (and the on-bubble nebulae had their own artefacts). The catalog
-    // still mints them (HUD census, picking data stay honest); only the
-    // draw pass is disabled. Re-enable by uncommenting once the march
-    // budget scales with angular size. Dust needs no pass in either
-    // layer: STAR_VERT folds the same sightline extinction into every
-    // local row that SILHOUETTE_VERT applies to the backdrop.
-    // const emisMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 1);
-    // const emisPts = new THREE.Points(geo, emisMat);
-    // emisPts.frustumCulled = false;
-    // emisPts.renderOrder = 1;
-    // this.scene.add(emisPts);
-    // this.starEmisPts = emisPts;
-    // this.starEmisMat = emisMat;
-    this.pushMagUniforms();
-    this.applyStarVis();
-  }
-
   private silUniforms(): Record<string, THREE.IUniform> {
     return {
       uCenter: { value: new THREE.Vector3() },
@@ -879,6 +686,13 @@ export class GalaxyView {
       uStarPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
+      uGlowDim: { value: GLOW_DIM },
+      uPhotoK: { value: PHOTO_K },
+      uPhotoP: { value: PHOTO_P },
+      uPhotoMin: { value: PHOTO_MIN },
+      uPhotoMax: { value: PHOTO_MAX },
+      uMaxPx: { value: POINT_MAX_PX },
+      uNearBoost: { value: POINT_NEAR_BOOST },
       ...this.shineUniforms(),
       ...this.dustUniforms(),
       ...this.extinctUniforms(),
@@ -895,7 +709,11 @@ export class GalaxyView {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
-    geo.setAttribute('aVis', new THREE.BufferAttribute(cloud.gain, 1));
+    const vis = cloud.gain.slice();
+    const visAttr = new THREE.BufferAttribute(vis, 1);
+    visAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aVis', visAttr);
+    this.starVis = visAttr;
     geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
     geo.setAttribute('aKind', new THREE.BufferAttribute(cloud.kind, 1));
     geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
@@ -925,7 +743,7 @@ export class GalaxyView {
 
   private cloudMats(): THREE.ShaderMaterial[] {
     const out: THREE.ShaderMaterial[] = [];
-    for (const m of [this.starMat, this.starEmisMat, this.silMat, this.silEmisMat]) {
+    for (const m of [this.silMat, this.silEmisMat]) {
       if (m) out.push(m);
     }
     return out;
@@ -942,37 +760,6 @@ export class GalaxyView {
     }
   }
 
-  /**
-   * Membership changed: reuse the point mesh. Remesh only when the
-   * cloud grew past the current buffers.
-   */
-  private syncArcStars(): void {
-    const cloud = this.cloud;
-    if (!cloud) return;
-    if (!this.starGeo || !this.starMat || !this.starVis) {
-      this.disposeLocalStars();
-      this.buildArcStars();
-      return;
-    }
-    const posAttr = this.starGeo.getAttribute('position') as THREE.BufferAttribute;
-    if (posAttr.array !== cloud.pos) {
-      const vis = new Float32Array(cloud.gain.length);
-      this.starVis = this.bindCloudAttrs(this.starGeo, cloud, vis);
-    } else {
-      posAttr.needsUpdate = true;
-      (this.starGeo.getAttribute('aColor') as THREE.BufferAttribute).needsUpdate = true;
-      const lum = this.starGeo.getAttribute('aLum') as THREE.BufferAttribute | undefined;
-      if (lum) lum.needsUpdate = true;
-      const kind = this.starGeo.getAttribute('aKind') as THREE.BufferAttribute | undefined;
-      if (kind) kind.needsUpdate = true;
-      const size = this.starGeo.getAttribute('aSize') as THREE.BufferAttribute | undefined;
-      if (size) size.needsUpdate = true;
-      const seed = this.starGeo.getAttribute('aSeed') as THREE.BufferAttribute | undefined;
-      if (seed) seed.needsUpdate = true;
-    }
-    this.starGeo.setDrawRange(0, cloud.n);
-    this.applyStarVis();
-  }
 
   // --------------------------------------------------------------- state
 
@@ -1043,22 +830,9 @@ export class GalaxyView {
     return this.grownCount;
   }
 
-  /** True if every loaded point sits inside the region ball. */
+  /** True when the luminous harvest is on the GPU. */
   cloudFitsRegion(): boolean {
-    const cloud = this.cloud;
-    if (!cloud || cloud.n <= 0) return false;
-    const r = UNIVERSE.GALAXY_REGION_R + 1e-5;
-    const r2 = r * r;
-    const cx = this.arcCenter.x;
-    const cy = this.arcCenter.y;
-    const cz = this.arcCenter.z;
-    for (let i = 0; i < cloud.n; i++) {
-      const dx = cloud.pos[i * 3] - cx;
-      const dy = cloud.pos[i * 3 + 1] - cy;
-      const dz = cloud.pos[i * 3 + 2] - cz;
-      if (dx * dx + dy * dy + dz * dz > r2) return false;
-    }
-    return true;
+    return Boolean(this.cloud && this.cloud.n > 0 && this.silPts);
   }
 
   /**
@@ -1173,21 +947,15 @@ export class GalaxyView {
     if (this.mode !== 'region') this.focus(best);
     const cat = galToCart(best.pos);
     this.orientArc();
-    const off = UNIVERSE.GALAXY_REGION_R * 0.4;
+    const off = FOCUS_PARK;
     this.arcCenter.set(
       cat.x - this.arcFwd.x * off,
       cat.y - this.arcFwd.y * off,
       cat.z - this.arcFwd.z * off,
     );
     this.mintAt.copy(this.arcCenter);
-    this.borderGen++;
-    this.borderBusy = false;
-    this.syncWorkerCloud();
     this.pushMagUniforms();
-    if (this.selected) {
-      const c = this.viewCart(this.selected);
-      this.pickRing.position.set(c.x, c.y, c.z);
-    }
+    this.placeHighlights();
     const v = this.viewCart(best);
     this.aimAt(v.x, v.y, v.z);
     this.applyCam();
@@ -1323,11 +1091,11 @@ export class GalaxyView {
     this.canvas.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
-    this.borderWorker?.terminate();
-    this.borderWorker = null;
     this.disposeArcStars();
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
+    this.hereRing.geometry.dispose();
+    (this.hereRing.material as THREE.Material).dispose();
     this.renderer.dispose();
   }
 
@@ -1349,13 +1117,7 @@ export class GalaxyView {
 
   private select(obj: GalaxyObject | null): void {
     this.selected = obj;
-    if (obj) {
-      const c = this.viewCart(obj);
-      this.pickRing.position.set(c.x, c.y, c.z);
-      this.pickRing.visible = true;
-    } else {
-      this.pickRing.visible = false;
-    }
+    this.placeHighlights();
     this.callbacks.onSelect(obj);
   }
 
@@ -1426,36 +1188,25 @@ export class GalaxyView {
 
   /**
    * Gestures are catalog kpc. The camera stays at the origin; the
-   * bubble centre slides. The GPU holds catalog positions — the
-   * vertex shader subtracts uCenter. Membership is a shell walk
-   * once the centre has moved MAG_SLIDE, run on a worker so the
-   * frame only updates the centre uniform.
+   * viewpoint slides. The GPU holds the harvest — the vertex shader
+   * subtracts uCenter. No membership walk.
    */
-  private moveBubble(vx: number, vy: number, vz: number, force = false): void {
-    if (this.mode !== 'region' || !this.cloud) return;
+  private moveBubble(vx: number, vy: number, vz: number, _force = false): void {
+    if (this.mode !== 'region') return;
     this.arcCenter.x += vx;
     this.arcCenter.y += vy;
     this.arcCenter.z += vz;
-    const d = this.arcCenter.distanceTo(this.mintAt);
-    if (force || d > MAG_REBUILD) {
-      this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), true);
-      this.mintAt.copy(this.arcCenter);
-      this.syncWorkerCloud();
-    } else if (d >= MAG_SLIDE) {
-      this.requestBorder();
-    }
+    this.mintAt.copy(this.arcCenter);
+    this.regionLabel = regionName(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
     this.pushMagUniforms();
-    if (this.selected) {
-      const c = this.viewCart(this.selected);
-      this.pickRing.position.set(c.x, c.y, c.z);
-    }
+    this.placeHighlights();
   }
 
-  /** Backdrop is minted once at app boot; attach the mesh if the cache is warm. */
+  /** Harvest is minted once at app boot; attach the mesh if the cache is warm. */
   private attachSilhouette(): void {
     const go = (): void => {
       if (this.disposed) return;
-      if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
+      this.bindSky();
     };
     if (silhouetteCloud(this.seed)) {
       go();
@@ -1464,131 +1215,22 @@ export class GalaxyView {
     void prepareUniverse(this.seed).then(go);
   }
 
-  private bootBorderWorker(): void {
-    try {
-      this.borderWorker = new Worker(new URL('../world/regionCloud.worker.ts', import.meta.url), { type: 'module' });
-      this.borderWorker.onmessage = this.onBorderMessage;
-      this.borderWorker.onerror = () => {
-        this.borderWorker?.terminate();
-        this.borderWorker = null;
-        this.borderBusy = false;
-      };
-    } catch {
-      this.borderWorker = null;
-    }
-  }
-
-  private syncWorkerCloud(): void {
-    const c = this.cloud;
-    const w = this.borderWorker;
-    if (!c || !w) return;
-    const ids = c.ids.slice(0, c.n);
-    const pos = c.pos.slice(0, c.n * 3);
-    const col = c.col.slice(0, c.n * 3);
-    const size = c.size.slice(0, c.n);
-    const pulse = c.pulse.slice(0, c.n);
-    const gain = c.gain.slice(0, c.n);
-    const bits = c.bits.slice(0, c.n);
-    const mk = c.mk.slice(0, c.n);
-    const lum = c.lum.slice(0, c.n);
-    const kind = c.kind.slice(0, c.n);
-    w.postMessage(
-      { type: 'set', seed: this.seed, n: c.n, ids, pos, col, size, pulse, gain, bits, mk, lum, kind },
-      [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer, kind.buffer],
-    );
-  }
-
-  private requestBorder(): void {
-    if (!this.cloud) return;
-    if (!this.borderWorker) {
-      this.applyMembership(
-        advanceRegionCloud(
-          this.seed,
-          this.cloud,
-          this.mintAt.x,
-          this.mintAt.y,
-          this.mintAt.z,
-          this.arcCenter.x,
-          this.arcCenter.y,
-          this.arcCenter.z,
-        ),
-        false,
-      );
-      this.mintAt.copy(this.arcCenter);
-      return;
-    }
-    if (this.borderBusy) return;
-    this.borderBusy = true;
-    this.borderWorker.postMessage({
-      type: 'advance',
-      gen: this.borderGen,
-      x0: this.mintAt.x,
-      y0: this.mintAt.y,
-      z0: this.mintAt.z,
-      x1: this.arcCenter.x,
-      y1: this.arcCenter.y,
-      z1: this.arcCenter.z,
-    });
-  }
-
-  private onBorderMessage = (e: MessageEvent): void => {
-    const m = e.data as {
-      type: string;
-      gen: number;
-      n: number;
-      ids: Float64Array;
-      pos: Float32Array;
-      col: Float32Array;
-      size: Float32Array;
-      pulse: Float32Array;
-      gain: Float32Array;
-      bits: Uint8Array;
-      mk: Uint8Array;
-      lum: Float32Array;
-      kind: Uint8Array;
-      x: number;
-      y: number;
-      z: number;
-    };
-    if (m.type !== 'cloud' || m.gen !== this.borderGen || this.mode !== 'region') return;
-    this.borderBusy = false;
-    this.applyMembership(
-      {
-        n: m.n,
-        ids: m.ids,
-        pos: m.pos,
-        col: m.col,
-        size: m.size,
-        pulse: m.pulse,
-        gain: m.gain,
-        bits: m.bits,
-        mk: m.mk,
-        lum: m.lum,
-        kind: m.kind,
-        ms: 0,
-      },
-      false,
-    );
-    this.mintAt.set(m.x, m.y, m.z);
-    if (this.arcCenter.distanceTo(this.mintAt) > MAG_REBUILD) {
-      this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), true);
-      this.mintAt.copy(this.arcCenter);
-      this.syncWorkerCloud();
-    } else if (this.arcCenter.distanceTo(this.mintAt) >= MAG_SLIDE) {
-      this.requestBorder();
-    }
-  };
-
-  private applyMembership(cloud: StarCloud, remesh: boolean): void {
-    this.cloud = cloud;
-    this.sectorPop = cloud.n;
-    this.regionLabel = regionName(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
-    this.censusMemo = {};
-    if (remesh) {
-      this.disposeLocalStars();
-      this.buildArcStars();
+  /** Here and the current pick sit in camera space as focus rings. */
+  private placeHighlights(): void {
+    const here = this.hereObj ?? this.home;
+    if (here) {
+      const c = this.viewCart(here);
+      this.hereRing.position.set(c.x, c.y, c.z);
+      this.hereRing.visible = true;
     } else {
-      this.syncArcStars();
+      this.hereRing.visible = false;
+    }
+    if (this.selected) {
+      const c = this.viewCart(this.selected);
+      this.pickRing.position.set(c.x, c.y, c.z);
+      this.pickRing.visible = true;
+    } else {
+      this.pickRing.visible = false;
     }
   }
 
@@ -1635,7 +1277,33 @@ export class GalaxyView {
     if (picked) this.select(picked);
   }
 
+  /** Here and visited samples — always pickable, even if faint. */
+  private pickPoi(cx: number, cy: number): GalaxyObject | null {
+    const pois: GalaxyObject[] = [];
+    const here = this.hereObj ?? this.home;
+    if (here) pois.push(here);
+    for (const id of this.visitedIds) {
+      if (here && id === here.id) continue;
+      const o = objectAt(this.seed, id);
+      if (o) pois.push(o);
+    }
+    let best: GalaxyObject | null = null;
+    let bestD = 28;
+    for (const o of pois) {
+      const p = this.projectClient(o);
+      if (!p) continue;
+      const d = Math.hypot(p.x - cx, p.y - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = o;
+      }
+    }
+    return best;
+  }
+
   private pickCloud(cx: number, cy: number): GalaxyObject | null {
+    const poi = this.pickPoi(cx, cy);
+    if (poi) return poi;
     const cloud = this.cloud;
     if (!cloud) return null;
     this.camera.updateMatrixWorld();
@@ -2028,14 +1696,16 @@ export class GalaxyView {
       mesh.scale.setScalar(Math.max(lo, Math.min(hi, d * k)));
     };
     ringFor(this.pickRing, 0.00035, 0.03, 0.045);
+    ringFor(this.hereRing, 0.0005, 0.045, 0.06);
     this.pickRing.rotation.z = t * 0.35;
+    this.hereRing.rotation.z = t * -0.22;
 
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onFrame?.({
       mode: this.mode,
       theta: this.theta,
       phi: this.phi,
-      radius: UNIVERSE.GALAXY_REGION_R,
+      radius: Math.hypot(this.arcCenter.x, this.arcCenter.z),
       pickable: true,
       resolved: this.cloud?.n ?? 0,
       grown: this.grownCount,

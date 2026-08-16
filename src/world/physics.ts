@@ -432,34 +432,27 @@ export const UNIVERSE = {
   GALAXY_POPULATION: 1_000_000_000,
 
   /**
-   * The catalog neighbourhood is a ball of radius GALAXY_REGION_R
-   * around the bubble centre — a real neighbourhood, not a marble.
-   * Face-on / Edge-on slide that ball far enough that the disk fits
-   * the screen; they are the same bubble, not a second viewer.
-   * Every occupied slot is kept near the
-   * centre (FULL_R). Farther cells keep only the massive tail of their
-   * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
-   * you can fly. Count is still an outcome — the bulge is denser.
-   * Flying slides that ball through the catalog (border in / out).
-   * Inside the ball the sky is 1:1 with the catalog — no VIEW_R
-   * stretch. The bubble's only job is membership: every occupied
-   * slot is drawn and visitable; outside it, only the magnitude-
-   * limited backdrop. Star size is the photograph (r / d), not a
-   * second scale.
+   * The explorer sky is the luminous harvest (SILHOUETTE_*), not a
+   * magnifier ball. You steer by bright stars, nebulae, and dust
+   * (dust is extinction). “Here” is a focus in front of the camera;
+   * other samples can highlight as points of interest. The faint
+   * 95% — adjacent dull stars around a camp — is a later survey.
+   * GALAXY_REGION_* is that future neighbourhood law, not the
+   * explorer. Face-on / Edge-on slide the viewpoint far enough
+   * that the disk fits the screen. View is 1:1 catalog kpc.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,
   GALAXY_SECTOR_STARS: 2500,
-  /** Catalog neighbourhood minted around the tap (kpc). View is 1:1. */
+  /** Future faint-survey neighbourhood (kpc). Not the explorer sky. */
   GALAXY_REGION_R: 0.02,
   /**
-   * Latched warp (catalog kpc / s). A fixed cruise — on is this
-   * rate, off is stop. 0.0025 crosses a 0.02 kpc neighbourhood in
-   * 8 s, so a world is a look, not a flash. MAG_SLIDE (0.002 kpc)
-   * fires every ~0.8 s; remint is not the limiter. WASD stays the
-   * slow look-around pace (arcPace).
+   * Latched warp (catalog kpc / s). A fixed cruise across the
+   * luminous harvest — on is this rate, off is stop. 0.25 crosses
+   * a kiloparsec in 4 s. WASD stays the slow look-around pace
+   * (arcPace).
    */
-  GALAXY_WARP: 0.0025,
+  GALAXY_WARP: 0.25,
   /** Within this of the tap, every occupied slot is drawn. */
   GALAXY_REGION_FULL_R: 0.12,
   /** Distance over which the IMF cut ramps to U_FAR. */
