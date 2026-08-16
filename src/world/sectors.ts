@@ -722,7 +722,7 @@ export function buildSilhouetteCloud(
   let n = 0;
   const batchEvery = Math.max(1, Math.floor(field.pN / 24));
   for (let cell = 0; cell < field.pN; cell++) {
-    if (field.pKind[cell] !== 0) continue;
+    // Every parent — the bulge is the spheroid, not a thin-disk spike.
     const filled = slotsInCell(seed, cell);
     if (filled <= 0) continue;
     const sLive = Math.floor(uLive * filled);

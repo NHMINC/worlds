@@ -99,7 +99,7 @@ export function parentsOverlappingAnnulus(
   rLo: number,
   rHi: number,
 ): number[] {
-  const slack = FIELD.JITTER * Math.sqrt(3) + 0.02;
+  const slack = FIELD.JITTER * 3 + 0.02;
   const reach = rHi + slack;
   const inner = Math.max(0, rLo - slack);
   const cube = index.cube;

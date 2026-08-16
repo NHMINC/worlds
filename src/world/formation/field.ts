@@ -3,8 +3,9 @@
  *
  * THE EVOLVED STAR PARTICLES ARE THE GALAXY. Each one is a parent:
  * it stands for ~starW real stars, and the catalog sits those stars
- * next to it (a small tent jitter so they fill the area, not a
- * cluster on the dot). Grids survive only for what is a medium —
+ * next to it (an isotropic Gaussian so they fill the area — a
+ * product-of-tents cube printed the PM mesh in the nucleus). Grids
+ * survive only for what is a medium —
  * gas / ISM / extinction — and for ring-profile fits.
  *
  * The sim is 2D (galaxies are thin). Disk parents get a sech² height
@@ -84,14 +85,12 @@ export const FIELD = {
   SPH_BINS: 96,
   SPH_RMAX: 24,
   /**
-   * Catalog jitter half-width (kpc). A tent around each parent, big
-   * enough that neighbouring clouds overlap and fill the evolved
-   * structure, small enough that a lone particle is not a globular
-   * cluster. One number — not a k-NN kernel.
+   * Catalog jitter σ (kpc), isotropic Gaussian. FORM.SOFT × 0.4 —
+   * the run cannot resolve inside the softening, so the cloud around
+   * a parent is that wide. A product-of-tents cube aligned with the
+   * PM mesh (SOFT ~ mesh) printed a lattice in the nucleus.
    */
-  JITTER: 0.24,
-  /** Spheroid sech² scale (kpc) when lifting 2D hot particles. */
-  HALO_H: 2.6,
+  JITTER: 0.32,
 } as const;
 
 const FEH_SUN = 0.0134;
@@ -405,12 +404,12 @@ export function bakeField(
   for (let i = 0; i < vcirc.length; i++) vcirc[i] = r.vcirc[i];
 
   // --- star particles: the catalog's parents ---
-  // One pass, after the sheet heights exist. Disk z is the sech²
-  // draw of the local h; spheroid z is the same law with HALO_H.
-  // Parents outside the catalog cylinder are dropped; starW soaks
-  // the remainder so occupancy is still the population.
+  // Disk: keep the 2D position, sech² height of the local sheet.
+  // Spheroid: the planar radius IS the 3D radius (cos φ uniform,
+  // azimuth kept) — a bulge is a ball, not a z-slab. No |z| clip:
+  // chopping the sphere at the catalog cylinder was the flat
+  // top/bottom. starW soaks whoever stays inside R ≤ rMax.
   const rMax = domain?.rMax ?? box;
-  const zMax = domain?.zMax ?? FIELD.HALO_H * 3;
   const lift = mulberry32(xmur3(`lift:${seed}`)());
   const ax: number[] = [];
   const ay: number[] = [];
@@ -426,21 +425,30 @@ export function bakeField(
     if (rad > rMax) continue;
     const vphi = (x * r.vy[i] - y * r.vx[i]) / Math.max(rad, 1e-6);
     const circ = vphi / vcAt(rad);
-    let h: number;
     let knd: number;
+    let px: number;
+    let py: number;
+    let pz: number;
     if (circ < FIELD.C_SPHEROID) {
-      h = FIELD.HALO_H;
       knd = 2;
+      const R = Math.max(FORM.SOFT * 0.5, rad);
+      const u = 2 * lift() - 1;
+      const s = Math.sqrt(Math.max(0, 1 - u * u));
+      const th = Math.atan2(y, x);
+      px = R * s * Math.cos(th);
+      py = R * u;
+      pz = R * s * Math.sin(th);
     } else {
       const hx = Math.max(FIELD.H_MIN, bilinear(hThin, OUT, (x + box) / dx - 0.5, (y + box) / dx - 0.5));
-      h = circ >= FIELD.C_THIN ? hx : hx * FIELD.H_THICK_RATIO;
+      const h = circ >= FIELD.C_THIN ? hx : hx * FIELD.H_THICK_RATIO;
       knd = circ >= FIELD.C_THIN ? 0 : 1;
+      px = x;
+      py = h * atanh01(lift());
+      pz = y;
     }
-    const z = h * atanh01(lift());
-    if (Math.abs(z) > zMax) continue;
-    ax.push(x);
-    ay.push(z);
-    az.push(y);
+    ax.push(px);
+    ay.push(py);
+    az.push(pz);
     kinds.push(knd);
     ages.push(ageOf(i));
     fehs.push(fehOf(i));

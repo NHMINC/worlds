@@ -149,6 +149,22 @@ const rhoCz1 = fieldDensity(f1, 0.3, 0, 1.2);
 console.log(`ρ(0.3,0,0)=${rhoC.toFixed(3)}  ρ(8.2,0,0)=${rhoSun.toFixed(4)}  ρ(0.3,0,z=1.2)=${rhoCz1.toFixed(4)}`);
 check(rhoC > rhoSun * 5, 'no central concentration');
 check(rhoCz1 > 0, 'bulge has no vertical extent');
+{
+  let nSphP = 0;
+  let z2 = 0;
+  let r2 = 0;
+  for (let j = 0; j < f1.pN; j++) {
+    if (f1.pKind[j] !== 2) continue;
+    nSphP++;
+    z2 += f1.pAY[j] * f1.pAY[j];
+    r2 += f1.pAX[j] * f1.pAX[j] + f1.pAZ[j] * f1.pAZ[j];
+  }
+  const zRms = Math.sqrt(z2 / Math.max(1, nSphP));
+  const rRms = Math.sqrt(r2 / Math.max(1, nSphP));
+  console.log(`spheroid parents: ${nSphP}  z_rms ${zRms.toFixed(2)} kpc  R_rms ${rRms.toFixed(2)} kpc`);
+  check(nSphP > 1000, `too few spheroid parents (${nSphP})`);
+  check(zRms > rRms * 0.4, `spheroid is a slab: z_rms ${zRms.toFixed(2)} vs R_rms ${rRms.toFixed(2)}`);
+}
 const parts = fieldDensityParts(f1, 8.2, 0, 0);
 console.log(`parts at solar circle: thin ${parts.thin.toFixed(4)} thick ${parts.thick.toFixed(4)} sph ${parts.spheroid.toFixed(5)} gas ${parts.gas.toFixed(4)}`);
 

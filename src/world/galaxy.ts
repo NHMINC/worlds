@@ -2,7 +2,7 @@
  * The shared galaxy: the formed POINT CLOUD plus an implicit stellar
  * catalog. Nothing is stored. Each evolved star particle is a parent
  * and stands for ~starW real stars. A star is (seed, parent, slot) →
- * that parent's position plus a small tent jitter, the parent's
+ * that parent's position plus an isotropic Gaussian, the parent's
  * population / age / chemistry, then stellar.evolve. The address *is*
  * the star. Occupancy is starW per parent — that *is* the population.
  *
@@ -306,38 +306,42 @@ export function packId(cell: number, slot: number): number {
   return cell * UNIVERSE.GALAXY_MAX_SLOT + slot;
 }
 
-/** Tent half-width (kpc) — one number, shared by stars and dust. */
+/** Gaussian σ (kpc) — one number, shared by stars and dust. */
 export function scatterKernelKpc(): number {
   return FIELD.JITTER;
 }
 
-/** Farthest a slot may sit from its parent (membership slack). */
+/** Farthest a slot may sit from its parent (≈ 3σ of the Gaussian). */
 export function slotScatterKpc(): number {
-  return FIELD.JITTER * Math.sqrt(3);
+  return FIELD.JITTER * 3;
 }
 
-/** Tent draw in [-w, w] (triangular, zero-mean). */
-const tent = (rng: () => number, w: number): number => (rng() + rng() - 1) * w;
+/** Box–Muller. Two uniforms → one N(0,1). Same two-draw cost as a tent. */
+const gauss = (rng: () => number): number => {
+  const u = Math.max(1e-9, rng());
+  const v = rng();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+};
 
-/** Star placement: parent + tent. That is the whole law. */
+/** Star placement: parent + isotropic Gaussian. That is the whole law. */
 function birthCart(rng: () => number, cell: number): { x: number; y: number; z: number } {
   const { field } = sampleField();
-  const w = FIELD.JITTER;
+  const s = FIELD.JITTER;
   return {
-    x: field.pAX[cell] + tent(rng, w),
-    y: field.pAY[cell] + tent(rng, w),
-    z: field.pAZ[cell] + tent(rng, w),
+    x: field.pAX[cell] + gauss(rng) * s,
+    y: field.pAY[cell] + gauss(rng) * s,
+    z: field.pAZ[cell] + gauss(rng) * s,
   };
 }
 
-/** Dust placement: polar lattice centre + the same tent. */
+/** Dust placement: polar lattice centre + the same Gaussian. */
 function polarBirthCart(rng: () => number, cell: number): { x: number; y: number; z: number } {
   const mid = polarCellCenter(cell);
-  const w = FIELD.JITTER;
+  const s = FIELD.JITTER;
   return {
-    x: mid.R * Math.cos(mid.theta) + tent(rng, w),
-    y: mid.z + tent(rng, w),
-    z: mid.R * Math.sin(mid.theta) + tent(rng, w),
+    x: mid.R * Math.cos(mid.theta) + gauss(rng) * s,
+    y: mid.z + gauss(rng) * s,
+    z: mid.R * Math.sin(mid.theta) + gauss(rng) * s,
   };
 }
 
