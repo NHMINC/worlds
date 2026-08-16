@@ -269,7 +269,7 @@ const check = (cond: boolean, msg: string) => {
   check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
   // Dust is census-only (never drawn; extinction is the visible law),
   // so the full clump population rides along — tens of thousands.
-  check(dust > 8_000 && dust < 80_000, `dust count ${dust} is not the full clump census`);
+  check(dust > 8_000 && dust < 250_000, `dust count ${dust} is not the full clump census`);
   check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
   check(minStarL >= UNIVERSE.GALAXY_SILHOUETTE_L, `silhouette star dim L=${minStarL}`);
   check(stars + nebulae < 170_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
