@@ -1,33 +1,32 @@
 /**
  * Two layers, two laws. Inside the catalog bubble a star starts as
- * one CSS pixel. Paint radius is the glow pin (GLOW_K) in catalog
- * kpc — view is 1:1. Size is max(1px, 2 r/d); it grows only when
- * the bubble is on top of it. Brightness L/d², colour teff.
- * Backdrop stays 1px.
+ * one CSS pixel at the rim and grows as 1/d when the camera closes.
+ * Paint radius is a fraction of GALAXY_REGION_R so the rim stays a
+ * pin if the ball changes. Brightness L/d², colour teff. Backdrop
+ * stays 1px.
  */
 import * as THREE from 'three';
+import { UNIVERSE } from '../world/physics';
 import type { GalaxyObject } from '../world/galaxy';
 
 /**
  * Toy paint-pin radius (catalog kpc; view is 1:1). Real R☉ is
  * metres against kiloparsecs — unusable. Size is max(1px, 2 r/d).
+ * GLOW_K = REGION_R / 2000 so 2 r / R × ~1000 px/rad ≈ 1 at the
+ * rim — a pin on entry, a disc only when the bubble is on top.
  * This is the photograph, not the visit lock — see AIM_R_K.
  */
-export const GLOW_K = 0.0024;
+export const GLOW_K = UNIVERSE.GALAXY_REGION_R / 2000;
 export const GLOW_P = 0.16;
-/** Dim / remnant floor for the paint pin. */
-export const GLOW_DIM = 0.0016;
+/** Dim / remnant floor for the paint pin. Below GLOW_K so remnants stay pins at the rim. */
+export const GLOW_DIM = GLOW_K * 0.67;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
-/**
- * Paint radius — same as the glow pin (GLOW_K).
- * A 10× PHOTO_K made stars that mint on the IMF ramp pop in as
- * discs. The catalog sample ball is unchanged.
- */
+/** Paint radius — same body as the glow pin. */
 export const PHOTO_K = GLOW_K;
 export const PHOTO_P = GLOW_P;
-export const PHOTO_MIN = 0.0007;
-export const PHOTO_MAX = 0.012;
+export const PHOTO_MIN = GLOW_K * 0.28;
+export const PHOTO_MAX = UNIVERSE.GALAXY_REGION_R * 0.05;
 /**
  * Visit-lock body (catalog kpc). Independent of the 1px paint pin.
  * A local catalog star locks when aimR / d ≥ AIM_MIN_ANG — close
@@ -35,10 +34,10 @@ export const PHOTO_MAX = 0.012;
  * backdrop rows are not in the cloud and never lock. Dust is
  * an ISM address, not a star.
  */
-export const AIM_R_K = 0.052;
+export const AIM_R_K = UNIVERSE.GALAXY_REGION_R * 0.0015;
 export const AIM_R_P = GLOW_P;
-export const AIM_R_MIN = 0.012;
-export const AIM_R_MAX = 0.22;
+export const AIM_R_MIN = UNIVERSE.GALAXY_REGION_R * 0.0008;
+export const AIM_R_MAX = UNIVERSE.GALAXY_REGION_R * 0.004;
 /**
  * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
  * Steep in L so the luminous tail is not one white.
@@ -59,7 +58,7 @@ export const AIM_MIN_ANG = 0.0022;
 
 export function glowRadiusKpc(L: number, dim = false): number {
   const r = GLOW_K * Math.pow(Math.max(L, 1e-4), GLOW_P);
-  return Math.max(dim ? GLOW_DIM : 0.0007, Math.min(0.012, r));
+  return Math.max(dim ? GLOW_DIM : PHOTO_MIN, Math.min(PHOTO_MAX, r));
 }
 
 /** Paint radius. Same body as glowRadiusKpc — one pin. */

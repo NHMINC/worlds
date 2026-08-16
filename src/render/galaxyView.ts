@@ -757,7 +757,7 @@ export class GalaxyView {
       uPxPerRad: { value: this.pxPerRad() },
       uGlowK: { value: GLOW_K },
       uGlowP: { value: GLOW_P },
-      uGlowMin: { value: 0.0007 },
+      uGlowMin: { value: PHOTO_MIN },
       uGlowDim: { value: GLOW_DIM },
       uMaxPx: { value: POINT_MAX_PX },
       uNearBoost: { value: POINT_NEAR_BOOST },
