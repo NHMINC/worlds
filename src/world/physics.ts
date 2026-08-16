@@ -463,23 +463,23 @@ export const UNIVERSE = {
    * is Strömgren-ish (HII_R_K · L^⅓); NEB_EMISSION is the
    * photograph stretch. They screen-blend (they glow, they do not
    * add to a white bar).
-   * DUST IS NOT VISIBLE. In the backdrop it is never drawn — it is
+   * DUST IS NOT VISIBLE. It is never drawn in EITHER layer — it is
    * a filter on the light law: every star and nebula row marches
    * the sightline from the bubble centre through the thin gas sheet
-   * × the same turbulence field (EXTINCT_K per unit column,
-   * EXTINCT_STEPS taps) and is dimmed by exp(−τ · DUST_RGB). Blue
-   * dies first, so rift-edge stars redden before they vanish; thick
-   * columns swallow stars whole and dust manifests the way Barnard
-   * found it — irregular star-poor holes, no sprite edges. The
-   * sheet's z-scale is ZD (razor thin), so bulge rows above the
+   * × the same turbulence field (EXTINCT_K per unit column;
+   * EXTINCT_STEPS taps for the backdrop, EXTINCT_STEPS_LOCAL for
+   * the short in-bubble column) and is dimmed by exp(−τ · DUST_RGB).
+   * Blue dies first, so rift-edge stars redden before they vanish;
+   * thick columns swallow stars whole and dust manifests the way
+   * Barnard found it — irregular star-poor holes, no sprite edges.
+   * The sheet's z-scale is ZD (razor thin), so bulge rows above the
    * plane shine over the lane. EXTINCT_MAX caps the column — from
    * inside the plane the real core is fully blocked; the cap keeps
-   * it glorious (a toy compression, like TIME_SCALE). The marched
-   * fractal-cloud shader (DUST_TAU, DUST_RIM, dustPhysics grain
-   * tints) remains for the local layer when it returns.
+   * it glorious (a toy compression, like TIME_SCALE). Dust rows in
+   * both clouds are census-only (HUD, grain-tint chemistry).
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
-   * with NEBULA_PX / DUST_PX as pixel floors so far sources stay
-   * findable; sprites under DUST_MINPX skip the march (a disc).
+   * with NEBULA_PX as the pixel floor so far shells stay findable;
+   * shells under DUST_MINPX skip the march (a disc).
    * Stars are one CSS pixel of photosphere colour — a point of
    * light, no disc, no bloom sprite. Intensity is L^P · (D/d)^q
    * then I/(1+I) so hue survives. STAR_PX is unused for stars
@@ -514,9 +514,12 @@ export const UNIVERSE = {
   GALAXY_EXTINCT_MAX: 2.5,
   /** Sightline march taps (vertex-shader cost, once per row). */
   GALAXY_EXTINCT_STEPS: 12,
+  /** Local-layer taps: the in-bubble column is at most REGION_R
+   *  (~2 kpc vs ~30 for the backdrop), so 3 taps sample it more
+   *  densely than the backdrop's 12 — same law, cheaper march. */
+  GALAXY_EXTINCT_STEPS_LOCAL: 3,
   SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
-  SILHOUETTE_DUST_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,
   /** Emission-nebula glow gain (photograph stretch, not new energy).
    *  Shells screen-blend: dest + src·(1-dest). They glow and
@@ -530,21 +533,13 @@ export const UNIVERSE = {
   HII_R_K: 0.004,
   /** Largest dust complex radius (kpc); wisps start near 0.05. */
   GALAXY_DUST_R_MAX: 0.8,
-  /** Raymarch steps through a clump (perf knob; 1 = cheap slice). */
+  /** Raymarch steps through a nebula shell (perf knob; 1 = cheap slice). */
   DUST_MARCH_STEPS: 10,
-  /** Sprites smaller than this (CSS px) skip the march. */
+  /** Nebula sprites smaller than this (CSS px) skip the march. */
   DUST_MINPX: 12,
-  /** Densest cores obscure this hard; never a solid wall. */
-  DUST_ALPHA_MAX: 0.92,
-  /** Optical-depth scale per kpc of dense cloud. */
-  DUST_TAU: 7.0,
-  /** Sub-grid ISM turbulence frequency (cycles / kpc). */
+  /** Sub-grid ISM turbulence frequency (cycles / kpc) — the nebula
+   *  march's filament scale. */
   DUST_FREQ: 11,
-  /** Lit-rim gain (nursery UV grazing the cloud edge). */
-  DUST_RIM: 2.2,
-  /** Rim lighting needs this many CSS px to be readable; below it the
-   *  two extra field taps per fragment buy nothing. */
-  DUST_RIM_MINPX: 36,
   /** Ice mantles condense when the temperature proxy falls below this. */
   DUST_ICE_WARM: 0.34,
 

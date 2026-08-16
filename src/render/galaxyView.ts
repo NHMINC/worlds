@@ -15,8 +15,9 @@
  * photosphere — size r/d, flux L/d², teff colour — so it grows
  * as we approach. Behind the ball a
  * magnitude-limited backdrop (stars and typed nebulae) sketches the
- * rest of the disk. Dust is never drawn: it is sightline extinction
- * on every backdrop row (see SILHOUETTE_VERT), so it manifests as
+ * rest of the disk. Dust is never drawn — in EITHER layer: every
+ * row, local or backdrop, marches the same sightline-extinction law
+ * (extinctGlsl) from the bubble centre, so dust manifests as
  * irregular star-poor rifts, the way Barnard found it. The
  * breadcrumb returns to the map.
  */
@@ -66,6 +67,47 @@ import { SHAPE_GLSL } from '../world/skyShape';
 /** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
 
+/**
+ * Dust is not drawn; it is subtraction — ONE law for both layers.
+ * Column density along a sightline: the thin gas sheet × the same
+ * turbulence complexes the clump-occupancy law samples. The sheet's
+ * z-scale is ZD (razor thin), so bulge rows above the plane shine
+ * over the lane — the Sombrero geometry emerges instead of being
+ * painted. `steps` is baked per shader: the backdrop marches the
+ * whole disk (GALAXY_EXTINCT_STEPS); the local column is at most
+ * REGION_R, so EXTINCT_STEPS_LOCAL taps sample it more densely for
+ * a fraction of the cost. Requires SHAPE_GLSL (dustField) above.
+ */
+const extinctGlsl = (steps: number) => /* glsl */ `
+  uniform float uExtinctK;
+  uniform float uExtinctMax;
+  uniform vec3 uDustRgb;
+  float extinctRho(vec3 p) {
+    float R = length(p.xz);
+    float ez = exp(min(abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_ZD)}, 12.0));
+    float sech = 2.0 / (ez + 1.0 / ez);
+    float gas = exp(-R / ${glslFloat(UNIVERSE.GALAXY_RD * UNIVERSE.GALAXY_RD_GAS)}) * sech * sech;
+    // 0.3 is the rift threshold: only above-average turbulence
+    // holds enough dust to matter along a whole column.
+    return gas * max(0.0, dustField(p, ${glslFloat(UNIVERSE.GALAXY_TURB_FREQ)}) - 0.3);
+  }
+  // Transmittance exp(−τ · DUST_RGB) from the bubble centre to a
+  // row — blue dies first, so rift-edge rows redden before they
+  // vanish. Brightness must ride vVis (the star fragment
+  // renormalizes colour to peak); colour carries the chroma shift.
+  vec3 extinctT(vec3 from, vec3 to) {
+    float dCat = length(to - from);
+    float dt = dCat / ${glslFloat(steps)};
+    vec3 dir = (to - from) / max(dCat, 1e-4);
+    float tau = 0.0;
+    for (int i = 0; i < ${steps}; i++) {
+      tau += extinctRho(from + dir * ((float(i) + 0.5) * dt));
+    }
+    tau = min(tau * uExtinctK * dt, uExtinctMax);
+    return exp(-tau * uDustRgb);
+  }
+`;
+
 /** Map-orbit radius range (kpc). */
 const MAP_R_MIN = 9;
 const MAP_R_MAX = 46;
@@ -101,6 +143,8 @@ export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
 }
 
 const STAR_VERT = /* glsl */ `
+  ${SHAPE_GLSL}
+  ${extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS_LOCAL)}
   attribute vec3 aColor;
   attribute float aVis;
   attribute float aLum;
@@ -140,9 +184,9 @@ const STAR_VERT = /* glsl */ `
     // Cull for the pass HERE: the shared fragment discards the wrong
     // kinds anyway, but a discarded sprite still rasterizes its whole
     // quad. Toward the core that tripled the overdraw for nothing.
+    // Dust rows (kind > 3.5) are census-only — never drawn.
     if ((uPass < 0.5 && aKind > 0.5) ||
-        (uPass > 0.5 && uPass < 1.5 && (aKind < 0.5 || aKind > 3.5)) ||
-        (uPass > 1.5 && aKind < 3.5)) {
+        (uPass > 0.5 && (aKind < 0.5 || aKind > 3.5))) {
       vVis = 0.0;
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -183,6 +227,13 @@ const STAR_VERT = /* glsl */ `
       vCenterCat = vec3(0.0);
       vPx = gl_PointSize;
     }
+    // Same dust law as the backdrop, over the short in-bubble
+    // column — a star does not brighten by crossing the bubble
+    // boundary, and local rifts line up with the backdrop's.
+    vec3 ext = extinctT(uCenter, position);
+    float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
+    vVis *= extLum;
+    vColor *= ext / max(extLum, 1e-3);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -195,6 +246,7 @@ function regionCamFar(): number {
 
 const SILHOUETTE_VERT = /* glsl */ `
   ${SHAPE_GLSL}
+  ${extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)}
   attribute vec3 aColor;
   attribute float aVis;
   attribute float aLum;
@@ -209,7 +261,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uRegionR;
   uniform float uStarPx;
   uniform float uNebulaPx;
-  uniform float uDustPx;
   uniform float uSuper;
   uniform float uFluxEps;
   uniform float uShineLGain;
@@ -217,9 +268,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uShineDistRef;
   uniform float uShineDistP;
   uniform float uShineSat;
-  uniform float uExtinctK;
-  uniform float uExtinctMax;
-  uniform vec3 uDustRgb;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -228,21 +276,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
-
-  // Dust is not drawn; it is subtraction. Column density along a
-  // sightline: the thin gas sheet × the same turbulence complexes
-  // the clump-occupancy law samples. The sheet's z-scale is ZD
-  // (razor thin), so bulge rows above the plane shine over the
-  // lane — the Sombrero geometry emerges instead of being painted.
-  float extinctRho(vec3 p) {
-    float R = length(p.xz);
-    float ez = exp(min(abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_ZD)}, 12.0));
-    float sech = 2.0 / (ez + 1.0 / ez);
-    float gas = exp(-R / ${glslFloat(UNIVERSE.GALAXY_RD * UNIVERSE.GALAXY_RD_GAS)}) * sech * sech;
-    // 0.3 is the rift threshold: only above-average turbulence
-    // holds enough dust to matter along a whole column.
-    return gas * max(0.0, dustField(p, ${glslFloat(UNIVERSE.GALAXY_TURB_FREQ)}) - 0.3);
-  }
 
   void main() {
     vColor = aColor;
@@ -254,11 +287,11 @@ const SILHOUETTE_VERT = /* glsl */ `
     vPx = 0.0;
     float dCat = length(position - uCenter);
     // Cull wrong-kind sprites for the pass here — a fragment discard
-    // still rasterizes the whole quad, tripling core overdraw.
+    // still rasterizes the whole quad, tripling core overdraw. Dust
+    // rows (kind > 3.5) are census-only and never pass either gate.
     if (dCat < uRegionR ||
         (uPass < 0.5 && aKind > 0.5) ||
-        (uPass > 0.5 && uPass < 1.5 && (aKind < 0.5 || aKind > 3.5)) ||
-        (uPass > 1.5 && aKind < 3.5)) {
+        (uPass > 0.5 && (aKind < 0.5 || aKind > 3.5))) {
       vVis = 0.0;
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -272,7 +305,7 @@ const SILHOUETTE_VERT = /* glsl */ `
       // the magnifier boundary.
       float d = max(length(mv.xyz), 0.001);
       float ang = max(aSize, 0.005) * uScale / d;
-      float floorPx = (aKind > 3.5 ? uDustPx : uNebulaPx) * uPixel;
+      float floorPx = uNebulaPx * uPixel;
       gl_PointSize = clamp(2.0 * ang * uPxPerRad, floorPx, 512.0);
       vVis = aVis;
       vCenterView = mv.xyz;
@@ -291,18 +324,7 @@ const SILHOUETTE_VERT = /* glsl */ `
       vPx = gl_PointSize;
     }
     // Extinction: march the column from the bubble to this row.
-    // exp(−τ · DUST_RGB) — blue dies first, so rift-edge rows
-    // redden before they vanish. Brightness carries the luminance
-    // of T; colour carries only the chroma shift (the star
-    // fragment renormalizes to peak, so dimming must ride vVis).
-    float dt = dCat / ${glslFloat(UNIVERSE.GALAXY_EXTINCT_STEPS)};
-    vec3 dir = (position - uCenter) / max(dCat, 1e-4);
-    float tau = 0.0;
-    for (int i = 0; i < ${UNIVERSE.GALAXY_EXTINCT_STEPS}; i++) {
-      tau += extinctRho(uCenter + dir * ((float(i) + 0.5) * dt));
-    }
-    tau = min(tau * uExtinctK * dt, uExtinctMax);
-    vec3 ext = exp(-tau * uDustRgb);
+    vec3 ext = extinctT(uCenter, position);
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
     vVis *= extLum;
     vColor *= ext / max(extLum, 1e-3);
@@ -312,7 +334,8 @@ const SILHOUETTE_VERT = /* glsl */ `
 
 const STAR_FRAG = /* glsl */ `
   ${SHAPE_GLSL}
-  // 0 = photosphere stars, 1 = emission nebulae (additive), 2 = dust (obscures).
+  // 0 = photosphere stars, 1 = emission nebulae (screen blend).
+  // Dust has no pass: it is sightline extinction in the vertex stage.
   uniform float uPass;
   uniform float uNebGain;
   uniform float uScale;
@@ -320,11 +343,7 @@ const STAR_FRAG = /* glsl */ `
   uniform mat3 uCamRotInv;
   uniform float uDustSteps;
   uniform float uDustMinPx;
-  uniform float uDustAlphaMax;
-  uniform float uDustTauK;
   uniform float uDustFreq;
-  uniform float uDustRim;
-  uniform float uDustRimMinPx;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -335,8 +354,7 @@ const STAR_FRAG = /* glsl */ `
   varying float vPx;
   void main() {
     if (uPass < 0.5 && vKind > 0.5) discard;
-    if (uPass > 0.5 && uPass < 1.5 && (vKind < 0.5 || vKind > 3.5)) discard;
-    if (uPass > 1.5 && vKind < 3.5) discard;
+    if (uPass > 0.5 && (vKind < 0.5 || vKind > 3.5)) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
       float I = max(vVis, 0.0);
@@ -355,67 +373,6 @@ const STAR_FRAG = /* glsl */ `
       float bright = I / (1.0 + I);
       if (bright < 0.008) discard;
       gl_FragColor = vec4(chroma * bright, 1.0);
-      return;
-    }
-    if (vKind > 3.5) {
-      // Dust: a short march through the shared sub-grid ISM field.
-      // The gate is CSS pixels: on a 3× phone the 4-CSS-px floor is
-      // 12 device px, which used to cross a device-px gate and march
-      // every unresolvable mote in the core stack.
-      if (vPx < uDustMinPx * uPixel) {
-        // Too small to resolve structure: a soft mote, weighted by density.
-        float mask = smoothstep(1.0, 0.55, length(p));
-        float a = uDustAlphaMax * mask * (0.15 + 0.7 * vVis);
-        if (a < 0.012) discard;
-        gl_FragColor = vec4(vColor, a);
-        return;
-      }
-      vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
-      vec3 rd = normalize(fragView);
-      float b = dot(rd, vCenterView);
-      float cc = dot(vCenterView, vCenterView) - vRadiusView * vRadiusView;
-      float h = b * b - cc;
-      if (h <= 0.0) discard;
-      h = sqrt(h);
-      float t0 = max(b - h, 0.001);
-      float t1 = b + h;
-      if (t1 <= t0) discard;
-      float radiusCat = vRadiusView / uScale;
-      // Steps scale with on-screen size: small sprites cannot show
-      // structure, so they do not pay for it.
-      float steps = clamp(floor(vPx / 24.0) + 2.0, 2.0, uDustSteps);
-      float tau = 0.0;
-      vec3 meanRel = vec3(0.0);
-      float wSum = 0.0;
-      for (int i = 0; i < 16; i++) {
-        if (float(i) >= steps - 0.5) break;
-        float t = mix(t0, t1, (float(i) + 0.5) / steps);
-        vec3 relCat = (uCamRotInv * (rd * t - vCenterView)) / uScale;
-        float rho = dustRho(vCenterCat + relCat, relCat, radiusCat, vVis, uDustFreq);
-        tau += rho;
-        meanRel += relCat * rho;
-        wSum += rho;
-      }
-      float segCat = (t1 - t0) / uScale;
-      tau *= uDustTauK * segCat / steps;
-      if (tau < 0.012) discard;
-      float trans = exp(-tau);
-      // Extinction: the thick core silhouettes; thin edges keep grain colour.
-      vec3 col = vColor * (0.22 + 0.78 * clamp(trans * 1.5, 0.0, 1.0));
-      if (vPx > uDustRimMinPx * uPixel && wSum > 1e-4) {
-        // Single-scatter rim: density falling toward the local OB light
-        // means that face is bathed in nursery UV — the Pillars edge.
-        vec3 mp = vCenterCat + meanRel / wSum;
-        vec3 L = normalize(vec3(
-          dustHash(vec3(vSeed * 91.3, 7.0, 1.0)) - 0.5,
-          0.35 * (dustHash(vec3(vSeed * 13.7, 2.0, 5.0)) - 0.5),
-          dustHash(vec3(vSeed * 29.1, 3.0, 9.0)) - 0.5) + 1e-4);
-        float here = dustField(mp, uDustFreq);
-        float lit = dustField(mp + L * 0.4 * radiusCat, uDustFreq);
-        float rim = clamp((here - lit) * uDustRim * vVis, 0.0, 1.0);
-        col += vec3(1.0, 0.93, 0.8) * rim * (1.0 - trans) * 0.85;
-      }
-      gl_FragColor = vec4(col, min(uDustAlphaMax, 1.0 - trans));
       return;
     }
     // Emission nebulae: self-luminous shells. Brightness is emission
@@ -605,16 +562,12 @@ export class GalaxyView {
   private starMat: THREE.ShaderMaterial | null = null;
   private starEmisPts: THREE.Points | null = null;
   private starEmisMat: THREE.ShaderMaterial | null = null;
-  private starDustPts: THREE.Points | null = null;
-  private starDustMat: THREE.ShaderMaterial | null = null;
   private starVis: THREE.BufferAttribute | null = null;
   private silPts: THREE.Points | null = null;
   private silGeo: THREE.BufferGeometry | null = null;
   private silMat: THREE.ShaderMaterial | null = null;
   private silEmisPts: THREE.Points | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
-  private silDustPts: THREE.Points | null = null;
-  private silDustMat: THREE.ShaderMaterial | null = null;
   private silWorker: Worker | null = null;
   /** Catalog positions (the vertex shader applies the magnifier). */
   private cloud: StarCloud | null = null;
@@ -906,12 +859,6 @@ export class GalaxyView {
   }
 
   private disposeLocalStars(): void {
-    if (this.starDustPts) {
-      this.scene.remove(this.starDustPts);
-      this.starDustMat?.dispose();
-      this.starDustPts = null;
-      this.starDustMat = null;
-    }
     if (this.starEmisPts) {
       this.scene.remove(this.starEmisPts);
       this.starEmisMat?.dispose();
@@ -930,12 +877,6 @@ export class GalaxyView {
   }
 
   private disposeSilhouette(): void {
-    if (this.silDustPts) {
-      this.scene.remove(this.silDustPts);
-      this.silDustMat?.dispose();
-      this.silDustPts = null;
-      this.silDustMat = null;
-    }
     if (this.silEmisPts) {
       this.scene.remove(this.silEmisPts);
       this.silEmisMat?.dispose();
@@ -995,6 +936,7 @@ export class GalaxyView {
       uPass: { value: 0 },
       ...this.shineUniforms(),
       ...this.dustUniforms(),
+      ...this.extinctUniforms(),
     };
   }
 
@@ -1010,25 +952,31 @@ export class GalaxyView {
     };
   }
 
-  /** The cloud-march knobs, shared by every material that compiles STAR_FRAG. */
+  /** The nebula-march knobs, shared by every material that compiles STAR_FRAG. */
   private dustUniforms(): Record<string, THREE.IUniform> {
     return {
       uCamRotInv: { value: new THREE.Matrix3() },
       uNebGain: { value: UNIVERSE.NEB_EMISSION },
       uDustSteps: { value: UNIVERSE.DUST_MARCH_STEPS },
       uDustMinPx: { value: UNIVERSE.DUST_MINPX },
-      uDustAlphaMax: { value: UNIVERSE.DUST_ALPHA_MAX },
-      uDustTauK: { value: UNIVERSE.DUST_TAU },
       uDustFreq: { value: UNIVERSE.DUST_FREQ },
-      uDustRim: { value: UNIVERSE.DUST_RIM },
-      uDustRimMinPx: { value: UNIVERSE.DUST_RIM_MINPX },
+    };
+  }
+
+  /** Extinction knobs — the shared dust law (extinctGlsl) in both vertex shaders. */
+  private extinctUniforms(): Record<string, THREE.IUniform> {
+    return {
+      uExtinctK: { value: UNIVERSE.GALAXY_EXTINCT_K },
+      uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
+      uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
     };
   }
 
   /**
-   * Three passes per layer, one shared fragment: stars add light,
+   * Two passes per layer, one shared fragment: stars add light,
    * emission nebulae SCREEN (dest + src·(1-dest) — they glow but
-   * cannot stack to a white bar), dust (drawn LAST) obscures both.
+   * cannot stack to a white bar). Dust has no pass: both vertex
+   * shaders fold sightline extinction into every row.
    */
   private makeCloudMaterial(
     vertexShader: string,
@@ -1044,7 +992,7 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: pass === 2 ? THREE.NormalBlending : nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
+      blending: nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
       blendSrc: nebula ? THREE.OneMinusDstColorFactor : THREE.SrcAlphaFactor,
       blendDst: THREE.OneFactor,
       toneMapped: false,
@@ -1074,10 +1022,9 @@ export class GalaxyView {
     // (and the on-bubble nebulae had their own artefacts). The catalog
     // still mints them (HUD census, picking data stay honest); only the
     // draw pass is disabled. Re-enable by uncommenting once the march
-    // budget scales with angular size. In-bubble DUST is back on: local
-    // clumps are the one place dust is still an object you fly through
-    // (the backdrop's dust is sightline extinction), and its fragment
-    // march is gated by DUST_MINPX / DUST_RIM_MINPX.
+    // budget scales with angular size. Dust needs no pass in either
+    // layer: STAR_VERT folds the same sightline extinction into every
+    // local row that SILHOUETTE_VERT applies to the backdrop.
     // const emisMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 1);
     // const emisPts = new THREE.Points(geo, emisMat);
     // emisPts.frustumCulled = false;
@@ -1085,13 +1032,6 @@ export class GalaxyView {
     // this.scene.add(emisPts);
     // this.starEmisPts = emisPts;
     // this.starEmisMat = emisMat;
-    const dustMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 2);
-    const dustPts = new THREE.Points(geo, dustMat);
-    dustPts.frustumCulled = false;
-    dustPts.renderOrder = 3;
-    this.scene.add(dustPts);
-    this.starDustPts = dustPts;
-    this.starDustMat = dustMat;
     this.pushMagUniforms();
     this.applyStarVis();
   }
@@ -1105,17 +1045,13 @@ export class GalaxyView {
       uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
       uStarPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
-      uDustPx: { value: UNIVERSE.SILHOUETTE_DUST_PX },
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
       ...this.shineUniforms(),
       ...this.dustUniforms(),
+      ...this.extinctUniforms(),
       // Fewer, fuller: the backdrop keeps only showpieces, so its
       // shells get more exposure than the local layer would.
       uNebGain: { value: UNIVERSE.NEB_EMISSION * UNIVERSE.SILHOUETTE_NEB_BOOST },
-      // Dust as a filter: sightline extinction on every row.
-      uExtinctK: { value: UNIVERSE.GALAXY_EXTINCT_K },
-      uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
-      uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
     };
   }
 
@@ -1156,7 +1092,7 @@ export class GalaxyView {
 
   private cloudMats(): THREE.ShaderMaterial[] {
     const out: THREE.ShaderMaterial[] = [];
-    for (const m of [this.starMat, this.starEmisMat, this.starDustMat, this.silMat, this.silEmisMat, this.silDustMat]) {
+    for (const m of [this.starMat, this.starEmisMat, this.silMat, this.silEmisMat]) {
       if (m) out.push(m);
     }
     return out;

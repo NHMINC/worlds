@@ -214,13 +214,16 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     Cached per seed. Envelope size is angular in both layers.
     Nebulae are 50% transparent spheres on the host (cyan PN,
     red SNR, white H II) — glass, not additive stacks. **Dust is
-    a raymarched fractal cloud** (`SHAPE_GLSL`): one absolute
-    sub-grid ISM field shared by every clump, Beer–Lambert
-    obscuration (wisps tint, dense cores genuinely hide what is
-    behind them, capped at `DUST_ALPHA_MAX`), warm lit rims on
-    star-forming clumps (`DUST_RIM` — the Pillars edge), and
-    grain colour from `dustPhysics` chemistry (silicate / sooty
-    carbon / ice mantles). The magnifier is unchanged: backdrop
+    never drawn — it is sightline extinction** (`extinctGlsl`,
+    one law in both vertex shaders): every star and nebula row
+    marches the column from the bubble centre through the thin
+    gas sheet × the turbulence field and dims by
+    `exp(−τ · GALAXY_DUST_RGB)` — blue dies first, so rift-edge
+    stars redden before they vanish, and dust manifests as
+    irregular star-poor holes, the way Barnard found it. Dust
+    rows stay minted census-only, wearing `dustPhysics` grain
+    chemistry (silicate / sooty carbon / ice mantles). The
+    magnifier is unchanged: backdrop
     dots are not pickable; a star is visitable only when the
     2 kpc ball has resolved that id. The sphere itself is
     untouched; the map saucer stays hidden. The breadcrumb
