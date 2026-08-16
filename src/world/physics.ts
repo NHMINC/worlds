@@ -372,8 +372,8 @@ export const UNIVERSE = {
    * (SFR_GAIN — Schmidt–Kennicutt-lite: dense gas births young
    * stars, i.e. nurseries), and the H II condition (CLOUD_HII —
    * a young massive star lights its natal cloud). Dust reddens:
-   * extinction per unit optical depth is DUST_RGB — blue dies
-   * first, which is why lanes look brown against the yellow bulge.
+   * extinction per unit optical depth is DUST_RGB (R, G, B) — blue
+   * dies first, so a lane through starlight goes warm.
    */
   GALAXY_TURB_SIGMA: 1.35,
   GALAXY_TURB_FREQ: 0.85,
@@ -382,7 +382,7 @@ export const UNIVERSE = {
   GALAXY_DUST_MAX: 8,
   GALAXY_SFR_GAIN: 10,
   GALAXY_CLOUD_HII: 0.1,
-  GALAXY_DUST_RGB: [1.65, 1.0, 0.55] as [number, number, number],
+  GALAXY_DUST_RGB: [0.55, 1.0, 1.65] as [number, number, number],
 
   /** Solar circle (kpc) — home-star search and the thin-disk yardstick. */
   R_SUN: 8.2,
@@ -465,13 +465,16 @@ export const UNIVERSE = {
    * sub-grid ISM field (domain-warped fBm, flattened to the disk so
    * filaments lie in the plane; neighbouring clumps are windows onto
    * the SAME field and join into complexes). Optical depth is
-   * Beer-Lambert — thin wisps barely tint, dense cores genuinely
-   * obscure up to DUST_ALPHA_MAX — and star-forming clumps get a
-   * warm lit rim (DUST_RIM, the Pillars look: nursery UV grazing
-   * the cloud edge). Composition (dustPhysics) colours the grains:
-   * silicate brown, sooty carbon where C/O is high, pale ice
-   * mantles on cold shielded outer clumps (DUST_ICE_WARM is the
-   * condensation threshold on the radiation-temperature proxy).
+   * Beer-Lambert — dust is a shadow, not a stamp. The fragment
+   * outputs transmittance T = exp(−τ · DUST_RGB) and multiplies
+   * the framebuffer; it does not emit grain colour. Thin wisps
+   * barely dim the stars, dense cores go near-black (floor
+   * 1 − DUST_ALPHA_MAX, never a solid wall). Blue dies first, so
+   * a lane through starlight goes warm. Grain chemistry
+   * (dustPhysics) scales τ: sooty carbon absorbs harder, ice
+   * mantles are thinner, metal-poor gas has less dust-to-gas.
+   * A lit rim (DUST_RIM) is in-scatter — it returns with the
+   * local layer, once there is a glow to light.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX / DUST_PX as pixel floors so far sources stay
    * findable; sprites under DUST_MINPX skip the march (a disc).
@@ -496,10 +499,11 @@ export const UNIVERSE = {
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
-  /** Density (optical depth) boost on backdrop dust — the survivors
-   *  read as real dark clouds, not faint smudges. Beer–Lambert, so
-   *  it deepens extinction; it never paints. */
-  SILHOUETTE_DUST_BOOST: 1.8,
+  /** Density (optical depth) boost on backdrop dust. A mild τ
+   *  through a saturated star pile is a brown filter; this is
+   *  high enough that thick sightlines go dark and only the
+   *  fringe stays warm (blue dies first). */
+  SILHOUETTE_DUST_BOOST: 4.5,
   SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_DUST_PX: 4,
@@ -520,7 +524,8 @@ export const UNIVERSE = {
   DUST_MARCH_STEPS: 10,
   /** Sprites smaller than this (CSS px) skip the march. */
   DUST_MINPX: 12,
-  /** Densest cores obscure this hard; never a solid wall. */
+  /** Densest cores obscure this hard; never a solid wall.
+   *  Transmittance floor is 1 − this (multiply blend). */
   DUST_ALPHA_MAX: 0.92,
   /** Optical-depth scale per kpc of dense cloud. */
   DUST_TAU: 7.0,
