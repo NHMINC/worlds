@@ -13,7 +13,6 @@ import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galax
 import {
   aimLocks,
   harvestGlowPx,
-  HARVEST_GLOW_MAX,
   HARVEST_L_REF,
   HARVEST_PSF_A,
   HARVEST_PSF_B,
@@ -146,7 +145,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uSuper;
   uniform float uFluxEps;
   uniform float uLRef;
-  uniform float uGlowMax;
   uniform float uPsfCore;
   uniform float uPsfTail;
   uniform float uPsfA;
@@ -209,7 +207,7 @@ const SILHOUETTE_VERT = /* glsl */ `
         * pow(uShineDistRef / max(d, 0.4), uShineDistP);
       float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
       float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
-      float css = min(uGlowMax, max(1.0, 1.0 + 2.0 * rCss));
+      float css = max(1.0, 1.0 + 2.0 * rCss);
       gl_PointSize = max(uPixel, css * uPixel);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
@@ -625,7 +623,6 @@ export class GalaxyView {
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
       uLRef: { value: HARVEST_L_REF },
-      uGlowMax: { value: HARVEST_GLOW_MAX },
       uPsfCore: { value: HARVEST_PSF_CORE },
       uPsfTail: { value: HARVEST_PSF_TAIL },
       uPsfA: { value: HARVEST_PSF_A },

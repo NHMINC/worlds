@@ -65,8 +65,6 @@ export const HARVEST_PSF_TAIL = 0.22;
 export const HARVEST_PSF_A = 0.07;
 export const HARVEST_PSF_B = 3.2;
 export const HARVEST_PSF_THRESH = 0.018;
-/** Sprite cap (CSS px). Room for wings, not a disc radius. */
-export const HARVEST_GLOW_MAX = 22;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
  * Steep in L so an O outshines the harvest floor. Shallow in d
@@ -109,7 +107,7 @@ export function harvestPsfRadiusCss(I: number): number {
 /** Sprite size (device px): room for visible wings. Not a filled disc. */
 export function harvestGlowPx(L: number, pixelRatio = 1): number {
   const I = harvestShine(L, HARVEST_SHINE_DIST_REF);
-  const css = Math.min(HARVEST_GLOW_MAX, Math.max(1, 1 + 2 * harvestPsfRadiusCss(I)));
+  const css = Math.max(1, 1 + 2 * harvestPsfRadiusCss(I));
   return Math.max(harvestStarPx(pixelRatio), css * pixelRatio);
 }
 
