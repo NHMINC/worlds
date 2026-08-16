@@ -1,6 +1,6 @@
 /* Fresh boot + the galaxy explorer. Clears IndexedDB, loads the app,
- * opens the region on the loaded star, checks the Helix saucer, taps
- * a star, sets course.
+ * waits for the universe mint, lands in the region on a living host,
+ * checks the Helix saucer, taps a star, sets course.
  * Run: node scripts/smoke-galaxy.mjs (dev server on :5173). */
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -35,8 +35,10 @@ await page.evaluate(async () => {
   localStorage.removeItem('wb_last_system');
 });
 await page.reload({ waitUntil: 'networkidle' });
-await page.waitForSelector('canvas');
-await page.waitForTimeout(6000);
+await page.waitForSelector('.universe-boot, .galaxy-explorer', { timeout: 30000 });
+await page.waitForSelector('.galaxy-explorer', { timeout: 90000 });
+await page.waitForFunction(() => !document.querySelector('.universe-boot'), { timeout: 90000 });
+await page.waitForTimeout(800);
 
 const boot = await page.evaluate(() => {
   const e = window.__engine;
@@ -49,15 +51,15 @@ const boot = await page.evaluate(() => {
   return {
     hasEngine: Boolean(e),
     bodyCount,
-    toolbar: Boolean(document.querySelector('.toolbar, .tb-btn')),
+    preparing: Boolean(document.querySelector('.universe-boot')),
+    explorer: Boolean(document.querySelector('.galaxy-explorer')),
   };
 });
 console.log('BOOT', JSON.stringify(boot));
+if (!boot.explorer) errors.push('empty save did not open the galaxy');
+if (boot.preparing) errors.push('preparing overlay still up after reveal');
 
-const galaxyBtn = page.locator('button[title="Galaxy — the shared catalog"]');
-if (await galaxyBtn.count()) {
-  await galaxyBtn.click();
-  await page.waitForTimeout(4000);
+{
   const gx = await page.evaluate(() => ({
     explorer: Boolean(document.querySelector('.galaxy-explorer')),
     title: document.querySelector('.galaxy-title')?.textContent ?? null,
@@ -88,7 +90,7 @@ if (await galaxyBtn.count()) {
   }));
   console.log('REGION', JSON.stringify(arc));
   await page.screenshot({ path: 'previews/galaxy-2-arc.png' });
-  if (arc.mode !== 'region') errors.push('toolbar did not open the region');
+  if (arc.mode !== 'region') errors.push('empty boot did not open the region');
   if (!arc.stars || arc.stars < 8_000) errors.push(`region loaded only ${arc.stars} stars`);
   if (!arc.inBall) errors.push('region cloud has stars outside the ball');
   if (!arc.dossier) errors.push('open did not select the loaded star');
@@ -301,16 +303,16 @@ if (await galaxyBtn.count()) {
   }));
   console.log('AFTER DISC TAP', JSON.stringify(afterGo));
   await page.screenshot({ path: 'previews/galaxy-5-tap.png' });
-} else {
-  console.error('NO GALAXY BUTTON');
-  errors.push('no galaxy button');
 }
 
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await phone.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
-await phone.waitForSelector('button[title="Galaxy — the shared catalog"]');
-await phone.waitForTimeout(2500);
-await phone.locator('button[title="Galaxy — the shared catalog"]').click({ force: true });
+const phoneGalaxy = phone.locator('button[title="Galaxy — the shared catalog"]');
+if (await phoneGalaxy.count()) {
+  await phoneGalaxy.click({ force: true });
+} else {
+  await phone.waitForSelector('.galaxy-explorer', { timeout: 90000 });
+}
 await phone.waitForTimeout(1500);
 const phoneUi = await phone.evaluate(() => ({
   homeChip: Boolean([...document.querySelectorAll('button.gx-chip')].find((b) => b.textContent === 'Home')),

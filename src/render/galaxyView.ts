@@ -51,8 +51,6 @@ import { systemAt } from '../world/systemgen';
 import {
   systemsOfInterest,
   buildRegionCloud,
-  buildSilhouetteCloud,
-  installSilhouetteCloud,
   silhouetteCloud,
   advanceRegionCloud,
   regionName,
@@ -65,6 +63,7 @@ import {
   type StarCloud,
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
+import { prepareUniverse } from '../world/universePrep';
 
 /** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
@@ -570,7 +569,6 @@ export class GalaxyView {
   private silMat: THREE.ShaderMaterial | null = null;
   private silEmisPts: THREE.Points | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
-  private silWorker: Worker | null = null;
   /** Catalog positions (the vertex shader applies the magnifier). */
   private cloud: StarCloud | null = null;
   private borderWorker: Worker | null = null;
@@ -683,7 +681,7 @@ export class GalaxyView {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     this.bootBorderWorker();
-    this.bootSilhouetteWorker();
+    this.attachSilhouette();
 
     this.setHere(hereStarId);
     this.openAtHere();
@@ -1444,8 +1442,6 @@ export class GalaxyView {
     window.removeEventListener('keyup', this.onKeyUp);
     this.borderWorker?.terminate();
     this.borderWorker = null;
-    this.silWorker?.terminate();
-    this.silWorker = null;
     this.disposeArcStars();
     for (const mk of [this.visitedMk, this.interestMk]) {
       if (!mk) continue;
@@ -1605,59 +1601,17 @@ export class GalaxyView {
     }
   }
 
-  private bootSilhouetteWorker(): void {
-    try {
-      this.silWorker = new Worker(new URL('../world/silhouette.worker.ts', import.meta.url), { type: 'module' });
-      this.silWorker.onmessage = (e: MessageEvent) => {
-        const m = e.data as {
-          type: string;
-          seed: string;
-          n: number;
-          ids: Float64Array;
-          pos: Float32Array;
-          col: Float32Array;
-          size: Float32Array;
-          pulse: Float32Array;
-          gain: Float32Array;
-          bits: Uint8Array;
-          mk: Uint8Array;
-          lum: Float32Array;
-          kind: Uint8Array;
-          ms: number;
-        };
-        if (m.type !== 'ready' || m.seed !== this.seed) return;
-        installSilhouetteCloud(m.seed, {
-          n: m.n,
-          ids: m.ids,
-          pos: m.pos,
-          col: m.col,
-          size: m.size,
-          pulse: m.pulse,
-          gain: m.gain,
-          bits: m.bits,
-          mk: m.mk,
-          lum: m.lum,
-          kind: m.kind,
-          ms: m.ms,
-        });
-        if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
-      };
-      this.silWorker.onerror = () => {
-        this.silWorker?.terminate();
-        this.silWorker = null;
-        if (this.disposed) return;
-        buildSilhouetteCloud(this.seed);
-        if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
-      };
-      this.silWorker.postMessage({ type: 'mint', seed: this.seed });
-    } catch {
-      this.silWorker = null;
-      window.setTimeout(() => {
-        if (this.disposed) return;
-        buildSilhouetteCloud(this.seed);
-        if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
-      }, 0);
+  /** Backdrop is minted once at app boot; attach the mesh if the cache is warm. */
+  private attachSilhouette(): void {
+    const go = (): void => {
+      if (this.disposed) return;
+      if (this.mode === 'region' && !this.silPts) this.buildSilhouetteStars();
+    };
+    if (silhouetteCloud(this.seed)) {
+      go();
+      return;
     }
+    void prepareUniverse(this.seed).then(go);
   }
 
   private bootBorderWorker(): void {

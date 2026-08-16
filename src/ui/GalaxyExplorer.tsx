@@ -26,8 +26,11 @@ interface Props {
   galaxySeed?: string;
   hereStarId?: number | null;
   visitedStarIds?: number[];
+  /** False on an empty save — there is no system to return to. */
+  canClose?: boolean;
   onSetCourse: (obj: GalaxyObject) => void;
   onClose: () => void;
+  onReady?: () => void;
 }
 
 export function GalaxyExplorer(props: Props) {
@@ -97,6 +100,7 @@ export function GalaxyExplorer(props: Props) {
       viewRef.current = view;
       (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView = view;
       setReady(true);
+      props.onReady?.();
       ro = new ResizeObserver(() => {
         view?.resize(wrap.clientWidth, wrap.clientHeight);
       });
@@ -206,9 +210,11 @@ export function GalaxyExplorer(props: Props) {
             </button>
           ))}
         </div>
-        <button className="gx-chip gx-close" onClick={props.onClose}>
-          Return
-        </button>
+        {props.canClose !== false && (
+          <button className="gx-chip gx-close" onClick={props.onClose}>
+            Return
+          </button>
+        )}
       </header>
 
       {selected && st && (

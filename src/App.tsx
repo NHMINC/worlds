@@ -6,6 +6,7 @@ import { exportSystem, importSystem } from './store/exportImport';
 import { CURRENT_GEN_VERSION, systemAt, type SystemSpec } from './world/systemgen';
 import { objectAt, type GalaxyObject } from './world/galaxy';
 import { discoverHabitable } from './world/discover';
+import { prepareUniverse } from './world/universePrep';
 import { PALETTE } from './world/palettes';
 import { uuid } from './world/rng';
 import type {
@@ -84,6 +85,8 @@ export default function App() {
   const [mapOpen, setMapOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [galaxyOpen, setGalaxyOpen] = useState(false);
+  const [preparing, setPreparing] = useState(true);
+  const [lookStarId, setLookStarId] = useState<number | null>(null);
   const [placeDialog, setPlaceDialog] = useState<PlaceDialogState | null>(null);
   const [inspected, setInspected] = useState<InspectedCell | null>(null);
   const [musicOn, setMusicOn] = useState(false);
@@ -185,30 +188,31 @@ export default function App() {
     return objectAt(s.galaxySeed ?? UNIVERSE.CANONICAL_SEED, s.starId) != null;
   }
 
-  async function ensureFirstCamp(): Promise<SystemMeta[]> {
+  async function openFreshGalaxy(): Promise<void> {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const start = discoverHabitable();
-    const meta = newSystemMeta(start.spec.star.name, start.spec.seed, {
-      starId: start.starId,
-      galaxySeed: UNIVERSE.CANONICAL_SEED,
-    });
-    await db.transaction('rw', db.systems, async () => {
-      const existing = await db.systems.toArray();
-      if (!existing.some(visitAlive)) await db.systems.add(meta);
-    });
-    return (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
+    setLookStarId(start.starId);
+    setGalaxyOpen(true);
   }
 
   async function boot(engine: Engine): Promise<void> {
+    const prep = prepareUniverse();
     const raw = await db.systems.orderBy('updatedAt').reverse().toArray();
     for (const s of raw) {
       if (s.starId != null && !visitAlive(s)) await deleteSystem(s.id);
     }
-    let list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
-    if (list.length === 0) list = await ensureFirstCamp();
+    const list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
     setSystems(list);
+    if (list.length === 0) {
+      await prep;
+      await openFreshGalaxy();
+      return;
+    }
+    await prep;
     const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
     const target = list.find((s) => s.id === lastId) ?? list[0];
     if (target) await openSystem(target.id, engine);
+    setPreparing(false);
   }
 
   async function openSystem(id: string, engineArg?: Engine): Promise<void> {
@@ -261,10 +265,18 @@ export default function App() {
 
   async function handleDelete(id: string): Promise<void> {
     await deleteSystem(id);
-    let list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
-    if (list.length === 0) list = await ensureFirstCamp();
+    const list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
     setSystems(list);
-    if (system?.id === id) await openSystem(list[0].id);
+    if (system?.id === id) {
+      if (list[0]) await openSystem(list[0].id);
+      else {
+        setSystem(null);
+        setSpec(null);
+        setPreparing(true);
+        await prepareUniverse();
+        await openFreshGalaxy();
+      }
+    }
   }
 
   async function handleSetCourse(obj: GalaxyObject): Promise<void> {
@@ -456,11 +468,19 @@ export default function App() {
 
       {galaxyOpen && (
         <GalaxyExplorer
-          hereStarId={system?.starId ?? null}
+          hereStarId={system?.starId ?? lookStarId}
           visitedStarIds={systems.map((s) => s.starId).filter((id): id is number => id != null)}
+          canClose={system != null}
           onSetCourse={(o) => void handleSetCourse(o)}
           onClose={() => setGalaxyOpen(false)}
+          onReady={() => setPreparing(false)}
         />
+      )}
+
+      {preparing && (
+        <div className="universe-boot" role="status">
+          Preparing the universe
+        </div>
       )}
 
       {!galaxyOpen && (
