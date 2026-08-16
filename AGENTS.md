@@ -189,8 +189,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   sphere** through the catalog: stars that cross in are minted,
   stars that leave drop out. The GPU holds catalog positions; the
   vertex shader applies the magnifier (`uCenter`, `uScale`).
-  Membership is a **shell walk** (`advanceRegionCloud`) on a
-  worker. Space inside is drawn in a `GALAXY_REGION_VIEW_R`
+  Membership remints off the animation thread (`buildRegionCloud`
+  on the region worker). Birth scatter is a large fraction of
+  `REGION_R`, so a rim walk is the same ball — doing that on the
+  frame is the warp hitch. Space inside is drawn in a `GALAXY_REGION_VIEW_R`
   (40 kpc) ball. Distant stars are **1px pinpricks**; closer ones
   grow from luminosity and distance. Behind the ball a
   magnitude-limited backdrop (`buildSilhouetteCloud`) draws the

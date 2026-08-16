@@ -35,7 +35,6 @@ import { systemAt } from '../world/systemgen';
 import {
   buildRegionCloud,
   silhouetteCloud,
-  advanceRegionCloud,
   regionName,
   sketchMatches,
   MK_LETTER,
@@ -94,8 +93,6 @@ const extinctGlsl = (steps: number) => /* glsl */ `
 
 /** Slide the catalog centre after it has moved this far (catalog kpc). */
 const MAG_SLIDE = 0.01;
-/** A jump bigger than this remints instead of walking the rim. */
-const MAG_REBUILD = 0.45;
 /** Latched warp. Speed is catalog kpc / s — see UNIVERSE.GALAXY_WARP. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
@@ -679,7 +676,6 @@ export class GalaxyView {
     this.resetThrust();
     this.borderGen++;
     this.borderBusy = false;
-    this.syncWorkerCloud();
 
     this.arcPos.set(0, 0, 0);
     const glen = Math.hypot(x, z);
@@ -1187,7 +1183,6 @@ export class GalaxyView {
     this.mintAt.copy(this.arcCenter);
     this.borderGen++;
     this.borderBusy = false;
-    this.syncWorkerCloud();
     this.pushMagUniforms();
     if (this.selected) {
       const c = this.viewCart(this.selected);
@@ -1422,23 +1417,18 @@ export class GalaxyView {
    * Gestures are in the magnified frame. The camera stays at the
    * origin; the sphere centre moves by dView / scale. The GPU holds
    * catalog positions — the vertex shader applies the magnifier.
-   * Membership is a shell walk once the centre has moved MAG_SLIDE,
-   * run on a worker so the frame only updates the magnifier uniforms.
+   * Membership remints on a worker once the centre has moved
+   * MAG_SLIDE. The frame never calls buildRegionCloud: birth
+   * scatter is a large fraction of REGION_R, so a "rim walk" is
+   * the whole ball, and doing that here is the warp hitch.
    */
-  private moveBubble(vx: number, vy: number, vz: number, force = false): void {
+  private moveBubble(vx: number, vy: number, vz: number): void {
     if (this.mode !== 'region' || !this.cloud) return;
     const s = this.magScale();
     this.arcCenter.x += vx / s;
     this.arcCenter.y += vy / s;
     this.arcCenter.z += vz / s;
-    const d = this.arcCenter.distanceTo(this.mintAt);
-    if (force || d > MAG_REBUILD) {
-      this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), true);
-      this.mintAt.copy(this.arcCenter);
-      this.syncWorkerCloud();
-    } else if (d >= MAG_SLIDE) {
-      this.requestBorder();
-    }
+    if (this.arcCenter.distanceTo(this.mintAt) >= MAG_SLIDE) this.requestBorder();
     this.pushMagUniforms();
     if (this.selected) {
       const c = this.viewCart(this.selected);
@@ -1473,56 +1463,26 @@ export class GalaxyView {
     }
   }
 
-  private syncWorkerCloud(): void {
-    const c = this.cloud;
-    const w = this.borderWorker;
-    if (!c || !w) return;
-    const ids = c.ids.slice(0, c.n);
-    const pos = c.pos.slice(0, c.n * 3);
-    const col = c.col.slice(0, c.n * 3);
-    const size = c.size.slice(0, c.n);
-    const pulse = c.pulse.slice(0, c.n);
-    const gain = c.gain.slice(0, c.n);
-    const bits = c.bits.slice(0, c.n);
-    const mk = c.mk.slice(0, c.n);
-    const lum = c.lum.slice(0, c.n);
-    const kind = c.kind.slice(0, c.n);
-    w.postMessage(
-      { type: 'set', seed: this.seed, n: c.n, ids, pos, col, size, pulse, gain, bits, mk, lum, kind },
-      [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer, kind.buffer],
-    );
-  }
-
   private requestBorder(): void {
     if (!this.cloud) return;
+    if (this.arcCenter.distanceTo(this.mintAt) < MAG_SLIDE) return;
     if (!this.borderWorker) {
-      this.applyMembership(
-        advanceRegionCloud(
-          this.seed,
-          this.cloud,
-          this.mintAt.x,
-          this.mintAt.y,
-          this.mintAt.z,
-          this.arcCenter.x,
-          this.arcCenter.y,
-          this.arcCenter.z,
-        ),
-        false,
-      );
+      // No worker: never remint while the ship is moving. One hitch
+      // when we stop is better than a freeze every MAG_SLIDE.
+      if (this.thrustOn || this.thrustSpeed > 1e-5) return;
+      this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), false);
       this.mintAt.copy(this.arcCenter);
       return;
     }
     if (this.borderBusy) return;
     this.borderBusy = true;
     this.borderWorker.postMessage({
-      type: 'advance',
+      type: 'rebuild',
+      seed: this.seed,
       gen: this.borderGen,
-      x0: this.mintAt.x,
-      y0: this.mintAt.y,
-      z0: this.mintAt.z,
-      x1: this.arcCenter.x,
-      y1: this.arcCenter.y,
-      z1: this.arcCenter.z,
+      x: this.arcCenter.x,
+      y: this.arcCenter.y,
+      z: this.arcCenter.z,
     });
   }
 
@@ -1565,13 +1525,7 @@ export class GalaxyView {
       false,
     );
     this.mintAt.set(m.x, m.y, m.z);
-    if (this.arcCenter.distanceTo(this.mintAt) > MAG_REBUILD) {
-      this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), true);
-      this.mintAt.copy(this.arcCenter);
-      this.syncWorkerCloud();
-    } else if (this.arcCenter.distanceTo(this.mintAt) >= MAG_SLIDE) {
-      this.requestBorder();
-    }
+    if (this.arcCenter.distanceTo(this.mintAt) >= MAG_SLIDE) this.requestBorder();
   };
 
   private applyMembership(cloud: StarCloud, remesh: boolean): void {
@@ -1813,10 +1767,15 @@ export class GalaxyView {
     }
     const cap = UNIVERSE.GALAXY_WARP;
     const rate = UNIVERSE.GALAXY_WARP_ACCEL;
+    const moving = this.thrustSpeed > 1e-5;
     if (this.thrustOn) this.thrustSpeed = Math.min(cap, this.thrustSpeed + rate * dt);
     else this.thrustSpeed = Math.max(0, this.thrustSpeed - rate * dt);
     if (this.thrustSpeed <= 1e-5) {
       this.thrustSpeed = 0;
+      if (moving) {
+        this.updateSight(true);
+        this.requestBorder();
+      }
       return;
     }
     this.orientArc();
@@ -1877,6 +1836,13 @@ export class GalaxyView {
       this.focusObj = null;
       this.focusHud = null;
       this.grownCount = 0;
+      return;
+    }
+    // Warp streams stars through the pip. Assembling each lock
+    // (systemAt) is a hitch; the plate waits until we stop.
+    if (this.thrustOn || this.thrustSpeed > 1e-5) {
+      this.focusObj = null;
+      this.focusHud = null;
       return;
     }
     this.orientArc();
@@ -2012,7 +1978,6 @@ export class GalaxyView {
     this.steerArc(dt);
     this.applyCam();
     this.updateSight();
-    this.aimReticle();
 
     const t = now * 0.001;
     const px = this.renderer.getPixelRatio();

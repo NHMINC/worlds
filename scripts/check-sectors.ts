@@ -194,12 +194,32 @@ const check = (cond: boolean, msg: string) => {
   const fresh = buildRegionCloud(seed, nudged.x, nudged.y, nudged.z, r);
   const slidIds = new Set(Array.from(slid.ids.subarray(0, slid.n)));
   const freshIds = new Set(Array.from(fresh.ids.subarray(0, fresh.n)));
+  check(slid.n === slidIds.size, `slide minted ${slid.n - slidIds.size} duplicate ids`);
   check(slidIds.size === freshIds.size, `slide n ${slidIds.size} != remint ${freshIds.size}`);
   let miss = 0;
   for (const id of freshIds) if (!slidIds.has(id)) miss++;
   check(miss === 0, `slide missed ${miss} stars a remint has`);
   check(slid.n !== a.n, 'sliding the sphere did not change membership');
   console.log(`  slide ${slid.ms.toFixed(1)} ms vs remint ${fresh.ms.toFixed(0)} ms`);
+
+  // Warp is 0.25 kpc/s. A few seconds of flight must not grow the
+  // cloud — that was the hitch: duplicates, then a main-thread remint.
+  let cur = slid;
+  let x = nudged.x;
+  for (let s = 0; s < 3; s++) {
+    const x1 = x + 0.25;
+    cur = advanceRegionCloud(seed, cur, x, rim.y, rim.z, x1, rim.y, rim.z, r);
+    const uniq = new Set(Array.from(cur.ids.subarray(0, cur.n)));
+    check(uniq.size === cur.n, `warp step ${s} has ${cur.n - uniq.size} duplicate ids (n=${cur.n})`);
+    x = x1;
+  }
+  const remint = buildRegionCloud(seed, x, rim.y, rim.z, r);
+  const curIds = new Set(Array.from(cur.ids.subarray(0, cur.n)));
+  const remintIds = new Set(Array.from(remint.ids.subarray(0, remint.n)));
+  check(curIds.size === remintIds.size, `after 0.75 kpc of slides n ${curIds.size} != remint ${remintIds.size}`);
+  let missWarp = 0;
+  for (const id of remintIds) if (!curIds.has(id)) missWarp++;
+  check(missWarp === 0, `after 0.75 kpc of slides missed ${missWarp} stars a remint has`);
 }
 
 // --- luminous backdrop: clock + dust, real ids, not a dwarf cloud ---
