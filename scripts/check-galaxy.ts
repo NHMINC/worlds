@@ -285,7 +285,7 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(shineMid > shineFloor, `4e3 Lsun (${shineMid.toFixed(2)}) must clear the floor (${shineFloor.toFixed(2)})`);
   check(shineO > shineFloor * 2, `O shine ${shineO.toFixed(2)} must beat floor ${shineFloor.toFixed(2)}`);
   check(shineGiant > shineO * 2, `1e5 Lsun must keep climbing, got ${shineGiant.toFixed(2)} vs O ${shineO.toFixed(2)}`);
-  check(Math.abs(harvestShine(400, 2) - harvestShine(400, 12)) < 1e-6, 'same L must stay visible at any distance');
+  check(harvestShine(400, 2) > harvestShine(400, 12) * 2, 'same L must dim with distance (apparent mag)');
   const floorCore = harvestPsf(shineFloor, 0);
   const floorWing = harvestPsf(shineFloor, 2.4);
   const oCore = harvestPsf(shineO, 0);
