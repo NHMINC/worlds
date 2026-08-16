@@ -102,7 +102,25 @@ for (let i = 0; i < 120; i++) {
 }
 const armMean = armD / Math.max(1, nArm);
 const gapMean = gapD / Math.max(1, nGap);
-check(armMean > gapMean * 1.15, `arms not overdense: ${armMean.toFixed(3)} vs ${gapMean.toFixed(3)}`);
+check(armMean > gapMean * 1.08, `arms not overdense: ${armMean.toFixed(3)} vs ${gapMean.toFixed(3)}`);
+check(gapMean > 0.02, `inter-arm emptied (ribbons, not a disc): ${gapMean.toFixed(3)}`);
+
+// Axle: the inner polar column at high |z| must be empty. A peanut
+// does not reach 2 kpc; a halo that still occupies those cells is a needle.
+{
+  let axleSlots = 0;
+  let axleCells = 0;
+  const nth = UNIVERSE.GALAXY_NTH;
+  const nz = UNIVERSE.GALAXY_NZ;
+  for (let it = 0; it < nth; it += 17) {
+    for (const iz of [0, 1, nz - 2, nz - 1]) {
+      const cell = 0 * nth * nz + it * nz + iz;
+      axleSlots += slotsInCell(seed, cell);
+      axleCells++;
+    }
+  }
+  check(axleSlots / Math.max(1, axleCells) < 0.4, `axle through the core: ${axleSlots} slots in ${axleCells} high-|z| inner cells`);
+}
 
 // Census — sample cells. Never walk the address space.
 const counts: Record<string, number> = {};

@@ -1,18 +1,17 @@
 /**
- * The shared galaxy: an SBbc (grand-design barred spiral) as a density
- * field plus an implicit stellar catalog. Nothing is stored. A star is
- * (seed, cell, slot) → position, population, IMF quantile, birth time,
- * chemistry, then stellar.evolve. The address *is* the star. We do not
- * keep a list of 7k samples; occupancy is the population.
+ * The shared galaxy: a Milky Way mass model as a density field plus an
+ * implicit stellar catalog. Nothing is stored. A star is (seed, cell,
+ * slot) → position, population, IMF quantile, birth time, chemistry,
+ * then stellar.evolve. The address *is* the star. Occupancy is
+ * density × volume × GALAXY_N_K.
  *
- * Within a cell the IMF is stratified: slot 0 is the low-mass end,
- * slot n−1 is the high-mass end. Zooming in is “include more slots,”
- * not “load a bigger array.”
+ * Birth positions stay in the scatter cube around the cell so the
+ * magnifier rim walk stays a rim. Within a cell the IMF is stratified:
+ * slot 0 is the low-mass end, slot n−1 is the high-mass end.
  *
- * Lin–Shu arms are a cosine overdensity on a logarithmic spiral; the bar
- * is a Ferrers ellipsoid; the halo is a potential-shaped envelope. We do
- * not integrate N-body for 10 Gyr — that is the decreed shortcut, same
- * family as “orbits are stable by fiat.”
+ * Arms are a midplane overdensity only. The bar / boxy bulge / X-peanut
+ * are ellipsoidal. We do not integrate N-body for 10 Gyr — that is the
+ * decreed shortcut, same family as “orbits are stable by fiat.”
  */
 import { mulberry32, xmur3 } from './rng';
 import { UNIVERSE } from './physics';
@@ -52,39 +51,78 @@ function u01(seed: string, ...parts: Array<string | number>): number {
   return rngFor(seed, ...parts)();
 }
 
-/** Logarithmic-spiral phase. 0 = arm crest. */
-export function armPhase(R: number, theta: number): number {
-  const { GALAXY_ARM_M: m, GALAXY_PITCH: pitch, GALAXY_RD: rd } = UNIVERSE;
+function logSpiralPhase(R: number, theta: number, m: number, pitch: number): number {
   const cot = 1 / Math.max(0.05, Math.tan(pitch));
-  return m * theta - m * cot * Math.log(Math.max(R, 0.15) / rd);
+  return m * theta - m * cot * Math.log(Math.max(R, 0.15) / UNIVERSE.GALAXY_RD);
+}
+
+/** Four-arm MW stellar phase. 0 = crest. */
+export function armPhase(R: number, theta: number): number {
+  return logSpiralPhase(R, theta, UNIVERSE.GALAXY_ARM_M, UNIVERSE.GALAXY_PITCH);
+}
+
+function armPhase2(R: number, theta: number): number {
+  return logSpiralPhase(R, theta, UNIVERSE.GALAXY_ARM_M2, UNIVERSE.GALAXY_PITCH2);
+}
+
+/** Stellar midplane arm factor — mild. Does not touch z. */
+function stellarArm(R: number, theta: number): number {
+  const U = UNIVERSE;
+  return 1 + U.GALAXY_ARM_A * Math.cos(armPhase(R, theta)) + U.GALAXY_ARM_A2 * Math.cos(armPhase2(R, theta));
+}
+
+/** Gas / dust / H II arm factor — stronger, still in-plane. */
+function gasArm(R: number, theta: number): number {
+  return 1 + UNIVERSE.GALAXY_GAS_ARM_A * Math.cos(armPhase(R, theta));
 }
 
 export function inSpiralArm(R: number, theta: number): boolean {
-  const c = Math.cos(armPhase(R, theta));
-  return c > 0.25;
+  return Math.cos(armPhase(R, theta)) > 0.2 || Math.cos(armPhase2(R, theta)) > 0.45;
+}
+
+/** Broken exponential surface (Lian+2024): flat 3.5–7.5, then Rd. */
+function diskSigma(R: number): number {
+  const U = UNIVERSE;
+  const blend = 1 / (1 + Math.exp((R - U.GALAXY_R_BREAK) / U.GALAXY_R_BREAK_W));
+  return blend * Math.exp(-R / U.GALAXY_RD_INNER) + (1 - blend) * Math.exp(-R / U.GALAXY_RD);
 }
 
 /**
  * Component densities at a point (relative, not physical Msun/pc³).
- * The catalog only needs shape and contrast.
+ * Occupancy uses the sum; a cell is how many stars that region is owed.
  */
 export function densityParts(p: GalPos): Record<Population, number> {
   const U = UNIVERSE;
   const r = Math.hypot(p.R, p.z);
-  const thin =
-    Math.exp(-p.R / U.GALAXY_RD) *
-    sech2(p.z / U.GALAXY_ZD) *
-    (1 + U.GALAXY_ARM_A * Math.cos(armPhase(p.R, p.theta)));
-  const thick = 0.14 * Math.exp(-p.R / U.GALAXY_RD_THICK) * sech2(p.z / U.GALAXY_Z_THICK);
-  const bulge = 4.2 * Math.exp(-3.5 * (r / U.GALAXY_RE_BULGE));
   const x = p.R * Math.cos(p.theta);
   const y = p.R * Math.sin(p.theta);
+  const thin = U.GALAXY_THIN_AMP * diskSigma(p.R) * sech2(p.z / U.GALAXY_ZD) * stellarArm(p.R, p.theta);
+  const thick = 0.13 * Math.exp(-p.R / U.GALAXY_RD_THICK) * sech2(p.z / U.GALAXY_Z_THICK);
   const rb2 =
     (x * x) / (U.GALAXY_BAR_A * U.GALAXY_BAR_A) +
     (y * y) / (U.GALAXY_BAR_B * U.GALAXY_BAR_B) +
     (p.z * p.z) / (U.GALAXY_BAR_C * U.GALAXY_BAR_C);
-  const bar = rb2 < 1 ? 3.4 * Math.pow(1 - rb2, 1.8) : 0;
-  const halo = 0.03 / Math.pow(1 + r / U.GALAXY_HALO_A, 3.2);
+  const bar = rb2 < 1 ? U.GALAXY_BAR_AMP * Math.pow(1 - rb2, 1.6) : 0;
+  const box =
+    U.GALAXY_BOX_AMP *
+    Math.exp(
+      -0.5 *
+        ((x * x) / (U.GALAXY_BOX_A * U.GALAXY_BOX_A) +
+          (y * y) / (U.GALAXY_BOX_B * U.GALAXY_BOX_B) +
+          (p.z * p.z) / (U.GALAXY_BOX_C * U.GALAXY_BOX_C)),
+    );
+  const k = U.GALAXY_PEANUT_Z / U.GALAXY_PEANUT_R;
+  const xa = Math.min(Math.abs(x), 2.2);
+  const ridge = Math.exp(
+    -0.5 * ((x * x) / (1.45 * 1.45) + (y * y) / (0.42 * 0.42)),
+  );
+  const peanut =
+    U.GALAXY_PEANUT_AMP *
+    ridge *
+    (Math.exp(-0.5 * ((p.z - k * xa) / 0.2) ** 2) + Math.exp(-0.5 * ((p.z + k * xa) / 0.2) ** 2));
+  const nuc = U.GALAXY_NUC_AMP * Math.exp(-p.R / U.GALAXY_NUC_RD) * sech2(p.z / U.GALAXY_NUC_ZD);
+  const bulge = box + peanut + nuc;
+  const halo = U.GALAXY_HALO_AMP / Math.pow(1 + r / U.GALAXY_HALO_A, 3.5);
   return {
     thin: Math.max(0, thin),
     thick: Math.max(0, thick),
@@ -122,11 +160,19 @@ function ismNoise(seed: string, x: number, y: number, z: number): number {
   return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
 }
 
-/** Gas disk is flatter than the stars: molecular gas hangs on past the stellar edge. */
+/** Molecular sheet: thinner than the stars, stronger arm contrast, in-plane only. */
 function gasBase(p: GalPos): number {
   const U = UNIVERSE;
-  const armF = 1 + U.GALAXY_ARM_A * Math.cos(armPhase(p.R, p.theta));
-  return Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2(p.z / U.GALAXY_ZD) * armF;
+  return (
+    Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2(p.z / U.GALAXY_ZD_GAS) * gasArm(p.R, p.theta)
+  );
+}
+
+/** Pull z to the midplane when the cell overlaps the gas sheet. */
+function sheetPos(mid: GalPos): GalPos {
+  const half = (2 * UNIVERSE.GALAXY_Z_THICK * 4) / UNIVERSE.GALAXY_NZ / 2;
+  if (Math.abs(mid.z) <= half) return { R: mid.R, theta: mid.theta, z: 0 };
+  return mid;
 }
 
 let ismMemoSeed = '';
@@ -146,7 +192,7 @@ export function ismNorm(seed: string, cell: number): number {
   }
   const hit = ismMemo.get(cell);
   if (hit !== undefined) return hit;
-  const p = cellCenter(cell);
+  const p = sheetPos(cellCenter(cell));
   const base = gasBase(p);
   let v = 0;
   if (base > 1e-5) {
@@ -156,7 +202,7 @@ export function ismNorm(seed: string, cell: number): number {
       (ismNoise(seed, c.x * f, c.y * f, c.z * f) +
         0.5 * ismNoise(seed, c.x * f * 2.3 + 31.7, c.y * f * 2.3, c.z * f * 2.3)) /
       1.5;
-    const ceil = (1 + UNIVERSE.GALAXY_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
+    const ceil = (1 + UNIVERSE.GALAXY_GAS_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
     v = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s)) / ceil);
   }
   if (ismMemo.size > 400_000) ismMemo.clear();

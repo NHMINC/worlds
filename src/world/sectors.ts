@@ -648,7 +648,9 @@ function thinDensityCeil(R: number, z: number): number {
   const U = UNIVERSE;
   const e = Math.exp(z / U.GALAXY_ZD);
   const sech2z = (2 / (e + 1 / e)) ** 2;
-  return Math.exp(-R / U.GALAXY_RD) * sech2z * (1 + U.GALAXY_ARM_A);
+  const blend = 1 / (1 + Math.exp((R - U.GALAXY_R_BREAK) / U.GALAXY_R_BREAK_W));
+  const sig = blend * Math.exp(-R / U.GALAXY_RD_INNER) + (1 - blend) * Math.exp(-R / U.GALAXY_RD);
+  return U.GALAXY_THIN_AMP * sig * sech2z * (1 + U.GALAXY_ARM_A + U.GALAXY_ARM_A2);
 }
 
 function catalogCellVolume(ir: number): number {
@@ -678,7 +680,9 @@ export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
  */
 function gasDensityCeil(R: number, z: number): number {
   const U = UNIVERSE;
-  const e = Math.exp(z / U.GALAXY_ZD);
+  const half = (2 * U.GALAXY_Z_THICK * 4) / U.GALAXY_NZ / 2;
+  const zSheet = Math.abs(z) <= half ? 0 : z;
+  const e = Math.exp(zSheet / U.GALAXY_ZD_GAS);
   const sech2z = (2 / (e + 1 / e)) ** 2;
   return Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2z;
 }
