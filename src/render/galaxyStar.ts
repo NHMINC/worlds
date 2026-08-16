@@ -56,29 +56,26 @@ export const HARVEST_SHINE_SAT = 2.7;
 export const HARVEST_L_REF = UNIVERSE.GALAXY_SILHOUETTE_L;
 /**
  * Eye PSF in CSS pixels — not sprite UVs. A Gaussian core
- * plus off-axis wings. The core peak is I, not I plus a
- * Lorentzian spike: that 4× boost clipped every harvest pin
- * to the same white pixel.
+ * (exp(−r² · CORE)) plus a Lorentzian tail TAIL/(A + B r²).
+ * Same shape as the in-system glare. Magnitude scales I; it
+ * does not stretch a filled circle.
  */
 export const HARVEST_PSF_CORE = 18;
-/** Wing amplitude · I^P, away from the core. */
-export const HARVEST_PSF_WING_K = 0.28;
-export const HARVEST_PSF_WING_P = 1.25;
-/** Wing scale² (CSS px²). */
-export const HARVEST_PSF_SIG2 = 1.6;
-export const HARVEST_PSF_THRESH = 0.045;
+export const HARVEST_PSF_TAIL = 0.22;
+export const HARVEST_PSF_A = 0.07;
+export const HARVEST_PSF_B = 3.2;
+export const HARVEST_PSF_THRESH = 0.018;
+/** Sprite cap (CSS px). Room for wings, not a disc radius. */
+export const HARVEST_GLOW_MAX = 22;
 /**
- * Apparent magnitude. Flux is L / (d² + ε); display is
- * max(MIN, GAIN · (flux / fluxRef)^P). MIN is 2× the reference
- * pin so the dim field shines through; stars already brighter
- * are unchanged.
+ * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
+ * Steep in L so an O outshines the harvest floor. Shallow in d
+ * so approaching does not inflate a disc.
  */
-export const HARVEST_SHINE_GAIN = 0.6;
-/** Visible floor: 2× the reference pin. Does not lift giants. */
-export const HARVEST_SHINE_MIN = 2 * HARVEST_SHINE_GAIN;
-export const HARVEST_SHINE_P = 0.55;
+export const HARVEST_SHINE_GAIN = 0.28;
+export const HARVEST_SHINE_L_P = 0.55;
 export const HARVEST_SHINE_DIST_REF = 8;
-export const HARVEST_FLUX_EPS = 0.16;
+export const HARVEST_SHINE_DIST_P = 0.22;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). Unused on harvest pins. */
@@ -98,33 +95,30 @@ export function harvestStarPx(pixelRatio = 1): number {
 
 /** PSF intensity at a CSS-pixel radius. Same formula the harvest fragment uses. */
 export function harvestPsf(I: number, rCss: number): number {
-  const i = Math.max(I, 0);
   const core = Math.exp(-rCss * rCss * HARVEST_PSF_CORE);
-  const wing = (HARVEST_PSF_WING_K * Math.pow(i, HARVEST_PSF_WING_P)) / (1 + (rCss * rCss) / HARVEST_PSF_SIG2);
-  return i * core + wing * (1 - core);
+  const tail = HARVEST_PSF_TAIL / (HARVEST_PSF_A + HARVEST_PSF_B * rCss * rCss);
+  return Math.max(0, I) * (0.95 * core + tail);
 }
 
-/** CSS-px radius where the wings drop through the visibility floor. */
+/** CSS-px radius where the Lorentzian wing drops through the visibility floor. */
 export function harvestPsfRadiusCss(I: number): number {
-  const peak = HARVEST_PSF_WING_K * Math.pow(Math.max(I, 0), HARVEST_PSF_WING_P);
-  if (peak <= HARVEST_PSF_THRESH) return 0;
-  return Math.sqrt(HARVEST_PSF_SIG2 * (peak / HARVEST_PSF_THRESH - 1));
+  const num = (HARVEST_PSF_TAIL * Math.max(I, 0)) / HARVEST_PSF_THRESH - HARVEST_PSF_A;
+  return Math.sqrt(Math.max(0, num / HARVEST_PSF_B));
 }
 
-/** Sprite size (device px): room for visible wings. No bright-end cap. */
+/** Sprite size (device px): room for visible wings. Not a filled disc. */
 export function harvestGlowPx(L: number, pixelRatio = 1): number {
   const I = harvestShine(L, HARVEST_SHINE_DIST_REF);
-  const css = Math.max(1, 1 + 2 * harvestPsfRadiusCss(I));
+  const css = Math.min(HARVEST_GLOW_MAX, Math.max(1, 1 + 2 * harvestPsfRadiusCss(I)));
   return Math.max(harvestStarPx(pixelRatio), css * pixelRatio);
 }
 
-/** Apparent-magnitude intensity. Same formula the harvest vertex uses. */
+/** Fly-distance intensity. Same formula the harvest vertex uses. */
 export function harvestShine(L: number, d: number): number {
-  const flux = Math.max(L, 1e-4) / (d * d + HARVEST_FLUX_EPS);
-  const fluxRef = HARVEST_L_REF / (HARVEST_SHINE_DIST_REF * HARVEST_SHINE_DIST_REF + HARVEST_FLUX_EPS);
-  return Math.max(
-    HARVEST_SHINE_MIN,
-    HARVEST_SHINE_GAIN * Math.pow(flux / Math.max(fluxRef, 1e-12), HARVEST_SHINE_P),
+  return (
+    HARVEST_SHINE_GAIN *
+    Math.pow(Math.max(L, 1e-4) / HARVEST_L_REF, HARVEST_SHINE_L_P) *
+    Math.pow(HARVEST_SHINE_DIST_REF / Math.max(d, 0.4), HARVEST_SHINE_DIST_P)
   );
 }
 

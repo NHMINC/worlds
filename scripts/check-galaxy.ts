@@ -19,6 +19,7 @@ import {
   harvestPsf,
   harvestShine,
   harvestStarPx,
+  HARVEST_GLOW_MAX,
   HARVEST_L_REF,
   shineDisplay,
   starKind,
@@ -273,28 +274,22 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const pin = harvestGlowPx(HARVEST_L_REF, 1);
   const midL = harvestGlowPx(1000, 1);
   const hotL = harvestGlowPx(8000, 1);
-  const giant = harvestGlowPx(1e6, 1);
-  check(pin <= 10, `harvest-floor star must stay a small pin, got ${pin.toFixed(2)}px`);
-  check(hotL > midL && midL >= pin, `glow room must rank L: ${pin.toFixed(1)} / ${midL.toFixed(1)} / ${hotL.toFixed(1)}`);
-  check(giant > hotL * 1.4, `hypergiant must outgrow an O (no bright-end cap): ${giant.toFixed(1)} vs ${hotL.toFixed(1)}`);
+  const cap = harvestGlowPx(1e6, 1);
+  check(pin <= 3.6, `harvest-floor sprite is wing room, not a disc, got ${pin.toFixed(2)}px`);
+  check(hotL > midL && midL > pin, `glow room must rank L: ${pin.toFixed(1)} / ${midL.toFixed(1)} / ${hotL.toFixed(1)}`);
+  check(cap <= HARVEST_GLOW_MAX + 1e-6, `glow cap ${cap} exceeded ${HARVEST_GLOW_MAX}`);
   const shineFloor = harvestShine(HARVEST_L_REF, 8);
-  const shineMid = harvestShine(4000, 8);
   const shineO = harvestShine(8000, 8);
-  const shineGiant = harvestShine(1e5, 8);
-  check(shineFloor > 1.0 && shineFloor < 1.5, `floor core must be 2× the reference pin, got ${shineFloor.toFixed(2)}`);
-  check(shineMid > shineFloor, `4e3 Lsun (${shineMid.toFixed(2)}) must clear the floor (${shineFloor.toFixed(2)})`);
-  check(shineO > shineFloor * 2, `O shine ${shineO.toFixed(2)} must beat floor ${shineFloor.toFixed(2)}`);
-  check(shineGiant > shineO * 2, `1e5 Lsun must keep climbing, got ${shineGiant.toFixed(2)} vs O ${shineO.toFixed(2)}`);
-  check(harvestShine(400, 2) > harvestShine(400, 12) * 2, 'same L must dim with distance (apparent mag)');
+  check(shineO > shineFloor * 2.5, `O shine ${shineO.toFixed(2)} must beat floor ${shineFloor.toFixed(2)}`);
+  check(harvestShine(400, 2) > harvestShine(400, 12) * 1.15, 'same L must dim with distance');
   const floorCore = harvestPsf(shineFloor, 0);
   const floorWing = harvestPsf(shineFloor, 2.4);
   const oCore = harvestPsf(shineO, 0);
   const oWing = harvestPsf(shineO, 2.4);
-  check(Math.abs(floorCore - shineFloor) < 0.02, `floor core must be I, not I×4 (${floorCore.toFixed(2)})`);
-  check(floorWing < 0.12, `floor PSF must stay a pin, wing ${floorWing.toFixed(3)}`);
-  check(oWing > floorWing * 2, `O wings must outshine the floor ${oWing.toFixed(3)} vs ${floorWing.toFixed(3)}`);
-  check(oCore / Math.max(harvestPsf(shineO, 2), 1e-6) > 6, `PSF must be a point, not a flat disc (${oCore.toFixed(2)} / mid)`);
-  check(floorCore > floorWing * 8, `floor core must dominate its wings`);
+  check(floorWing < 0.02, `floor PSF must die as a pin, wing ${floorWing.toFixed(3)}`);
+  check(oWing > floorWing * 4, `O wings must outshine the floor ${oWing.toFixed(3)} vs ${floorWing.toFixed(3)}`);
+  check(oCore / Math.max(harvestPsf(shineO, 1.2), 1e-6) > 8, `PSF must be a point, not a flat disc (${oCore.toFixed(2)} / mid)`);
+  check(floorCore > floorWing * 20, `floor core must dominate its wings`);
   const oHue = harvestChroma(teffToRgb(28000));
   const mHue = harvestChroma(teffToRgb(3400));
   const gHue = harvestChroma(teffToRgb(5800));
