@@ -119,11 +119,15 @@ nearby cells, then more of the IMF. You cannot pick a star until
 you are close enough that it has resolved. Set course loads that
   star. We **store visits only** (overlays, camera, labels). We do
   not mint systems. App boot mints the whole-disk backdrop once
-  (`prepareUniverse`) behind “Preparing the universe”. An empty
-  save does not write a camp: it queries nearby solar-circle hosts
-  for a living world (`discoverHabitable`) and opens the region
-  looking at that star. Set course is the first visit. Changing the
-  grid renumbers `starId`; old visits from the 7k-sample era are void.
+  (`prepareUniverse`) behind the HTML “Preparing the universe”
+  splash — not a React overlay, so Strict Mode remounts cannot
+  flash it twice. The explorer stays mounted (`is-dormant` on a
+  world) so opening the map does not remint or show the splash
+  again. An empty save does not write a camp: it queries nearby
+  solar-circle hosts for a living world (`discoverHabitable`) and
+  opens the region looking at that star. Set course is the first
+  visit. Changing the grid renumbers `starId`; old visits from the
+  7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
 
@@ -181,8 +185,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - **The explorer is one magnification sphere, not a saucer chart.**
   App boot mints the whole-disk backdrop once (`prepareUniverse`)
   and opens the region at the loaded star (`hereStarId`, else
-  `homeStar`) with that star on the reticle. An empty save opens
-  the same way on a discovered living host. The camera sits at the
+  `homeStar`) with that star on the reticle. The explorer canvas
+  stays alive after Return / set course; only the splash is
+  once-per-load. An empty save opens the same way on a discovered
+  living host. The camera sits at the
   sphere centre — it does not tour the ball. Gestures **slide the
   sphere** through the catalog: stars that cross in are minted,
   stars that leave drop out. The GPU holds catalog positions; the

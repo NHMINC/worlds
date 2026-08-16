@@ -28,6 +28,8 @@ interface Props {
   visitedStarIds?: number[];
   /** False on an empty save — there is no system to return to. */
   canClose?: boolean;
+  /** False while the explorer is kept warm but hidden. */
+  active?: boolean;
   onSetCourse: (obj: GalaxyObject) => void;
   onClose: () => void;
   onReady?: () => void;
@@ -40,6 +42,11 @@ export function GalaxyExplorer(props: Props) {
   const viewRef = useRef<GalaxyView | null>(null);
   const goRef = useRef(props.onSetCourse);
   goRef.current = props.onSetCourse;
+  const hereRef = useRef(props.hereStarId ?? null);
+  hereRef.current = props.hereStarId ?? null;
+  const readyRef = useRef(props.onReady);
+  readyRef.current = props.onReady;
+  const active = props.active !== false;
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<GalaxyObject | null>(null);
   const [filter, setFilter] = useState<GalaxyFilter>('all');
@@ -95,12 +102,13 @@ export function GalaxyExplorer(props: Props) {
             );
           },
         },
-        props.hereStarId ?? null,
+        hereRef.current,
       );
       viewRef.current = view;
       (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView = view;
+      view.setActive(active);
       setReady(true);
-      props.onReady?.();
+      readyRef.current?.();
       ro = new ResizeObserver(() => {
         view?.resize(wrap.clientWidth, wrap.clientHeight);
       });
@@ -116,7 +124,25 @@ export function GalaxyExplorer(props: Props) {
       viewRef.current = null;
       delete (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView;
     };
-  }, [seed, props.hereStarId]);
+    // Recreating the view remints the neighbourhood. hereStarId is
+    // applied below; only a seed change is a new universe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seed]);
+
+  useEffect(() => {
+    if (!ready) return;
+    viewRef.current?.setHere(props.hereStarId ?? null);
+    viewRef.current?.openAtHere();
+  }, [props.hereStarId, ready]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !ready) return;
+    view.setActive(active);
+    if (active && wrapRef.current) {
+      view.resize(wrapRef.current.clientWidth, wrapRef.current.clientHeight);
+    }
+  }, [active, ready]);
 
   useEffect(() => {
     if (ready) viewRef.current?.setVisited(props.visitedStarIds ?? []);
@@ -143,7 +169,11 @@ export function GalaxyExplorer(props: Props) {
   const inRegion = frame.mode === 'region';
 
   return (
-    <div className="galaxy-explorer">
+    <div
+      className={`galaxy-explorer${active ? '' : ' is-dormant'}`}
+      aria-hidden={!active}
+      inert={!active ? true : undefined}
+    >
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
         {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}

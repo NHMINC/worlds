@@ -36,8 +36,11 @@ await page.evaluate(async () => {
 });
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForSelector('.universe-boot, .galaxy-explorer', { timeout: 30000 });
-await page.waitForSelector('.galaxy-explorer', { timeout: 90000 });
-await page.waitForFunction(() => !document.querySelector('.universe-boot'), { timeout: 90000 });
+await page.waitForFunction(() => {
+  const splash = document.getElementById('universe-boot');
+  const gx = document.querySelector('.galaxy-explorer');
+  return !splash && Boolean(gx) && !gx.classList.contains('is-dormant');
+}, { timeout: 90000 });
 await page.waitForTimeout(800);
 
 const boot = await page.evaluate(() => {
@@ -48,11 +51,12 @@ const boot = await page.evaluate(() => {
   } catch {
     bodyCount = -1;
   }
+  const gx = document.querySelector('.galaxy-explorer');
   return {
     hasEngine: Boolean(e),
     bodyCount,
-    preparing: Boolean(document.querySelector('.universe-boot')),
-    explorer: Boolean(document.querySelector('.galaxy-explorer')),
+    preparing: Boolean(document.getElementById('universe-boot')),
+    explorer: Boolean(gx) && !gx.classList.contains('is-dormant'),
   };
 });
 console.log('BOOT', JSON.stringify(boot));
@@ -162,10 +166,13 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   if (survey.point) {
     await page.mouse.click(survey.point.x, survey.point.y);
     await page.waitForTimeout(600);
-    const pointTap = await page.evaluate(() => ({
-      explorer: Boolean(document.querySelector('.galaxy-explorer')),
-      id: window.__galaxyView?.selectedObject?.()?.id ?? null,
-    }));
+    const pointTap = await page.evaluate(() => {
+      const gx = document.querySelector('.galaxy-explorer');
+      return {
+        explorer: Boolean(gx) && !gx.classList.contains('is-dormant'),
+        id: window.__galaxyView?.selectedObject?.()?.id ?? null,
+      };
+    });
     console.log('POINT TAP', JSON.stringify(pointTap));
     if (!pointTap.explorer) errors.push('tapping a survey star set course instead of selecting');
     if (pointTap.id !== survey.point.id) errors.push('tapping a survey star did not select it');
@@ -280,37 +287,59 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
     errors.push('Set course button missing after selecting a star');
   }
   try {
-    await page.waitForFunction(() => !document.querySelector('.galaxy-explorer'), { timeout: 20000 });
+    await page.waitForFunction(() => {
+      const gx = document.querySelector('.galaxy-explorer');
+      return Boolean(gx?.classList.contains('is-dormant'));
+    }, { timeout: 20000 });
   } catch {
     console.error('FAIL: Set course did not leave the explorer');
     errors.push('Set course did not leave the explorer');
   }
-  const afterGo = await page.evaluate(() => ({
-    explorer: Boolean(document.querySelector('.galaxy-explorer')),
-    title: document.querySelector('.tb-world')?.textContent ?? '',
-  }));
+  const afterGo = await page.evaluate(() => {
+    const gx = document.querySelector('.galaxy-explorer');
+    return {
+      explorer: Boolean(gx) && !gx.classList.contains('is-dormant'),
+      kept: Boolean(gx),
+      splash: Boolean(document.getElementById('universe-boot')),
+      title: document.querySelector('.tb-world')?.textContent ?? '',
+    };
+  });
   console.log('AFTER DISC TAP', JSON.stringify(afterGo));
   await page.screenshot({ path: 'previews/galaxy-5-tap.png' });
+  if (afterGo.explorer) errors.push('Set course left the explorer visible');
+  if (!afterGo.kept) errors.push('Set course unmounted the explorer');
+  if (afterGo.splash) errors.push('Set course revived the boot splash');
 }
 
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await phone.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+await phone.waitForFunction(() => !document.getElementById('universe-boot'), { timeout: 90000 });
 const phoneGalaxy = phone.locator('button[title="Galaxy — the shared catalog"]');
 if (await phoneGalaxy.count()) {
   await phoneGalaxy.click({ force: true });
 } else {
-  await phone.waitForSelector('.galaxy-explorer', { timeout: 90000 });
+  await phone.waitForFunction(() => {
+    const gx = document.querySelector('.galaxy-explorer');
+    return Boolean(gx) && !gx.classList.contains('is-dormant');
+  }, { timeout: 90000 });
 }
 await phone.waitForTimeout(1500);
-const phoneUi = await phone.evaluate(() => ({
-  homeChip: Boolean([...document.querySelectorAll('button.gx-chip')].find((b) => b.textContent === 'Home')),
-}));
+const phoneUi = await phone.evaluate(() => {
+  const gx = document.querySelector('.galaxy-explorer');
+  return {
+    homeChip: Boolean([...document.querySelectorAll('button.gx-chip')].find((b) => b.textContent === 'Home')),
+    splash: Boolean(document.getElementById('universe-boot')),
+    explorer: Boolean(gx) && !gx.classList.contains('is-dormant'),
+  };
+});
 console.log('PHONE', JSON.stringify(phoneUi));
 await phone.screenshot({ path: 'previews/galaxy-6-phone.png' });
 if (!phoneUi.homeChip) {
   console.error('FAIL: Home chip hidden on a phone-sized viewport');
   errors.push('home chip hidden on phone');
 }
+if (phoneUi.splash) errors.push('opening the galaxy map showed the boot splash again');
+if (!phoneUi.explorer) errors.push('phone galaxy map did not reveal the kept explorer');
 await phone.close();
 
 console.log('ERRORS', errors.length ? errors.join('\n---\n') : 'none');

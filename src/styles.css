@@ -951,6 +951,12 @@ body,
   color: var(--text);
 }
 
+.galaxy-explorer.is-dormant {
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+
 .galaxy-stage {
   position: absolute;
   inset: 0;

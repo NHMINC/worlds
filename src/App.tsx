@@ -6,7 +6,7 @@ import { exportSystem, importSystem } from './store/exportImport';
 import { CURRENT_GEN_VERSION, systemAt, type SystemSpec } from './world/systemgen';
 import { objectAt, type GalaxyObject } from './world/galaxy';
 import { discoverHabitable } from './world/discover';
-import { prepareUniverse } from './world/universePrep';
+import { hideUniverseSplash, prepareUniverse } from './world/universePrep';
 import { PALETTE } from './world/palettes';
 import { uuid } from './world/rng';
 import type {
@@ -85,7 +85,6 @@ export default function App() {
   const [mapOpen, setMapOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [galaxyOpen, setGalaxyOpen] = useState(false);
-  const [preparing, setPreparing] = useState(true);
   const [lookStarId, setLookStarId] = useState<number | null>(null);
   const [placeDialog, setPlaceDialog] = useState<PlaceDialogState | null>(null);
   const [inspected, setInspected] = useState<InspectedCell | null>(null);
@@ -206,13 +205,14 @@ export default function App() {
     if (list.length === 0) {
       await prep;
       await openFreshGalaxy();
+      hideUniverseSplash();
       return;
     }
     await prep;
     const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
     const target = list.find((s) => s.id === lastId) ?? list[0];
     if (target) await openSystem(target.id, engine);
-    setPreparing(false);
+    hideUniverseSplash();
   }
 
   async function openSystem(id: string, engineArg?: Engine): Promise<void> {
@@ -272,9 +272,9 @@ export default function App() {
       else {
         setSystem(null);
         setSpec(null);
-        setPreparing(true);
         await prepareUniverse();
         await openFreshGalaxy();
+        hideUniverseSplash();
       }
     }
   }
@@ -466,22 +466,15 @@ export default function App() {
         )}
       </div>
 
-      {galaxyOpen && (
-        <GalaxyExplorer
-          hereStarId={system?.starId ?? lookStarId}
-          visitedStarIds={systems.map((s) => s.starId).filter((id): id is number => id != null)}
-          canClose={system != null}
-          onSetCourse={(o) => void handleSetCourse(o)}
-          onClose={() => setGalaxyOpen(false)}
-          onReady={() => setPreparing(false)}
-        />
-      )}
-
-      {preparing && (
-        <div className="universe-boot" role="status">
-          Preparing the universe
-        </div>
-      )}
+      {/* Kept mounted so Return / the map icon never remint the sky. */}
+      <GalaxyExplorer
+        hereStarId={system?.starId ?? lookStarId}
+        visitedStarIds={systems.map((s) => s.starId).filter((id): id is number => id != null)}
+        canClose={system != null}
+        active={galaxyOpen}
+        onSetCourse={(o) => void handleSetCourse(o)}
+        onClose={() => setGalaxyOpen(false)}
+      />
 
       {!galaxyOpen && (
       <Toolbar

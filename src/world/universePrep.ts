@@ -29,6 +29,14 @@ type ReadyMsg = {
 };
 
 let inflight: Promise<StarCloud> | null = null;
+let splashHidden = false;
+
+/** Remove the HTML splash once. Survives React Strict Mode remounts. */
+export function hideUniverseSplash(): void {
+  if (splashHidden) return;
+  splashHidden = true;
+  document.getElementById('universe-boot')?.remove();
+}
 
 function cloudFromMsg(m: ReadyMsg): StarCloud {
   return {
@@ -78,3 +86,7 @@ export function prepareUniverse(seed = UNIVERSE.CANONICAL_SEED): Promise<StarClo
   });
   return inflight;
 }
+
+// Start the once-per-load harvest as soon as the module is imported,
+// so Strict Mode remounts and the galaxy map share one worker.
+void prepareUniverse();

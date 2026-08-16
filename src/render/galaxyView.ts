@@ -496,6 +496,7 @@ export class GalaxyView {
   private callbacks: Callbacks;
   private disposed = false;
   private raf = 0;
+  private active = true;
 
   private mode: GalaxyMode = 'region';
   private regionLabel: string | null = null;
@@ -1305,6 +1306,20 @@ export class GalaxyView {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Pause the loop while the explorer is hidden so the planet can run. */
+  setActive(on: boolean): void {
+    if (this.disposed || on === this.active) return;
+    this.active = on;
+    if (on) {
+      this.lastT = performance.now();
+      if (!this.raf) this.raf = requestAnimationFrame(this.frame);
+    } else {
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+      this.setWarp(false);
+    }
+  }
+
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
@@ -1997,7 +2012,7 @@ export class GalaxyView {
   // --------------------------------------------------------------- frame
 
   private frame = (): void => {
-    if (this.disposed) return;
+    if (this.disposed || !this.active) return;
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
