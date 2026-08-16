@@ -1,44 +1,88 @@
 /**
- * Membership for the magnification sphere. The animation thread
- * only updates magnifier uniforms; this worker remints the 2 kpc
- * ball at the new centre. Birth scatter is a large fraction of
- * REGION_R, so a rim walk is the same ball — remint is the law
- * (same ids as buildRegionCloud) without freezing the frame.
+ * Border monitor for the magnification sphere. The main thread
+ * keeps flying (uniforms only); this worker slides membership.
  */
-import { buildRegionCloud } from './sectors';
+import { advanceRegionCloud } from './sectors';
 import type { StarCloud } from './sectors';
 
-type RebuildMsg = {
-  type: 'rebuild';
+type SetMsg = {
+  type: 'set';
   seed: string;
-  gen: number;
-  x: number;
-  y: number;
-  z: number;
+  n: number;
+  ids: Float64Array;
+  pos: Float32Array;
+  col: Float32Array;
+  size: Float32Array;
+  pulse: Float32Array;
+  gain: Float32Array;
+  bits: Uint8Array;
+  mk: Uint8Array;
+  lum: Float32Array;
+  kind: Uint8Array;
 };
 
-type InMsg = RebuildMsg | { type: 'clear' };
+type AdvanceMsg = {
+  type: 'advance';
+  gen: number;
+  x0: number;
+  y0: number;
+  z0: number;
+  x1: number;
+  y1: number;
+  z1: number;
+};
+
+type InMsg = SetMsg | AdvanceMsg | { type: 'clear' };
+
+let seed = '';
+let cloud: StarCloud | null = null;
 
 const post = self as unknown as {
   postMessage: (data: unknown, transfer?: Transferable[]) => void;
 };
 
-function postCloud(gen: number, cloud: StarCloud, x: number, y: number, z: number): void {
-  const n = cloud.n;
-  const ids = cloud.ids.slice(0, n);
-  const pos = cloud.pos.slice(0, n * 3);
-  const col = cloud.col.slice(0, n * 3);
-  const size = cloud.size.slice(0, n);
-  const pulse = cloud.pulse.slice(0, n);
-  const gain = cloud.gain.slice(0, n);
-  const bits = cloud.bits.slice(0, n);
-  const mk = cloud.mk.slice(0, n);
-  const lum = cloud.lum.slice(0, n);
-  const kind = cloud.kind.slice(0, n);
+self.onmessage = (e: MessageEvent<InMsg>): void => {
+  const m = e.data;
+  if (m.type === 'clear') {
+    cloud = null;
+    return;
+  }
+  if (m.type === 'set') {
+    seed = m.seed;
+    cloud = {
+      n: m.n,
+      ids: m.ids,
+      pos: m.pos,
+      col: m.col,
+      size: m.size,
+      pulse: m.pulse,
+      gain: m.gain,
+      bits: m.bits,
+      mk: m.mk,
+      lum: m.lum,
+      kind: m.kind,
+      ms: 0,
+    };
+    return;
+  }
+  if (m.type !== 'advance' || !cloud) return;
+  const next = advanceRegionCloud(seed, cloud, m.x0, m.y0, m.z0, m.x1, m.y1, m.z1);
+  cloud = next;
+  const n = next.n;
+  const ids = next.ids.slice(0, n);
+  const pos = next.pos.slice(0, n * 3);
+  const col = next.col.slice(0, n * 3);
+  const size = next.size.slice(0, n);
+  const pulse = next.pulse.slice(0, n);
+  const gain = next.gain.slice(0, n);
+  const bits = next.bits.slice(0, n);
+  const mk = next.mk.slice(0, n);
+  const lum = next.lum.slice(0, n);
+  const kind = next.kind.slice(0, n);
   post.postMessage(
     {
       type: 'cloud',
-      gen,
+      gen: m.gen,
       n,
       ids,
       pos,
@@ -50,17 +94,10 @@ function postCloud(gen: number, cloud: StarCloud, x: number, y: number, z: numbe
       mk,
       lum,
       kind,
-      x,
-      y,
-      z,
+      x: m.x1,
+      y: m.y1,
+      z: m.z1,
     },
     [ids.buffer, pos.buffer, col.buffer, size.buffer, pulse.buffer, gain.buffer, bits.buffer, mk.buffer, lum.buffer, kind.buffer],
   );
-}
-
-self.onmessage = (e: MessageEvent<InMsg>): void => {
-  const m = e.data;
-  if (m.type === 'clear') return;
-  if (m.type !== 'rebuild') return;
-  postCloud(m.gen, buildRegionCloud(m.seed, m.x, m.y, m.z), m.x, m.y, m.z);
 };

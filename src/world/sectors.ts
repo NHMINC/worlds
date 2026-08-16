@@ -618,18 +618,12 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
   for (let ci = 0; ci < cells.length; ci++) {
     const cell = cells[ci];
     const filled = filledOf[ci];
-    const tapR = UNIVERSE.GALAXY_REGION_FULL_R;
-    const tapR2 = tapR * tapR;
-    const nearTap = cellDist(cell, x, y, z) < tapR + slotScatterKpc();
-    const slotFrom = nearTap ? 0 : slot0[ci];
-    for (let slot = slotFrom; slot < filled; slot++) {
+    for (let slot = slot0[ci]; slot < filled; slot++) {
       const p = slotBirthCart(seed, cell, slot);
       const dx = p.x - x;
       const dy = p.y - y;
       const dz = p.z - z;
-      const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 > r2) continue;
-      if (slot < slot0[ci] && d2 > tapR2) continue;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
       writeBirth(seed, cell, slot, filled, n++, c);
     }
     const clumps = dustClumpsInCell(seed, cell);
@@ -654,9 +648,7 @@ function thinDensityCeil(R: number, z: number): number {
   const U = UNIVERSE;
   const e = Math.exp(z / U.GALAXY_ZD);
   const sech2z = (2 / (e + 1 / e)) ** 2;
-  const blend = 1 / (1 + Math.exp((R - U.GALAXY_R_BREAK) / U.GALAXY_R_BREAK_W));
-  const sig = blend * Math.exp(-R / U.GALAXY_RD_INNER) + (1 - blend) * Math.exp(-R / U.GALAXY_RD);
-  return U.GALAXY_THIN_AMP * sig * sech2z * (1 + U.GALAXY_ARM_A + U.GALAXY_ARM_A2);
+  return Math.exp(-R / U.GALAXY_RD) * sech2z * (1 + U.GALAXY_ARM_A);
 }
 
 function catalogCellVolume(ir: number): number {
@@ -686,9 +678,7 @@ export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
  */
 function gasDensityCeil(R: number, z: number): number {
   const U = UNIVERSE;
-  const half = (2 * U.GALAXY_Z_THICK * 4) / U.GALAXY_NZ / 2;
-  const zSheet = Math.abs(z) <= half ? 0 : z;
-  const e = Math.exp(zSheet / U.GALAXY_ZD_GAS);
+  const e = Math.exp(z / U.GALAXY_ZD);
   const sech2z = (2 / (e + 1 / e)) ** 2;
   return Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2z;
 }
@@ -799,9 +789,7 @@ function dropStar(c: Omit<StarCloud, 'n' | 'ms'>, i: number, n: number): number 
  * Interior keepers stay put. Only the rim shell (and the IMF-ramp
  * core) is tested. Enterers append; leavers swap-remove. Same
  * membership as buildRegionCloud at the new centre — a border
- * monitor, not a rebuild of the galaxy. Keepers are a set of ids
- * so a cell that appears in both the shell and the ramp cannot
- * remint a star the ball already holds.
+ * monitor, not a rebuild of the galaxy.
  */
 export function advanceRegionCloud(
   seed: string,
@@ -818,12 +806,17 @@ export function advanceRegionCloud(
   const r2 = r * r;
   const scatter = slotScatterKpc() + 0.02;
   const slide = Math.hypot(x1 - x0, y1 - y0, z1 - z0);
+  // A rim-cell star can sit 2×scatter inward of a cell that is not
+  // well-inside. The shell must cover that, or we remint a keeper.
+  const inner = Math.max(0, r - slide - 2 * scatter);
+  const inner2 = inner * inner;
   const ramp =
     UNIVERSE.GALAXY_REGION_FULL_R + UNIVERSE.GALAXY_REGION_U_RAMP + slide + scatter;
   const ramp2 = ramp * ramp;
   const pos = cloud.pos;
   const ids = cloud.ids;
-  const have = new Set<number>();
+  const rim = new Set<number>();
+  const dustHave = new Set<number>();
   let n = cloud.n;
   for (let i = 0; i < n; ) {
     const i3 = i * 3;
@@ -836,18 +829,22 @@ export function advanceRegionCloud(
       continue;
     }
     const id = ids[i];
+    if (isDustId(id) || (cloud.bits[i] & BIT_DUST) !== 0) dustHave.add(id);
+    const nearRim = d2 >= inner2;
     const nearRamp = d2 <= ramp2;
-    if (nearRamp && !isDustId(id) && (cloud.bits[i] & BIT_DUST) === 0) {
-      const { cell, slot } = splitId(id);
-      const filled = slotsInCell(seed, cell);
-      const dCell = cellDist(cell, x1, y1, z1);
-      const tapR2 = UNIVERSE.GALAXY_REGION_FULL_R ** 2;
-      if (slot < Math.floor(regionImfFloor(dCell) * filled) && d2 > tapR2) {
-        n = dropStar(cloud, i, n);
-        continue;
+    if (nearRim || nearRamp) {
+      if (isDustId(id) || (cloud.bits[i] & BIT_DUST) !== 0) {
+        if (nearRim) rim.add(id);
+      } else {
+        const { cell, slot } = splitId(id);
+        const filled = slotsInCell(seed, cell);
+        if (slot < Math.floor(regionImfFloor(cellDist(cell, x1, y1, z1)) * filled)) {
+          n = dropStar(cloud, i, n);
+          continue;
+        }
+        if (nearRim) rim.add(id);
       }
     }
-    have.add(id);
     i++;
   }
   const shellLo = Math.max(0, r - slide - 2 * scatter);
@@ -858,32 +855,28 @@ export function advanceRegionCloud(
   }
   let buf: Omit<StarCloud, 'n' | 'ms'> | StarCloud = cloud;
   for (const cell of cells) {
-    const c1 = cellDist(cell, x1, y1, z1);
-    const c0 = cellDist(cell, x0, y0, z0);
-    const wellInsideOld = c0 + scatter < r && c1 + scatter < r;
-    const nearRamp = c1 <= ramp;
+    const d1 = cellDist(cell, x1, y1, z1);
+    const d0 = cellDist(cell, x0, y0, z0);
+    const wellInsideOld = d0 + scatter < r && d1 + scatter < r;
+    const nearRamp = d1 <= ramp;
     if (wellInsideOld && !nearRamp) continue;
     const filled = slotsInCell(seed, cell);
     if (filled > 0) {
-      const s1 = Math.floor(regionImfFloor(c1) * filled);
-      const s0 = Math.floor(regionImfFloor(c0) * filled);
-      const nearTap = c1 < UNIVERSE.GALAXY_REGION_FULL_R + slotScatterKpc();
-      if (!wellInsideOld || s1 < s0 || nearTap) {
-        const from = nearTap ? 0 : s1;
+      const s1 = Math.floor(regionImfFloor(d1) * filled);
+      const s0 = Math.floor(regionImfFloor(d0) * filled);
+      if (!wellInsideOld || s1 < s0) {
+        const from = s1;
         const to = wellInsideOld ? s0 : filled;
         for (let slot = from; slot < to; slot++) {
           const id = packId(cell, slot);
-          if (have.has(id)) continue;
+          if (rim.has(id)) continue;
           const p = slotBirthCart(seed, cell, slot);
           const dx = p.x - x1;
           const dy = p.y - y1;
           const dz = p.z - z1;
-          const pd2 = dx * dx + dy * dy + dz * dz;
-          if (pd2 > r2) continue;
-          if (slot < s1 && pd2 > UNIVERSE.GALAXY_REGION_FULL_R ** 2) continue;
+          if (dx * dx + dy * dy + dz * dz > r2) continue;
           buf = ensureCloudCap(buf, n, n + 1);
           writeBirth(seed, cell, slot, filled, n, buf);
-          have.add(id);
           n++;
         }
       }
@@ -894,7 +887,7 @@ export function advanceRegionCloud(
       const clumps = dustClumpsInCell(seed, cell);
       for (let k = 0; k < clumps; k++) {
         const did = dustId(cell, k);
-        if (have.has(did)) continue;
+        if (rim.has(did) || dustHave.has(did)) continue;
         const cart = dustBirthCart(seed, cell, k);
         const dx = cart.x - x1;
         const dy = cart.y - y1;
@@ -902,7 +895,6 @@ export function advanceRegionCloud(
         if (dx * dx + dy * dy + dz * dz > r2) continue;
         buf = ensureCloudCap(buf, n, n + 1);
         writeDust(seed, cell, k, n, buf);
-        have.add(did);
         n++;
       }
     }
