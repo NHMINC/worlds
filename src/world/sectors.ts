@@ -477,9 +477,9 @@ function dustRadiusKpc(seed: string, cell: number, k: number): number {
 /**
  * One dust clump: scattered position (no lattice), sphere of
  * influence from the field — wisps ~0.05 kpc, complexes up to
- * GALAXY_DUST_R_MAX. Grain colour is chemistry (silicate / sooty
- * carbon / ice mantles); `gain` carries the mean density the cloud
- * shader integrates — obscuration and lit rims derive from it.
+ * GALAXY_DUST_R_MAX. Grain mix is chemistry (silicate / sooty
+ * carbon / ice mantles) — the shader scales τ from its luminance,
+ * it does not paint the mix. `gain` is mean density (field × d2g).
  */
 function writeDust(seed: string, cell: number, k: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
   const cart = dustBirthCart(seed, cell, k);
@@ -489,6 +489,8 @@ function writeDust(seed: string, cell: number, k: number, i: number, c: Omit<Sta
   const radius = dustRadiusKpc(seed, cell, k);
   let rgb = mix3(DUST_SILICATE, DUST_SOOT, phys.carbonFrac);
   rgb = mix3(rgb, DUST_ICE, phys.iceFrac * 0.7);
+  // rgb is the grain mix (silicate / soot / ice). The shader uses
+  // its luminance to scale τ — soot absorbs harder; ice is thinner.
   // Metallicity is the dust-to-gas ratio: metal-poor gas makes thin dust.
   const d2g = Math.min(1.6, Math.pow(10, 0.5 * phys.feh));
   writeRow(id, cart.x, cart.y, cart.z, i, c, {
