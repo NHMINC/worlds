@@ -270,6 +270,12 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(dB > dG && dG > dR, `DUST_RGB ${dR},${dG},${dB} does not kill blue first`);
   check(UNIVERSE.GALAXY_EXTINCT_MAX < 5, 'uncapped extinction blacks out the core from in-plane views');
   check(UNIVERSE.GALAXY_EXTINCT_MAX > 1, 'a sub-1 cap cannot carve visible rifts');
+  // One law, both layers: the local march must sample the short
+  // in-bubble column at least as densely as the backdrop samples
+  // the disk, or a star would brighten by crossing the boundary.
+  const localSpacing = UNIVERSE.GALAXY_REGION_R / UNIVERSE.GALAXY_EXTINCT_STEPS_LOCAL;
+  const farSpacing = (UNIVERSE.GALAXY_R_MAX * 2) / UNIVERSE.GALAXY_EXTINCT_STEPS;
+  check(localSpacing <= farSpacing, `local extinction taps coarser than backdrop (${localSpacing.toFixed(2)} vs ${farSpacing.toFixed(2)} kpc)`);
 }
 
 // (The sampled "grain" starfield is gone: it drew tens of thousands of

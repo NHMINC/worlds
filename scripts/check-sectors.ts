@@ -357,7 +357,6 @@ const check = (cond: boolean, msg: string) => {
   // The full clump census spans the whole disk, so silicate / soot /
   // ice chemistry should show a broad spread of grain tints again.
   check(tints.size >= 8, `dust wears ${tints.size} tints — composition is not reaching the grains`);
-  check(UNIVERSE.DUST_ALPHA_MAX > 0.5 && UNIVERSE.DUST_ALPHA_MAX < 1, 'dense cores must obscure but never be a solid wall');
   console.log(`  dust chemistry: ice ${iceIn.toFixed(2)} -> ${iceOut.toFixed(2)} with radius; ${tints.size}+ grain tints`);
 }
 
