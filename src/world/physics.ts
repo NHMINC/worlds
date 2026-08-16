@@ -410,9 +410,12 @@ export const UNIVERSE = {
    * Face-on / Edge-on slide that ball far enough that the disk fits
    * the screen; they are the same magnifier, not a second viewer.
    * Every occupied slot is kept near the
-   * centre (FULL_R). Farther cells keep only the massive tail of their
-   * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
-   * you can fly. Count is still an outcome — the bulge is denser.
+   * centre (FULL_R). Farther than that, the region cloud is the
+   * same luminous tail as the silhouette — not a filled 2 kpc
+   * cookie of every massive slot (that pancake, seen edge-on, was
+   * the flat-topped core box). U_FAR is the slot gate; the
+   * silhouette brightness cut is the eye. Count is still an
+   * outcome — the bulge is denser.
    * Flying slides that ball through the catalog (border in / out).
    * The same stars are drawn in a VIEW_R ball (offsets from the
    * centre × VIEW_R/REGION_R) so the gaps are flyable. Star size

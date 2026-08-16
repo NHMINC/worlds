@@ -170,7 +170,7 @@ const check = (cond: boolean, msg: string) => {
   const b4 = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
   check(a.n === b4.n && a.n > 0, `region cloud not deterministic ${a.n} vs ${b4.n}`);
   check(a.ids[0] === b4.ids[0], 'region first id drifted');
-  check(a.n > 8_000 && a.n < 800_000, `outer-disk region ${a.n} is not a flyable sky`);
+  check(a.n > 2_000 && a.n < 800_000, `outer-disk region ${a.n} is not a flyable sky`);
   check(a.pos.length >= a.n * 3 && a.lum.length >= a.n && a.gain.length >= a.n, `region buffers shorter than n=${a.n}`);
   let maxD = 0;
   for (let i = 0; i < a.n; i++) {

@@ -517,6 +517,33 @@ function writeBirth(seed: string, cell: number, slot: number, filled: number, i:
   writeFromBirth(cell, slot, i, c, b, isSlotAlive(b.massZams, b.ageGyr));
 }
 
+/**
+ * Region membership. Inside FULL_R the IMF is complete — you are
+ * there. Beyond it the row must be a silhouette beacon. Otherwise
+ * the 2 kpc ball ∩ thin disk fills solid and, seen edge-on, reads
+ * as a flat-topped rectangle (the "core box").
+ */
+function writeRegionSlot(
+  seed: string,
+  cell: number,
+  slot: number,
+  filled: number,
+  d: number,
+  i: number,
+  c: Omit<StarCloud, 'n' | 'ms'>,
+): boolean {
+  if (d <= UNIVERSE.GALAXY_REGION_FULL_R) {
+    writeBirth(seed, cell, slot, filled, i, c);
+    return true;
+  }
+  const b = slotBirthRaw(seed, cell, slot, filled);
+  if (!maybeClockRow(b)) return false;
+  const ev = sketchEvolve(b);
+  if (!keepSilhouettePhase(ev, packId(cell, slot))) return false;
+  writeEvolved(cell, slot, i, c, b, ev);
+  return true;
+}
+
 function finishCloud(c: Omit<StarCloud, 'n' | 'ms'>, n: number, t0: number): StarCloud {
   if (n === c.ids.length) return { n, ...c, ms: performance.now() - t0 };
   return {
@@ -639,8 +666,10 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
       const dz = p.z - z;
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 > r2) continue;
-      if (slot < Math.floor(regionImfFloor(Math.sqrt(d2)) * filled)) continue;
-      writeBirth(seed, cell, slot, filled, n++, c);
+      const d = Math.sqrt(d2);
+      if (slot < Math.floor(regionImfFloor(d) * filled)) continue;
+      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 1024);
+      if (writeRegionSlot(seed, cell, slot, filled, d, n, c)) n++;
     }
   }
   const dustCells = polarCellsOverlappingBall(x, y, z, r);
@@ -871,6 +900,14 @@ export function advanceRegionCloud(
           n = dropStar(cloud, i, n);
           continue;
         }
+        if (
+          d2 > UNIVERSE.GALAXY_REGION_FULL_R * UNIVERSE.GALAXY_REGION_FULL_R &&
+          (cloud.bits[i] & BIT_NEBULA) === 0 &&
+          cloud.lum[i] < UNIVERSE.GALAXY_SILHOUETTE_L
+        ) {
+          n = dropStar(cloud, i, n);
+          continue;
+        }
         if (nearRim) rim.add(id);
       }
     }
@@ -904,12 +941,13 @@ export function advanceRegionCloud(
       const dy = p.y - y1;
       const dz = p.z - z1;
       const d2s = dx * dx + dy * dy + dz * dz;
-      if (d2s > r2) continue;
-      if (slot < Math.floor(regionImfFloor(Math.sqrt(d2s)) * filled)) continue;
-      buf = ensureCloudCap(buf, n, n + 1);
-      writeBirth(seed, cell, slot, filled, n, buf);
-      have.add(id);
-      n++;
+        if (d2s > r2) continue;
+        const d = Math.sqrt(d2s);
+        if (slot < Math.floor(regionImfFloor(d) * filled)) continue;
+        buf = ensureCloudCap(buf, n, n + 1);
+        if (!writeRegionSlot(seed, cell, slot, filled, d, n, buf)) continue;
+        have.add(id);
+        n++;
     }
   }
   const dustCells = polarCellsOverlappingAnnulus(x1, y1, z1, shellLo, r);
