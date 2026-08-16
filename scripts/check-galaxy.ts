@@ -279,9 +279,9 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
 }
 
 {
-  // Warp is a disk cruise on the luminous harvest.
-  check(UNIVERSE.GALAXY_WARP >= 0.2, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
-  check(UNIVERSE.GALAXY_WARP <= 0.4, `warp ${UNIVERSE.GALAXY_WARP} is faster than the harvest cruise`);
+  // Warp is a disk cruise on the luminous harvest: 1 kpc/s.
+  check(UNIVERSE.GALAXY_WARP >= 0.8, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a harvest cruise`);
+  check(UNIVERSE.GALAXY_WARP <= 1.5, `warp ${UNIVERSE.GALAXY_WARP} is faster than a look`);
   // Dust is a filter: blue must die first or a rift edge goes cold
   // instead of warm, and the column cap must leave the core visible.
   const [dR, dG, dB] = UNIVERSE.GALAXY_DUST_RGB;

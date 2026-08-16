@@ -448,11 +448,11 @@ export const UNIVERSE = {
   GALAXY_REGION_R: 0.02,
   /**
    * Latched warp (catalog kpc / s). A fixed cruise across the
-   * luminous harvest — on is this rate, off is stop. 0.25 crosses
-   * a kiloparsec in 4 s. WASD stays the slow look-around pace
-   * (arcPace).
+   * luminous harvest — on is this rate, off is stop. 1 kpc/s is
+   * a look: solar circle to the core in ~8 s, a kiloparsec is
+   * one second. WASD stays the slow look-around pace (arcPace).
    */
-  GALAXY_WARP: 0.25,
+  GALAXY_WARP: 1,
   /** Within this of the tap, every occupied slot is drawn. */
   GALAXY_REGION_FULL_R: 0.12,
   /** Distance over which the IMF cut ramps to U_FAR. */
