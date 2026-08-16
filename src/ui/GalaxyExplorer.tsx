@@ -268,7 +268,7 @@ export function GalaxyExplorer(props: Props) {
         )}
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
-          {' · ↑ / Warp to fly · ↓ / Stop to brake · drag to look'}
+          {' · ↑ / Warp to fly · ↓ / Stop · drag to look'}
         </div>
       </footer>
     </div>
