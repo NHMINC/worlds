@@ -9,12 +9,17 @@ win** — the README still describes an earlier realistic-globe era.
 
 ## What this is
 
-A **procedural galaxy in a bottle**. One canonical seed unfolds into a
-single **grand-design barred spiral** (Hubble SBbc — two long arms, a
-bar, a bulge: the accepted beautiful galaxy, and our own Milky Way’s
-class). Stars, remnants, and nebulae are a cheap function of that seed
-plus laws. You **discover** a star system by going there; you do not
-mint one. The stars in the sky **are** that catalog.
+A **procedural galaxy in a bottle**. The canonical seed does not pick a
+shape from a table — it **runs a formation**: a deterministic
+gas-to-galaxy sim (`src/world/formation/`) collapses a rotating cloud
+in a static halo, stars form where the gas is dense, feedback
+regulates, and the disk goes bar- and spiral-unstable on its own. The
+baked field of that run (thin/thick disk, spheroid, gas, chemistry,
+ages) is the ONLY density law the catalog samples — bulge, arms, the
+metallicity gradient and the age structure are outcomes, not inputs.
+Stars, remnants, and nebulae are a cheap function of that field plus
+laws. You **discover** a star system by going there; you do not mint
+one. The stars in the sky **are** that catalog.
 
 Worlds stay small Goldberg-hex globes with layered strata (Godus-like
 onion rings) in Caribbean / cel-shaded tones. The feeling: a perfect
@@ -96,8 +101,10 @@ is the job.
 ## Causal chain (do not skip steps)
 
 ```
-CANONICAL_SEED + UNIVERSE mass model (SBbc)
-  → density / rotation / population (thin, thick, halo, bulge, bar)
+CANONICAL_SEED → formation genes → gas-to-galaxy run (deterministic)
+  → baked GalaxyField (Σ thin/thick, scale heights, spheroid, gas,
+    [Fe/H], ages) — population is KINEMATIC OUTCOME, not a label
+  → density / rotation / population (thin, thick, halo, bulge)
   → star at (R, θ, z): IMF mass, birth time, [Fe/H], C/O
   → evolve(mass, age, Z) → MK class / remnant / nebula
   → disk chemistry at orbital radius (condensation sequence)
@@ -118,12 +125,18 @@ As you zoom and fly, `objectsNear` resolves the massive tail of
 nearby cells, then more of the IMF. You cannot pick a star until
 you are close enough that it has resolved. Set course loads that
   star. We **store visits only** (overlays, camera, labels). We do
-  not mint systems. App boot mints the whole-disk backdrop once
-  (`prepareUniverse`) behind “Preparing the universe”. An empty
-  save does not write a camp: it queries nearby solar-circle hosts
-  for a living world (`discoverHabitable`) and opens the region
-  looking at that star. Set course is the first visit. Changing the
-  grid renumbers `starId`; old visits from the 7k-sample era are void.
+  not mint systems. App boot is the **cinematic** (`UniverseBoot` +
+  `prepareUniverse`): Act 1 streams the live formation run from its
+  worker (a warm IndexedDB cache replays baked keyframes instead of
+  re-running 13 Gyr); Act 2 streams the catalog buildout in batches;
+  Act 3 opens the explorer face-on and `introFlight` slides the
+  magnifier bubble down to the loaded (or discovered) star — the
+  camera never moves, membership walks on the worker, one remint on
+  arrival. Skip jumps to arrival. An empty save does not write a
+  camp: it queries nearby solar-circle hosts for a living world
+  (`discoverHabitable`) and flies there. Set course is the first
+  visit. Changing the grid or `FORMATION_VERSION` renumbers /
+  re-homes `starId`; old visits are void (checked at boot).
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
 
@@ -440,6 +453,11 @@ These are allowed as *future physics*, not as painted features:
 - Wiring the catalog into the **in-system** night-sky shader (the explorer
   already *is* the catalog; `buildStars()` in the system viewer is still
   a random shell and must retire).
+- A region-ball **eye budget** for the deep nuclear core: a 2 kpc ball
+  parked on the softened core mints millions of rows today. The budget
+  law (keep the brightest up to what an eye resolves) must not break
+  the slide/remint equality or the backdrop visit handshake — design
+  it as a per-position law both paths recompute identically.
 - Live multiplayer. Freeze generation before anyone shares a hex live.
 
 Player features (mining, bases, cargo) are **not** in this bucket — they
@@ -450,10 +468,13 @@ are overlays. See **Player layer**.
 ## How we change things
 
 1. **Reproduce with a seed**, not a one-off mesh edit. Sample `objectAt`,
-   land, walk. `scripts/check-galaxy.ts` is the
-   catalog law; smoke scripts in `scripts/smoke-*.mjs` (Playwright against
-   `localhost:5173`) exist for horizon, reflections, flood, torch, sky,
-   land, etc. Use them; add one if you invent a new failure mode.
+   land, walk. `scripts/check-formation.ts` is the formation law
+   (determinism, runtime budget, disk/spheroid split, gradient);
+   `scripts/check-galaxy.ts` is the catalog law; smoke scripts in
+   `scripts/smoke-*.mjs` (Playwright against `localhost:5173`) exist for
+   the boot cinematic (`smoke-boot.mjs`), the explorer, horizon,
+   reflections, flood, torch, sky, land, etc. Use them; add one if you
+   invent a new failure mode.
 2. **Fix the law** in `physics.ts` / `galaxy.ts` / `stellar.ts` /
    `scattering.ts` / the relevant shader’s shared chunk. If you must add
    an approximation (Chapman slant, Eddington diffusion, Schlick), comment
@@ -487,12 +508,16 @@ Code map (start here):
 | Area | Where |
 |------|--------|
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
-| Galaxy (SBbc field + implicit catalog) | `src/world/galaxy.ts` |
+| Formation sim (gas → galaxy, deterministic) | `src/world/formation/sim.ts` |
+| Baked field + resolution/renorm laws | `src/world/formation/field.ts` |
+| Active field registry + radial fits | `src/world/formation/registry.ts` |
+| Galaxy (formed field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
 | Galaxy explorer (magnification bubble) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
-| Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
+| Universe boot (form → bake → cache → mint) | `src/world/universePrep.ts` |
+| Boot cinematic overlay (three acts) | `src/ui/UniverseBoot.tsx` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |

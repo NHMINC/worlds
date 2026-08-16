@@ -61,6 +61,28 @@ type BatchMsg = { type: 'batch'; frac: number; from: number; to: number; pos: Fl
 
 let inflight: Promise<StarCloud> | null = null;
 
+/**
+ * Hooks subscribe to the ONE inflight run. React StrictMode mounts the
+ * boot overlay twice: the first mount claims the pipeline and is then
+ * disposed — if its hooks were captured by closure, the remount would
+ * watch a silent boot. Late callers join here instead.
+ */
+const subs = new Set<PrepHooks>();
+const emit: Required<PrepHooks> = {
+  onFormationSnap: (pts, frac, tMyr) => {
+    for (const s of subs) s.onFormationSnap?.(pts, frac, tMyr);
+  },
+  onFormationReplay: (keyframes) => {
+    for (const s of subs) s.onFormationReplay?.(keyframes);
+  },
+  onFieldReady: (field) => {
+    for (const s of subs) s.onFieldReady?.(field);
+  },
+  onCatalogBatch: (pos, col, frac) => {
+    for (const s of subs) s.onCatalogBatch?.(pos, col, frac);
+  },
+};
+
 function cloudFromMsg(m: ReadyMsg): StarCloud {
   return {
     n: m.n,
@@ -83,7 +105,7 @@ function fieldKey(seed: string): string {
 }
 
 /** Stage 1+2: a formed, installed field — cache, worker run, or sync fallback. */
-async function prepareField(seed: string, hooks?: PrepHooks): Promise<GalaxyField> {
+async function prepareField(seed: string, hooks: Required<PrepHooks>): Promise<GalaxyField> {
   const active = activeGalaxyField();
   if (active && active.seed === seed && active.version === FORMATION_VERSION) return active;
   let cached: { field: GalaxyField; keyframes: Float32Array[] } | undefined;
@@ -94,8 +116,8 @@ async function prepareField(seed: string, hooks?: PrepHooks): Promise<GalaxyFiel
   }
   if (cached) {
     installGalaxyField(cached.field);
-    hooks?.onFormationReplay?.(cached.keyframes);
-    hooks?.onFieldReady?.(cached.field);
+    hooks.onFormationReplay(cached.keyframes);
+    hooks.onFieldReady(cached.field);
     return cached.field;
   }
   const field = await new Promise<GalaxyField>((resolve) => {
@@ -104,7 +126,7 @@ async function prepareField(seed: string, hooks?: PrepHooks): Promise<GalaxyFiel
       w.onmessage = (e: MessageEvent<FormationSnapMsg | FormationDoneMsg>) => {
         const m = e.data;
         if (m.type === 'snap') {
-          hooks?.onFormationSnap?.(m.pts, m.frac, m.tMyr);
+          hooks.onFormationSnap(m.pts, m.frac, m.tMyr);
           return;
         }
         if (m.type !== 'done' || m.seed !== seed) return;
@@ -124,7 +146,7 @@ async function prepareField(seed: string, hooks?: PrepHooks): Promise<GalaxyFiel
       resolve(ensureGalaxyField(seed));
     }
   });
-  hooks?.onFieldReady?.(field);
+  hooks.onFieldReady(field);
   return field;
 }
 
@@ -132,36 +154,40 @@ async function prepareField(seed: string, hooks?: PrepHooks): Promise<GalaxyFiel
 export function prepareUniverse(seed = UNIVERSE.CANONICAL_SEED, hooks?: PrepHooks): Promise<StarCloud> {
   const hit = silhouetteCloud(seed);
   if (hit) return Promise.resolve(hit);
+  if (hooks) subs.add(hooks);
   if (inflight) return inflight;
   inflight = (async () => {
-    const field = await prepareField(seed, hooks);
-    const cloud = await new Promise<StarCloud>((resolve) => {
-      try {
-        const w = new Worker(new URL('./silhouette.worker.ts', import.meta.url), { type: 'module' });
-        w.onmessage = (e: MessageEvent<ReadyMsg | BatchMsg>) => {
-          const m = e.data;
-          if (m.type === 'batch') {
-            hooks?.onCatalogBatch?.(m.pos, m.col, m.frac);
-            return;
-          }
-          if (m.type !== 'ready' || m.seed !== seed) return;
-          const c = cloudFromMsg(m);
-          installSilhouetteCloud(seed, c);
-          w.terminate();
-          resolve(c);
-        };
-        w.onerror = () => {
-          w.terminate();
+    try {
+      const field = await prepareField(seed, emit);
+      return await new Promise<StarCloud>((resolve) => {
+        try {
+          const w = new Worker(new URL('./silhouette.worker.ts', import.meta.url), { type: 'module' });
+          w.onmessage = (e: MessageEvent<ReadyMsg | BatchMsg>) => {
+            const m = e.data;
+            if (m.type === 'batch') {
+              emit.onCatalogBatch(m.pos, m.col, m.frac);
+              return;
+            }
+            if (m.type !== 'ready' || m.seed !== seed) return;
+            const c = cloudFromMsg(m);
+            installSilhouetteCloud(seed, c);
+            w.terminate();
+            resolve(c);
+          };
+          w.onerror = () => {
+            w.terminate();
+            resolve(buildSilhouetteCloud(seed));
+          };
+          // Structured clone (no transfer): the main thread keeps its field.
+          w.postMessage({ type: 'mint', seed, field });
+        } catch {
           resolve(buildSilhouetteCloud(seed));
-        };
-        // Structured clone (no transfer): the main thread keeps its field.
-        w.postMessage({ type: 'mint', seed, field });
-      } catch {
-        resolve(buildSilhouetteCloud(seed));
-      }
-    });
-    inflight = null;
-    return cloud;
+        }
+      });
+    } finally {
+      inflight = null;
+      subs.clear();
+    }
   })();
   return inflight;
 }

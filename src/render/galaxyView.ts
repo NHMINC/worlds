@@ -1104,7 +1104,8 @@ export class GalaxyView {
       this.goOverview('face');
       return;
     }
-    this.focus(obj);
+    // Pin the dossier; the approach mints the region ONCE at its park.
+    this.select(obj);
     this.approachNearest();
     this.pinBack();
   }
@@ -1186,7 +1187,7 @@ export class GalaxyView {
     if (p === 'home') {
       const obj = this.hereObj ?? this.home;
       if (!obj) return;
-      this.focus(obj);
+      this.select(obj);
       this.approachNearest();
       this.pinBack();
       return;
@@ -1264,36 +1265,24 @@ export class GalaxyView {
   }
 
   /** Open the region around a star and select it. */
-  focus(obj: GalaxyObject): void {
-    const c = galToCart(obj.pos);
-    this.enterRegion(c.x, c.y, c.z, obj);
-  }
-
   /**
-   * Slide the bubble so a pinned star sits just ahead of the camera
-   * (still at the centre). Smoke / tests.
+   * Park the bubble so a pinned star sits just ahead of the camera
+   * (still at the centre). One remint AT the parking point — the
+   * membership must be of the ball we end on, not the star's ball
+   * re-anchored a hair off (rim rows would sit outside the region).
    */
   approachNearest(): GalaxyObject | null {
     const best = this.selected ?? this.hereObj ?? this.home;
     if (!best) return null;
-    if (this.mode !== 'region') this.focus(best);
     const cat = galToCart(best.pos);
     this.orientArc();
     const off = 0.028 / this.magScale();
-    this.arcCenter.set(
+    this.enterRegion(
       cat.x - this.arcFwd.x * off,
       cat.y - this.arcFwd.y * off,
       cat.z - this.arcFwd.z * off,
+      best,
     );
-    this.mintAt.copy(this.arcCenter);
-    this.borderGen++;
-    this.borderBusy = false;
-    this.syncWorkerCloud();
-    this.pushMagUniforms();
-    if (this.selected) {
-      const c = this.viewCart(this.selected);
-      this.pickRing.position.set(c.x, c.y, c.z);
-    }
     const v = this.viewCart(best);
     this.aimAt(v.x, v.y, v.z);
     this.applyCam();
