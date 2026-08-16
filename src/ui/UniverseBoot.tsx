@@ -11,9 +11,9 @@
  *   catalog rows (positions and colours); the sky fills in ring by
  *   ring over the fading formation cloud.
  *
- * The view is face-on with the explorer's exact overview framing, so
- * Act 3 — the relocation flight down to the loaded star — starts from
- * the same pose without a cut.
+ * The view orbits a little above the plane so the collapse reads as
+ * 3D (a ball flattening, not a stamped disk). Act 3 still opens the
+ * explorer face-on.
  */
 import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
@@ -28,10 +28,12 @@ interface Props {
   leaving: boolean;
 }
 
-const FORM_PTS = 26_000;
+const FORM_PTS = 10_000;
 const CATALOG_CAP = 400_000;
 /** Replay pace (keyframes per second) for a warm cache. */
-const REPLAY_FPS = 9;
+const REPLAY_FPS = 12;
+/** How fast the drawn cloud chases the latest snap (per frame). */
+const FOLLOW = 0.16;
 
 /** Same framing law as the explorer's Face-on preset. */
 function overviewHeight(fovDeg: number): number {
@@ -72,8 +74,10 @@ export function UniverseBoot(props: Props) {
     renderer.setClearColor(new THREE.Color('#070b14'), 1);
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 4000);
-    camera.position.set(0, overviewHeight(50), 0);
-    camera.up.set(0, 0, -1);
+    const camDist = overviewHeight(50) * 0.92;
+    const camTilt = 0.52;
+    camera.up.set(0, 1, 0);
+    camera.position.set(0, camDist * Math.cos(camTilt), camDist * Math.sin(camTilt));
     camera.lookAt(0, 0, 0);
 
     // --- Act 1 mesh: the forming galaxy ---
@@ -84,11 +88,11 @@ export function UniverseBoot(props: Props) {
     formGeo.setAttribute('color', new THREE.BufferAttribute(formCol, 3));
     formGeo.setDrawRange(0, 0);
     const formMat = new THREE.PointsMaterial({
-      size: 2.2,
+      size: 2.8,
       sizeAttenuation: false,
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.88,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -119,19 +123,45 @@ export function UniverseBoot(props: Props) {
     let catN = 0;
     let fading = false;
     const rgb = { r: 0, g: 0, b: 0 };
+    const targetPos = new Float32Array(FORM_PTS * 3);
+    const targetCol = new Float32Array(FORM_PTS * 3);
+    let formN = 0;
+    let hasTarget = false;
 
-    const drawSnap = (pts: Float32Array): void => {
-      const m = Math.min(FORM_PTS, Math.floor(pts.length / 3));
+    const setTarget = (pts: Float32Array): void => {
+      const m = Math.min(FORM_PTS, Math.floor(pts.length / 4));
       for (let j = 0; j < m; j++) {
-        formPos[j * 3] = pts[j * 3];
-        formPos[j * 3 + 1] = 0;
-        formPos[j * 3 + 2] = pts[j * 3 + 1];
-        formColor(pts[j * 3 + 2], rgb);
-        formCol[j * 3] = rgb.r;
-        formCol[j * 3 + 1] = rgb.g;
-        formCol[j * 3 + 2] = rgb.b;
+        targetPos[j * 3] = pts[j * 4];
+        targetPos[j * 3 + 1] = pts[j * 4 + 2];
+        targetPos[j * 3 + 2] = pts[j * 4 + 1];
+        formColor(pts[j * 4 + 3], rgb);
+        targetCol[j * 3] = rgb.r;
+        targetCol[j * 3 + 1] = rgb.g;
+        targetCol[j * 3 + 2] = rgb.b;
       }
-      formGeo.setDrawRange(0, m);
+      formN = m;
+      if (!hasTarget) {
+        formPos.set(targetPos.subarray(0, m * 3));
+        formCol.set(targetCol.subarray(0, m * 3));
+        formGeo.setDrawRange(0, m);
+        (formGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+        (formGeo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+        hasTarget = true;
+      }
+    };
+
+    const followTarget = (): void => {
+      if (!hasTarget) return;
+      for (let j = 0; j < formN; j++) {
+        const o = j * 3;
+        formPos[o] += (targetPos[o] - formPos[o]) * FOLLOW;
+        formPos[o + 1] += (targetPos[o + 1] - formPos[o + 1]) * FOLLOW;
+        formPos[o + 2] += (targetPos[o + 2] - formPos[o + 2]) * FOLLOW;
+        formCol[o] += (targetCol[o] - formCol[o]) * FOLLOW;
+        formCol[o + 1] += (targetCol[o + 1] - formCol[o + 1]) * FOLLOW;
+        formCol[o + 2] += (targetCol[o + 2] - formCol[o + 2]) * FOLLOW;
+      }
+      formGeo.setDrawRange(0, formN);
       (formGeo.attributes.position as THREE.BufferAttribute).needsUpdate = true;
       (formGeo.attributes.color as THREE.BufferAttribute).needsUpdate = true;
     };
@@ -144,7 +174,7 @@ export function UniverseBoot(props: Props) {
     const prep = prepareUniverse(props.seed ?? UNIVERSE.CANONICAL_SEED, {
       onFormationSnap: (pts, f, tMyr) => {
         if (disposed) return;
-        drawSnap(pts);
+        setTarget(pts);
         const gyr = (f * UNIVERSE.GALAXY_AGE_GYR).toFixed(1);
         setCaption('The galaxy forms');
         setDetail(`${gyr} Gyr · ${Math.round(tMyr).toLocaleString()} Myr of dynamics`);
@@ -219,11 +249,19 @@ export function UniverseBoot(props: Props) {
       if (disposed) return;
       if (replay && replayAt < replay.length && now - replayLast > 1000 / REPLAY_FPS) {
         replayLast = now;
-        drawSnap(replay[replayAt]);
+        setTarget(replay[replayAt]);
         setDetail(`${((replayAt / Math.max(1, replay.length - 1)) * UNIVERSE.GALAXY_AGE_GYR).toFixed(1)} Gyr`);
         setFrac(0.72 * (replayAt / Math.max(1, replay.length - 1)));
         replayAt++;
       }
+      followTarget();
+      const az = now * 0.000055;
+      camera.position.set(
+        camDist * Math.sin(camTilt) * Math.sin(az),
+        camDist * Math.cos(camTilt),
+        camDist * Math.sin(camTilt) * Math.cos(az),
+      );
+      camera.lookAt(0, 0, 0);
       // The formed cloud yields to the catalog: same galaxy, real rows.
       if (fading && (!replay || replayAt >= replay.length) && formMat.opacity > 0.12) {
         formMat.opacity = Math.max(0.12, formMat.opacity - 0.012);

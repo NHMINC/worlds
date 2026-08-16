@@ -9,18 +9,16 @@ import { runFormation, FORM, FORMATION_VERSION } from './sim';
 import { bakeField, type GalaxyField } from './field';
 import { catalogDomain, fieldTransferables } from './registry';
 
-/** Movie cadence (sim steps) and subsample size. */
-const SNAP_EVERY = 20;
-const SNAP_PTS = 24_000;
+/** Movie cadence (sim steps). Every particle is drawn — N is 10k. */
+const SNAP_EVERY = 12;
 /** Keyframes kept for the cached replay. */
-const KEY_EVERY = 80;
-const KEY_PTS = 9000;
+const KEY_EVERY = 48;
 
 export type FormationSnapMsg = {
   type: 'snap';
   frac: number;
   tMyr: number;
-  /** [x, y, k] triplets; k < 0 = gas, else stellar age in Myr. */
+  /** [x, y, z, k] quads; k < 0 = gas, else stellar age in Myr. */
   pts: Float32Array;
 };
 
@@ -38,23 +36,21 @@ const post = self as unknown as {
 };
 
 function snapshot(
-  count: number,
   step: number,
   px: Float64Array,
   py: Float64Array,
+  pz: Float64Array,
   star: Uint8Array,
   tBirth: Float32Array,
 ): Float32Array {
   const n = px.length;
-  const stride = Math.max(1, Math.floor(n / count));
-  const m = Math.floor(n / stride);
-  const pts = new Float32Array(m * 3);
+  const pts = new Float32Array(n * 4);
   const t = step * FORM.DT;
-  for (let j = 0; j < m; j++) {
-    const i = j * stride;
-    pts[j * 3] = px[i];
-    pts[j * 3 + 1] = py[i];
-    pts[j * 3 + 2] = star[i] ? Math.max(0, t - tBirth[i]) : -1;
+  for (let i = 0; i < n; i++) {
+    pts[i * 4] = px[i];
+    pts[i * 4 + 1] = py[i];
+    pts[i * 4 + 2] = pz[i];
+    pts[i * 4 + 3] = star[i] ? Math.max(0, t - tBirth[i]) : -1;
   }
   return pts;
 }
@@ -66,16 +62,16 @@ self.onmessage = (e: MessageEvent<{ type: 'form'; seed: string }>): void => {
   const keyframes: Float32Array[] = [];
   const result = runFormation(seed, {
     snapEvery: SNAP_EVERY,
-    onSnapshot: (step, px, py, star, tBirth) => {
-      const pts = snapshot(SNAP_PTS, step, px, py, star, tBirth);
-      if (step % KEY_EVERY === 0) keyframes.push(snapshot(KEY_PTS, step, px, py, star, tBirth));
+    onSnapshot: (step, px, py, pz, star, tBirth) => {
+      const pts = snapshot(step, px, py, pz, star, tBirth);
+      if (step % KEY_EVERY === 0) keyframes.push(snapshot(step, px, py, pz, star, tBirth));
       post.postMessage(
         { type: 'snap', frac: step / FORM.STEPS, tMyr: step * FORM.DT, pts } satisfies FormationSnapMsg,
         [pts.buffer],
       );
     },
   });
-  keyframes.push(snapshot(KEY_PTS, FORM.STEPS, result.px, result.py, result.star, result.tBirth));
+  keyframes.push(snapshot(FORM.STEPS, result.px, result.py, result.pz, result.star, result.tBirth));
   const field = bakeField(
     seed,
     FORMATION_VERSION,

@@ -84,6 +84,21 @@ export function fft2d(plan: FftPlan, a: Float64Array, dir: number): void {
   for (let col = 0; col < n; col++) fft(plan, a, col * 2, n * 2, dir);
 }
 
+/** 3D in-place complex FFT on an n×n×n interleaved grid (x fastest). */
+export function fft3d(plan: FftPlan, a: Float64Array, dir: number): void {
+  const n = plan.n;
+  const n2 = n * n;
+  for (let z = 0; z < n; z++) {
+    for (let y = 0; y < n; y++) fft(plan, a, (z * n2 + y * n) * 2, 2, dir);
+  }
+  for (let z = 0; z < n; z++) {
+    for (let x = 0; x < n; x++) fft(plan, a, (z * n2 + x) * 2, n * 2, dir);
+  }
+  for (let y = 0; y < n; y++) {
+    for (let x = 0; x < n; x++) fft(plan, a, (y * n + x) * 2, n2 * 2, dir);
+  }
+}
+
 /**
  * Isolated Poisson solver for a thin disk: Φ = (G·mass) ⊛ −1/√(r²+ε²).
  * Mesh m×m of G-folded cell masses (units (km/s)²·kpc); zero-padded to
@@ -140,6 +155,75 @@ export class PoissonSolver {
     for (let j = 0; j < m; j++) {
       for (let i = 0; i < m; i++) {
         phi[j * m + i] = work[(j * p + i) * 2] * inv;
+      }
+    }
+  }
+}
+
+/**
+ * Isolated Poisson solver in 3D: Φ = (G·mass) ⊛ −1/√(r²+ε²).
+ * Same Plummer kernel as the disk solver; the third axis is real.
+ * Mesh m³ of G-folded cell masses, zero-padded to p=2m.
+ */
+export class PoissonSolver3D {
+  private readonly m: number;
+  private readonly p: number;
+  private readonly plan: FftPlan;
+  private readonly kernel: Float64Array;
+  private readonly work: Float64Array;
+
+  constructor(m: number, dx: number, soft: number) {
+    this.m = m;
+    this.p = m * 2;
+    this.plan = makePlan(this.p);
+    const p = this.p;
+    this.work = new Float64Array(p * p * p * 2);
+    this.kernel = new Float64Array(p * p * p * 2);
+    const p2 = p * p;
+    for (let k = 0; k < p; k++) {
+      const dk = k <= p / 2 ? k : k - p;
+      for (let j = 0; j < p; j++) {
+        const dj = j <= p / 2 ? j : j - p;
+        for (let i = 0; i < p; i++) {
+          const di = i <= p / 2 ? i : i - p;
+          const r2 = (di * di + dj * dj + dk * dk) * dx * dx + soft * soft;
+          this.kernel[(k * p2 + j * p + i) * 2] = -1 / Math.sqrt(r2);
+        }
+      }
+    }
+    fft3d(this.plan, this.kernel, -1);
+  }
+
+  /** massG: m³ G-folded masses. phi: m³ output. */
+  solve(massG: Float64Array, phi: Float64Array): void {
+    const { m, p, work, kernel, plan } = this;
+    work.fill(0);
+    const m2 = m * m;
+    const p2 = p * p;
+    for (let k = 0; k < m; k++) {
+      for (let j = 0; j < m; j++) {
+        for (let i = 0; i < m; i++) {
+          work[(k * p2 + j * p + i) * 2] = massG[k * m2 + j * m + i];
+        }
+      }
+    }
+    fft3d(plan, work, -1);
+    const n = p * p * p;
+    for (let t = 0; t < n; t++) {
+      const re = work[t * 2];
+      const im = work[t * 2 + 1];
+      const kr = kernel[t * 2];
+      const ki = kernel[t * 2 + 1];
+      work[t * 2] = re * kr - im * ki;
+      work[t * 2 + 1] = re * ki + im * kr;
+    }
+    fft3d(plan, work, 1);
+    const inv = 1 / n;
+    for (let k = 0; k < m; k++) {
+      for (let j = 0; j < m; j++) {
+        for (let i = 0; i < m; i++) {
+          phi[k * m2 + j * m + i] = work[(k * p2 + j * p + i) * 2] * inv;
+        }
       }
     }
   }

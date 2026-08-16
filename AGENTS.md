@@ -14,8 +14,8 @@ shape from a table — it **runs a formation**: a deterministic
 gas-to-galaxy sim (`src/world/formation/`) collapses a rotating cloud
 in a static halo, stars form where the gas is dense, feedback
 regulates, and the disk goes bar- and spiral-unstable on its own. The
-evolved star particles of that run ARE the galaxy — each is a parent
-and stands for ~10⁴ real stars. The catalog sits those stars next to
+evolved star particles of that run ARE the galaxy — 10 000 parents,
+each standing for ~10⁵ real stars. The catalog sits those stars next to
 their parent (an isotropic Gaussian so they fill the area). Gas / ISM stay a
 smooth field. Bulge, arms, the metallicity gradient and the age
 structure are outcomes, not inputs. Stars, remnants, and nebulae are
@@ -84,8 +84,9 @@ types or star types.
   not a one-off `if (sunset) color = orange`.
 - **Documented simplifications** (decreed, not hidden): metallic core and
   spin-aligned dipole on every body (a compass works); orbits are stable
-  by fiat; we do not integrate an N-body galaxy for 10 Gyr (Lin–Shu
-  density field + IMF + closed-form stellar clock instead); interstellar
+  by fiat; we integrate a toy-compressed 3D particle-mesh formation
+  (`SIM_GYR` stands in for `GALAXY_AGE_GYR`) — not a cosmological zoom;
+  interstellar
   travel is a deterministic set-course, not a real light-year cruise;
   short nebula phases are toy-stretched (`HII_GYR`, `PN_GYR`, `SNR_GYR`)
   so they are findable, the way `TIME_SCALE` stretches a dawn; interiors,
@@ -509,7 +510,7 @@ Code map (start here):
 | Area | Where |
 |------|--------|
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
-| Formation sim (gas → galaxy, deterministic) | `src/world/formation/sim.ts` |
+| Formation sim (3D PM, 10k particles) | `src/world/formation/sim.ts` |
 | Baked field + resolution/renorm laws | `src/world/formation/field.ts` |
 | Active field registry + radial fits | `src/world/formation/registry.ts` |
 | Galaxy (formed field + implicit catalog) | `src/world/galaxy.ts` |

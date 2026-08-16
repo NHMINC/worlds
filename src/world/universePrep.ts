@@ -30,7 +30,7 @@ import type { FormationDoneMsg, FormationSnapMsg } from './formation/formation.w
 import { db } from '../store/db';
 
 export interface PrepHooks {
-  /** A live formation frame ([x, y, ageMyr|-1] triplets) at sim fraction `frac`. */
+  /** A live formation frame ([x, y, z, ageMyr|-1] quads) at sim fraction `frac`. */
   onFormationSnap?: (pts: Float32Array, frac: number, tMyr: number) => void;
   /** Warm cache: the stored keyframes, for a fast replay instead of a live run. */
   onFormationReplay?: (keyframes: Float32Array[]) => void;

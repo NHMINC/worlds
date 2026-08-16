@@ -8,16 +8,15 @@
  * survive only for what is a medium —
  * gas / ISM / extinction — and for ring-profile fits.
  *
- * The sim is 2D (galaxies are thin). Disk parents get a sech² height
- * from the measured sheet; hot non-circular parents are the spheroid
- * and are lifted onto a sphere (planar R is the 3D radius).
- * Populations are KINEMATIC OUTCOMES.
+ * The sim is 3D. Parents keep the positions the run earned — no
+ * sech² lift, no sphere-of-R remap (those painted a cylinder).
+ * Populations are KINEMATIC OUTCOMES. Disk / thick / spheroid
+ * labels still come from circularity, for the ISM grids only.
  *
  * Ages: SIM_GYR of dynamical time stand in for GALAXY_AGE_GYR of
  * cosmic time (a named toy compression, like TIME_SCALE). The baked
  * ageGyr fields are already in galaxy-clock units.
  */
-import { mulberry32, xmur3 } from '../rng';
 import { FORM, type FormationResult } from './sim';
 import { dexp, dlog10 } from './detmath';
 
@@ -91,7 +90,7 @@ export const FIELD = {
    * a parent is that wide. A product-of-tents cube aligned with the
    * PM mesh (SOFT ~ mesh) printed a lattice in the nucleus.
    */
-  JITTER: 0.32,
+    JITTER: 0.42,
 } as const;
 
 const FEH_SUN = 0.0134;
@@ -107,12 +106,6 @@ const U32 = new Uint32Array(F32.buffer);
 
 /** exp-based tanh (no Math.tanh — keep the op set small and portable). */
 const tanhE = (x: number): number => (x > 20 ? 1 : 1 - 2 / (dexp(2 * x) + 1));
-
-/** Inverse of the sech² sheet CDF: z = h · atanh(2u − 1). */
-const atanh01 = (u: number): number => {
-  const x = Math.min(0.999, Math.max(0.001, u)) * 2 - 1;
-  return 0.5 * Math.log((1 + x) / (1 - x));
-};
 
 /**
  * Bake. `ageSpanGyr` maps sim time onto the galaxy clock; `popTarget`
@@ -169,7 +162,9 @@ export function bakeField(
   for (let i = 0; i < r.n; i++) {
     const x = r.px[i];
     const y = r.py[i];
+    const z = r.pz[i];
     const rad = Math.hypot(x, y);
+    const rad3 = Math.hypot(x, y, z);
     const gx = (x + box) / dx - 0.5;
     const gy = (y + box) / dx - 0.5;
     const i0 = Math.floor(gx);
@@ -215,9 +210,9 @@ export function bakeField(
       // slice mass by vanishing shell volumes and re-mint the cusp).
       nSph++;
       const sig = FORM.SOFT * 0.5;
-      const s = Math.max(1e-3, rad);
-      const b0 = Math.max(0, Math.floor((rad - 3 * sig) / sphDr));
-      const b1 = Math.min(FIELD.SPH_BINS - 1, Math.floor((rad + 3 * sig + sphDr) / sphDr));
+      const s = Math.max(1e-3, rad3);
+      const b0 = Math.max(0, Math.floor((rad3 - 3 * sig) / sphDr));
+      const b1 = Math.min(FIELD.SPH_BINS - 1, Math.floor((rad3 + 3 * sig + sphDr) / sphDr));
       const inv2s2 = 1 / (2 * sig * sig);
       let wSum = 0;
       let wAt = 0;
@@ -229,7 +224,7 @@ export function bakeField(
         wSum += w;
       }
       if (wSum <= 0) {
-        const b = Math.min(FIELD.SPH_BINS - 1, Math.floor(rad / sphDr));
+        const b = Math.min(FIELD.SPH_BINS - 1, Math.floor(rad3 / sphDr));
         sphM[b] += 1;
         sphFehS[b] += feh;
         sphAgeS[b] += age;
@@ -405,13 +400,10 @@ export function bakeField(
   for (let i = 0; i < vcirc.length; i++) vcirc[i] = r.vcirc[i];
 
   // --- star particles: the catalog's parents ---
-  // Disk: keep the 2D position, sech² height of the local sheet.
-  // Spheroid: the planar radius IS the 3D radius (cos φ uniform,
-  // azimuth kept) — a bulge is a ball, not a z-slab. No |z| clip:
-  // chopping the sphere at the catalog cylinder was the flat
-  // top/bottom. starW soaks whoever stays inside R ≤ rMax.
+  // The run already placed them in 3D. Catalog frame is (x, height, y).
+  // No |z| clip: a hard ceiling was the cylinder. starW soaks whoever
+  // stays inside cylindrical R ≤ rMax.
   const rMax = domain?.rMax ?? box;
-  const lift = mulberry32(xmur3(`lift:${seed}`)());
   const ax: number[] = [];
   const ay: number[] = [];
   const az: number[] = [];
@@ -426,30 +418,10 @@ export function bakeField(
     if (rad > rMax) continue;
     const vphi = (x * r.vy[i] - y * r.vx[i]) / Math.max(rad, 1e-6);
     const circ = vphi / vcAt(rad);
-    let knd: number;
-    let px: number;
-    let py: number;
-    let pz: number;
-    if (circ < FIELD.C_SPHEROID) {
-      knd = 2;
-      const R = Math.max(FORM.SOFT * 0.5, rad);
-      const u = 2 * lift() - 1;
-      const s = Math.sqrt(Math.max(0, 1 - u * u));
-      const th = Math.atan2(y, x);
-      px = R * s * Math.cos(th);
-      py = R * u;
-      pz = R * s * Math.sin(th);
-    } else {
-      const hx = Math.max(FIELD.H_MIN, bilinear(hThin, OUT, (x + box) / dx - 0.5, (y + box) / dx - 0.5));
-      const h = circ >= FIELD.C_THIN ? hx : hx * FIELD.H_THICK_RATIO;
-      knd = circ >= FIELD.C_THIN ? 0 : 1;
-      px = x;
-      py = h * atanh01(lift());
-      pz = y;
-    }
-    ax.push(px);
-    ay.push(py);
-    az.push(pz);
+    const knd = circ < FIELD.C_SPHEROID ? 2 : circ >= FIELD.C_THIN ? 0 : 1;
+    ax.push(x);
+    ay.push(r.pz[i]);
+    az.push(y);
     kinds.push(knd);
     ages.push(ageOf(i));
     fehs.push(fehOf(i));
