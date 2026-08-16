@@ -211,7 +211,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   must retire so ground and explorer agree.
 - **Explorer gestures.** The camera stays at the bubble centre.
   Fly is a **latched warp**: ↑ / W (or the **Warp** button)
-  accelerates to a cap at the same rate ↓ / S / **Stop** brakes.
+  holds a fixed catalog rate; ↓ / S / **Stop** is stop.
   A tap, not a hold. Drag looks. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch. A/D still slide.

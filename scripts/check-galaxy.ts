@@ -278,10 +278,11 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
 }
 
 {
-  // Warp is catalog kpc/s. A photograph-frame cap crawls once the
-  // magnifier is 20×. 0.25 crosses a 2 kpc ball in ~8 s.
-  check(UNIVERSE.GALAXY_WARP >= 0.2, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
-  check(UNIVERSE.GALAXY_WARP_ACCEL > UNIVERSE.GALAXY_WARP, 'warp should reach cap in under a second');
+  // Warp is a fixed catalog kpc/s. Fast enough to cross a 2 kpc
+  // ball, slow enough that MAG_SLIDE (0.01 kpc) has time to mint
+  // enterers (~125 ms at 0.08 kpc/s).
+  check(UNIVERSE.GALAXY_WARP > 0.02, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
+  check(UNIVERSE.GALAXY_WARP <= 0.1, `warp ${UNIVERSE.GALAXY_WARP} outruns the rim walk`);
   // Dust is a filter: blue must die first or a rift edge goes cold
   // instead of warm, and the column cap must leave the core visible.
   const [dR, dG, dB] = UNIVERSE.GALAXY_DUST_RGB;

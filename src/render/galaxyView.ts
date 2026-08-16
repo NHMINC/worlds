@@ -1328,7 +1328,7 @@ export class GalaxyView {
     this.thrustSpeed = 0;
   }
 
-  /** Latch warp on (accel to cap) or off (brake to stop). A tap, not a hold. */
+  /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
   setWarp(on: boolean): void {
     if (this.mode !== 'region') return;
     this.thrustOn = on;
@@ -1804,21 +1804,15 @@ export class GalaxyView {
     this.keys.delete(e.code);
   };
 
-  /** Latched warp: ↑ / Warp accel, ↓ / Stop brake, same rate. */
+  /** Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop. */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
       this.thrustOn = false;
       this.thrustSpeed = 0;
       return;
     }
-    const cap = UNIVERSE.GALAXY_WARP;
-    const rate = UNIVERSE.GALAXY_WARP_ACCEL;
-    if (this.thrustOn) this.thrustSpeed = Math.min(cap, this.thrustSpeed + rate * dt);
-    else this.thrustSpeed = Math.max(0, this.thrustSpeed - rate * dt);
-    if (this.thrustSpeed <= 1e-5) {
-      this.thrustSpeed = 0;
-      return;
-    }
+    this.thrustSpeed = this.thrustOn ? UNIVERSE.GALAXY_WARP : 0;
+    if (this.thrustSpeed <= 0) return;
     this.orientArc();
     // thrustSpeed is catalog kpc/s; moveBubble takes the magnified frame.
     const step = this.thrustSpeed * this.magScale() * dt;
