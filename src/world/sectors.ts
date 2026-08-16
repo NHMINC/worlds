@@ -844,6 +844,7 @@ export function advanceRegionCloud(
   const pos = cloud.pos;
   const ids = cloud.ids;
   const rim = new Set<number>();
+  const have = new Set<number>();
   const dustHave = new Set<number>();
   let n = cloud.n;
   for (let i = 0; i < n; ) {
@@ -873,6 +874,7 @@ export function advanceRegionCloud(
         if (nearRim) rim.add(id);
       }
     }
+    have.add(id);
     i++;
   }
   const shellLo = Math.max(0, r - slide - 2 * scatter);
@@ -892,23 +894,22 @@ export function advanceRegionCloud(
     if (filled <= 0) continue;
     const s1 = Math.floor(regionImfFloor(imfDist(cell, x1, y1, z1)) * filled);
     const s0 = Math.floor(regionImfFloor(imfDist(cell, x0, y0, z0)) * filled);
-    if (!wellInsideOld || s1 < s0) {
-      const from = s1;
-      const to = wellInsideOld ? s0 : filled;
-      for (let slot = from; slot < to; slot++) {
-        const id = packId(cell, slot);
-        if (rim.has(id)) continue;
-        const p = slotBirthCart(seed, cell, slot);
-        const dx = p.x - x1;
-        const dy = p.y - y1;
-        const dz = p.z - z1;
-        const d2s = dx * dx + dy * dy + dz * dz;
-        if (d2s > r2) continue;
-        if (slot < Math.floor(regionImfFloor(Math.sqrt(d2s)) * filled)) continue;
-        buf = ensureCloudCap(buf, n, n + 1);
-        writeBirth(seed, cell, slot, filled, n, buf);
-        n++;
-      }
+    const from = Math.min(s0, s1);
+    const to = filled;
+    for (let slot = from; slot < to; slot++) {
+      const id = packId(cell, slot);
+      if (have.has(id) || rim.has(id)) continue;
+      const p = slotBirthCart(seed, cell, slot);
+      const dx = p.x - x1;
+      const dy = p.y - y1;
+      const dz = p.z - z1;
+      const d2s = dx * dx + dy * dy + dz * dz;
+      if (d2s > r2) continue;
+      if (slot < Math.floor(regionImfFloor(Math.sqrt(d2s)) * filled)) continue;
+      buf = ensureCloudCap(buf, n, n + 1);
+      writeBirth(seed, cell, slot, filled, n, buf);
+      have.add(id);
+      n++;
     }
   }
   const dustCells = polarCellsOverlappingAnnulus(x1, y1, z1, shellLo, r);
