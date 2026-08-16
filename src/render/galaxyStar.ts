@@ -69,14 +69,15 @@ export const HARVEST_PSF_SIG2 = 1.6;
 export const HARVEST_PSF_THRESH = 0.045;
 /**
  * Apparent magnitude. Flux is L / (d² + ε); display is
- * FLOOR + GAIN · (flux / fluxRef)^P. FLOOR is +50% of the
- * reference pin so the field stays visible; GAIN still ranks
- * giants with no bright-end cap.
+ * max(MIN, FLOOR + GAIN · (flux / fluxRef)^P). MIN is 2× the
+ * reference pin so the field reads; stars already above it
+ * are unchanged.
  */
 export const HARVEST_SHINE_GAIN = 0.065;
-/** Lift on every pin — +50% of the reference floor so the field
- *  stays visible while giants still rank above it. */
+/** Lift on the rank curve — +50% of the reference gain. */
 export const HARVEST_SHINE_FLOOR = HARVEST_SHINE_GAIN * 0.5;
+/** Visible floor. 2× the reference pin; does not lift giants. */
+export const HARVEST_SHINE_MIN = 2 * (HARVEST_SHINE_FLOOR + HARVEST_SHINE_GAIN);
 export const HARVEST_SHINE_P = 0.55;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_FLUX_EPS = 0.16;
@@ -123,9 +124,10 @@ export function harvestGlowPx(L: number, pixelRatio = 1): number {
 export function harvestShine(L: number, d: number): number {
   const flux = Math.max(L, 1e-4) / (d * d + HARVEST_FLUX_EPS);
   const fluxRef = HARVEST_L_REF / (HARVEST_SHINE_DIST_REF * HARVEST_SHINE_DIST_REF + HARVEST_FLUX_EPS);
-  return (
+  return Math.max(
+    HARVEST_SHINE_MIN,
     HARVEST_SHINE_FLOOR +
-    HARVEST_SHINE_GAIN * Math.pow(flux / Math.max(fluxRef, 1e-12), HARVEST_SHINE_P)
+      HARVEST_SHINE_GAIN * Math.pow(flux / Math.max(fluxRef, 1e-12), HARVEST_SHINE_P),
   );
 }
 
