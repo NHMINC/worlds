@@ -447,12 +447,15 @@ export const UNIVERSE = {
   /** Future faint-survey neighbourhood (kpc). Not the explorer sky. */
   GALAXY_REGION_R: 0.02,
   /**
-   * Latched warp (catalog kpc / s). A fixed cruise across the
-   * luminous harvest — on is this rate, off is stop. 1 kpc/s is
-   * a look: solar circle to the core in ~8 s, a kiloparsec is
-   * one second. WASD stays the slow look-around pace (arcPace).
+   * Latched warp. Diameter (2 × R_MAX) in CROSS_S seconds — rim
+   * to opposite rim in about a minute. Rate is catalog kpc / s;
+   * on is this cruise, off is stop. WASD stays the slow
+   * look-around pace (arcPace).
    */
-  GALAXY_WARP: 1,
+  GALAXY_WARP_CROSS_S: 69,
+  get GALAXY_WARP(): number {
+    return (2 * this.GALAXY_R_MAX) / this.GALAXY_WARP_CROSS_S;
+  },
   /** Within this of the tap, every occupied slot is drawn. */
   GALAXY_REGION_FULL_R: 0.12,
   /** Distance over which the IMF cut ramps to U_FAR. */
