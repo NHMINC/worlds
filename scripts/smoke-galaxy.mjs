@@ -1,5 +1,6 @@
-/* Fresh boot + the sector-map galaxy explorer. Clears IndexedDB, loads
- * the app, opens the map, dives into an arc, taps a star, sets course.
+/* Fresh boot + the galaxy explorer. Clears IndexedDB, loads the app,
+ * waits for the universe mint, lands in the region on a living host,
+ * checks the Helix saucer, taps a star, sets course.
  * Run: node scripts/smoke-galaxy.mjs (dev server on :5173). */
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -34,8 +35,10 @@ await page.evaluate(async () => {
   localStorage.removeItem('wb_last_system');
 });
 await page.reload({ waitUntil: 'networkidle' });
-await page.waitForSelector('canvas');
-await page.waitForTimeout(6000);
+await page.waitForSelector('.universe-boot, .galaxy-explorer', { timeout: 30000 });
+await page.waitForSelector('.galaxy-explorer', { timeout: 90000 });
+await page.waitForFunction(() => !document.querySelector('.universe-boot'), { timeout: 90000 });
+await page.waitForTimeout(800);
 
 const boot = await page.evaluate(() => {
   const e = window.__engine;
@@ -48,45 +51,35 @@ const boot = await page.evaluate(() => {
   return {
     hasEngine: Boolean(e),
     bodyCount,
-    toolbar: Boolean(document.querySelector('.toolbar, .tb-btn')),
+    preparing: Boolean(document.querySelector('.universe-boot')),
+    explorer: Boolean(document.querySelector('.galaxy-explorer')),
   };
 });
 console.log('BOOT', JSON.stringify(boot));
+if (!boot.explorer) errors.push('empty save did not open the galaxy');
+if (boot.preparing) errors.push('preparing overlay still up after reveal');
 
-const galaxyBtn = page.locator('button[title="Galaxy — the shared catalog"]');
-if (await galaxyBtn.count()) {
-  await galaxyBtn.click();
-  await page.waitForTimeout(4000);
+{
   const gx = await page.evaluate(() => ({
     explorer: Boolean(document.querySelector('.galaxy-explorer')),
     title: document.querySelector('.galaxy-title')?.textContent ?? null,
     sub: document.querySelector('.galaxy-sub')?.textContent ?? null,
     mode: window.__galaxyView?.currentMode?.() ?? null,
+    selected: window.__galaxyView?.selectedObject?.()?.id ?? null,
+    here: window.__galaxyView?.here?.()?.id ?? null,
+    home: window.__galaxyView?.home?.id ?? null,
   }));
-  console.log('MAP', JSON.stringify(gx));
-  await page.screenshot({ path: 'previews/galaxy-1-map.png' });
-  if (gx.mode !== 'map') errors.push(`expected map mode, got ${gx.mode}`);
+  console.log('OPEN', JSON.stringify(gx));
+  await page.screenshot({ path: 'previews/galaxy-1-region.png' });
+  if (gx.mode !== 'region') errors.push(`expected region mode on open, got ${gx.mode}`);
+  const expectId = gx.here ?? gx.home;
+  if (expectId != null && gx.selected !== expectId) {
+    errors.push(`opened on ${gx.selected}, not here/home ${expectId}`);
+  }
 
+  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
   await page.waitForFunction(() => Boolean(window.__galaxyView?.home), { timeout: 8000 });
 
-  // Oblique (~79°) — the bulge must be a dome, not a golden cone.
-  await page.evaluate(() => window.__galaxyView?.setPreset?.('edge'));
-  await page.waitForTimeout(1800);
-  await page.screenshot({ path: 'previews/galaxy-1b-oblique.png' });
-  await page.evaluate(() => window.__galaxyView?.setPreset?.('face'));
-  await page.waitForTimeout(800);
-
-  // Tap the home marker: enters home's arc with the star selected.
-  const ring = await page.evaluate(() => {
-    const v = window.__galaxyView;
-    return v.projectClient(v.home);
-  });
-  console.log('HOME MARKER', JSON.stringify(ring));
-  if (ring) {
-    await page.mouse.click(ring.x, ring.y);
-    await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
-    await page.waitForTimeout(400);
-  }
   const arc = await page.evaluate(() => ({
     mode: window.__galaxyView?.currentMode?.() ?? null,
     region: window.__galaxyView?.currentRegion?.() ?? null,
@@ -97,10 +90,50 @@ if (await galaxyBtn.count()) {
   }));
   console.log('REGION', JSON.stringify(arc));
   await page.screenshot({ path: 'previews/galaxy-2-arc.png' });
-  if (arc.mode !== 'region') errors.push('tapping home marker did not enter its region');
+  if (arc.mode !== 'region') errors.push('empty boot did not open the region');
   if (!arc.stars || arc.stars < 8_000) errors.push(`region loaded only ${arc.stars} stars`);
   if (!arc.inBall) errors.push('region cloud has stars outside the ball');
-  if (!arc.dossier) errors.push('home marker tap did not open a dossier');
+  if (!arc.dossier) errors.push('open did not select the loaded star');
+  if (!arc.crumb) errors.push('region breadcrumb missing');
+
+  // Helix overview still exists: Face-on / Edge-on saucer.
+  await page.click('.gx-crumb');
+  await page.waitForTimeout(1200);
+  const map = await page.evaluate(() => window.__galaxyView?.currentMode?.() ?? null);
+  console.log('MAP', JSON.stringify({ mode: map }));
+  if (map !== 'map') errors.push('breadcrumb did not return to the map');
+  await page.screenshot({ path: 'previews/galaxy-1-map.png' });
+
+  // Oblique (~79°) — the bulge must be a dome, not a golden cone.
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('edge'));
+  await page.waitForTimeout(1800);
+  await page.screenshot({ path: 'previews/galaxy-1b-oblique.png' });
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('face'));
+  await page.waitForTimeout(800);
+
+  // Tap the home marker: re-enters home's region with the star selected.
+  const ring = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    return v.projectClient(v.home);
+  });
+  console.log('HOME MARKER', JSON.stringify(ring));
+  if (ring) {
+    await page.mouse.click(ring.x, ring.y);
+    await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
+    await page.waitForTimeout(400);
+  }
+  const homeDive = await page.evaluate(() => ({
+    mode: window.__galaxyView?.currentMode?.() ?? null,
+    selected: window.__galaxyView?.selectedObject?.()?.id ?? null,
+    home: window.__galaxyView?.home?.id ?? null,
+    dossier: document.querySelector('.gd-class')?.textContent ?? null,
+  }));
+  console.log('HOME DIVE', JSON.stringify(homeDive));
+  if (homeDive.mode !== 'region') errors.push('tapping home marker did not enter its region');
+  if (homeDive.home != null && homeDive.selected !== homeDive.home) {
+    errors.push('home marker tap did not select home');
+  }
+  if (!homeDive.dossier) errors.push('home marker tap did not open a dossier');
 
   const survey = await page.evaluate(() => {
     const v = window.__galaxyView;
@@ -270,16 +303,16 @@ if (await galaxyBtn.count()) {
   }));
   console.log('AFTER DISC TAP', JSON.stringify(afterGo));
   await page.screenshot({ path: 'previews/galaxy-5-tap.png' });
-} else {
-  console.error('NO GALAXY BUTTON');
-  errors.push('no galaxy button');
 }
 
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await phone.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
-await phone.waitForSelector('button[title="Galaxy — the shared catalog"]');
-await phone.waitForTimeout(2500);
-await phone.locator('button[title="Galaxy — the shared catalog"]').click({ force: true });
+const phoneGalaxy = phone.locator('button[title="Galaxy — the shared catalog"]');
+if (await phoneGalaxy.count()) {
+  await phoneGalaxy.click({ force: true });
+} else {
+  await phone.waitForSelector('.galaxy-explorer', { timeout: 90000 });
+}
 await phone.waitForTimeout(1500);
 const phoneUi = await phone.evaluate(() => ({
   homeChip: Boolean([...document.querySelectorAll('button.gx-chip')].find((b) => b.textContent === 'Home')),

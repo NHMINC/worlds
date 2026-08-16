@@ -117,11 +117,13 @@ is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
 As you zoom and fly, `objectsNear` resolves the massive tail of
 nearby cells, then more of the IMF. You cannot pick a star until
 you are close enough that it has resolved. Set course loads that
-star. We **store visits only** (overlays, camera, labels). We do
-not mint systems. A first landing may sample thousands of FGK hosts
-near the solar circle (the home point) to find a world that already
-has life — that is a query, not a catalog. Changing the grid
-renumbers `starId`; old visits from the 7k-sample era are void.
+  star. We **store visits only** (overlays, camera, labels). We do
+  not mint systems. App boot mints the whole-disk backdrop once
+  (`prepareUniverse`) behind “Preparing the universe”. An empty
+  save does not write a camp: it queries nearby solar-circle hosts
+  for a living world (`discoverHabitable`) and opens the region
+  looking at that star. Set course is the first visit. Changing the
+  grid renumbers `starId`; old visits from the 7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
 
@@ -187,7 +189,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     markers for home, here, visited systems, and ~100 deterministic
     systems of interest (`systemsOfInterest`). NO stars are drawn on
     the map; the speckle is chart fabric, not a sky. The map camera
-    orbits the origin.
+    orbits the origin. The in-system galaxy icon does **not** land
+    here — it opens the region at the loaded star (`hereStarId`,
+    else `homeStar`) with that star on the reticle. An empty save
+    opens the same way on a discovered living host. The saucer is
+    the Helix breadcrumb / Face-on chart, not the landing page.
   - **Region**: a magnification sphere of radius `GALAXY_REGION_R`
     (~2 kpc) in catalog space. Near the centre (`GALAXY_REGION_FULL_R`)
     every occupied slot is a point. Farther cells keep only the
@@ -211,7 +217,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     population with scattered positions, not fake stars, not
     landings. The same field drives star formation (dense gas
     births young stars — nurseries) and the H II condition.
-    Cached per seed. Envelope size is angular in both layers.
+    Cached per seed — minted once at app boot (`prepareUniverse`)
+    on a worker, not on the dive. The local 2 kpc cloud is minted
+    on each enter (then slid by `advanceRegionCloud`); the dive
+    must not sync-walk the disk.
+    Envelope size is angular in both layers.
     Nebulae are 50% transparent spheres on the host (cyan PN,
     red SNR, white H II) — glass, not additive stacks. **Dust is
     never drawn — it is sightline extinction** (`extinctGlsl`,
@@ -523,8 +533,9 @@ Code map (start here):
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
 | Galaxy explorer (saucer + region dive) | `src/render/galaxySectors.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
-| First landing (habitable search) | `src/world/discover.ts` |
+| First look (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |

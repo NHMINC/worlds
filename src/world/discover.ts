@@ -1,7 +1,8 @@
 /**
- * First landing: we do not mint a system. We search nearby solar-circle
+ * First look: we do not mint a system. We search nearby solar-circle
  * hosts for a star whose planets already include a habitable world.
- * The galaxy is not a list; this is a query.
+ * The galaxy is not a list; this is a query. An empty save opens the
+ * explorer on that star; set course writes the first visit.
  */
 import { UNIVERSE } from './physics';
 import { solarCircleHosts, type GalaxyObject } from './galaxy';
