@@ -6,6 +6,21 @@ import type {
   SystemMeta,
   TerrainOverrideRecord,
 } from '../world/types';
+import type { GalaxyField } from '../world/formation/field';
+
+/**
+ * Cached formation output: the baked field the catalog samples plus
+ * the replay keyframes the boot movie plays on a warm start. Purely
+ * regenerable (seed + FORMATION_VERSION), cached because forming the
+ * galaxy costs ~half a minute of CPU.
+ */
+export interface GalaxyFieldRecord {
+  /** `${seed}:${FORMATION_VERSION}` */
+  key: string;
+  field: GalaxyField;
+  keyframes: Float32Array[];
+  savedAt: number;
+}
 
 class WorldBuilderDB extends Dexie {
   systems!: Table<SystemMeta, string>;
@@ -13,6 +28,7 @@ class WorldBuilderDB extends Dexie {
   terrain!: Table<TerrainOverrideRecord, [string, string]>;
   labels!: Table<LabelRecord, string>;
   objects!: Table<ObjectRecord, string>;
+  fields!: Table<GalaxyFieldRecord, string>;
 
   constructor() {
     super('hex-world-builder');
@@ -51,6 +67,11 @@ class WorldBuilderDB extends Dexie {
         await tx.table('labels').clear();
         await tx.table('objects').clear();
       });
+    // v5: the formed-galaxy cache (seed + formation version → baked
+    // field + boot-replay keyframes). Regenerable at any time.
+    this.version(5).stores({
+      fields: 'key',
+    });
   }
 }
 
