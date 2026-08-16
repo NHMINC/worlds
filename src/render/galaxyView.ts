@@ -14,10 +14,11 @@
  * magnified (VIEW_R / REGION_R). Inside the ball a star is a
  * photosphere — size r/d, flux L/d², teff colour — so it grows
  * as we approach. Behind the ball a
- * magnitude-limited backdrop (stars, typed nebulae, dusty cell
- * centres) sketches the rest of the disk. Same shape law as the
- * local sample; magnifier places them. The breadcrumb returns to
- * the map.
+ * magnitude-limited backdrop (stars and typed nebulae) sketches the
+ * rest of the disk. Dust is never drawn: it is sightline extinction
+ * on every backdrop row (see SILHOUETTE_VERT), so it manifests as
+ * irregular star-poor rifts, the way Barnard found it. The
+ * breadcrumb returns to the map.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -61,6 +62,9 @@ import {
   type StarCloud,
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
+
+/** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
+const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
 
 /** Map-orbit radius range (kpc). */
 const MAP_R_MIN = 9;
@@ -190,6 +194,7 @@ function regionCamFar(): number {
 }
 
 const SILHOUETTE_VERT = /* glsl */ `
+  ${SHAPE_GLSL}
   attribute vec3 aColor;
   attribute float aVis;
   attribute float aLum;
@@ -212,6 +217,9 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uShineDistRef;
   uniform float uShineDistP;
   uniform float uShineSat;
+  uniform float uExtinctK;
+  uniform float uExtinctMax;
+  uniform vec3 uDustRgb;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -220,6 +228,22 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
+
+  // Dust is not drawn; it is subtraction. Column density along a
+  // sightline: the thin gas sheet × the same turbulence complexes
+  // the clump-occupancy law samples. The sheet's z-scale is ZD
+  // (razor thin), so bulge rows above the plane shine over the
+  // lane — the Sombrero geometry emerges instead of being painted.
+  float extinctRho(vec3 p) {
+    float R = length(p.xz);
+    float ez = exp(min(abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_ZD)}, 12.0));
+    float sech = 2.0 / (ez + 1.0 / ez);
+    float gas = exp(-R / ${glslFloat(UNIVERSE.GALAXY_RD * UNIVERSE.GALAXY_RD_GAS)}) * sech * sech;
+    // 0.3 is the rift threshold: only above-average turbulence
+    // holds enough dust to matter along a whole column.
+    return gas * max(0.0, dustField(p, ${glslFloat(UNIVERSE.GALAXY_TURB_FREQ)}) - 0.3);
+  }
+
   void main() {
     vColor = aColor;
     vKind = aKind;
@@ -266,6 +290,22 @@ const SILHOUETTE_VERT = /* glsl */ `
       gl_PointSize = max(1.0, uPixel);
       vPx = gl_PointSize;
     }
+    // Extinction: march the column from the bubble to this row.
+    // exp(−τ · DUST_RGB) — blue dies first, so rift-edge rows
+    // redden before they vanish. Brightness carries the luminance
+    // of T; colour carries only the chroma shift (the star
+    // fragment renormalizes to peak, so dimming must ride vVis).
+    float dt = dCat / ${glslFloat(UNIVERSE.GALAXY_EXTINCT_STEPS)};
+    vec3 dir = (position - uCenter) / max(dCat, 1e-4);
+    float tau = 0.0;
+    for (int i = 0; i < ${UNIVERSE.GALAXY_EXTINCT_STEPS}; i++) {
+      tau += extinctRho(uCenter + dir * ((float(i) + 0.5) * dt));
+    }
+    tau = min(tau * uExtinctK * dt, uExtinctMax);
+    vec3 ext = exp(-tau * uDustRgb);
+    float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
+    vVis *= extLum;
+    vColor *= ext / max(extLum, 1e-3);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -1067,10 +1107,12 @@ export class GalaxyView {
       ...this.shineUniforms(),
       ...this.dustUniforms(),
       // Fewer, fuller: the backdrop keeps only showpieces, so its
-      // shells get more exposure and its clouds more optical depth
-      // than the local layer. Same laws, backdrop-only values.
+      // shells get more exposure than the local layer would.
       uNebGain: { value: UNIVERSE.NEB_EMISSION * UNIVERSE.SILHOUETTE_NEB_BOOST },
-      uDustTauK: { value: UNIVERSE.DUST_TAU * UNIVERSE.SILHOUETTE_DUST_BOOST },
+      // Dust as a filter: sightline extinction on every row.
+      uExtinctK: { value: UNIVERSE.GALAXY_EXTINCT_K },
+      uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
+      uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
     };
   }
 
@@ -1102,13 +1144,10 @@ export class GalaxyView {
     this.scene.add(emisPts);
     this.silEmisPts = emisPts;
     this.silEmisMat = emisMat;
-    const dustMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 2);
-    const dustPts = new THREE.Points(geo, dustMat);
-    dustPts.frustumCulled = false;
-    dustPts.renderOrder = 2;
-    this.scene.add(dustPts);
-    this.silDustPts = dustPts;
-    this.silDustMat = dustMat;
+    // No dust pass: dust is not visible, it filters. The rows stay
+    // minted (census, grain-tint check, future local layer) and the
+    // per-pass kind gates cull them; the sightline extinction march
+    // in SILHOUETTE_VERT is how dust reaches the eye.
     this.pushMagUniforms();
   }
 

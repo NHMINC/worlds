@@ -264,6 +264,12 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   // magnifier is 20×. 0.25 crosses a 2 kpc ball in ~8 s.
   check(UNIVERSE.GALAXY_WARP >= 0.2, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
   check(UNIVERSE.GALAXY_WARP_ACCEL > UNIVERSE.GALAXY_WARP, 'warp should reach cap in under a second');
+  // Dust is a filter: blue must die first or a rift edge goes cold
+  // instead of warm, and the column cap must leave the core visible.
+  const [dR, dG, dB] = UNIVERSE.GALAXY_DUST_RGB;
+  check(dB > dG && dG > dR, `DUST_RGB ${dR},${dG},${dB} does not kill blue first`);
+  check(UNIVERSE.GALAXY_EXTINCT_MAX < 5, 'uncapped extinction blacks out the core from in-plane views');
+  check(UNIVERSE.GALAXY_EXTINCT_MAX > 1, 'a sub-1 cap cannot carve visible rifts');
 }
 
 // (The sampled "grain" starfield is gone: it drew tens of thousands of
