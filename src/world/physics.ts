@@ -481,11 +481,14 @@ export const UNIVERSE = {
    * with NEBULA_PX as the pixel floor so far shells stay findable;
    * shells under DUST_MINPX skip the march (a disc).
    * Stars are one CSS pixel of photosphere colour — a point of
-   * light, no disc, no bloom sprite. Intensity is L^P · (D/d)^q
-   * then I/(1+I) so hue survives. STAR_PX is unused for stars
-   * (kept so older comments that name the knob still resolve).
-   * SUPER_GAIN is leftover exposure. Optical approximations,
-   * like AIR_LINE. Not pickable.
+   * light, no disc, no bloom sprite. Intensity is TRUE FLUX,
+   * EXPOSURE · L / d² (catalog kpc), then I/(1+I) so hue survives —
+   * one photograph shared with the integrated-light march. Distant
+   * dots dim honestly; the glow integral carries the far view (that
+   * is where the missing 10⁹ stars live). STAR_PX is unused for
+   * stars (kept so older comments that name the knob still
+   * resolve). SUPER_GAIN is leftover exposure. Optical
+   * approximations, like AIR_LINE. Not pickable.
    */
   GALAXY_SILHOUETTE_M: 5,
   /** Backdrop stars: present-day L / L☉. Brightness is this continuous
@@ -512,7 +515,11 @@ export const UNIVERSE = {
   /** Column cap. Honest in-plane extinction blacks out the core
    *  (the real Milky Way's is invisible); the cap keeps it bright. */
   GALAXY_EXTINCT_MAX: 2.5,
-  /** Sightline march taps (vertex-shader cost, once per row). */
+  /** Sightline march taps (vertex-shader cost, once per row). The
+   *  march is clamped to the gas slab (|z| ≤ 4·ZD) before stepping —
+   *  a face-on column crosses the razor-thin sheet in ~1 kpc, and
+   *  taps spread over the whole 46 kpc sightline sampled it as
+   *  noise. Same taps, spent where the dust lives. */
   GALAXY_EXTINCT_STEPS: 12,
   /** Local-layer taps: the in-bubble column is at most REGION_R
    *  (~2 kpc vs ~30 for the backdrop), so 3 taps sample it more
@@ -521,6 +528,44 @@ export const UNIVERSE = {
   SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,
+  /**
+   * INTEGRATED LIGHT. The unresolved IMF below SILHOUETTE_L reaches
+   * the eye as a per-pixel emission march of the SAME density law
+   * the catalog samples (densityParts on the GPU), absorbed by the
+   * SAME dust column (extinctRho × DUST_RGB) inside the march — so
+   * lanes are absorption against glow, the thing lanes actually are.
+   * From outside this is the Hubble photograph (golden bulge/bar,
+   * blue crests, brown lanes); from inside it is the Milky Way band.
+   * One law, every distance, no overview mode. Resolved rows sit
+   * ABOVE the cut, so stars add on top without double counting.
+   * GLOW_GAIN is the same photograph stretch family as NEB_EMISSION.
+   */
+  GALAXY_GLOW_STEPS: 44,
+  GALAXY_GLOW_GAIN: 3.0,
+  /** Eye adaptation (Weber–Fechner): the photograph stretch divides
+   *  by 1 + ADAPT × stellar density at the camera. In dark space the
+   *  full stretch shows the Hubble photograph; embedded in the disk
+   *  the adapted eye sees a subtle Milky Way band and dark poles,
+   *  not a lit ceiling. One law, continuous in position. */
+  GALAXY_GLOW_ADAPT: 50,
+  /** March slab half-height (kpc): sech² leaves nothing above ~4
+   *  thick-disk scale heights; halo glow above it is decreed
+   *  negligible (halo light is carried by its resolved stars). */
+  GALAXY_GLOW_ZCAP: 3.6,
+  /** Population light below the cut (mean unresolved colour, linear
+   *  RGB). Chemistry-of-populations, not paint: the young thin disk
+   *  integrates A/F-dominated pale blue-white, arm overdensity adds
+   *  the youngest light (bluer), old bulge/bar/thick integrate
+   *  K-giant gold, halo is old and faintly warm. */
+  GALAXY_LIGHT_THIN: [0.72, 0.82, 1.0] as [number, number, number],
+  GALAXY_LIGHT_ARM: [0.55, 0.72, 1.0] as [number, number, number],
+  GALAXY_LIGHT_WARM: [1.0, 0.78, 0.5] as [number, number, number],
+  GALAXY_LIGHT_HALO: [1.0, 0.9, 0.72] as [number, number, number],
+  /** One photograph: a resolved backdrop dot is EXPOSURE · L / d²
+   *  (catalog kpc) through I/(1+I). 0.015 matches the local layer's
+   *  brightness at the bubble boundary, so a star does not pop when
+   *  it crosses. */
+  GALAXY_EXPOSURE: 0.015,
   /** Emission-nebula glow gain (photograph stretch, not new energy).
    *  Shells screen-blend: dest + src·(1-dest). They glow and
    *  saturate; they do not add to a white bar. This is one cloud. */

@@ -107,6 +107,52 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   if (face.mode !== 'region') errors.push('Face-on left the region');
   if (faceR < 20) errors.push(`Face-on bubble not far enough (${faceR})`);
 
+  // Integrated light: the face-on photograph must be a galaxy, not a
+  // uniform dot pattern — warm bulge, dark space, arm/gap contrast,
+  // blue somewhere on the disk.
+  const facePx = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    if (!v?.samplePixel) return null;
+    const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const core = v.samplePixel(0.5, 0.5);
+    const corner = v.samplePixel(0.05, 0.06);
+    // The nucleus itself blows out (a photograph does); the WARM test
+    // samples a small ring around it, inside the golden bulge/bar.
+    let warmNear = 0;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      const c = v.samplePixel(0.5 + 0.02 * Math.cos(a), 0.5 + 0.032 * Math.sin(a));
+      if (c[0] > c[2] + 6) warmNear++;
+    }
+    const ring = [];
+    for (let i = 0; i < 24; i++) {
+      const a = (i / 24) * Math.PI * 2;
+      ring.push(v.samplePixel(0.5 + 0.109 * Math.cos(a), 0.5 + 0.175 * Math.sin(a)));
+    }
+    const lums = ring.map(lum);
+    const blueish = ring.filter((c) => c[2] > c[0] + 4).length;
+    return {
+      coreLum: lum(core),
+      warmNear,
+      cornerLum: lum(corner),
+      ringMax: Math.max(...lums),
+      ringMin: Math.min(...lums),
+      blueish,
+    };
+  });
+  console.log('FACE LIGHT', JSON.stringify(facePx));
+  if (!facePx) {
+    errors.push('samplePixel hook missing');
+  } else {
+    if (facePx.coreLum < 60) errors.push(`face-on core too dim (${facePx.coreLum})`);
+    if (facePx.warmNear < 2) errors.push(`face-on bulge not warm (${facePx.warmNear}/12)`);
+    if (facePx.cornerLum > 30) errors.push(`face-on space not dark (${facePx.cornerLum})`);
+    if (facePx.ringMax < (facePx.ringMin + 4) * 1.5) {
+      errors.push(`face-on disk has no arm/gap contrast (${facePx.ringMin}..${facePx.ringMax})`);
+    }
+    if (facePx.blueish < 2) errors.push(`face-on disk has no blue arm light (${facePx.blueish})`);
+  }
+
   await page.evaluate(() => window.__galaxyView?.setPreset?.('edge'));
   await page.waitForTimeout(1200);
   const edge = await page.evaluate(() => ({
@@ -118,6 +164,36 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   await page.screenshot({ path: 'previews/galaxy-1b-edge.png' });
   if (edge.mode !== 'region') errors.push('Edge-on left the region');
   if (edgeR < 20) errors.push(`Edge-on bubble not far enough (${edgeR})`);
+  if (edge.region && Math.abs(edge.region.y) > 0.01) {
+    errors.push(`Edge-on not in the plane (y=${edge.region.y})`);
+  }
+
+  // Edge-on photograph: warm bulge on the midline, a razor-thin disk
+  // (bright at the plane, gone a little above), dark corners.
+  const edgePx = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    if (!v?.samplePixel) return null;
+    const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const core = v.samplePixel(0.5, 0.5);
+    const above = v.samplePixel(0.5, 0.3);
+    const corner = v.samplePixel(0.06, 0.08);
+    // Warm bulge just above/below the blown nucleus and midplane line.
+    let warmNear = 0;
+    for (const [dx, dy] of [[0, 0.02], [0, -0.02], [0.015, 0.015], [-0.015, 0.015], [0.015, -0.015], [-0.015, -0.015]]) {
+      const c = v.samplePixel(0.5 + dx, 0.5 + dy);
+      if (c[0] > c[2] + 6) warmNear++;
+    }
+    return { coreLum: lum(core), warmNear, aboveLum: lum(above), cornerLum: lum(corner) };
+  });
+  console.log('EDGE LIGHT', JSON.stringify(edgePx));
+  if (edgePx) {
+    if (edgePx.coreLum < 60) errors.push(`edge-on core too dim (${edgePx.coreLum})`);
+    if (edgePx.warmNear < 1) errors.push(`edge-on bulge not warm (${edgePx.warmNear}/6)`);
+    if (edgePx.aboveLum > edgePx.coreLum * 0.5) {
+      errors.push(`edge-on disk not thin (above=${edgePx.aboveLum} core=${edgePx.coreLum})`);
+    }
+    if (edgePx.cornerLum > 30) errors.push(`edge-on space not dark (${edgePx.cornerLum})`);
+  }
 
   await page.evaluate(() => window.__galaxyView?.setPreset?.('back'));
   await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
@@ -298,10 +374,10 @@ await phone.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
 const phoneGalaxy = phone.locator('button[title="Galaxy — the shared catalog"]');
 if (await phoneGalaxy.count()) {
   await phoneGalaxy.click({ force: true });
-} else {
-  await phone.waitForSelector('.galaxy-explorer', { timeout: 90000 });
 }
-await phone.waitForTimeout(1500);
+await phone.waitForSelector('.galaxy-explorer', { timeout: 90000 });
+await phone.waitForSelector('button.gx-chip', { timeout: 30000 });
+await phone.waitForTimeout(400);
 const phoneUi = await phone.evaluate(() => ({
   homeChip: Boolean([...document.querySelectorAll('button.gx-chip')].find((b) => b.textContent === 'Home')),
 }));
