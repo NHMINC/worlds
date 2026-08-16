@@ -1068,13 +1068,16 @@ export class GalaxyView {
     this.starGeo = geo;
     this.starMat = mat;
     this.starVis = visAttr;
-    // In-bubble nebula / dust envelopes are OFF for now: magnified ×20
-    // they rasterize hundreds of px each and every fragment marches the
-    // turbulence field — the measured majority of the core-facing frame
+    // In-bubble NEBULA envelopes stay OFF for now: magnified ×20 they
+    // rasterize hundreds of px each and every fragment marches the
+    // turbulence field — a measured majority of the core-facing frame
     // (and the on-bubble nebulae had their own artefacts). The catalog
     // still mints them (HUD census, picking data stay honest); only the
-    // draw passes are disabled. Re-enable by uncommenting once the march
-    // budget scales with angular size.
+    // draw pass is disabled. Re-enable by uncommenting once the march
+    // budget scales with angular size. In-bubble DUST is back on: local
+    // clumps are the one place dust is still an object you fly through
+    // (the backdrop's dust is sightline extinction), and its fragment
+    // march is gated by DUST_MINPX / DUST_RIM_MINPX.
     // const emisMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 1);
     // const emisPts = new THREE.Points(geo, emisMat);
     // emisPts.frustumCulled = false;
@@ -1082,13 +1085,13 @@ export class GalaxyView {
     // this.scene.add(emisPts);
     // this.starEmisPts = emisPts;
     // this.starEmisMat = emisMat;
-    // const dustMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 2);
-    // const dustPts = new THREE.Points(geo, dustMat);
-    // dustPts.frustumCulled = false;
-    // dustPts.renderOrder = 3;
-    // this.scene.add(dustPts);
-    // this.starDustPts = dustPts;
-    // this.starDustMat = dustMat;
+    const dustMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 2);
+    const dustPts = new THREE.Points(geo, dustMat);
+    dustPts.frustumCulled = false;
+    dustPts.renderOrder = 3;
+    this.scene.add(dustPts);
+    this.starDustPts = dustPts;
+    this.starDustMat = dustMat;
     this.pushMagUniforms();
     this.applyStarVis();
   }
