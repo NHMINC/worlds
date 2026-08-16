@@ -74,6 +74,15 @@ export const HARVEST_SHINE_GAIN = 0.28;
 export const HARVEST_SHINE_L_P = 0.55;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_SHINE_DIST_P = 0.22;
+/**
+ * Super-sun tail only. Extra I is identically zero at and below
+ * SUPER_L, so the rest of the harvest photograph is unchanged.
+ * Leftover luminosity (L / SUPER_L − 1) rides the same distance
+ * law and the same PSF — more wing, not a new disc or a new if.
+ */
+export const HARVEST_SUPER_L = 50_000;
+export const HARVEST_SUPER_GAIN = 4;
+export const HARVEST_SUPER_P = 1;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). Unused on harvest pins. */
@@ -111,13 +120,23 @@ export function harvestGlowPx(L: number, pixelRatio = 1): number {
   return Math.max(harvestStarPx(pixelRatio), css * pixelRatio);
 }
 
+/** Leftover luminosity above SUPER_L. Zero for every other harvest star. */
+export function harvestSuperExtra(L: number): number {
+  const x = Math.max(L, 1e-4) / HARVEST_SUPER_L;
+  if (x <= 1) return 0;
+  return HARVEST_SUPER_GAIN * (Math.pow(x, HARVEST_SUPER_P) - 1);
+}
+
 /** Fly-distance intensity. Same formula the harvest vertex uses. */
 export function harvestShine(L: number, d: number): number {
-  return (
-    HARVEST_SHINE_GAIN *
-    Math.pow(Math.max(L, 1e-4) / HARVEST_L_REF, HARVEST_SHINE_L_P) *
-    Math.pow(HARVEST_SHINE_DIST_REF / Math.max(d, 0.4), HARVEST_SHINE_DIST_P)
+  const dist = Math.pow(
+    HARVEST_SHINE_DIST_REF / Math.max(d, 0.4),
+    HARVEST_SHINE_DIST_P,
   );
+  const base =
+    HARVEST_SHINE_GAIN *
+    Math.pow(Math.max(L, 1e-4) / HARVEST_L_REF, HARVEST_SHINE_L_P);
+  return (base + harvestSuperExtra(L)) * dist;
 }
 
 /** Teff RGB pushed off grey. Same mix the harvest vertex uses. */
