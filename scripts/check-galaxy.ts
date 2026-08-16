@@ -264,10 +264,6 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   // magnifier is 20×. 0.25 crosses a 2 kpc ball in ~8 s.
   check(UNIVERSE.GALAXY_WARP >= 0.2, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
   check(UNIVERSE.GALAXY_WARP_ACCEL > UNIVERSE.GALAXY_WARP, 'warp should reach cap in under a second');
-  // Dust reddens: blue must die first or a lane through starlight
-  // goes cold instead of warm.
-  const [dR, dG, dB] = UNIVERSE.GALAXY_DUST_RGB;
-  check(dB > dG && dG > dR, `DUST_RGB ${dR},${dG},${dB} does not kill blue first`);
 }
 
 // (The sampled "grain" starfield is gone: it drew tens of thousands of

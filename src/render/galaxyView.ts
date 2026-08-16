@@ -282,7 +282,6 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustMinPx;
   uniform float uDustAlphaMax;
   uniform float uDustTauK;
-  uniform vec3 uDustRgb;
   uniform float uDustFreq;
   uniform float uDustRim;
   uniform float uDustRimMinPx;
@@ -319,46 +318,64 @@ const STAR_FRAG = /* glsl */ `
       return;
     }
     if (vKind > 3.5) {
-      // Dust is a shadow. Output transmittance T = exp(−τ · DUST_RGB)
-      // and multiply the framebuffer. Grain chemistry scales τ
-      // (soot absorbs harder; ice is thinner) — it is not a paint.
+      // Dust: a short march through the shared sub-grid ISM field.
       // The gate is CSS pixels: on a 3× phone the 4-CSS-px floor is
       // 12 device px, which used to cross a device-px gate and march
       // every unresolvable mote in the core stack.
-      float grain = dot(vColor, vec3(0.299, 0.587, 0.114));
-      float absorb = clamp(1.45 - 1.2 * grain, 0.35, 1.6);
-      float tau = 0.0;
       if (vPx < uDustMinPx * uPixel) {
+        // Too small to resolve structure: a soft mote, weighted by density.
         float mask = smoothstep(1.0, 0.55, length(p));
-        tau = uDustTauK * 0.2 * mask * (0.2 + 0.8 * vVis) * absorb;
-      } else {
-        vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
-        vec3 rd = normalize(fragView);
-        float b = dot(rd, vCenterView);
-        float cc = dot(vCenterView, vCenterView) - vRadiusView * vRadiusView;
-        float h = b * b - cc;
-        if (h <= 0.0) discard;
-        h = sqrt(h);
-        float t0 = max(b - h, 0.001);
-        float t1 = b + h;
-        if (t1 <= t0) discard;
-        float radiusCat = vRadiusView / uScale;
-        // Steps scale with on-screen size: small sprites cannot show
-        // structure, so they do not pay for it.
-        float steps = clamp(floor(vPx / 24.0) + 2.0, 2.0, uDustSteps);
-        for (int i = 0; i < 16; i++) {
-          if (float(i) >= steps - 0.5) break;
-          float t = mix(t0, t1, (float(i) + 0.5) / steps);
-          vec3 relCat = (uCamRotInv * (rd * t - vCenterView)) / uScale;
-          tau += dustRho(vCenterCat + relCat, relCat, radiusCat, vVis, uDustFreq);
-        }
-        float segCat = (t1 - t0) / uScale;
-        tau *= uDustTauK * segCat / steps * absorb;
+        float a = uDustAlphaMax * mask * (0.15 + 0.7 * vVis);
+        if (a < 0.012) discard;
+        gl_FragColor = vec4(vColor, a);
+        return;
       }
-      if (tau < 0.02) discard;
-      vec3 T = exp(-tau * uDustRgb);
-      T = max(T, vec3(1.0 - uDustAlphaMax));
-      gl_FragColor = vec4(T, 1.0);
+      vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
+      vec3 rd = normalize(fragView);
+      float b = dot(rd, vCenterView);
+      float cc = dot(vCenterView, vCenterView) - vRadiusView * vRadiusView;
+      float h = b * b - cc;
+      if (h <= 0.0) discard;
+      h = sqrt(h);
+      float t0 = max(b - h, 0.001);
+      float t1 = b + h;
+      if (t1 <= t0) discard;
+      float radiusCat = vRadiusView / uScale;
+      // Steps scale with on-screen size: small sprites cannot show
+      // structure, so they do not pay for it.
+      float steps = clamp(floor(vPx / 24.0) + 2.0, 2.0, uDustSteps);
+      float tau = 0.0;
+      vec3 meanRel = vec3(0.0);
+      float wSum = 0.0;
+      for (int i = 0; i < 16; i++) {
+        if (float(i) >= steps - 0.5) break;
+        float t = mix(t0, t1, (float(i) + 0.5) / steps);
+        vec3 relCat = (uCamRotInv * (rd * t - vCenterView)) / uScale;
+        float rho = dustRho(vCenterCat + relCat, relCat, radiusCat, vVis, uDustFreq);
+        tau += rho;
+        meanRel += relCat * rho;
+        wSum += rho;
+      }
+      float segCat = (t1 - t0) / uScale;
+      tau *= uDustTauK * segCat / steps;
+      if (tau < 0.012) discard;
+      float trans = exp(-tau);
+      // Extinction: the thick core silhouettes; thin edges keep grain colour.
+      vec3 col = vColor * (0.22 + 0.78 * clamp(trans * 1.5, 0.0, 1.0));
+      if (vPx > uDustRimMinPx * uPixel && wSum > 1e-4) {
+        // Single-scatter rim: density falling toward the local OB light
+        // means that face is bathed in nursery UV — the Pillars edge.
+        vec3 mp = vCenterCat + meanRel / wSum;
+        vec3 L = normalize(vec3(
+          dustHash(vec3(vSeed * 91.3, 7.0, 1.0)) - 0.5,
+          0.35 * (dustHash(vec3(vSeed * 13.7, 2.0, 5.0)) - 0.5),
+          dustHash(vec3(vSeed * 29.1, 3.0, 9.0)) - 0.5) + 1e-4);
+        float here = dustField(mp, uDustFreq);
+        float lit = dustField(mp + L * 0.4 * radiusCat, uDustFreq);
+        float rim = clamp((here - lit) * uDustRim * vVis, 0.0, 1.0);
+        col += vec3(1.0, 0.93, 0.8) * rim * (1.0 - trans) * 0.85;
+      }
+      gl_FragColor = vec4(col, min(uDustAlphaMax, 1.0 - trans));
       return;
     }
     // Emission nebulae: self-luminous shells. Brightness is emission
@@ -962,7 +979,6 @@ export class GalaxyView {
       uDustMinPx: { value: UNIVERSE.DUST_MINPX },
       uDustAlphaMax: { value: UNIVERSE.DUST_ALPHA_MAX },
       uDustTauK: { value: UNIVERSE.DUST_TAU },
-      uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
       uDustFreq: { value: UNIVERSE.DUST_FREQ },
       uDustRim: { value: UNIVERSE.DUST_RIM },
       uDustRimMinPx: { value: UNIVERSE.DUST_RIM_MINPX },
@@ -972,8 +988,7 @@ export class GalaxyView {
   /**
    * Three passes per layer, one shared fragment: stars add light,
    * emission nebulae SCREEN (dest + src·(1-dest) — they glow but
-   * cannot stack to a white bar), dust MULTIPLIES (dest · T) so it
-   * is a shadow through whatever is already there, not a stamp.
+   * cannot stack to a white bar), dust (drawn LAST) obscures both.
    */
   private makeCloudMaterial(
     vertexShader: string,
@@ -982,7 +997,6 @@ export class GalaxyView {
   ): THREE.ShaderMaterial {
     uniforms.uPass = { value: pass };
     const nebula = pass === 1;
-    const dust = pass === 2;
     return new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader: STAR_FRAG,
@@ -990,10 +1004,9 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: dust ? THREE.MultiplyBlending : nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
-      ...(nebula
-        ? { blendSrc: THREE.OneMinusDstColorFactor, blendDst: THREE.OneFactor }
-        : {}),
+      blending: pass === 2 ? THREE.NormalBlending : nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
+      blendSrc: nebula ? THREE.OneMinusDstColorFactor : THREE.SrcAlphaFactor,
+      blendDst: THREE.OneFactor,
       toneMapped: false,
     });
   }
@@ -1092,9 +1105,7 @@ export class GalaxyView {
     const dustMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 2);
     const dustPts = new THREE.Points(geo, dustMat);
     dustPts.frustumCulled = false;
-    // After backdrop stars/nebulae, before local stars: the dust
-    // is outside the ball, so it multiplies the far sky only.
-    dustPts.renderOrder = -0.5;
+    dustPts.renderOrder = 2;
     this.scene.add(dustPts);
     this.silDustPts = dustPts;
     this.silDustMat = dustMat;
