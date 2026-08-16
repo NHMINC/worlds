@@ -457,7 +457,7 @@ function polarCellVolume(ir: number): number {
   return 0.5 * (R1 * R1 - R0 * R0) * (TAU / nth) * dz;
 }
 
-function polarCellOf(p: GalPos): number {
+export function polarCellOf(p: GalPos): number {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const ir = Math.max(0, Math.min(nr - 1, Math.floor((p.R / rMax) * nr)));
@@ -571,8 +571,20 @@ export function slotBirthRaw(seed: string, cell: number, slot: number, filled: n
   const pop = popOfParent(field.pKind[cell], pos.R, pos.z);
   const mean = field.pAge[cell];
   const T = UNIVERSE.GALAXY_AGE_GYR;
-  const ageLo = Math.max(0.02, mean * 0.15);
-  const ageHi = Math.min(T, Math.max(ageLo + 0.5, mean * 1.35));
+  // Parent mean is the cohort. The window still reaches "now" so
+  // massive stars and H II can exist; dense gas tilts younger.
+  let ageLo: number;
+  let ageHi: number;
+  if (pop === 'thin') {
+    ageLo = 0.02;
+    ageHi = Math.min(T - 0.2, Math.max(1.5, 2 * mean));
+  } else if (pop === 'thick') {
+    ageLo = Math.min(T - 1, Math.max(4, mean * 0.7));
+    ageHi = T;
+  } else {
+    ageLo = Math.min(T - 0.2, Math.max(6, mean * 0.8));
+    ageHi = T;
+  }
   const arm = inSpiralArm(pos.R, pos.theta);
   const ism = ismNorm(seed, polarCellOf(pos));
   let uAge = rng();

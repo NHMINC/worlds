@@ -3,7 +3,7 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, cellCenter, dustPhysics, galToCart, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { cellCount, cellCenter, dustPhysics, galToCart, ismNorm, objectAt, polarCellCenter, polarCellOf, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
 import {
   catalogRingMasses,
   ringBounds,
@@ -30,6 +30,7 @@ import {
   cellFromDustId,
 } from '../src/world/sectors';
 import { emissionLook, shapeAt, KIND_HII, KIND_PN, KIND_SNR } from '../src/world/skyShape';
+import { sampleField } from '../src/world/formation/registry';
 
 const seed = UNIVERSE.CANONICAL_SEED;
 let fail = 0;
@@ -229,7 +230,7 @@ const check = (cond: boolean, msg: string) => {
       dustSeen.add(id);
       check(!objectAt(seed, id), `dust id ${id} claims to be a living star`);
       // A population scatters; a lattice pins to cell centres.
-      const mid = galToCart(cellCenter(cellFromDustId(id)));
+      const mid = galToCart(polarCellCenter(cellFromDustId(id)));
       const off = Math.hypot(a.pos[i * 3] - mid.x, a.pos[i * 3 + 1] - mid.y, a.pos[i * 3 + 2] - mid.z);
       if (off > 0.02) dustOffLattice++;
       continue;
@@ -360,16 +361,16 @@ const check = (cond: boolean, msg: string) => {
 
 // --- nursery law: dense gas births young stars (causal, not painted) ---
 {
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
-  const izMid = Math.floor(nz / 2);
-  const ir = Math.floor((UNIVERSE.R_SUN / rMax) * nr);
+  const { field } = sampleField();
   type Row = { ism: number; young: number };
   const rows: Row[] = [];
-  for (let it = 0; it < nth; it += 2) {
-    const cell = ir * nth * nz + it * nz + izMid;
+  for (let cell = 0; cell < field.pN; cell++) {
+    if (field.pKind[cell] !== 0) continue;
+    const R = Math.hypot(field.pAX[cell], field.pAZ[cell]);
+    if (Math.abs(R - UNIVERSE.R_SUN) > 1.8) continue;
     const filled = slotsInCell(seed, cell);
     if (filled < 12) continue;
-    const ism = ismNorm(seed, cell);
+    const ism = ismNorm(seed, polarCellOf(cellCenter(cell)));
     let young = 0;
     const probe = 10;
     for (let j = 0; j < probe; j++) {
