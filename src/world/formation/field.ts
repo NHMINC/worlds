@@ -170,12 +170,46 @@ export function bakeField(
     const feh = fehOf(i);
 
     if (c < FIELD.C_SPHEROID) {
-      // Spheroid: spherical shells from the particle's own radius.
+      // Spheroid: spherical shells. Each particle deposits as a 3D
+      // Gaussian blob of the force-softening width, not a delta — the
+      // run cannot have made structure sharper than FORM.SOFT, so a
+      // delta-binned cusp would be numerics, not physics. The shell
+      // mass of a 3D blob centred at radius s has the closed form
+      // w(r) ∝ (r/s)·[e^−(r−s)²/2σ² − e^−(r+s)²/2σ²]; weights are
+      // normalized per particle, so mass is conserved and the centre
+      // stays at FINITE density (a 1D-in-radius kernel would divide
+      // slice mass by vanishing shell volumes and re-mint the cusp).
       nSph++;
-      const b = Math.min(FIELD.SPH_BINS - 1, Math.floor(rad / sphDr));
-      sphM[b] += 1;
-      sphFehS[b] += feh;
-      sphAgeS[b] += age;
+      const sig = FORM.SOFT * 0.5;
+      const s = Math.max(1e-3, rad);
+      const b0 = Math.max(0, Math.floor((rad - 3 * sig) / sphDr));
+      const b1 = Math.min(FIELD.SPH_BINS - 1, Math.floor((rad + 3 * sig + sphDr) / sphDr));
+      const inv2s2 = 1 / (2 * sig * sig);
+      let wSum = 0;
+      let wAt = 0;
+      for (let b = b0; b <= b1; b++) {
+        const rb = (b + 0.5) * sphDr;
+        const dm = rb - s;
+        const dp = rb + s;
+        const w = (rb / s) * (dexp(-dm * dm * inv2s2) - dexp(-dp * dp * inv2s2));
+        wSum += w;
+      }
+      if (wSum <= 0) {
+        const b = Math.min(FIELD.SPH_BINS - 1, Math.floor(rad / sphDr));
+        sphM[b] += 1;
+        sphFehS[b] += feh;
+        sphAgeS[b] += age;
+        continue;
+      }
+      for (let b = b0; b <= b1; b++) {
+        const rb = (b + 0.5) * sphDr;
+        const dm = rb - s;
+        const dp = rb + s;
+        wAt = ((rb / s) * (dexp(-dm * dm * inv2s2) - dexp(-dp * dp * inv2s2))) / wSum;
+        sphM[b] += wAt;
+        sphFehS[b] += feh * wAt;
+        sphAgeS[b] += age * wAt;
+      }
       continue;
     }
     if (!inGrid) continue;
@@ -284,19 +318,9 @@ export function bakeField(
     sphAge[b] = sphM[b] > 0 ? sphAgeS[b] / sphM[b] : ageSpanGyr * 0.85;
   }
 
-  // Resolution law: the PM force is Plummer-softened at FORM.SOFT —
-  // the run cannot have made structure sharper than that, so a
-  // steeper central cusp is numerics, not physics. The nuclear mass
-  // is real; its unresolved profile is decreed a uniform-density
-  // core of the softening radius (same mass, honest shape).
-  {
-    const bSoft = Math.min(FIELD.SPH_BINS - 1, Math.floor(FORM.SOFT / sphDr));
-    let coreM = 0;
-    for (let b = 0; b <= bSoft; b++) coreM += sphM[b];
-    const coreVol = (4 / 3) * Math.PI * ((bSoft + 1) * sphDr) ** 3;
-    const coreRho = (coreM / coreVol) * perStar;
-    for (let b = 0; b <= bSoft; b++) sphRho[b] = coreRho;
-  }
+  // (The resolution floor lives in the deposit above: every spheroid
+  // particle is a softening-width blob, so the profile is smooth
+  // through the centre — no cusp, no flat-core cliff.)
 
   // --- renormalize onto the catalog domain ---
   // Occupancy is the population BY DECREE. Mass the catalog cannot
