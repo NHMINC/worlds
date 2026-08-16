@@ -1,32 +1,16 @@
 /**
- * The galaxy explorer: a saucer chart plus a regional dive.
- *
- * MAP mode shows the saucer — a static mesh coloured by the density
- * law (galaxySectors.ts) — plus markers for home, the current system,
- * visited systems, and ~100 deterministic systems of interest. No
- * stars are drawn on the map. The map camera orbits the origin.
- *
- * REGION mode is a magnification sphere in catalog space. The
- * camera sits at the centre — it does not fly around inside the
- * ball. Look-drag slides the heading. Warp (↑ / Warp button) latches
- * acceleration; ↓ / Stop brakes at the same rate. The vertex shader
- * follows the centre; a worker mints and drops the rim. Space is
- * magnified (VIEW_R / REGION_R). Inside the ball a star is a
- * photosphere — size r/d, flux L/d², teff colour — so it grows
- * as we approach. Behind the ball a
- * magnitude-limited backdrop (stars and typed nebulae) sketches the
- * rest of the disk. Dust is never drawn — in EITHER layer: every
- * row, local or backdrop, marches the same sightline-extinction law
- * (extinctGlsl) from the bubble centre, so dust manifests as
- * irregular star-poor rifts, the way Barnard found it. The
- * in-system galaxy icon opens this mode on the loaded star
- * (here, else home) with that star on the reticle. The breadcrumb
- * returns to the map.
+ * The galaxy explorer is one magnification sphere in catalog space.
+ * The camera sits at the centre. Look-drag slides the heading. Warp
+ * latches acceleration; Stop brakes. Face-on / Edge-on slide the
+ * bubble far enough that the whole disk fits the screen; Back
+ * restores the pose from before that overview; Home parks on the
+ * loaded star (else the canonical home) and pins that pose as Back.
+ * Behind the ball a magnitude-limited backdrop sketches the rest of
+ * the disk. Dust is never drawn — it is sightline extinction.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
-import { createSectorMap, type SectorMap } from './galaxySectors';
 import {
   aimLocks,
   GLOW_DIM,
@@ -49,7 +33,6 @@ import {
 import { classifyStar } from '../world/stellar';
 import { systemAt } from '../world/systemgen';
 import {
-  systemsOfInterest,
   buildRegionCloud,
   silhouetteCloud,
   advanceRegionCloud,
@@ -109,23 +92,25 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   }
 `;
 
-/** Map-orbit radius range (kpc). */
-const MAP_R_MIN = 9;
-const MAP_R_MAX = 46;
-const MAP_R_HOME = 34;
 /** Slide the catalog centre after it has moved this far (catalog kpc). */
 const MAG_SLIDE = 0.01;
 /** A jump bigger than this remints instead of walking the rim. */
 const MAG_REBUILD = 0.45;
 /** Latched warp. Speed is catalog kpc / s — see UNIVERSE.GALAXY_WARP. */
-/** Zoom is direct and gentle; one motion crosses at most this factor. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
-const ZOOM_GESTURE_SPAN = 2.6;
 
-export type GalaxyMode = 'map' | 'region';
+export type GalaxyMode = 'region';
 export type GalaxyFilter = 'all' | 'hot' | 'sunlike' | 'cool' | 'remnant' | 'nebula' | 'halo' | 'arm';
-export type GalaxyPreset = 'face' | 'edge' | 'home' | 'arm';
+export type GalaxyPreset = 'face' | 'edge' | 'home' | 'back';
+
+interface BubblePose {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  pitch: number;
+}
 
 export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
   const st = o.star;
@@ -445,34 +430,6 @@ const STAR_FRAG = /* glsl */ `
   }
 `;
 
-// Markers: fixed-pixel round sprites, always readable over the map.
-const MARK_VERT = /* glsl */ `
-  attribute vec3 aColor;
-  attribute float aSize;
-  uniform float uPixel;
-  varying vec3 vColor;
-  void main() {
-    vColor = aColor;
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    gl_PointSize = aSize * uPixel;
-    gl_Position = projectionMatrix * mv;
-  }
-`;
-
-const MARK_FRAG = /* glsl */ `
-  varying vec3 vColor;
-  void main() {
-    vec2 p = gl_PointCoord * 2.0 - 1.0;
-    float r = length(p);
-    if (r > 1.0) discard;
-    float ring = smoothstep(1.0, 0.72, r) * smoothstep(0.28, 0.55, r);
-    float core = 1.0 - smoothstep(0.0, 0.3, r);
-    float a = max(ring, core * 0.9);
-    if (a < 0.05) discard;
-    gl_FragColor = vec4(vColor, a);
-  }
-`;
-
 export interface GalaxyFocus {
   id: number;
   name: string;
@@ -493,15 +450,14 @@ export interface GalaxyFrame {
   theta: number;
   phi: number;
   radius: number;
-  /** True in region mode (stars are tappable there). */
   pickable: boolean;
-  /** Loaded region stars (0 on the map). */
+  /** Loaded region stars. */
   resolved: number;
   /** Local catalog stars close enough to lock the reticle — no cap. */
   grown: number;
-  /** Region label, e.g. "8.2 kpc · 57°" — null on the map. */
+  /** Region label, e.g. "8.2 kpc · 57°". */
   sector: string | null;
-  /** Exact occupied-slot population of the open region (0 on the map). */
+  /** Exact occupied-slot population of the open region. */
   population: number;
   /** Most-centred star in the sight, when close enough. */
   focus: GalaxyFocus | null;
@@ -526,13 +482,6 @@ interface Callbacks {
   onFrame?: (f: GalaxyFrame) => void;
 }
 
-interface MarkerSet {
-  pts: THREE.Points;
-  geo: THREE.BufferGeometry;
-  mat: THREE.ShaderMaterial;
-  objs: GalaxyObject[];
-}
-
 export class GalaxyView {
   /** Stars loaded for the open region (empty on the map). */
   objects: GalaxyObject[] = [];
@@ -548,10 +497,11 @@ export class GalaxyView {
   private disposed = false;
   private raf = 0;
 
-  private mode: GalaxyMode = 'map';
+  private mode: GalaxyMode = 'region';
   private regionLabel: string | null = null;
   private sectorPop = 0;
-  private sectors: SectorMap;
+  private overview = false;
+  private backPose: BubblePose | null = null;
   private lastSightAt = 0;
   private focusObj: GalaxyObject | null = null;
   private focusHud: GalaxyFocus | null = null;
@@ -575,12 +525,8 @@ export class GalaxyView {
   private borderGen = 0;
   private borderBusy = false;
 
-  private visitedMk: MarkerSet | null = null;
-  private interestMk: MarkerSet | null = null;
   private camRot3 = new THREE.Matrix3();
 
-  private homeRing: THREE.Mesh;
-  private hereRing: THREE.Mesh;
   private pickRing: THREE.Mesh;
   private hereObj: GalaxyObject | null = null;
 
@@ -589,14 +535,10 @@ export class GalaxyView {
 
   private theta = 0.25;
   private phi = 0.16;
-  private radius = 40;
   private tgtTheta = 0.25;
   private tgtPhi = 0.16;
-  private tgtRadius = 40;
-  private look = new THREE.Vector3();
-  private tgtLook = new THREE.Vector3();
 
-  /** Camera stays at the origin in region mode. Unused on the map. */
+  /** Camera stays at the origin; the bubble centre moves. */
   private arcPos = new THREE.Vector3();
   private arcYaw = 0;
   private arcPitch = -0.6;
@@ -618,8 +560,6 @@ export class GalaxyView {
   private moved = 0;
   private pointers = new Map<number, { x: number; y: number }>();
   private pinch0 = 0;
-  private gestureR = 0;
-  private lastZoomAt = 0;
   private thrustOn = false;
   private thrustSpeed = 0;
   private idle = 0;
@@ -643,33 +583,10 @@ export class GalaxyView {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
     this.renderer.setClearColor(new THREE.Color('#070b14'), 1);
-    this.camera = new THREE.PerspectiveCamera(50, 1, 0.02, 400);
+    this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
 
-    this.sectors = createSectorMap();
-    this.scene.add(this.sectors.group);
-
-    this.homeRing = this.makeRing(0x9ec4ff, 0.28);
-    this.hereRing = this.makeRing(0x7fa88b, 0.22);
     this.pickRing = this.makeRing(0xf4e4c1, 0.18);
-    this.scene.add(this.homeRing, this.hereRing, this.pickRing);
-    if (this.home) {
-      const c = galToCart(this.home.pos);
-      this.homeRing.position.set(c.x, c.y, c.z);
-      this.homeRing.visible = true;
-    } else {
-      this.homeRing.visible = false;
-    }
-    this.hereRing.visible = false;
-    this.pickRing.visible = false;
-
-    // Systems of interest: deterministic wonders, built after first
-    // paint so boot never blocks on 5k objectAt calls.
-    window.setTimeout(() => {
-      if (this.disposed) return;
-      this.interestMk = this.makeMarkers(systemsOfInterest(this.seed, 100), [0.95, 0.85, 0.55], 9);
-      this.interestMk.pts.visible = this.mode === 'map';
-      this.scene.add(this.interestMk.pts);
-    }, 60);
+    this.scene.add(this.pickRing);
 
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown, { passive: false });
@@ -705,68 +622,16 @@ export class GalaxyView {
     return mesh;
   }
 
-  private makeMarkers(objs: GalaxyObject[], rgb: [number, number, number], sizePx: number): MarkerSet {
-    const n = Math.max(1, objs.length);
-    const pos = new Float32Array(n * 3);
-    const col = new Float32Array(n * 3);
-    const size = new Float32Array(n);
-    for (let i = 0; i < objs.length; i++) {
-      const c = galToCart(objs[i].pos);
-      pos[i * 3] = c.x;
-      pos[i * 3 + 1] = c.y;
-      pos[i * 3 + 2] = c.z;
-      col[i * 3] = rgb[0];
-      col[i * 3 + 1] = rgb[1];
-      col[i * 3 + 2] = rgb[2];
-      size[i] = sizePx;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
-    geo.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
-    if (objs.length === 0) geo.setDrawRange(0, 0);
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: MARK_VERT,
-      fragmentShader: MARK_FRAG,
-      uniforms: { uPixel: { value: this.renderer.getPixelRatio() } },
-      transparent: true,
-      depthWrite: false,
-    });
-    const pts = new THREE.Points(geo, mat);
-    pts.frustumCulled = false;
-    return { pts, geo, mat, objs };
-  }
-
   /** Loaded system, if it is a catalog row. */
   here(): GalaxyObject | null {
     return this.hereObj;
   }
 
   setHere(id: number | null): void {
-    const o = id != null ? objectAt(this.seed, id) : null;
-    this.hereObj = o;
-    if (!o) {
-      this.hereRing.visible = false;
-      return;
-    }
-    const c = galToCart(o.pos);
-    this.hereRing.position.set(c.x, c.y, c.z);
-    this.hereRing.visible = true;
+    this.hereObj = id != null ? objectAt(this.seed, id) : null;
   }
 
-  setVisited(ids: number[]): void {
-    if (this.visitedMk) {
-      this.scene.remove(this.visitedMk.pts);
-      this.visitedMk.geo.dispose();
-      this.visitedMk.mat.dispose();
-    }
-    const objs = ids
-      .map((id) => objectAt(this.seed, id))
-      .filter((o): o is GalaxyObject => o != null);
-    this.visitedMk = this.makeMarkers(objs, [0.55, 0.85, 0.62], 8);
-    this.visitedMk.pts.visible = this.mode === 'map';
-    this.scene.add(this.visitedMk.pts);
-  }
+  setVisited(_ids: number[]): void {}
 
   // ------------------------------------------------------------- region mode
 
@@ -793,8 +658,8 @@ export class GalaxyView {
 
   /**
    * Open the magnification sphere around a world point. `select` is
-   * pinned when the dive is a star (home, marker); a saucer tap
-   * leaves it null. Flying slides this ball through the catalog.
+   * pinned when the dive is a star. Flying slides this ball through
+   * the catalog.
    */
   enterRegion(x: number, y: number, z: number, select: GalaxyObject | null = null): void {
     this.disposeArcStars();
@@ -808,9 +673,7 @@ export class GalaxyView {
     this.lastEnterMs = cloud.ms;
     this.objects = [];
     this.buildArcStars();
-    // Backdrop is once-per-seed. The worker mints it; attach if the
-    // cache is already warm. Do not sync-mint here — that walk of the
-    // whole disk is the hitch after a saucer tap.
+    // Backdrop is once-per-seed. Attach if the cache is already warm.
     this.buildSilhouetteStars();
     this.censusMemo = {};
     this.resetThrust();
@@ -827,46 +690,9 @@ export class GalaxyView {
     this.camera.near = 0.001;
     this.camera.far = regionCamFar();
     this.camera.updateProjectionMatrix();
-    this.sectors.group.visible = false;
-    if (this.visitedMk) this.visitedMk.pts.visible = false;
-    if (this.interestMk) this.interestMk.pts.visible = false;
     this.select(select);
     this.applyCam();
     this.updateSight(true);
-  }
-
-  /** Back to the saucer. The region's stars are dropped; the map is static. */
-  exitRegion(): void {
-    if (this.mode !== 'region') return;
-    this.mode = 'map';
-    this.disposeArcStars();
-    this.objects = [];
-    this.cloud = null;
-    this.sectorPop = 0;
-    this.regionLabel = null;
-    this.focusObj = null;
-    this.focusHud = null;
-    this.censusMemo = {};
-    this.grownCount = 0;
-    this.resetThrust();
-    this.borderGen++;
-    this.borderBusy = false;
-    this.borderWorker?.postMessage({ type: 'clear' });
-    this.sectors.group.visible = true;
-    if (this.visitedMk) this.visitedMk.pts.visible = true;
-    if (this.interestMk) this.interestMk.pts.visible = true;
-    this.select(null);
-    this.tgtLook.set(0, 0, 0);
-    this.tgtTheta = this.arcYaw;
-    this.tgtPhi = 0.9;
-    this.theta = this.tgtTheta;
-    this.phi = this.tgtPhi;
-    this.tgtRadius = MAP_R_HOME;
-    this.gestureR = this.tgtRadius;
-    this.camera.near = 0.02;
-    this.camera.far = 400;
-    this.camera.updateProjectionMatrix();
-    // The saucer is a chart again; the last dive is not a tile.
   }
 
   private disposeLocalStars(): void {
@@ -1242,49 +1068,98 @@ export class GalaxyView {
 
   /**
    * Open the region on the loaded star (else home) and park it
-   * just ahead of the centre reticle. Face-on map is only the
-   * fallback when the catalog has no home row.
+   * just ahead of the centre reticle. That pose is the Back bookmark.
    */
   openAtHere(): void {
     const obj = this.hereObj ?? this.home;
     if (!obj) {
-      this.setPreset('face');
-      this.theta = this.tgtTheta;
-      this.phi = this.tgtPhi;
-      this.radius = this.tgtRadius;
-      this.applyCam();
+      this.goOverview('face');
       return;
     }
     this.focus(obj);
     this.approachNearest();
+    this.pinBack();
   }
 
   setPreset(p: GalaxyPreset): void {
     if (p === 'home') {
       const obj = this.hereObj ?? this.home;
-      if (obj) this.focus(obj);
+      if (!obj) return;
+      this.focus(obj);
+      this.approachNearest();
+      this.pinBack();
       return;
     }
-    this.exitRegion();
-    if (p === 'face') {
-      this.tgtTheta = 0.25;
-      this.tgtPhi = 0.16;
-      this.tgtRadius = 40;
-    } else if (p === 'edge') {
-      this.tgtTheta = 0.15;
-      this.tgtPhi = 1.42;
-      this.tgtRadius = 36;
+    if (p === 'back') {
+      this.restoreBack();
+      return;
+    }
+    this.goOverview(p);
+  }
+
+  private snapshotPose(): BubblePose {
+    return {
+      x: this.arcCenter.x,
+      y: this.arcCenter.y,
+      z: this.arcCenter.z,
+      yaw: this.arcYaw,
+      pitch: this.arcPitch,
+    };
+  }
+
+  /** Remember the current pose unless we are already in an overview. */
+  private rememberBack(): void {
+    if (this.overview) return;
+    this.backPose = this.snapshotPose();
+  }
+
+  /** Home (and first look) pin Back to this pose. */
+  private pinBack(): void {
+    this.overview = false;
+    this.backPose = this.snapshotPose();
+  }
+
+  /**
+   * Sit far enough that the disk diameter fits ~70% of the vertical
+   * FOV. Scale cancels in the magnifier, so this is catalog kpc.
+   */
+  private overviewDistance(): number {
+    const r = UNIVERSE.GALAXY_R_MAX;
+    const half = ((this.camera.fov * Math.PI) / 180) * 0.35;
+    return r / Math.max(1e-4, Math.tan(half));
+  }
+
+  private goOverview(kind: 'face' | 'edge'): void {
+    this.rememberBack();
+    this.overview = true;
+    const d = this.overviewDistance();
+    if (kind === 'face') {
+      this.enterRegion(0, d, 0, null);
+      this.aimAt(0, -1, 0);
     } else {
-      this.tgtTheta = 1.15;
-      this.tgtPhi = 0.55;
-      this.tgtRadius = 22;
-      const c = galToCart({ R: UNIVERSE.GALAXY_RD * 2.2, theta: 1.1, z: 0 });
-      this.tgtLook.set(c.x, c.y, c.z);
-      this.idle = 0;
+      // A few degrees above the plane so the dust sheet does not eat the disk.
+      const elev = 0.14;
+      const c = Math.cos(elev);
+      const s = Math.sin(elev);
+      this.enterRegion(d * c, d * s, 0, null);
+      this.aimAt(-c, -s, 0);
+    }
+    this.applyCam();
+    this.updateSight(true);
+  }
+
+  private restoreBack(): void {
+    const p = this.backPose;
+    if (!p) {
+      this.openAtHere();
       return;
     }
-    this.tgtLook.set(0, 0, 0);
-    this.idle = 0;
+    this.overview = false;
+    this.enterRegion(p.x, p.y, p.z, null);
+    this.arcYaw = p.yaw;
+    this.arcPitch = p.pitch;
+    this.applyCam();
+    this.updateSight(true);
   }
 
   /** Open the region around a star and select it. */
@@ -1443,16 +1318,6 @@ export class GalaxyView {
     this.borderWorker?.terminate();
     this.borderWorker = null;
     this.disposeArcStars();
-    for (const mk of [this.visitedMk, this.interestMk]) {
-      if (!mk) continue;
-      mk.geo.dispose();
-      mk.mat.dispose();
-    }
-    this.sectors.dispose();
-    this.homeRing.geometry.dispose();
-    (this.homeRing.material as THREE.Material).dispose();
-    this.hereRing.geometry.dispose();
-    (this.hereRing.material as THREE.Material).dispose();
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
     this.renderer.dispose();
@@ -1513,34 +1378,14 @@ export class GalaxyView {
   }
 
   private applyCam(): void {
-    if (this.mode === 'region') {
-      this.orientArc();
-      this.camera.position.set(0, 0, 0);
-      this.camera.up.copy(this.arcUp);
-      this.arcLook.copy(this.arcFwd);
-      this.camera.lookAt(this.arcLook);
-      this.radius = 0;
-      this.theta = this.arcYaw;
-      this.phi = Math.PI / 2 - this.arcPitch;
-      this.look.copy(this.arcLook);
-      this.pushMagUniforms();
-      return;
-    }
-    const r = this.radius;
-    const x = this.look.x + r * Math.sin(this.phi) * Math.cos(this.theta);
-    const y = this.look.y + r * Math.cos(this.phi);
-    const z = this.look.z + r * Math.sin(this.phi) * Math.sin(this.theta);
-    this.camera.position.set(x, y, z);
-    this.camera.up.set(0, 1, 0);
-    this.camera.lookAt(this.look);
-  }
-
-  private minR(): number {
-    return MAP_R_MIN;
-  }
-
-  private maxR(): number {
-    return MAP_R_MAX;
+    this.orientArc();
+    this.camera.position.set(0, 0, 0);
+    this.camera.up.copy(this.arcUp);
+    this.arcLook.copy(this.arcFwd);
+    this.camera.lookAt(this.arcLook);
+    this.theta = this.arcYaw;
+    this.phi = Math.PI / 2 - this.arcPitch;
+    this.pushMagUniforms();
   }
 
   /**
@@ -1743,26 +1588,16 @@ export class GalaxyView {
   }
 
   /**
-   * Map: scale the orbit radius toward what is already framed.
-   * Region: pinch / wheel slides the 40 kpc ball along the look
-   * (the camera stays at the centre; the magnifier moves).
+   * Pinch / wheel slides the ball along the look (the camera stays
+   * at the centre; the magnifier moves).
    */
   private zoom(factor: number): void {
-    const now = performance.now();
     this.idle = 0;
-    if (this.mode === 'region') {
-      this.orientArc();
-      const dir = factor < 1 ? 1 : -1;
-      const step = this.arcPace() * 14 * Math.abs(Math.log(Math.max(1e-3, factor))) * dir;
-      this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
-      this.applyCam();
-      return;
-    }
-    if (now - this.lastZoomAt > 600) this.gestureR = this.tgtRadius;
-    this.lastZoomAt = now;
-    const lo = Math.max(this.minR(), this.gestureR / ZOOM_GESTURE_SPAN);
-    const hi = Math.min(this.maxR(), this.gestureR * ZOOM_GESTURE_SPAN);
-    this.tgtRadius = Math.max(lo, Math.min(hi, this.tgtRadius * factor));
+    this.orientArc();
+    const dir = factor < 1 ? 1 : -1;
+    const step = this.arcPace() * 14 * Math.abs(Math.log(Math.max(1e-3, factor))) * dir;
+    this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
+    this.applyCam();
   }
 
   // ------------------------------------------------------------- picking
@@ -1779,26 +1614,6 @@ export class GalaxyView {
     };
   }
 
-  private markerAt(cx: number, cy: number): GalaxyObject | null {
-    let best: GalaxyObject | null = null;
-    let bestD = 26;
-    const pools: GalaxyObject[] = [];
-    if (this.hereObj) pools.push(this.hereObj);
-    if (this.home) pools.push(this.home);
-    if (this.visitedMk) pools.push(...this.visitedMk.objs);
-    if (this.interestMk) pools.push(...this.interestMk.objs);
-    for (const o of pools) {
-      const p = this.projectClient(o);
-      if (!p) continue;
-      const d = Math.hypot(p.x - cx, p.y - cy);
-      if (d < bestD) {
-        bestD = d;
-        best = o;
-      }
-    }
-    return best;
-  }
-
   private setRay(cx: number, cy: number): void {
     const rect = this.canvas.getBoundingClientRect();
     this.ndc.set(
@@ -1811,17 +1626,6 @@ export class GalaxyView {
 
   private pick(cx: number, cy: number): void {
     this.setRay(cx, cy);
-    if (this.mode === 'map') {
-      // Markers first — a visited world or a wonder beats its tile.
-      const mk = this.markerAt(cx, cy);
-      if (mk) {
-        this.focus(mk);
-        return;
-      }
-      const hit = this.sectors.pick(this.raycaster);
-      if (hit) this.enterRegion(hit.x, 0, hit.z);
-      return;
-    }
     const picked = this.pickCloud(cx, cy);
     if (picked) this.select(picked);
   }
@@ -1898,8 +1702,6 @@ export class GalaxyView {
       this.dragging = false;
       const pts = [...this.pointers.values()];
       this.pinch0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      this.gestureR = this.tgtRadius;
-      this.lastZoomAt = performance.now();
     }
   };
 
@@ -2206,20 +2008,11 @@ export class GalaxyView {
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
     this.idle += dt;
-    if (this.mode === 'region') {
-      this.cruise(dt);
-      this.steerArc(dt);
-      this.applyCam();
-      this.updateSight();
-      this.aimReticle();
-    } else {
-      if (!this.dragging && this.idle > 3) this.tgtTheta += dt * 0.04;
-      this.theta += (this.tgtTheta - this.theta) * (1 - Math.exp(-dt * 4.2));
-      this.phi += (this.tgtPhi - this.phi) * (1 - Math.exp(-dt * 4.2));
-      this.radius += (this.tgtRadius - this.radius) * (1 - Math.exp(-dt * 3.6));
-      this.look.lerp(this.tgtLook, 1 - Math.exp(-dt * 3.2));
-      this.applyCam();
-    }
+    this.cruise(dt);
+    this.steerArc(dt);
+    this.applyCam();
+    this.updateSight();
+    this.aimReticle();
 
     const t = now * 0.001;
     const px = this.renderer.getPixelRatio();
@@ -2238,34 +2031,23 @@ export class GalaxyView {
       const d = cam.distanceTo(mesh.position);
       mesh.scale.setScalar(Math.max(lo, Math.min(hi, d * k)));
     };
-    if (this.mode === 'region') {
-      ringFor(this.pickRing, 0.00035, 0.03, 0.045);
-      ringFor(this.homeRing, 0.00035, 0.03, 0.045);
-      ringFor(this.hereRing, 0.00035, 0.03, 0.04);
-    } else {
-      const ringS = Math.max(0.02, this.radius * 0.03);
-      this.pickRing.scale.setScalar(ringS);
-      this.homeRing.scale.setScalar(ringS);
-      this.hereRing.scale.setScalar(ringS * 0.85);
-    }
+    ringFor(this.pickRing, 0.00035, 0.03, 0.045);
     this.pickRing.rotation.z = t * 0.35;
-    this.homeRing.rotation.z = -t * 0.12;
-    this.hereRing.rotation.z = t * 0.2;
 
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onFrame?.({
       mode: this.mode,
       theta: this.theta,
       phi: this.phi,
-      radius: this.mode === 'region' ? UNIVERSE.GALAXY_REGION_VIEW_R : this.radius,
-      pickable: this.mode === 'region',
+      radius: UNIVERSE.GALAXY_REGION_VIEW_R,
+      pickable: true,
       resolved: this.cloud?.n ?? 0,
       grown: this.grownCount,
       sector: this.regionLabel,
       population: this.sectorPop,
-      focus: this.mode === 'region' ? this.focusHud : null,
-      warp: this.mode === 'region' && this.thrustOn,
-      backdrop: this.mode === 'region' ? (this.silPts ? (silhouetteCloud(this.seed)?.n ?? 0) : 0) : 0,
+      focus: this.focusHud,
+      warp: this.thrustOn,
+      backdrop: this.silPts ? (silhouetteCloud(this.seed)?.n ?? 0) : 0,
     });
     this.raf = requestAnimationFrame(this.frame);
   };
