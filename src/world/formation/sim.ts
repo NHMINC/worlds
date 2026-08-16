@@ -125,7 +125,7 @@ export const FORM = {
   DT: 3,
   STEPS: 2600,
   /** Plummer softening (kpc) — also the resolution floor. */
-  SOFT: 1.2,
+  SOFT: 1.6,
   /** Solve gravity every this many steps (forces reused between). */
   GRAV_EVERY: 2,
   /** Star formation pass cadence (steps). */
@@ -133,19 +133,19 @@ export const FORM = {
   /** Gρ threshold for star formation ((km/s)²/kpc²). Volume, not a
    * projected cylinder — the 2D surface-density gate could not see
    * height, so a dense column looked the same as a filled tube. */
-  SF_THRESH: 40,
+  SF_THRESH: 50,
   /** Base SF probability per Myr at threshold density. FAST response:
    * regulation must outrun cooling (τ ~ 100 Myr) or the disk drops
    * below Q = 1 and fragments wholesale. The long-term consumption
    * rate is NOT this constant — it is the self-regulated equilibrium
    * where feedback heating balances dissipation (Ostriker–Shetty). */
-  SF_RATE: 0.0005,
+  SF_RATE: 0.00035,
   /** Cold-gas efficiency scale (km/s): star formation goes as
    * σ_cold² / (σ² + σ_cold²) of the cell's shear-corrected dispersion.
    * Cold settled disk → full rate; the hot collapse forms stars ~50×
    * slower — and those rare hot births ARE the spheroid (bulge+halo),
    * not a label. One smooth law, no binary gate. */
-  SF_COLD: 15,
+  SF_COLD: 22,
   /** Supernova feedback: each birth reheats its cell's remaining gas
    * with this much velocity kick (km/s), shared over the cell's gas
    * mass. Self-regulation — dense pockets stall themselves instead of
@@ -165,13 +165,13 @@ export const FORM = {
   /** Primordial metallicity. */
   Z0: 1e-4,
   /** Gas velocity-dispersion floor (km/s) — thermal pressure stand-in. */
-  SIGMA_FLOOR: 7,
+  SIGMA_FLOOR: 12,
   /** Initial Toomre Q of the cloud. Below ~1 the whole cold disk
    * fragments at once into giant clumps that sink and merge into a
    * monster nucleus (observed: half the galaxy at R < 1 kpc in one
    * 0.5-Gyr event). Marginal stability is the physical starting
    * point; cooling then lowers Q slowly and SF + feedback regulate. */
-  Q_INIT: 1.5,
+  Q_INIT: 1.7,
 } as const;
 
 /** Draw the formation genes. The seed IS the galaxy's history. */
@@ -181,7 +181,7 @@ export function formationGenes(seed: string): FormationGenes {
   // compact halo suppresses it (Ostriker–Peebles). The halo range is
   // set so baryons rule inside ~2 scale lengths, like real spirals.
   return {
-    vHalo: 145 + 40 * rng(),
+    vHalo: 160 + 35 * rng(),
     rcHalo: 3.5 + 2.5 * rng(),
     spin: 0.85 + 0.2 * rng(),
     coolTau: 55 + 90 * rng(),
@@ -242,7 +242,10 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
     const sn = dsin(th);
     px[i] = r3 * s * c;
     py[i] = r3 * s * sn;
-    pz[i] = r3 * u;
+    // Oblate cloud (c/a ≈ 0.5): still a 3D ball in the first frames,
+    // already spinning toward a disk so the collapse does not freeze
+    // as a thin bar.
+    pz[i] = r3 * u * 0.5;
     const R = Math.max(1e-6, Math.hypot(px[i], py[i]));
     const vc = vcInit(Math.max(r3, 0.4));
     const rr = Math.max(R, 0.4);

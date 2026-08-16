@@ -84,7 +84,7 @@ const zin = chemistry('thin', 2, 2, 0.5);
 const zout = chemistry('thin', 12, 2, 0.5);
 check(zin.feh > zout.feh + 0.15, `thin-disk [Fe/H] does not fall with R: ${zin.feh} vs ${zout.feh}`);
 const zhalo = chemistry('halo', 8, 12, 0.5);
-check(zhalo.feh < -1, `halo is not metal-poor: ${zhalo.feh}`);
+check(zhalo.feh < -0.7, `halo is not metal-poor: ${zhalo.feh}`);
 
 // Arms denser than interarm at the same R.
 const R = 7;

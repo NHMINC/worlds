@@ -394,13 +394,14 @@ export const UNIVERSE = {
    * starW = GALAXY_POPULATION / nParents real stars. objectAt is O(1)
    * at 10⁹ ids the same as at ten. We never enumerate the galaxy; the
    * explorer asks objectsNear for the volume it occupies. MAX_SLOT is
-   * sized so starW fits. The polar lattice (NR × NTH × NZ) remains
+   * sized so starW fits (~10⁵ at 10k parents). The polar lattice
+   * (NR × NTH × NZ) remains
    * the ISM / dust address — a medium, not the stellar catalog.
    */
   GALAXY_NR: 288,
   GALAXY_NTH: 576,
   GALAXY_NZ: 18,
-  GALAXY_MAX_SLOT: 32768,
+  GALAXY_MAX_SLOT: 262144,
   GALAXY_N_K: 12_600_000,
   GALAXY_POPULATION: 1_000_000_000,
 

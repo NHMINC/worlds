@@ -1048,21 +1048,17 @@ function starGlow(o: GalaxyObject): number {
  * every one is a real address.
  */
 export function systemsOfInterest(seed: string, n = 100): GalaxyObject[] {
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz } = UNIVERSE;
-  const izMid = Math.floor(nz / 2);
+  const { field } = sampleField();
   const picks: Array<{ o: GalaxyObject; score: number }> = [];
-  // ~4600 cells sampled on a fixed lattice around the midplane.
-  for (let ir = 2; ir < nr; ir += 5) {
-    for (let it = 0; it < nth; it += 12) {
-      for (const iz of [izMid - 3, izMid, izMid + 3]) {
-        const cell = ir * nth * nz + it * nz + iz;
-        const filled = slotsInCell(seed, cell);
-        if (filled <= 0) continue;
-        const o = objectAt(seed, packId(cell, filled - 1));
-        if (!o) continue;
-        picks.push({ o, score: interestScore(o) });
-      }
-    }
+  // Parents, not the polar ISM lattice. A fixed stride keeps the
+  // harvest O(thousands) of massive slots, not a full evolve of 10k.
+  const step = Math.max(1, Math.floor(field.pN / 2500));
+  for (let cell = 0; cell < field.pN; cell += step) {
+    const filled = slotsInCell(seed, cell);
+    if (filled <= 0) continue;
+    const o = objectAt(seed, packId(cell, filled - 1));
+    if (!o) continue;
+    picks.push({ o, score: interestScore(o) });
   }
   picks.sort((a, b) => b.score - a.score);
   const out: GalaxyObject[] = [];

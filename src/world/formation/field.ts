@@ -172,23 +172,39 @@ export function bakeField(
     const inGrid = i0 >= 0 && i0 < OUT - 1 && j0 >= 0 && j0 < OUT - 1;
 
     if (!r.star[i]) {
-      if (!inGrid) continue;
-      const tx = gx - i0;
-      const ty = gy - j0;
-      const b = j0 * OUT + i0;
-      const w00 = (1 - tx) * (1 - ty);
-      const w10 = tx * (1 - ty);
-      const w01 = (1 - tx) * ty;
-      const w11 = tx * ty;
+      // Gas is a medium. Ten thousand particles cannot CIC a sheet —
+      // each leftover parcel is a softening-width blob, the same
+      // resolution floor the run already declared.
       const feh = fehOf(i);
-      mGas[b] += w00;
-      mGas[b + 1] += w10;
-      mGas[b + OUT] += w01;
-      mGas[b + OUT + 1] += w11;
-      sFehGas[b] += feh * w00;
-      sFehGas[b + 1] += feh * w10;
-      sFehGas[b + OUT] += feh * w01;
-      sFehGas[b + OUT + 1] += feh * w11;
+      const sig = FORM.SOFT;
+      const radPix = Math.max(1, Math.ceil((3 * sig) / dx));
+      const inv2s2 = 1 / (2 * sig * sig);
+      let wSum = 0;
+      for (let dj = -radPix; dj <= radPix; dj++) {
+        for (let di = -radPix; di <= radPix; di++) {
+          const ii = i0 + di;
+          const jj = j0 + dj;
+          if (ii < 0 || ii >= OUT || jj < 0 || jj >= OUT) continue;
+          const rx = (ii + 0.5) * dx - box - x;
+          const ry = (jj + 0.5) * dx - box - y;
+          wSum += dexp(-(rx * rx + ry * ry) * inv2s2);
+        }
+      }
+      if (wSum <= 0) continue;
+      const inv = 1 / wSum;
+      for (let dj = -radPix; dj <= radPix; dj++) {
+        for (let di = -radPix; di <= radPix; di++) {
+          const ii = i0 + di;
+          const jj = j0 + dj;
+          if (ii < 0 || ii >= OUT || jj < 0 || jj >= OUT) continue;
+          const rx = (ii + 0.5) * dx - box - x;
+          const ry = (jj + 0.5) * dx - box - y;
+          const w = dexp(-(rx * rx + ry * ry) * inv2s2) * inv;
+          const b = jj * OUT + ii;
+          mGas[b] += w;
+          sFehGas[b] += feh * w;
+        }
+      }
       continue;
     }
 
