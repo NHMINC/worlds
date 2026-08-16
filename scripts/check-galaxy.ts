@@ -281,10 +281,10 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
 }
 
 {
-  // Warp is a fixed catalog kpc/s. A 0.02 kpc ball remints cheaply,
-  // so 0.25 is a cruise again (crosses the neighbourhood in ~0.08 s).
-  check(UNIVERSE.GALAXY_WARP >= 0.2, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
-  check(UNIVERSE.GALAXY_WARP <= 0.4, `warp ${UNIVERSE.GALAXY_WARP} is faster than the small-ball cruise`);
+  // Warp is a fixed catalog kpc/s. 0.0025 crosses a 0.02 kpc
+  // neighbourhood in 8 s — a look, not a flash.
+  check(UNIVERSE.GALAXY_WARP >= 0.002, `warp ${UNIVERSE.GALAXY_WARP} is slower than the look-pace cruise`);
+  check(UNIVERSE.GALAXY_WARP <= 0.003, `warp ${UNIVERSE.GALAXY_WARP} still flashes past worlds`);
   // Dust is a filter: blue must die first or a rift edge goes cold
   // instead of warm, and the column cap must leave the core visible.
   const [dR, dG, dB] = UNIVERSE.GALAXY_DUST_RGB;

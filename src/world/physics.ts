@@ -454,12 +454,12 @@ export const UNIVERSE = {
   GALAXY_REGION_R: 0.02,
   /**
    * Latched warp (catalog kpc / s). A fixed cruise — on is this
-   * rate, off is stop. 0.25 crosses a 0.02 kpc neighbourhood in
-   * ~0.08 s. MAG_SLIDE (0.002 kpc) fires every ~8 ms; the small
-   * ball remints cheaply. WASD stays the slow look-around pace
-   * (arcPace).
+   * rate, off is stop. 0.0025 crosses a 0.02 kpc neighbourhood in
+   * 8 s, so a world is a look, not a flash. MAG_SLIDE (0.002 kpc)
+   * fires every ~0.8 s; remint is not the limiter. WASD stays the
+   * slow look-around pace (arcPace).
    */
-  GALAXY_WARP: 0.25,
+  GALAXY_WARP: 0.0025,
   /** Within this of the tap, every occupied slot is drawn. */
   GALAXY_REGION_FULL_R: 0.12,
   /** Distance over which the IMF cut ramps to U_FAR. */
