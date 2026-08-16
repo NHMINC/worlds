@@ -275,10 +275,13 @@ const check = (cond: boolean, msg: string) => {
   // Visit handshake: a backdrop star must be a local keeper when the ball sits on it.
   let host = -1;
   for (let i = 0; i < a.n; i++) {
-    if (a.kind[i] === KIND_STAR && a.lum[i] >= 8) {
-      host = i;
-      break;
-    }
+    if (a.kind[i] !== KIND_STAR || a.lum[i] < 8) continue;
+    // Skip the nuclear spike — a 2 kpc ball on the core mints the
+    // whole bulge. The handshake is "a disk backdrop star is local."
+    const R = Math.hypot(a.pos[i * 3], a.pos[i * 3 + 2]);
+    if (R < 4) continue;
+    host = i;
+    break;
   }
   check(host >= 0, 'no luminous backdrop star for the visit handshake');
   if (host >= 0) {

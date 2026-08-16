@@ -590,6 +590,11 @@ export function regionName(x: number, _y: number, z: number): string {
   return `${R.toFixed(1)} kpc · ${deg.toFixed(0)}°`;
 }
 
+/** Closest a slot of this parent can sit to (x,y,z). */
+function imfDist(cell: number, x: number, y: number, z: number): number {
+  return Math.max(0, cellDist(cell, x, y, z) - slotScatterKpc());
+}
+
 /** IMF floor for a cell at distance d from the tap. 0 = every slot. */
 export function regionImfFloor(d: number): number {
   const full = UNIVERSE.GALAXY_REGION_FULL_R;
@@ -616,7 +621,7 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     const f = slotsInCell(seed, cells[i]);
     filledOf[i] = f;
     if (f <= 0) continue;
-    const d = cellDist(cells[i], x, y, z);
+    const d = imfDist(cells[i], x, y, z);
     const s0 = Math.floor(regionImfFloor(d) * f);
     slot0[i] = s0;
     cap += f - s0;
@@ -859,7 +864,7 @@ export function advanceRegionCloud(
       } else {
         const { cell, slot } = splitId(id);
         const filled = slotsInCell(seed, cell);
-        if (slot < Math.floor(regionImfFloor(cellDist(cell, x1, y1, z1)) * filled)) {
+        if (slot < Math.floor(regionImfFloor(imfDist(cell, x1, y1, z1)) * filled)) {
           n = dropStar(cloud, i, n);
           continue;
         }
@@ -883,8 +888,8 @@ export function advanceRegionCloud(
     if (wellInsideOld && !nearRamp) continue;
     const filled = slotsInCell(seed, cell);
     if (filled <= 0) continue;
-    const s1 = Math.floor(regionImfFloor(d1) * filled);
-    const s0 = Math.floor(regionImfFloor(d0) * filled);
+    const s1 = Math.floor(regionImfFloor(imfDist(cell, x1, y1, z1)) * filled);
+    const s0 = Math.floor(regionImfFloor(imfDist(cell, x0, y0, z0)) * filled);
     if (!wellInsideOld || s1 < s0) {
       const from = s1;
       const to = wellInsideOld ? s0 : filled;
