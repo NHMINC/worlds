@@ -19,7 +19,13 @@ import {
   harvestPsf,
   harvestShine,
   harvestStarPx,
+  harvestSuperExtra,
   HARVEST_L_REF,
+  HARVEST_SHINE_DIST_P,
+  HARVEST_SHINE_DIST_REF,
+  HARVEST_SHINE_GAIN,
+  HARVEST_SHINE_L_P,
+  HARVEST_SUPER_L,
   shineDisplay,
   starKind,
   visualRadiusKpc,
@@ -281,6 +287,20 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const shineO = harvestShine(8000, 8);
   check(shineO > shineFloor * 2.5, `O shine ${shineO.toFixed(2)} must beat floor ${shineFloor.toFixed(2)}`);
   check(harvestShine(400, 2) > harvestShine(400, 12) * 1.15, 'same L must dim with distance');
+  const coreShine = (L: number, d: number) =>
+    HARVEST_SHINE_GAIN *
+    Math.pow(Math.max(L, 1e-4) / HARVEST_L_REF, HARVEST_SHINE_L_P) *
+    Math.pow(HARVEST_SHINE_DIST_REF / Math.max(d, 0.4), HARVEST_SHINE_DIST_P);
+  check(harvestSuperExtra(8000) === 0 && harvestSuperExtra(HARVEST_SUPER_L) === 0,
+    'super-sun extra must be zero at and below the cut');
+  check(Math.abs(harvestShine(8000, 8) - coreShine(8000, 8)) < 1e-12,
+    'ordinary O harvest shine must be unchanged');
+  check(Math.abs(harvestShine(HARVEST_L_REF, 8) - coreShine(HARVEST_L_REF, 8)) < 1e-12,
+    'harvest-floor shine must be unchanged');
+  check(harvestShine(1e6, 8) > coreShine(1e6, 8) * 2.5,
+    `super-sun must get extra I: ${harvestShine(1e6, 8).toFixed(1)} vs core ${coreShine(1e6, 8).toFixed(1)}`);
+  check(harvestGlowPx(1e6, 1) > harvestGlowPx(8000, 1) * 3,
+    `super-sun glow must outgrow an O: ${harvestGlowPx(1e6, 1).toFixed(1)} vs ${harvestGlowPx(8000, 1).toFixed(1)}`);
   const floorCore = harvestPsf(shineFloor, 0);
   const floorWing = harvestPsf(shineFloor, 2.4);
   const oCore = harvestPsf(shineO, 0);

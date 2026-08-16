@@ -198,7 +198,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   **point sources**: a 1px Teff core plus the eye’s PSF
   (Gaussian core + Lorentzian tail — the same glare shape as
   the in-system sun). Magnitude lifts the wings with no
-  bright-end cap; it does not stamp a larger disc. Colour stays in the glow; only the
+  bright-end cap; it does not stamp a larger disc. Above
+  `HARVEST_SUPER_L` leftover luminosity adds extra I — super-suns
+  only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`). A harvest star is visitable
