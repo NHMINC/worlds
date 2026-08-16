@@ -24,7 +24,7 @@ page.on('console', (msg) => {
   }
 });
 
-await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
+await page.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
 await page.evaluate(async () => {
   await new Promise((resolve, reject) => {
     const req = indexedDB.deleteDatabase('hex-world-builder');
@@ -35,9 +35,13 @@ await page.evaluate(async () => {
   localStorage.removeItem('wb_last_system');
 });
 await page.reload({ waitUntil: 'networkidle' });
-await page.waitForSelector('.universe-boot, .galaxy-explorer', { timeout: 30000 });
-await page.waitForSelector('.galaxy-explorer', { timeout: 90000 });
-await page.waitForFunction(() => !document.querySelector('.universe-boot'), { timeout: 90000 });
+await page.waitForSelector('.universe-boot-stage, .galaxy-explorer', { timeout: 30000 });
+await page.waitForSelector('.galaxy-explorer', { timeout: 180000 });
+// The boot relocation flight is its own smoke (smoke-boot.mjs) — skip it
+// here (via the view: the veil may still cover the Skip button).
+await page.evaluate(() => window.__galaxyView?.skipIntro?.());
+await page.waitForFunction(() => window.__galaxyView?.introActive?.() !== true, { timeout: 30000 });
+await page.waitForFunction(() => !document.querySelector('.universe-boot-stage'), { timeout: 90000 });
 await page.waitForTimeout(800);
 
 const boot = await page.evaluate(() => {
@@ -51,7 +55,7 @@ const boot = await page.evaluate(() => {
   return {
     hasEngine: Boolean(e),
     bodyCount,
-    preparing: Boolean(document.querySelector('.universe-boot')),
+    preparing: Boolean(document.querySelector('.universe-boot-stage')),
     explorer: Boolean(document.querySelector('.galaxy-explorer')),
   };
 });
@@ -294,13 +298,10 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
 }
 
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
-await phone.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
-const phoneGalaxy = phone.locator('button[title="Galaxy — the shared catalog"]');
-if (await phoneGalaxy.count()) {
-  await phoneGalaxy.click({ force: true });
-} else {
-  await phone.waitForSelector('.galaxy-explorer', { timeout: 90000 });
-}
+await phone.goto('http://localhost:5173/', { waitUntil: 'networkidle' });
+await phone.waitForSelector('.galaxy-explorer', { timeout: 180000 });
+await phone.evaluate(() => window.__galaxyView?.skipIntro?.());
+await phone.waitForFunction(() => window.__galaxyView?.introActive?.() !== true, { timeout: 30000 });
 await phone.waitForTimeout(1500);
 const phoneUi = await phone.evaluate(() => ({
   homeChip: Boolean([...document.querySelectorAll('button.gx-chip')].find((b) => b.textContent === 'Home')),

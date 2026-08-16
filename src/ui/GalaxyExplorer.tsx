@@ -28,9 +28,13 @@ interface Props {
   visitedStarIds?: number[];
   /** False on an empty save — there is no system to return to. */
   canClose?: boolean;
+  /** Open with the boot relocation flight (face-on → the here star). */
+  intro?: boolean;
   onSetCourse: (obj: GalaxyObject) => void;
   onClose: () => void;
   onReady?: () => void;
+  /** The relocation flight arrived (or was skipped). */
+  onIntroDone?: () => void;
 }
 
 export function GalaxyExplorer(props: Props) {
@@ -40,6 +44,11 @@ export function GalaxyExplorer(props: Props) {
   const viewRef = useRef<GalaxyView | null>(null);
   const goRef = useRef(props.onSetCourse);
   goRef.current = props.onSetCourse;
+  const introDoneRef = useRef(props.onIntroDone);
+  introDoneRef.current = props.onIntroDone;
+  const readyCbRef = useRef(props.onReady);
+  readyCbRef.current = props.onReady;
+  const introRef = useRef(props.intro ?? false);
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<GalaxyObject | null>(null);
   const [filter, setFilter] = useState<GalaxyFilter>('all');
@@ -57,6 +66,7 @@ export function GalaxyExplorer(props: Props) {
     focus: null,
     warp: false,
     backdrop: 0,
+    intro: props.intro ?? false,
   });
 
   useEffect(() => {
@@ -75,6 +85,7 @@ export function GalaxyExplorer(props: Props) {
         {
           onSelect: setSelected,
           onGo: (obj) => goRef.current(obj),
+          onIntroDone: () => introDoneRef.current?.(),
           onFrame: (f) => {
             setFrame((prev) =>
               prev.mode !== f.mode ||
@@ -86,6 +97,7 @@ export function GalaxyExplorer(props: Props) {
               prev.sector !== f.sector ||
               prev.warp !== f.warp ||
               prev.backdrop !== f.backdrop ||
+              prev.intro !== f.intro ||
               prev.focus?.id !== f.focus?.id ||
               (f.focus != null &&
                 (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
@@ -96,11 +108,13 @@ export function GalaxyExplorer(props: Props) {
           },
         },
         props.hereStarId ?? null,
+        introRef.current,
       );
+      introRef.current = false;
       viewRef.current = view;
       (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView = view;
       setReady(true);
-      props.onReady?.();
+      readyCbRef.current?.();
       ro = new ResizeObserver(() => {
         view?.resize(wrap.clientWidth, wrap.clientHeight);
       });
@@ -140,13 +154,19 @@ export function GalaxyExplorer(props: Props) {
   const incDeg = (frame.phi * 180) / Math.PI;
   const censusKeys = Object.keys(census).sort((a, b) => (census[b] ?? 0) - (census[a] ?? 0));
   const censusMax = Math.max(1, ...censusKeys.map((k) => census[k] ?? 0));
-  const inRegion = frame.mode === 'region';
+  // During the boot relocation the stage is a cinematic: no chrome.
+  const inRegion = frame.mode === 'region' && !frame.intro;
 
   return (
     <div className="galaxy-explorer">
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
         {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}
+        {frame.intro && (
+          <button type="button" className="gx-skip" onClick={() => viewRef.current?.skipIntro()}>
+            Skip
+          </button>
+        )}
         {inRegion && <div className="gx-pip" aria-hidden />}
         {inRegion && (
           <button
@@ -182,26 +202,28 @@ export function GalaxyExplorer(props: Props) {
         )}
       </div>
 
-      <header className="galaxy-top">
-        <div className="galaxy-brand">
-          <div className="galaxy-title">Helix{frame.sector ? ` · ${frame.sector}` : ''}</div>
-          <div className="galaxy-sub">
-            {`${frame.population.toLocaleString()} in this volume · ${frame.backdrop.toLocaleString()} behind`}
+      {!frame.intro && (
+        <header className="galaxy-top">
+          <div className="galaxy-brand">
+            <div className="galaxy-title">Helix{frame.sector ? ` · ${frame.sector}` : ''}</div>
+            <div className="galaxy-sub">
+              {`${frame.population.toLocaleString()} in this volume · ${frame.backdrop.toLocaleString()} behind`}
+            </div>
           </div>
-        </div>
-        <div className="galaxy-presets">
-          {PRESETS.map((p) => (
-            <button key={p.id} className="gx-chip" onClick={() => viewRef.current?.setPreset(p.id)}>
-              {p.label}
+          <div className="galaxy-presets">
+            {PRESETS.map((p) => (
+              <button key={p.id} className="gx-chip" onClick={() => viewRef.current?.setPreset(p.id)}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {props.canClose !== false && (
+            <button className="gx-chip gx-close" onClick={props.onClose}>
+              Return
             </button>
-          ))}
-        </div>
-        {props.canClose !== false && (
-          <button className="gx-chip gx-close" onClick={props.onClose}>
-            Return
-          </button>
-        )}
-      </header>
+          )}
+        </header>
+      )}
 
       {selected && st && (
         <aside className="galaxy-dossier">
@@ -267,8 +289,9 @@ export function GalaxyExplorer(props: Props) {
           </div>
         )}
         <div className="galaxy-readout">
-          i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
-          {' · ↑ / Warp to fly · ↓ / Stop to brake · drag to look'}
+          {frame.intro
+            ? 'Setting course'
+            : `i ${incDeg.toFixed(0)}° · ${frame.radius.toFixed(1)} kpc · ↑ / Warp to fly · ↓ / Stop to brake · drag to look`}
         </div>
       </footer>
     </div>

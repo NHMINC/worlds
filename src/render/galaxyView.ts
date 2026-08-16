@@ -47,6 +47,7 @@ import {
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
 import { prepareUniverse } from '../world/universePrep';
+import { activeGalaxyField, sampleField } from '../world/formation/registry';
 
 /** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
@@ -62,15 +63,20 @@ const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}
  * REGION_R, so EXTINCT_STEPS_LOCAL taps sample it more densely for
  * a fraction of the cost. Requires SHAPE_GLSL (dustField) above.
  */
-const extinctGlsl = (steps: number) => /* glsl */ `
+const extinctGlsl = (steps: number) => {
+  // The gas sheet the dust rides in is the FORMED disk's own smooth
+  // fit (scale length and height measured off the baked field), not a
+  // hand-set exponential — the lanes belong to the galaxy that grew.
+  const { gasRd, gasZd } = sampleField().fits;
+  return /* glsl */ `
   uniform float uExtinctK;
   uniform float uExtinctMax;
   uniform vec3 uDustRgb;
   float extinctRho(vec3 p) {
     float R = length(p.xz);
-    float ez = exp(min(abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_ZD)}, 12.0));
+    float ez = exp(min(abs(p.y) / ${glslFloat(gasZd)}, 12.0));
     float sech = 2.0 / (ez + 1.0 / ez);
-    float gas = exp(-R / ${glslFloat(UNIVERSE.GALAXY_RD * UNIVERSE.GALAXY_RD_GAS)}) * sech * sech;
+    float gas = exp(-R / ${glslFloat(gasRd)}) * sech * sech;
     // 0.3 is the rift threshold: only above-average turbulence
     // holds enough dust to matter along a whole column.
     return gas * max(0.0, dustField(p, ${glslFloat(UNIVERSE.GALAXY_TURB_FREQ)}) - 0.3);
@@ -91,6 +97,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     return exp(-tau * uDustRgb);
   }
 `;
+};
 
 /** Slide the catalog centre after it has moved this far (catalog kpc). */
 const MAG_SLIDE = 0.01;
@@ -128,7 +135,9 @@ export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
   return o.inArm;
 }
 
-const STAR_VERT = /* glsl */ `
+// Shader sources are FUNCTIONS: they bake the formed field's fitted
+// gas constants, which exist only after boot installs the field.
+const starVert = () => /* glsl */ `
   ${SHAPE_GLSL}
   ${extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS_LOCAL)}
   attribute vec3 aColor;
@@ -230,7 +239,7 @@ function regionCamFar(): number {
   return UNIVERSE.GALAXY_R_MAX * 2 * mag * 4;
 }
 
-const SILHOUETTE_VERT = /* glsl */ `
+const silhouetteVert = () => /* glsl */ `
   ${SHAPE_GLSL}
   ${extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)}
   attribute vec3 aColor;
@@ -465,6 +474,8 @@ export interface GalaxyFrame {
   warp: boolean;
   /** Luminous-tail backdrop points currently on the GPU (0 if not minted). */
   backdrop: number;
+  /** True while the boot relocation flight is playing. */
+  intro: boolean;
 }
 
 export interface RegionSelection {
@@ -480,6 +491,8 @@ interface Callbacks {
   /** Set course from the sight plate. */
   onGo?: (obj: GalaxyObject) => void;
   onFrame?: (f: GalaxyFrame) => void;
+  /** The boot relocation flight has arrived (or was skipped). */
+  onIntroDone?: () => void;
 }
 
 export class GalaxyView {
@@ -568,12 +581,26 @@ export class GalaxyView {
   private filter: GalaxyFilter = 'all';
   private selected: GalaxyObject | null = null;
   private censusMemo: Record<string, number> = {};
+  private introAnim: {
+    t: number;
+    dur: number;
+    ax: number;
+    ay: number;
+    az: number;
+    bx: number;
+    by: number;
+    bz: number;
+    sx: number;
+    sy: number;
+    sz: number;
+  } | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
     seed: string,
     callbacks: Callbacks,
     hereStarId: number | null = null,
+    intro = false,
   ) {
     this.canvas = canvas;
     this.callbacks = callbacks;
@@ -601,7 +628,8 @@ export class GalaxyView {
     this.attachSilhouette();
 
     this.setHere(hereStarId);
-    this.openAtHere();
+    if (intro) this.introFlight();
+    else this.openAtHere();
     this.raf = requestAnimationFrame(this.frame);
   }
 
@@ -844,7 +872,7 @@ export class GalaxyView {
     }
     const geo = new THREE.BufferGeometry();
     const visAttr = this.bindCloudAttrs(geo, cloud, vis);
-    const mat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 0);
+    const mat = this.makeCloudMaterial(starVert(), this.localGlowUniforms(), 0);
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     pts.renderOrder = 0;
@@ -862,7 +890,7 @@ export class GalaxyView {
     // budget scales with angular size. Dust needs no pass in either
     // layer: STAR_VERT folds the same sightline extinction into every
     // local row that SILHOUETTE_VERT applies to the backdrop.
-    // const emisMat = this.makeCloudMaterial(STAR_VERT, this.localGlowUniforms(), 1);
+    // const emisMat = this.makeCloudMaterial(starVert(), this.localGlowUniforms(), 1);
     // const emisPts = new THREE.Points(geo, emisMat);
     // emisPts.frustumCulled = false;
     // emisPts.renderOrder = 1;
@@ -905,7 +933,7 @@ export class GalaxyView {
     geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
     geo.setDrawRange(0, cloud.n);
-    const mat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 0);
+    const mat = this.makeCloudMaterial(silhouetteVert(), this.silUniforms(), 0);
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     pts.renderOrder = -2;
@@ -913,7 +941,7 @@ export class GalaxyView {
     this.silPts = pts;
     this.silGeo = geo;
     this.silMat = mat;
-    const emisMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 1);
+    const emisMat = this.makeCloudMaterial(silhouetteVert(), this.silUniforms(), 1);
     const emisPts = new THREE.Points(geo, emisMat);
     emisPts.frustumCulled = false;
     emisPts.renderOrder = -1;
@@ -1076,16 +1104,90 @@ export class GalaxyView {
       this.goOverview('face');
       return;
     }
-    this.focus(obj);
+    // Pin the dossier; the approach mints the region ONCE at its park.
+    this.select(obj);
     this.approachNearest();
     this.pinBack();
+  }
+
+  /**
+   * The boot relocation: park face-on over the whole disk, then fly
+   * the bubble down to the loaded star (else home). The path is a
+   * smooth chord; the look hands off from the core to the star. All
+   * the machinery is the ordinary bubble slide — membership walks on
+   * the worker; the one synchronous remint happens on arrival, where
+   * openAtHere would have paid it anyway.
+   */
+  introFlight(durationMs = 9000): void {
+    const obj = this.hereObj ?? this.home;
+    if (!obj) {
+      this.callbacks.onIntroDone?.();
+      return;
+    }
+    this.overview = false;
+    const d = this.overviewDistance();
+    this.enterRegion(0, d, 0, null);
+    this.aimAt(0, -1, 0);
+    this.applyCam();
+    this.updateSight(true);
+    const cat = galToCart(obj.pos);
+    const glen = Math.hypot(cat.x, cat.z) || 1;
+    const off = 0.028 / this.magScale();
+    this.introAnim = {
+      t: 0,
+      dur: Math.max(1, durationMs / 1000),
+      ax: 0,
+      ay: d,
+      az: 0,
+      bx: cat.x - (cat.x / glen) * off,
+      by: cat.y,
+      bz: cat.z - (cat.z / glen) * off,
+      sx: cat.x,
+      sy: cat.y,
+      sz: cat.z,
+    };
+  }
+
+  introActive(): boolean {
+    return this.introAnim != null;
+  }
+
+  /** Jump the relocation to its destination. */
+  skipIntro(): void {
+    if (!this.introAnim) return;
+    this.introAnim = null;
+    this.openAtHere();
+    this.callbacks.onIntroDone?.();
+  }
+
+  private introTick(dt: number): void {
+    const a = this.introAnim;
+    if (!a) return;
+    a.t += dt;
+    const u = Math.min(1, a.t / a.dur);
+    if (u >= 1) {
+      this.introAnim = null;
+      this.openAtHere();
+      this.callbacks.onIntroDone?.();
+      return;
+    }
+    const s = u * u * (3 - 2 * u);
+    const px = a.ax + (a.bx - a.ax) * s;
+    const py = a.ay + (a.by - a.ay) * s;
+    const pz = a.az + (a.bz - a.az) * s;
+    this.arcCenter.set(px, py, pz);
+    if (this.arcCenter.distanceTo(this.mintAt) >= MAG_SLIDE) this.requestBorder();
+    this.pushMagUniforms();
+    // Look: hold the core, then hand off to the destination star.
+    const sLook = Math.min(1, s * 1.6);
+    this.aimAt(a.sx * sLook - px, a.sy * sLook - py, a.sz * sLook - pz);
   }
 
   setPreset(p: GalaxyPreset): void {
     if (p === 'home') {
       const obj = this.hereObj ?? this.home;
       if (!obj) return;
-      this.focus(obj);
+      this.select(obj);
       this.approachNearest();
       this.pinBack();
       return;
@@ -1163,36 +1265,24 @@ export class GalaxyView {
   }
 
   /** Open the region around a star and select it. */
-  focus(obj: GalaxyObject): void {
-    const c = galToCart(obj.pos);
-    this.enterRegion(c.x, c.y, c.z, obj);
-  }
-
   /**
-   * Slide the bubble so a pinned star sits just ahead of the camera
-   * (still at the centre). Smoke / tests.
+   * Park the bubble so a pinned star sits just ahead of the camera
+   * (still at the centre). One remint AT the parking point — the
+   * membership must be of the ball we end on, not the star's ball
+   * re-anchored a hair off (rim rows would sit outside the region).
    */
   approachNearest(): GalaxyObject | null {
     const best = this.selected ?? this.hereObj ?? this.home;
     if (!best) return null;
-    if (this.mode !== 'region') this.focus(best);
     const cat = galToCart(best.pos);
     this.orientArc();
     const off = 0.028 / this.magScale();
-    this.arcCenter.set(
+    this.enterRegion(
       cat.x - this.arcFwd.x * off,
       cat.y - this.arcFwd.y * off,
       cat.z - this.arcFwd.z * off,
+      best,
     );
-    this.mintAt.copy(this.arcCenter);
-    this.borderGen++;
-    this.borderBusy = false;
-    this.syncWorkerCloud();
-    this.pushMagUniforms();
-    if (this.selected) {
-      const c = this.viewCart(this.selected);
-      this.pickRing.position.set(c.x, c.y, c.z);
-    }
     const v = this.viewCart(best);
     this.aimAt(v.x, v.y, v.z);
     this.applyCam();
@@ -1462,6 +1552,11 @@ export class GalaxyView {
   private bootBorderWorker(): void {
     try {
       this.borderWorker = new Worker(new URL('../world/regionCloud.worker.ts', import.meta.url), { type: 'module' });
+      // The walker samples the same formed galaxy (structured clone —
+      // the main thread keeps its copy). Without this the worker would
+      // re-run the formation sim for itself.
+      const field = activeGalaxyField();
+      if (field) this.borderWorker.postMessage({ type: 'field', field });
       this.borderWorker.onmessage = this.onBorderMessage;
       this.borderWorker.onerror = () => {
         this.borderWorker?.terminate();
@@ -1565,7 +1660,10 @@ export class GalaxyView {
       false,
     );
     this.mintAt.set(m.x, m.y, m.z);
-    if (this.arcCenter.distanceTo(this.mintAt) > MAG_REBUILD) {
+    // During the intro flight the bubble outruns the walker by design;
+    // a synchronous remint every frame would hitch the cinematic. Let
+    // membership lag (the backdrop covers it) — arrival remints once.
+    if (this.arcCenter.distanceTo(this.mintAt) > MAG_REBUILD && !this.introAnim) {
       this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), true);
       this.mintAt.copy(this.arcCenter);
       this.syncWorkerCloud();
@@ -2008,8 +2106,12 @@ export class GalaxyView {
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
     this.idle += dt;
-    this.cruise(dt);
-    this.steerArc(dt);
+    if (this.introAnim) {
+      this.introTick(dt);
+    } else {
+      this.cruise(dt);
+      this.steerArc(dt);
+    }
     this.applyCam();
     this.updateSight();
     this.aimReticle();
@@ -2048,6 +2150,7 @@ export class GalaxyView {
       focus: this.focusHud,
       warp: this.thrustOn,
       backdrop: this.silPts ? (silhouetteCloud(this.seed)?.n ?? 0) : 0,
+      intro: this.introAnim != null,
     });
     this.raf = requestAnimationFrame(this.frame);
   };

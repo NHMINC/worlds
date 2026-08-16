@@ -46,6 +46,8 @@ import {
 } from './galaxy';
 import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
 import { KIND_DUST, KIND_STAR, emissionLook, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
+import { ringAt, sampleField } from './formation/registry';
+import { FIELD } from './formation/field';
 
 export { KIND_STAR, KIND_HII, KIND_PN, KIND_SNR, KIND_DUST } from './skyShape';
 
@@ -640,15 +642,23 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
   return { n, ...c, ms: performance.now() - t0 };
 }
 
+const sech2 = (x: number): number => {
+  if (x > 20 || x < -20) return 0;
+  const e = Math.exp(x);
+  const s = 2 / (e + 1 / e);
+  return s * s;
+};
+
 /**
- * Thin-disk density at arm crest. Living B stars are a thin-disk
- * clock (ageWindow floor 0.02 Gyr); other pops are already too old.
+ * Upper bound of the thin-disk density on a ring: the formed field's
+ * own azimuthal maximum, spread with the ring's fattest scale height.
+ * Living B stars are a thin-disk clock (ageWindow floor 0.02 Gyr);
+ * other pops are already too old.
  */
 function thinDensityCeil(R: number, z: number): number {
-  const U = UNIVERSE;
-  const e = Math.exp(z / U.GALAXY_ZD);
-  const sech2z = (2 / (e + 1 / e)) ** 2;
-  return Math.exp(-R / U.GALAXY_RD) * sech2z * (1 + U.GALAXY_ARM_A);
+  const { fits } = sampleField();
+  const h = Math.max(FIELD.H_MIN, ringAt(fits.hPeak, fits.ringDr, R));
+  return ringAt(fits.thinPeak, fits.ringDr, R) * sech2(z / h);
 }
 
 function catalogCellVolume(ir: number): number {
@@ -673,14 +683,14 @@ export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
 }
 
 /**
- * Upper bound of ismNorm at (R, z): arm crest and +1σ clump cancel
- * against the field's own normalization, leaving the bare gas disk.
+ * Upper bound of ismNorm at (R, z): the formed gas disk's ring
+ * maximum over the global peak (the same normalization gasBase uses),
+ * spread with the fattest gas sheet on the ring.
  */
 function gasDensityCeil(R: number, z: number): number {
-  const U = UNIVERSE;
-  const e = Math.exp(z / U.GALAXY_ZD);
-  const sech2z = (2 / (e + 1 / e)) ** 2;
-  return Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2z;
+  const { fits } = sampleField();
+  const hg = Math.max(FIELD.H_MIN, ringAt(fits.hPeak, fits.ringDr, R) * 0.5);
+  return Math.min(1, ringAt(fits.gasPeak, fits.ringDr, R) / fits.gasMidPeak) * sech2(z / hg);
 }
 
 /**
@@ -691,9 +701,13 @@ function gasDensityCeil(R: number, z: number): number {
  * sample ball. Not pickable. Dust ids are (cell, clump), never
  * catalog stars.
  */
-export function buildSilhouetteCloud(seed: string): StarCloud {
+export function buildSilhouetteCloud(
+  seed: string,
+  onBatch?: (c: Omit<StarCloud, 'n' | 'ms'>, from: number, to: number, frac: number) => void,
+): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
   const t0 = performance.now();
+  let batchAt = 0;
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
@@ -738,6 +752,13 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
           }
         }
       }
+    }
+    // Stream the buildout: rows minted since the last call, plus how
+    // far the radial walk has come (the boot overlay draws the sky
+    // filling in instead of a spinner).
+    if (onBatch && n > batchAt) {
+      onBatch(c, batchAt, n, (ir + 1) / nr);
+      batchAt = n;
     }
   }
   const cloud = finishCloud(c, n, t0);

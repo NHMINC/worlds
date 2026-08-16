@@ -4,10 +4,14 @@
  */
 import { advanceRegionCloud } from './sectors';
 import type { StarCloud } from './sectors';
+import { installGalaxyField } from './formation/registry';
+import type { GalaxyField } from './formation/field';
 
 type SetMsg = {
   type: 'set';
   seed: string;
+  /** The formed galaxy this cloud samples (present on the first set). */
+  field?: GalaxyField;
   n: number;
   ids: Float64Array;
   pos: Float32Array;
@@ -32,7 +36,7 @@ type AdvanceMsg = {
   z1: number;
 };
 
-type InMsg = SetMsg | AdvanceMsg | { type: 'clear' };
+type InMsg = SetMsg | AdvanceMsg | { type: 'field'; field: GalaxyField } | { type: 'clear' };
 
 let seed = '';
 let cloud: StarCloud | null = null;
@@ -47,8 +51,13 @@ self.onmessage = (e: MessageEvent<InMsg>): void => {
     cloud = null;
     return;
   }
+  if (m.type === 'field') {
+    installGalaxyField(m.field);
+    return;
+  }
   if (m.type === 'set') {
     seed = m.seed;
+    if (m.field) installGalaxyField(m.field);
     cloud = {
       n: m.n,
       ids: m.ids,
