@@ -637,7 +637,9 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
       const dx = p.x - x;
       const dy = p.y - y;
       const dz = p.z - z;
-      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > r2) continue;
+      if (slot < Math.floor(regionImfFloor(Math.sqrt(d2)) * filled)) continue;
       writeBirth(seed, cell, slot, filled, n++, c);
     }
   }
@@ -864,7 +866,7 @@ export function advanceRegionCloud(
       } else {
         const { cell, slot } = splitId(id);
         const filled = slotsInCell(seed, cell);
-        if (slot < Math.floor(regionImfFloor(imfDist(cell, x1, y1, z1)) * filled)) {
+        if (slot < Math.floor(regionImfFloor(Math.sqrt(d2)) * filled)) {
           n = dropStar(cloud, i, n);
           continue;
         }
@@ -900,7 +902,9 @@ export function advanceRegionCloud(
         const dx = p.x - x1;
         const dy = p.y - y1;
         const dz = p.z - z1;
-        if (dx * dx + dy * dy + dz * dz > r2) continue;
+        const d2s = dx * dx + dy * dy + dz * dz;
+        if (d2s > r2) continue;
+        if (slot < Math.floor(regionImfFloor(Math.sqrt(d2s)) * filled)) continue;
         buf = ensureCloudCap(buf, n, n + 1);
         writeBirth(seed, cell, slot, filled, n, buf);
         n++;
