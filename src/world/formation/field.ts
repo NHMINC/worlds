@@ -1,18 +1,21 @@
 /**
- * Bake the formation run into a GalaxyField: the pointwise density /
- * age / chemistry law the catalog samples. The sim is 2D (galaxies
- * are thin); the third dimension is derived per region from measured
- * kinematics — a self-gravitating isothermal sheet has ρ(z) =
- * Σ/(2h)·sech²(z/h) with h = σ_z²/(πGΣ), and σ_z is a fixed fraction
- * of the measured planar dispersion. Stars on hot / non-circular
- * orbits are the spheroid (bulge + halo): they get a spherical
- * profile from their own radial distribution. Populations are
- * KINEMATIC OUTCOMES here, not input labels.
+ * Bake the formation run into a GalaxyField.
+ *
+ * THE EVOLVED STAR PARTICLES ARE THE GALAXY. Each one is a parent:
+ * it stands for ~starW real stars, and the catalog sits those stars
+ * next to it (a small tent jitter so they fill the area, not a
+ * cluster on the dot). Grids survive only for what is a medium —
+ * gas / ISM / extinction — and for ring-profile fits.
+ *
+ * The sim is 2D (galaxies are thin). Disk parents get a sech² height
+ * from the measured sheet; hot non-circular parents are the spheroid
+ * and get a fatter sech². Populations are KINEMATIC OUTCOMES.
  *
  * Ages: SIM_GYR of dynamical time stand in for GALAXY_AGE_GYR of
  * cosmic time (a named toy compression, like TIME_SCALE). The baked
  * ageGyr fields are already in galaxy-clock units.
  */
+import { mulberry32, xmur3 } from '../rng';
 import { FORM, type FormationResult } from './sim';
 import { dexp, dlog10 } from './detmath';
 
@@ -45,6 +48,22 @@ export interface GalaxyField {
   vcDr: number;
   /** Normalization: density units are stars per kpc³ / GALAXY_N_K. */
   norm: number;
+
+  /**
+   * Star-particle parents — the catalog. Catalog cartesian (x, z
+   * in-plane; y height). pKind 0 thin / 1 thick / 2 spheroid.
+   * starW = real stars per parent (renormalized onto the catalog
+   * cylinder so nParents × starW = GALAXY_POPULATION).
+   */
+  pN: number;
+  pAX: Float32Array;
+  pAY: Float32Array;
+  pAZ: Float32Array;
+  pKind: Uint8Array;
+  pAge: Float32Array;
+  pFeh: Float32Array;
+  starW: number;
+
   hash: number;
   ms: number;
 }
@@ -64,6 +83,15 @@ export const FIELD = {
   YOUNG_GYR: 1.0,
   SPH_BINS: 96,
   SPH_RMAX: 24,
+  /**
+   * Catalog jitter half-width (kpc). A tent around each parent, big
+   * enough that neighbouring clouds overlap and fill the evolved
+   * structure, small enough that a lone particle is not a globular
+   * cluster. One number — not a k-NN kernel.
+   */
+  JITTER: 0.24,
+  /** Spheroid sech² scale (kpc) when lifting 2D hot particles. */
+  HALO_H: 2.6,
 } as const;
 
 const FEH_SUN = 0.0134;
@@ -79,6 +107,12 @@ const U32 = new Uint32Array(F32.buffer);
 
 /** exp-based tanh (no Math.tanh — keep the op set small and portable). */
 const tanhE = (x: number): number => (x > 20 ? 1 : 1 - 2 / (dexp(2 * x) + 1));
+
+/** Inverse of the sech² sheet CDF: z = h · atanh(2u − 1). */
+const atanh01 = (u: number): number => {
+  const x = Math.min(0.999, Math.max(0.001, u)) * 2 - 1;
+  return 0.5 * Math.log((1 + x) / (1 - x));
+};
 
 /**
  * Bake. `ageSpanGyr` maps sim time onto the galaxy clock; `popTarget`
@@ -370,10 +404,61 @@ export function bakeField(
   const vcirc = new Float32Array(r.vcirc.length);
   for (let i = 0; i < vcirc.length; i++) vcirc[i] = r.vcirc[i];
 
+  // --- star particles: the catalog's parents ---
+  // One pass, after the sheet heights exist. Disk z is the sech²
+  // draw of the local h; spheroid z is the same law with HALO_H.
+  // Parents outside the catalog cylinder are dropped; starW soaks
+  // the remainder so occupancy is still the population.
+  const rMax = domain?.rMax ?? box;
+  const zMax = domain?.zMax ?? FIELD.HALO_H * 3;
+  const lift = mulberry32(xmur3(`lift:${seed}`)());
+  const ax: number[] = [];
+  const ay: number[] = [];
+  const az: number[] = [];
+  const kinds: number[] = [];
+  const ages: number[] = [];
+  const fehs: number[] = [];
+  for (let i = 0; i < r.n; i++) {
+    if (!r.star[i]) continue;
+    const x = r.px[i];
+    const y = r.py[i];
+    const rad = Math.hypot(x, y);
+    if (rad > rMax) continue;
+    const vphi = (x * r.vy[i] - y * r.vx[i]) / Math.max(rad, 1e-6);
+    const circ = vphi / vcAt(rad);
+    let h: number;
+    let knd: number;
+    if (circ < FIELD.C_SPHEROID) {
+      h = FIELD.HALO_H;
+      knd = 2;
+    } else {
+      const hx = Math.max(FIELD.H_MIN, bilinear(hThin, OUT, (x + box) / dx - 0.5, (y + box) / dx - 0.5));
+      h = circ >= FIELD.C_THIN ? hx : hx * FIELD.H_THICK_RATIO;
+      knd = circ >= FIELD.C_THIN ? 0 : 1;
+    }
+    const z = h * atanh01(lift());
+    if (Math.abs(z) > zMax) continue;
+    ax.push(x);
+    ay.push(z);
+    az.push(y);
+    kinds.push(knd);
+    ages.push(ageOf(i));
+    fehs.push(fehOf(i));
+  }
+  const pN = ax.length;
+  const pAX = new Float32Array(ax);
+  const pAY = new Float32Array(ay);
+  const pAZ = new Float32Array(az);
+  const pKind = new Uint8Array(kinds);
+  const pAge = new Float32Array(ages);
+  const pFeh = new Float32Array(fehs);
+  const starW = popTarget / Math.max(1, pN);
+
   let hash = 2166136261 >>> 0;
   for (let k = 0; k < n2; k += 7) hash = fnv(hash, sigThin[k]);
   for (let k = 0; k < n2; k += 7) hash = fnv(hash, hThin[k]);
   for (let b = 0; b < FIELD.SPH_BINS; b++) hash = fnv(hash, sphRho[b]);
+  for (let j = 0; j < pN; j += 11) hash = fnv(hash, pAX[j] + pAY[j] + pAZ[j]);
 
   return {
     seed,
@@ -395,6 +480,14 @@ export function bakeField(
     vcirc,
     vcDr: r.vcDr,
     norm: perStar * normScale,
+    pN,
+    pAX,
+    pAY,
+    pAZ,
+    pKind,
+    pAge,
+    pFeh,
+    starW,
     hash,
     ms: performance.now() - t0,
   };

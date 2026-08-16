@@ -389,15 +389,13 @@ export const UNIVERSE = {
   R_SUN: 8.2,
 
   /**
-   * Implicit catalog: a star is (cell, slot), never a stored row.
-   * Occupancy is density × volume × GALAXY_N_K — that product *is* the
-   * population, not a sample of it. objectAt is O(1) at 10⁹ ids the
-   * same as at ten. We never enumerate the galaxy; the explorer asks
-   * objectsNear for the volume it occupies. GALAXY_POPULATION is the
-   * design headcount (∫ density dV × N_K). MAX_SLOT is sized so the
-   * densest cell of the FORMED field (the softening-floored nuclear
-   * core) still fits — a smaller cap silently deletes bulge mass.
-   * Halo cells stay sparse; arms fill up.
+   * Implicit catalog: a star is (parent, slot), never a stored row.
+   * Each evolved formation particle is a parent and stands for
+   * starW = GALAXY_POPULATION / nParents real stars. objectAt is O(1)
+   * at 10⁹ ids the same as at ten. We never enumerate the galaxy; the
+   * explorer asks objectsNear for the volume it occupies. MAX_SLOT is
+   * sized so starW fits. The polar lattice (NR × NTH × NZ) remains
+   * the ISM / dust address — a medium, not the stellar catalog.
    */
   GALAXY_NR: 288,
   GALAXY_NTH: 576,

@@ -92,7 +92,7 @@ const check = (cond: boolean, msg: string) => {
 
 // --- addressing round-trips ---
 {
-  for (const cell of [0, 12345, 999_999, cellCount() - 1]) {
+  for (const cell of [0, 12345, Math.floor(cellCount() / 2), cellCount() - 1]) {
     const id = sectorOfCell(cell);
     check(sectorCells(id).includes(cell), `cell ${cell} not inside its own arc ${sectorName(id)}`);
   }

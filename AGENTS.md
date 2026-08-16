@@ -14,12 +14,14 @@ shape from a table — it **runs a formation**: a deterministic
 gas-to-galaxy sim (`src/world/formation/`) collapses a rotating cloud
 in a static halo, stars form where the gas is dense, feedback
 regulates, and the disk goes bar- and spiral-unstable on its own. The
-baked field of that run (thin/thick disk, spheroid, gas, chemistry,
-ages) is the ONLY density law the catalog samples — bulge, arms, the
-metallicity gradient and the age structure are outcomes, not inputs.
-Stars, remnants, and nebulae are a cheap function of that field plus
-laws. You **discover** a star system by going there; you do not mint
-one. The stars in the sky **are** that catalog.
+evolved star particles of that run ARE the galaxy — each is a parent
+and stands for ~10⁴ real stars. The catalog sits those stars next to
+their parent (a small tent so they fill the area). Gas / ISM stay a
+smooth field. Bulge, arms, the metallicity gradient and the age
+structure are outcomes, not inputs. Stars, remnants, and nebulae are
+a cheap function of that point cloud plus laws. You **discover** a
+star system by going there; you do not mint one. The stars in the
+sky **are** that catalog.
 
 Worlds stay small Goldberg-hex globes with layered strata (Godus-like
 onion rings) in Caribbean / cel-shaded tones. The feeling: a perfect
@@ -69,9 +71,9 @@ types or star types.
   `evolve(mass, age, Z)` plus a short-lived nebula window. We do not
   store the galaxy. A star is an address: `objectAt(seed, id)` is O(1)
   at a billion ids the same as at ten. Occupancy is
-  `density × volume × GALAXY_N_K` — that *is* the population
+  `starW` per formation parent — that *is* the population
   (~`GALAXY_POPULATION`). We never `collectCatalog`. The explorer
-  asks `objectsNear` for the volume it occupies; within a cell the
+  asks `objectsNear` for the volume it occupies; within a parent the
   IMF is stratified so zooming in is “include more slots,” not
   “load a bigger array.”
 - **Toy constants live in `UNIVERSE` (`src/world/physics.ts`).** Compress
@@ -102,10 +104,9 @@ is the job.
 
 ```
 CANONICAL_SEED → formation genes → gas-to-galaxy run (deterministic)
-  → baked GalaxyField (Σ thin/thick, scale heights, spheroid, gas,
-    [Fe/H], ages) — population is KINEMATIC OUTCOME, not a label
-  → density / rotation / population (thin, thick, halo, bulge)
-  → star at (R, θ, z): IMF mass, birth time, [Fe/H], C/O
+  → baked GalaxyField (star-particle parents + gas/ISM grids)
+  → catalog star = parent + tent jitter; identity from the parent
+  → IMF mass, birth time, [Fe/H], C/O
   → evolve(mass, age, Z) → MK class / remnant / nebula
   → disk chemistry at orbital radius (condensation sequence)
   → body inventory + bulk density + radius

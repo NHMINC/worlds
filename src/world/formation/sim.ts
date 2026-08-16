@@ -29,7 +29,7 @@ import { dcos, dexp, dgauss, dlog, dsin, DTAU } from './detmath';
 import { PoissonSolver } from './fft';
 
 /** Bump when the sim's laws change: every address in the sky moves. */
-export const FORMATION_VERSION = 3;
+export const FORMATION_VERSION = 4;
 
 /** km/s → kpc/Myr. */
 const KV = 1 / 977.79222;

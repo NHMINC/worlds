@@ -44,9 +44,91 @@ export interface FieldFits {
   diskRd: number;
 }
 
+/** Uniform spatial hash of parents. Cube = 1 kpc — coarse on purpose. */
+export interface ParentIndex {
+  cube: number;
+  grid: Map<number, number[]>;
+}
+
 interface ActiveField {
   field: GalaxyField;
   fits: FieldFits;
+  parents: ParentIndex;
+}
+
+const PARENT_CUBE = 1;
+
+function packCube(ix: number, iy: number, iz: number): number {
+  return ((ix + 512) << 20) | ((iy + 512) << 10) | (iz + 512);
+}
+
+function buildParentIndex(f: GalaxyField): ParentIndex {
+  const cube = PARENT_CUBE;
+  const grid = new Map<number, number[]>();
+  for (let j = 0; j < f.pN; j++) {
+    const ix = Math.floor(f.pAX[j] / cube);
+    const iy = Math.floor(f.pAY[j] / cube);
+    const iz = Math.floor(f.pAZ[j] / cube);
+    const k = packCube(ix, iy, iz);
+    const b = grid.get(k);
+    if (b) b.push(j);
+    else grid.set(k, [j]);
+  }
+  return { cube, grid };
+}
+
+/** Parent indices whose jitter cube may meet the ball (catalog cartesian). */
+export function parentsOverlappingBall(
+  field: GalaxyField,
+  index: ParentIndex,
+  x: number,
+  y: number,
+  z: number,
+  r: number,
+): number[] {
+  return parentsOverlappingAnnulus(field, index, x, y, z, 0, r);
+}
+
+/** Parent indices whose jitter cube may meet the spherical shell rLo..rHi. */
+export function parentsOverlappingAnnulus(
+  field: GalaxyField,
+  index: ParentIndex,
+  x: number,
+  y: number,
+  z: number,
+  rLo: number,
+  rHi: number,
+): number[] {
+  const slack = FIELD.JITTER * Math.sqrt(3) + 0.02;
+  const reach = rHi + slack;
+  const inner = Math.max(0, rLo - slack);
+  const cube = index.cube;
+  const ix0 = Math.floor((x - reach) / cube);
+  const ix1 = Math.floor((x + reach) / cube);
+  const iy0 = Math.floor((y - reach) / cube);
+  const iy1 = Math.floor((y + reach) / cube);
+  const iz0 = Math.floor((z - reach) / cube);
+  const iz1 = Math.floor((z + reach) / cube);
+  const reach2 = reach * reach;
+  const inner2 = inner * inner;
+  const out: number[] = [];
+  for (let ix = ix0; ix <= ix1; ix++) {
+    for (let iy = iy0; iy <= iy1; iy++) {
+      for (let iz = iz0; iz <= iz1; iz++) {
+        const bucket = index.grid.get(packCube(ix, iy, iz));
+        if (!bucket) continue;
+        for (let n = 0; n < bucket.length; n++) {
+          const j = bucket[n];
+          const dx = field.pAX[j] - x;
+          const dy = field.pAY[j] - y;
+          const dz = field.pAZ[j] - z;
+          const d2 = dx * dx + dy * dy + dz * dz;
+          if (d2 <= reach2 && d2 >= inner2) out.push(j);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 let active: ActiveField | null = null;
@@ -173,7 +255,7 @@ function bakeFits(f: GalaxyField): FieldFits {
 
 /** Adopt a field minted elsewhere (boot worker, IndexedDB cache). */
 export function installGalaxyField(field: GalaxyField): void {
-  active = { field, fits: bakeFits(field) };
+  active = { field, fits: bakeFits(field), parents: buildParentIndex(field) };
 }
 
 export function activeGalaxyField(): GalaxyField | null {
@@ -210,6 +292,24 @@ export function fieldFor(seed: string): ActiveField {
   return active!;
 }
 
+/** Parents whose jitter may meet a catalog-cartesian ball. */
+export function parentsNear(x: number, y: number, z: number, r: number): number[] {
+  const { field, parents } = sampleField();
+  return parentsOverlappingBall(field, parents, x, y, z, r);
+}
+
+/** Parents whose jitter may meet a catalog-cartesian shell. */
+export function parentsNearAnnulus(
+  x: number,
+  y: number,
+  z: number,
+  rLo: number,
+  rHi: number,
+): number[] {
+  const { field, parents } = sampleField();
+  return parentsOverlappingAnnulus(field, parents, x, y, z, rLo, rHi);
+}
+
 /**
  * The field for unseeded samplers (densityParts and friends take a
  * position, not a seed). Every seeded entry point ensures its own
@@ -241,6 +341,12 @@ export function fieldTransferables(f: GalaxyField): Transferable[] {
     f.sphFeh.buffer,
     f.sphAge.buffer,
     f.vcirc.buffer,
+    f.pAX.buffer,
+    f.pAY.buffer,
+    f.pAZ.buffer,
+    f.pKind.buffer,
+    f.pAge.buffer,
+    f.pFeh.buffer,
   ];
 }
 
@@ -260,6 +366,12 @@ export function cloneField(f: GalaxyField): GalaxyField {
     sphFeh: f.sphFeh.slice(),
     sphAge: f.sphAge.slice(),
     vcirc: f.vcirc.slice(),
+    pAX: f.pAX.slice(),
+    pAY: f.pAY.slice(),
+    pAZ: f.pAZ.slice(),
+    pKind: f.pKind.slice(),
+    pAge: f.pAge.slice(),
+    pFeh: f.pFeh.slice(),
   };
 }
 

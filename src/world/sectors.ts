@@ -21,9 +21,11 @@ import {
   cellCenter,
   cellsOverlappingAnnulus,
   cellsOverlappingBall,
+  polarCellCenter,
+  polarCellsOverlappingAnnulus,
+  polarCellsOverlappingBall,
   chemistry,
   density,
-  densityParts,
   dustBirthCart,
   dustClumpsInCell,
   dustPhysics,
@@ -176,20 +178,25 @@ export function sectorOfCell(cell: number): SectorId {
   return sectorOfPos(cellCenter(cell));
 }
 
-/** Every catalog cell inside one arc (ring span × spoke span × all z). */
+/** Every parent whose position falls in this pizza slice. Exact partition. */
+let sectorCellMemo: number[][] | null = null;
+let sectorCellSeed = '';
+
 export function sectorCells(id: SectorId): number[] {
-  const { GALAXY_NTH: nth, GALAXY_NZ: nz } = UNIVERSE;
-  const bounds = ringBounds();
-  const [it0, it1] = spokeBounds(id.sector);
-  const out: number[] = [];
-  for (let ir = bounds[id.ring]; ir < bounds[id.ring + 1]; ir++) {
-    for (let it = it0; it < it1; it++) {
-      for (let iz = 0; iz < nz; iz++) {
-        out.push(ir * nth * nz + it * nz + iz);
-      }
+  const { field } = sampleField();
+  const key = field.seed;
+  if (!sectorCellMemo || sectorCellSeed !== key) {
+    const S = UNIVERSE.GALAXY_SECTORS;
+    const n = UNIVERSE.GALAXY_SECTOR_RINGS * S;
+    const bins: number[][] = Array.from({ length: n }, () => []);
+    for (let cell = 0; cell < field.pN; cell++) {
+      const sid = sectorOfPos(cellCenter(cell));
+      bins[sid.ring * S + sid.sector].push(cell);
     }
+    sectorCellMemo = bins;
+    sectorCellSeed = key;
   }
-  return out;
+  return sectorCellMemo[id.ring * UNIVERSE.GALAXY_SECTORS + id.sector];
 }
 
 /** Arc centre (mid radius, mid azimuth, midplane) for cameras and labels. */
@@ -366,7 +373,7 @@ function writeRow(
 }
 
 function sketchEvolve(b: SlotBirth): ReturnType<typeof evolve> {
-  const chem = chemistry(b.pop, b.pos.R, b.ageGyr, b.rng());
+  const chem = chemistry(b.pop, b.pos.R, b.ageGyr, b.rng(), b.cell);
   return evolve({
     massZams: b.massZams,
     ageGyr: b.ageGyr,
@@ -628,6 +635,10 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
       if (dx * dx + dy * dy + dz * dz > r2) continue;
       writeBirth(seed, cell, slot, filled, n++, c);
     }
+  }
+  const dustCells = polarCellsOverlappingBall(x, y, z, r);
+  for (let i = 0; i < dustCells.length; i++) {
+    const cell = dustCells[i];
     const clumps = dustClumpsInCell(seed, cell);
     for (let k = 0; k < clumps; k++) {
       const cart = dustBirthCart(seed, cell, k);
@@ -655,12 +666,6 @@ const sech2 = (x: number): number => {
  * Living B stars are a thin-disk clock (ageWindow floor 0.02 Gyr);
  * other pops are already too old.
  */
-function thinDensityCeil(R: number, z: number): number {
-  const { fits } = sampleField();
-  const h = Math.max(FIELD.H_MIN, ringAt(fits.hPeak, fits.ringDr, R));
-  return ringAt(fits.thinPeak, fits.ringDr, R) * sech2(z / h);
-}
-
 function catalogCellVolume(ir: number): number {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
   const R0 = (ir / nr) * rMax;
@@ -708,56 +713,51 @@ export function buildSilhouetteCloud(
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
   const t0 = performance.now();
   let batchAt = 0;
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
-    UNIVERSE;
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz } = UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const mLo = UNIVERSE.GALAXY_SILHOUETTE_M;
   const uLive = imfQuantile(mLo);
-  const liveFrac = Math.max(1e-6, 1 - uLive);
+  const { field } = sampleField();
   let c = allocCloud(180_000);
   let n = 0;
+  const batchEvery = Math.max(1, Math.floor(field.pN / 24));
+  for (let cell = 0; cell < field.pN; cell++) {
+    if (field.pKind[cell] !== 0) continue;
+    const filled = slotsInCell(seed, cell);
+    if (filled <= 0) continue;
+    const sLive = Math.floor(uLive * filled);
+    for (let slot = sLive; slot < filled; slot++) {
+      const birth = slotBirthRaw(seed, cell, slot, filled);
+      if (!maybeClockRow(birth)) continue;
+      const ev = sketchEvolve(birth);
+      if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
+      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+      writeEvolved(cell, slot, n++, c, birth, ev);
+    }
+    if (onBatch && n > batchAt && cell % batchEvery === 0) {
+      onBatch(c, batchAt, n, cell / field.pN);
+      batchAt = n;
+    }
+  }
   for (let ir = 0; ir < nr; ir++) {
     const vol = catalogCellVolume(ir);
-    const R = ((ir + 0.5) / nr) * rMax;
     for (let iz = 0; iz < nz; iz++) {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
-      const ceil = thinDensityCeil(R, z) * vol * nK;
+      const R = ((ir + 0.5) / nr) * UNIVERSE.GALAXY_R_MAX;
       const dustCeil = gasDensityCeil(R, z) * vol * UNIVERSE.GALAXY_DUST_N_K;
-      if (ceil * liveFrac < 0.2 && dustCeil < 0.05) continue;
+      if (dustCeil < 0.05) continue;
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
-        const mid = cellCenter(cell);
-        const thin = densityParts(mid).thin;
-        const expect = thin * vol * nK;
-        if (expect * liveFrac >= 0.2) {
-          const filled = slotsInCell(seed, cell);
-          if (filled > 0) {
-            const sLive = Math.floor(uLive * filled);
-            for (let slot = sLive; slot < filled; slot++) {
-              const birth = slotBirthRaw(seed, cell, slot, filled);
-              if (!maybeClockRow(birth)) continue;
-              const ev = sketchEvolve(birth);
-              if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
-              if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-              writeEvolved(cell, slot, n++, c, birth, ev);
-            }
-          }
-        }
-        if (dustCeil >= 0.05) {
-          const clumps = dustClumpsInCell(seed, cell);
-          for (let k = 0; k < clumps; k++) {
-            if (dustRadiusKpc(seed, cell, k) < UNIVERSE.GALAXY_SILHOUETTE_DUST_R) continue;
-            if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-            writeDust(seed, cell, k, n++, c);
-          }
+        const clumps = dustClumpsInCell(seed, cell);
+        for (let k = 0; k < clumps; k++) {
+          if (dustRadiusKpc(seed, cell, k) < UNIVERSE.GALAXY_SILHOUETTE_DUST_R) continue;
+          if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+          writeDust(seed, cell, k, n++, c);
         }
       }
     }
-    // Stream the buildout: rows minted since the last call, plus how
-    // far the radial walk has come (the boot overlay draws the sky
-    // filling in instead of a spinner).
     if (onBatch && n > batchAt) {
-      onBatch(c, batchAt, n, (ir + 1) / nr);
+      onBatch(c, batchAt, n, 0.7 + 0.3 * ((ir + 1) / nr));
       batchAt = n;
     }
   }
@@ -882,42 +882,49 @@ export function advanceRegionCloud(
     const nearRamp = d1 <= ramp;
     if (wellInsideOld && !nearRamp) continue;
     const filled = slotsInCell(seed, cell);
-    if (filled > 0) {
-      const s1 = Math.floor(regionImfFloor(d1) * filled);
-      const s0 = Math.floor(regionImfFloor(d0) * filled);
-      if (!wellInsideOld || s1 < s0) {
-        const from = s1;
-        const to = wellInsideOld ? s0 : filled;
-        for (let slot = from; slot < to; slot++) {
-          const id = packId(cell, slot);
-          if (rim.has(id)) continue;
-          const p = slotBirthCart(seed, cell, slot);
-          const dx = p.x - x1;
-          const dy = p.y - y1;
-          const dz = p.z - z1;
-          if (dx * dx + dy * dy + dz * dz > r2) continue;
-          buf = ensureCloudCap(buf, n, n + 1);
-          writeBirth(seed, cell, slot, filled, n, buf);
-          n++;
-        }
-      }
-    }
-    // Dust keepers of well-inside cells are already members; only
-    // entering cells mint their clumps.
-    if (!wellInsideOld) {
-      const clumps = dustClumpsInCell(seed, cell);
-      for (let k = 0; k < clumps; k++) {
-        const did = dustId(cell, k);
-        if (rim.has(did) || dustHave.has(did)) continue;
-        const cart = dustBirthCart(seed, cell, k);
-        const dx = cart.x - x1;
-        const dy = cart.y - y1;
-        const dz = cart.z - z1;
+    if (filled <= 0) continue;
+    const s1 = Math.floor(regionImfFloor(d1) * filled);
+    const s0 = Math.floor(regionImfFloor(d0) * filled);
+    if (!wellInsideOld || s1 < s0) {
+      const from = s1;
+      const to = wellInsideOld ? s0 : filled;
+      for (let slot = from; slot < to; slot++) {
+        const id = packId(cell, slot);
+        if (rim.has(id)) continue;
+        const p = slotBirthCart(seed, cell, slot);
+        const dx = p.x - x1;
+        const dy = p.y - y1;
+        const dz = p.z - z1;
         if (dx * dx + dy * dy + dz * dz > r2) continue;
         buf = ensureCloudCap(buf, n, n + 1);
-        writeDust(seed, cell, k, n, buf);
+        writeBirth(seed, cell, slot, filled, n, buf);
         n++;
       }
+    }
+  }
+  const dustCells = polarCellsOverlappingAnnulus(x1, y1, z1, shellLo, r);
+  if (ramp > 0) {
+    const core = polarCellsOverlappingAnnulus(x1, y1, z1, 0, ramp);
+    for (let i = 0; i < core.length; i++) dustCells.push(core[i]);
+  }
+  for (const cell of dustCells) {
+    const mid = polarCellCenter(cell);
+    const d1 = Math.hypot(mid.R * Math.cos(mid.theta) - x1, mid.z - y1, mid.R * Math.sin(mid.theta) - z1);
+    const d0 = Math.hypot(mid.R * Math.cos(mid.theta) - x0, mid.z - y0, mid.R * Math.sin(mid.theta) - z0);
+    const wellInsideOld = d0 + scatter < r && d1 + scatter < r;
+    if (wellInsideOld) continue;
+    const clumps = dustClumpsInCell(seed, cell);
+    for (let k = 0; k < clumps; k++) {
+      const did = dustId(cell, k);
+      if (rim.has(did) || dustHave.has(did)) continue;
+      const cart = dustBirthCart(seed, cell, k);
+      const dx = cart.x - x1;
+      const dy = cart.y - y1;
+      const dz = cart.z - z1;
+      if (dx * dx + dy * dy + dz * dz > r2) continue;
+      buf = ensureCloudCap(buf, n, n + 1);
+      writeDust(seed, cell, k, n, buf);
+      n++;
     }
   }
   return { ...buf, n, ms: performance.now() - t0 };

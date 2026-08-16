@@ -1,24 +1,22 @@
 /**
- * The shared galaxy: a FORMED disk (the gas-to-galaxy run baked into a
- * GalaxyField) plus an implicit stellar catalog. Nothing is stored. A
- * star is (seed, cell, slot) → position, population, IMF quantile,
- * birth time, chemistry, then stellar.evolve. The address *is* the
- * star. We do not keep a list of samples; occupancy is the population.
+ * The shared galaxy: the formed POINT CLOUD plus an implicit stellar
+ * catalog. Nothing is stored. Each evolved star particle is a parent
+ * and stands for ~starW real stars. A star is (seed, parent, slot) →
+ * that parent's position plus a small tent jitter, the parent's
+ * population / age / chemistry, then stellar.evolve. The address *is*
+ * the star. Occupancy is starW per parent — that *is* the population.
  *
- * Within a cell the IMF is stratified: slot 0 is the low-mass end,
+ * Within a parent the IMF is stratified: slot 0 is the low-mass end,
  * slot n−1 is the high-mass end. Zooming in is “include more slots,”
  * not “load a bigger array.”
  *
- * The density law is no longer an analytic SBbc formula. The seed runs
- * a deterministic formation sim once (src/world/formation); its baked
- * field — thin/thick disk, spheroid, gas, chemistry, ages — is what
- * every function here samples. Bulge, bar, arms, the metallicity
- * gradient and the age structure are OUTCOMES of that run.
+ * Gas / ISM / extinction stay a smooth grid: a medium, not a point
+ * set. Dust still addresses that polar lattice.
  */
 import { mulberry32, xmur3 } from './rng';
 import { UNIVERSE } from './physics';
 import { evolve, imfMass, msLifetime, msLuminosity, msRadius, teffFromLR, type StellarState } from './stellar';
-import { ringAt, sampleField } from './formation/registry';
+import { parentsNear, parentsNearAnnulus, ringAt, sampleField } from './formation/registry';
 import { FIELD, fieldDensityParts, fieldGridAt } from './formation/field';
 
 export type Population = 'thin' | 'thick' | 'halo' | 'bulge' | 'bar';
@@ -157,7 +155,7 @@ export function ismNorm(seed: string, cell: number): number {
   }
   const hit = ismMemo.get(cell);
   if (hit !== undefined) return hit;
-  const p = cellCenter(cell);
+  const p = polarCellCenter(cell);
   const base = gasBase(p);
   let v = 0;
   if (base > 1e-5) {
@@ -212,7 +210,7 @@ const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
  */
 export function dustPhysics(seed: string, cell: number): DustPhysics {
   const field = ismNorm(seed, cell);
-  const p = cellCenter(cell);
+  const p = polarCellCenter(cell);
   const scatter = u01(seed, 'dustChem', cell);
   const { feh, carbon } = chemistry('thin', p.R, 0.5, scatter);
   // Radiation temperature proxy: hot inner disk, cooled by shielding.
@@ -224,24 +222,10 @@ export function dustPhysics(seed: string, cell: number): DustPhysics {
   return { field, feh, carbon, iceFrac, carbonFrac };
 }
 
-/** Clump position: the same tent-kernel scatter stars use. No lattice. */
+/** Clump position: polar cell centre + the same tent stars use. */
 export function dustBirthCart(seed: string, cell: number, k: number): { x: number; y: number; z: number } {
   const rng = rngFor(seed, 'dustPos', cell, k);
-  return birthCart(rng, cell);
-}
-
-function pickPop(d: Record<Population, number>, u: number): Population {
-  const keys: Population[] = ['thin', 'thick', 'bulge', 'bar', 'halo'];
-  let t = 0;
-  for (const k of keys) t += d[k];
-  if (t <= 0) return 'halo';
-  let acc = 0;
-  const cut = u * t;
-  for (const k of keys) {
-    acc += d[k];
-    if (cut <= acc) return k;
-  }
-  return 'thin';
+  return polarBirthCart(rng, cell);
 }
 
 /** Spheroid profile lookup (bulge + halo share one formed profile). */
@@ -264,14 +248,19 @@ export function chemistry(
   R: number,
   ageGyr: number,
   scatter: number,
+  cell?: number,
 ): { feh: number; carbon: number } {
   const { field, fits } = sampleField();
   const young = 1 - ageGyr / UNIVERSE.GALAXY_AGE_GYR;
-  const diskBase = ringAt(fits.fehDisk, fits.ringDr, R);
   let feh = 0;
-  if (pop === 'thin') feh = diskBase + 0.18 * young;
-  else if (pop === 'thick') feh = diskBase - 0.35;
-  else feh = sphProfileAt(field.sphFeh, field.sphDr, R);
+  if (cell != null && cell >= 0 && cell < field.pN) {
+    feh = field.pFeh[cell];
+  } else {
+    const diskBase = ringAt(fits.fehDisk, fits.ringDr, R);
+    if (pop === 'thin') feh = diskBase + 0.18 * young;
+    else if (pop === 'thick') feh = diskBase - 0.35;
+    else feh = sphProfileAt(field.sphFeh, field.sphDr, R);
+  }
   feh += (scatter - 0.5) * (pop === 'halo' ? 0.7 : 0.25);
   const zRel = Math.pow(10, feh);
   const carbon = 0.55 + 0.45 * Math.min(2.2, zRel) + 0.35 * Math.max(0, young) * (pop === 'thin' ? 1 : 0.2);
@@ -301,7 +290,7 @@ export function ageWindow(pop: Population, R: number): [number, number] {
 }
 
 export function cellCount(): number {
-  return UNIVERSE.GALAXY_NR * UNIVERSE.GALAXY_NTH * UNIVERSE.GALAXY_NZ;
+  return sampleField().field.pN;
 }
 
 export function catalogSize(): number {
@@ -317,34 +306,34 @@ export function packId(cell: number, slot: number): number {
   return cell * UNIVERSE.GALAXY_MAX_SLOT + slot;
 }
 
-/**
- * Scatter kernel half-width (kpc). The cell is an ADDRESS BIN, not a
- * physical box: placement scatters each slot with a Cartesian tent
- * kernel (sum of two uniforms — a linear B-spline). Overlapping tents
- * between neighbouring cells interpolate the occupancy histogram into
- * a piecewise-linear density, so the lattice, its slab stripes and
- * its hard cube edges all dissolve. Cartesian, because the old polar
- * jitter (R clamped at 0.05, θ divided by max(0.4, R)) piled every
- * inner-ring star onto one cylinder — the "axle" through the core.
- */
+/** Tent half-width (kpc) — one number, shared by stars and dust. */
 export function scatterKernelKpc(): number {
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  return 0.75 * dz;
+  return FIELD.JITTER;
 }
 
-/** Farthest a slot may sit from its cell centre (membership slack). */
+/** Farthest a slot may sit from its parent (membership slack). */
 export function slotScatterKpc(): number {
-  return scatterKernelKpc() * Math.sqrt(3);
+  return FIELD.JITTER * Math.sqrt(3);
 }
 
 /** Tent draw in [-w, w] (triangular, zero-mean). */
 const tent = (rng: () => number, w: number): number => (rng() + rng() - 1) * w;
 
-/** One placement law for stars and dust: cell centre + Cartesian tent. */
+/** Star placement: parent + tent. That is the whole law. */
 function birthCart(rng: () => number, cell: number): { x: number; y: number; z: number } {
-  const mid = cellCenter(cell);
-  const w = scatterKernelKpc();
+  const { field } = sampleField();
+  const w = FIELD.JITTER;
+  return {
+    x: field.pAX[cell] + tent(rng, w),
+    y: field.pAY[cell] + tent(rng, w),
+    z: field.pAZ[cell] + tent(rng, w),
+  };
+}
+
+/** Dust placement: polar lattice centre + the same tent. */
+function polarBirthCart(rng: () => number, cell: number): { x: number; y: number; z: number } {
+  const mid = polarCellCenter(cell);
+  const w = FIELD.JITTER;
   return {
     x: mid.R * Math.cos(mid.theta) + tent(rng, w),
     y: mid.z + tent(rng, w),
@@ -352,21 +341,28 @@ function birthCart(rng: () => number, cell: number): { x: number; y: number; z: 
   };
 }
 
-/**
- * Catalog cells whose scatter cubes may meet a Cartesian ball
- * (disk in XZ, Y is height). Occupants are still filtered by
- * |p − centre| ≤ r. When the ball covers the origin we take every
- * spoke of the inner rings — a θ-wedge would miss the far side.
- */
+/** Parents whose jitter cubes may meet a Cartesian ball. */
 export function cellsOverlappingBall(x: number, y: number, z: number, r: number): number[] {
-  return cellsOverlappingAnnulus(x, y, z, 0, r);
+  return parentsNear(x, y, z, r);
 }
 
-/**
- * Catalog cells whose scatter cubes may meet a Cartesian spherical
- * shell rLo..rHi (inclusive). rLo = 0 is the filled ball.
- */
+/** Parents whose jitter cubes may meet a Cartesian spherical shell. */
 export function cellsOverlappingAnnulus(
+  x: number,
+  y: number,
+  z: number,
+  rLo: number,
+  rHi: number,
+): number[] {
+  return parentsNearAnnulus(x, y, z, rLo, rHi);
+}
+
+/** Polar ISM cells whose cubes may meet a Cartesian ball. Dust only. */
+export function polarCellsOverlappingBall(x: number, y: number, z: number, r: number): number[] {
+  return polarCellsOverlappingAnnulus(x, y, z, 0, r);
+}
+
+export function polarCellsOverlappingAnnulus(
   x: number,
   y: number,
   z: number,
@@ -395,7 +391,7 @@ export function cellsOverlappingAnnulus(
       const it = (itc + dt + nth * 16) % nth;
       for (let iz = iz0; iz <= iz1; iz++) {
         const cell = ir * nth * nz + it * nz + iz;
-        const mid = cellCenter(cell);
+        const mid = polarCellCenter(cell);
         const mx = mid.R * Math.cos(mid.theta) - x;
         const my = mid.z - y;
         const mz = mid.R * Math.sin(mid.theta) - z;
@@ -432,7 +428,15 @@ export function slotRangeForMass(n: number, mLo: number, mHi: number): [number, 
   return [a, b];
 }
 
+/** Parent position (no jitter) as galactocentric coords. */
 export function cellCenter(cell: number): GalPos {
+  const { field } = sampleField();
+  if (cell < 0 || cell >= field.pN) return { R: 0, theta: 0, z: 0 };
+  return cartToGal(field.pAX[cell], field.pAY[cell], field.pAZ[cell]);
+}
+
+/** Polar ISM lattice centre — dust / extinction addressing only. */
+export function polarCellCenter(cell: number): GalPos {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
   const iz = cell % nz;
   const it = Math.floor(cell / nz) % nth;
@@ -444,18 +448,31 @@ export function cellCenter(cell: number): GalPos {
   return { R, theta, z };
 }
 
-function cellVolume(cell: number): number {
+function polarCellVolume(ir: number): number {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
-  const ir = Math.floor(cell / (nz * nth));
   const R0 = (ir / nr) * rMax;
   const R1 = ((ir + 1) / nr) * rMax;
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / nz;
-  const dtheta = TAU / nth;
-  return 0.5 * (R1 * R1 - R0 * R0) * dtheta * dz;
+  return 0.5 * (R1 * R1 - R0 * R0) * (TAU / nth) * dz;
 }
 
-/** How many slots in this cell are occupied. Density is the law. */
+function polarCellOf(p: GalPos): number {
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
+  const ir = Math.max(0, Math.min(nr - 1, Math.floor((p.R / rMax) * nr)));
+  const th = (((p.theta % TAU) + TAU) % TAU) / TAU;
+  const it = Math.max(0, Math.min(nth - 1, Math.floor(th * nth)));
+  const iz = Math.max(0, Math.min(nz - 1, Math.floor(((p.z / zMax + 1) / 2) * nz)));
+  return ir * nth * nz + it * nz + iz;
+}
+
+function cellVolume(cell: number): number {
+  const ir = Math.floor(cell / (UNIVERSE.GALAXY_NZ * UNIVERSE.GALAXY_NTH));
+  return polarCellVolume(ir);
+}
+
+/** How many slots this parent holds. starW is the law. */
 let slotMemoSeed = '';
 const slotMemo = new Map<number, number>();
 
@@ -466,12 +483,12 @@ export function slotsInCell(seed: string, cell: number): number {
   }
   const hit = slotMemo.get(cell);
   if (hit !== undefined) return hit;
-  const c = cellCenter(cell);
-  const expect = density(c) * cellVolume(cell) * UNIVERSE.GALAXY_N_K;
-  if (expect <= 0) {
+  const { field } = sampleField();
+  if (cell < 0 || cell >= field.pN) {
     slotMemo.set(cell, 0);
     return 0;
   }
+  const expect = field.starW;
   const whole = Math.floor(expect);
   const extra = u01(seed, 'occ', cell) < expect - whole ? 1 : 0;
   const n = Math.min(UNIVERSE.GALAXY_MAX_SLOT, whole + extra);
@@ -505,7 +522,7 @@ function objectAtRaw(seed: string, id: number): GalaxyObject | null {
   const filled = slotsInCell(seed, cell);
   if (slot >= filled) return null;
   const b = slotBirthRaw(seed, cell, slot, filled);
-  const { feh, carbon } = chemistry(b.pop, b.pos.R, b.ageGyr, b.rng());
+  const { feh, carbon } = chemistry(b.pop, b.pos.R, b.ageGyr, b.rng(), cell);
   const star = evolve({
     massZams: b.massZams,
     ageGyr: b.ageGyr,
@@ -531,6 +548,7 @@ export interface SlotBirth {
   inCloud: boolean;
   ageGyr: number;
   massZams: number;
+  cell: number;
   rng: () => number;
 }
 
@@ -539,28 +557,31 @@ export function slotBirthCart(seed: string, cell: number, slot: number): { x: nu
   return birthCart(rngFor(seed, cell, slot), cell);
 }
 
+function popOfParent(kind: number, R: number, z: number): Population {
+  if (kind === 0) return 'thin';
+  if (kind === 1) return 'thick';
+  return Math.hypot(R, z) < SPHEROID_BULGE_R ? 'bulge' : 'halo';
+}
+
 export function slotBirthRaw(seed: string, cell: number, slot: number, filled: number): SlotBirth {
   const rng = rngFor(seed, cell, slot);
-  // Placement: cell centre + Cartesian tent (see scatterKernelKpc).
-  // Occupancy still carries the density law; the id (cell, slot)
-  // never moves.
+  const { field } = sampleField();
   const c = birthCart(rng, cell);
   const pos: GalPos = cartToGal(c.x, c.y, c.z);
-  const parts = densityParts(pos);
-  const pop = pickPop(parts, rng());
-  const [ageLo, ageHi] = ageWindow(pop, pos.R);
+  const pop = popOfParent(field.pKind[cell], pos.R, pos.z);
+  const mean = field.pAge[cell];
+  const T = UNIVERSE.GALAXY_AGE_GYR;
+  const ageLo = Math.max(0.02, mean * 0.15);
+  const ageHi = Math.min(T, Math.max(ageLo + 0.5, mean * 1.35));
   const arm = inSpiralArm(pos.R, pos.theta);
-  const ism = ismNorm(seed, cell);
-  // Schmidt–Kennicutt-lite: star formation follows the gas. The denser
-  // the cloud, the more recent the births — nurseries emerge instead of
-  // a binary "in arm" flag. Same rng draw count: ids never move.
+  const ism = ismNorm(seed, polarCellOf(pos));
   let uAge = rng();
   if (pop === 'thin') uAge = Math.pow(uAge, 1 + UNIVERSE.GALAXY_SFR_GAIN * ism);
   const ageGyr = ageLo + uAge * Math.max(0.01, ageHi - ageLo);
   const jitter = u01(seed, 'imfJ', cell, slot);
   const uImf = Math.min(0.999999, (slot + jitter) / Math.max(1, filled));
   const massZams = imfMass(uImf);
-  return { pos, pop, inArm: arm, inCloud: ism >= UNIVERSE.GALAXY_CLOUD_HII, ageGyr, massZams, rng };
+  return { pos, pop, inArm: arm, inCloud: ism >= UNIVERSE.GALAXY_CLOUD_HII, ageGyr, massZams, cell, rng };
 }
 
 export function isSlotAlive(massZams: number, ageGyr: number): boolean {
@@ -603,7 +624,7 @@ function pushNear(out: GalaxyObject[], seen: Set<number>, o: GalaxyObject | null
   return out.length >= limit;
 }
 
-/** Walk a neighbourhood of cells; return occupied objects (capped). */
+/** Walk nearby parents; return occupied objects (capped). */
 export function objectsNear(
   seed: string,
   p: GalPos,
@@ -613,76 +634,23 @@ export function objectsNear(
   const opts: NearQuery = typeof limitOrOpts === 'number' ? { limit: limitOrOpts } : limitOrOpts;
   const limit = opts.limit ?? 80;
   const uMin = Math.max(0, Math.min(0.999, opts.uMin ?? 0));
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const ir0 = Math.max(0, Math.floor(((p.R - dR) / rMax) * nr));
-  const ir1 = Math.min(nr - 1, Math.floor(((p.R + dR) / rMax) * nr));
-  const dTh = dR / Math.max(0.4, p.R);
-  const itc = Math.floor(((((p.theta % TAU) + TAU) % TAU) / TAU) * nth);
-  const dit = Math.max(1, Math.ceil((dTh / TAU) * nth));
-  const izc = Math.floor(((p.z / zMax + 1) / 2) * nz);
-  const diz = Math.max(1, Math.ceil((dR / Math.max(0.2, 2 * zMax)) * nz));
   const out: GalaxyObject[] = [];
   const seen = new Set<number>();
   const perCell = uMin > 0.9 ? 4 : uMin > 0.5 ? 10 : 28;
-  // The sample must be a LAW of the cells, not of the query window.
-  // A window-relative walk returned a different subset after every
-  // small pan — stars flashed in, were replaced, and each visited
-  // cell dumped its whole per-cell budget while its neighbours gave
-  // nothing (clumps of "crap" with voids between). Instead: keep a
-  // cell iff an absolute hash of its id clears the budget threshold.
-  // The keep-set is pan-stable (a cell's coin never re-flips) and
-  // nested in zoom (lower thresholds keep subsets), and hash order is
-  // uncorrelated with position, so coverage stays even. Kept cells
-  // are then visited nearest-first, so the limit truncates at the far
-  // fringe — where the view fade already sits — and a flyby is stars
-  // drifting in at the edge, not a re-rolled sky.
-  const nRings = Math.max(1, ir1 - ir0 + 1);
-  const nThW = 2 * dit + 1;
-  const izLo = Math.max(0, izc - diz);
-  const izHi = Math.min(nz - 1, izc + diz);
-  const totalCells = nRings * nThW * Math.max(1, izHi - izLo + 1);
+  const c = galToCart(p);
+  const near = cellsOverlappingBall(c.x, c.y, c.z, dR);
   const CELL_BUDGET = 6000;
-  // Quantized to powers of two: the raw ratio drifts with every small
-  // window reshape, re-rolling the keep-set's fringe. Power-of-2 bins
-  // change rarely, and when they do the sets stay nested.
-  const rawThr = Math.min(1, CELL_BUDGET / Math.max(1, totalCells));
+  const rawThr = Math.min(1, CELL_BUDGET / Math.max(1, near.length));
   const thr = rawThr >= 1 ? 1 : Math.pow(2, Math.round(Math.log2(rawThr)));
-  // A wide detection bubble covers millions of cells — too many even to
-  // hash-test. Coarsen the walk on an ABSOLUTE lattice (indices ≡ 0 mod
-  // stride, never window-relative, so panning cannot re-roll it) and
-  // compensate the keep probability, leaving the expected kept count —
-  // and the nested-subset property — intact.
-  let sR = 1;
-  let sT = 1;
-  let sZ = 1;
-  const nZW = Math.max(1, izHi - izLo + 1);
-  for (let g = 0; g < 10 && (nRings / sR) * (nThW / sT) * (nZW / sZ) > 300_000; g++) {
-    if (nRings / sR >= nThW / sT && nRings / sR >= nZW / sZ) sR *= 2;
-    else if (nThW / sT >= nZW / sZ) sT *= 2;
-    else sZ *= 2;
-  }
-  const thrEff = Math.min(1, thr * sR * sT * sZ);
-  const px = p.R * Math.cos(p.theta);
-  const py = p.R * Math.sin(p.theta);
+  const { field } = sampleField();
   const kept: Array<{ cell: number; d2: number }> = [];
-  for (let ir = ir0; ir <= ir1; ir++) {
-    if (ir % sR !== 0 && sR > 1) continue;
-    const R = ((ir + 0.5) / nr) * rMax;
-    for (let dt = -dit; dt <= dit; dt++) {
-      const it = (itc + dt + nth * 8) % nth;
-      if (it % sT !== 0 && sT > 1) continue;
-      const th = ((it + 0.5) / nth) * TAU;
-      const cx = R * Math.cos(th) - px;
-      const cy = R * Math.sin(th) - py;
-      for (let iz = izLo; iz <= izHi; iz++) {
-        if (iz % sZ !== 0 && sZ > 1) continue;
-        const cell = ir * nth * nz + it * nz + iz;
-        if (cellHash01(cell) >= thrEff) continue;
-        const cz = ((iz + 0.5) / nz - 0.5) * 2 * zMax - p.z;
-        kept.push({ cell, d2: cx * cx + cy * cy + cz * cz });
-      }
-    }
+  for (let i = 0; i < near.length; i++) {
+    const cell = near[i];
+    if (cellHash01(cell) >= thr) continue;
+    const dx = field.pAX[cell] - c.x;
+    const dy = field.pAY[cell] - c.y;
+    const dz = field.pAZ[cell] - c.z;
+    kept.push({ cell, d2: dx * dx + dy * dy + dz * dz });
   }
   kept.sort((a, b) => a.d2 - b.d2);
   // Spread the limit across the WHOLE window: if the kept cells would
@@ -749,47 +717,49 @@ const homeMemo = new Map<string, number>();
 export function homeStarId(seed = UNIVERSE.CANONICAL_SEED): number {
   const hit = homeMemo.get(seed);
   if (hit != null) return hit;
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, R_SUN: rSun } = UNIVERSE;
-  const irSun = Math.round((rSun / rMax) * nr);
-  const izMid = Math.floor(nz / 2);
-  const it0 = Math.floor(u01(seed, 'home-az') * nth);
+  const { field } = sampleField();
+  const rSun = UNIVERSE.R_SUN;
+  const az0 = u01(seed, 'home-az') * TAU;
+  const cand: Array<{ cell: number; d: number }> = [];
+  for (let cell = 0; cell < field.pN; cell++) {
+    if (field.pKind[cell] === 2) continue;
+    const x = field.pAX[cell];
+    const z = field.pAZ[cell];
+    const y = field.pAY[cell];
+    const R = Math.hypot(x, z);
+    if (Math.abs(R - rSun) > 1.6 || Math.abs(y) > 0.55) continue;
+    const dth = Math.min(Math.abs(Math.atan2(z, x) - az0), TAU);
+    cand.push({ cell, d: Math.abs(R - rSun) + Math.abs(y) * 0.6 + Math.min(dth, TAU - dth) * 0.3 });
+  }
+  cand.sort((a, b) => a.d - b.d);
   let best = -1;
   let bestScore = -1e9;
-  for (let dir = 0; dir <= 3; dir++) {
-    for (const sign of dir === 0 ? [0] : [-1, 1]) {
-      const ir = irSun + sign * dir;
-      if (ir < 2 || ir >= nr - 1) continue;
-      for (let dz = -1; dz <= 1; dz++) {
-        const iz = izMid + dz;
-        if (iz < 0 || iz >= nz) continue;
-        for (let w = 0; w <= 10; w++) {
-          for (const sw of w === 0 ? [0] : [-1, 1]) {
-            const it = (it0 + sw * w + nth) % nth;
-            const cell = ir * nth * nz + it * nz + iz;
-            const n = slotsInCell(seed, cell);
-            const [s0, s1] = slotRangeForMass(n, 0.55, 1.3);
-            for (let s = s0; s < s1; s++) {
-              const o = objectAt(seed, packId(cell, s));
-              if (!o) continue;
-              const st = o.star;
-              if (st.phase !== 'main_sequence') continue;
-              if (st.mk !== 'G' && st.mk !== 'K' && st.mk !== 'F') continue;
-              if (st.lumClass !== 'V' && st.lumClass !== 'VI') continue;
-              if (o.pop === 'halo') continue;
-              const score =
-                (st.mk === 'G' ? 4 : st.mk === 'K' ? 2.5 : 1) +
-                (o.pop === 'thin' ? 1.2 : 0) +
-                (1 - Math.abs(st.feh)) +
-                (st.nebula === 'none' ? 0.3 : 0) -
-                Math.abs(o.pos.R - rSun) * 0.15 -
-                Math.abs(o.pos.z) * 0.4;
-              if (score > bestScore) {
-                bestScore = score;
-                best = o.id;
-              }
-            }
-          }
-        }
+  const take = Math.min(48, cand.length);
+  for (let i = 0; i < take; i++) {
+    const cell = cand[i].cell;
+    const n = slotsInCell(seed, cell);
+    const [s0, s1] = slotRangeForMass(n, 0.55, 1.3);
+    const step = Math.max(1, Math.floor((s1 - s0) / 12));
+    for (let s = s0; s < s1; s += step) {
+      const o = objectAt(seed, packId(cell, s));
+      if (!o) continue;
+      const st = o.star;
+      if (st.phase !== 'main_sequence') continue;
+      if (st.mk !== 'G' && st.mk !== 'K' && st.mk !== 'F') continue;
+      if (st.lumClass !== 'V' && st.lumClass !== 'VI') continue;
+      if (o.pop === 'halo') continue;
+      const dth = Math.abs(o.pos.theta - az0);
+      const score =
+        (st.mk === 'G' ? 4 : st.mk === 'K' ? 2.5 : 1) +
+        (o.pop === 'thin' ? 1.2 : 0) +
+        (1 - Math.abs(st.feh)) +
+        (st.nebula === 'none' ? 0.3 : 0) -
+        Math.abs(o.pos.R - rSun) * 0.15 -
+        Math.abs(o.pos.z) * 0.4 -
+        Math.min(dth, TAU - dth) * 0.05;
+      if (score > bestScore) {
+        bestScore = score;
+        best = o.id;
       }
     }
   }
@@ -809,35 +779,25 @@ export function homeStar(seed = UNIVERSE.CANONICAL_SEED): GalaxyObject | null {
  * the whole grid.
  */
 export function solarCircleHosts(seed: string, max = 7000): GalaxyObject[] {
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, R_SUN: rSun } = UNIVERSE;
-  const irSun = Math.round((rSun / rMax) * nr);
-  const izMid = Math.floor(nz / 2);
-  const it0 = Math.floor(u01(seed, 'hosts-az') * nth);
+  const { field } = sampleField();
+  const rSun = UNIVERSE.R_SUN;
   const out: GalaxyObject[] = [];
-  for (let w = 0; w < nth && out.length < max; w++) {
-    const it = (it0 + w * 11) % nth;
-    for (let dir = 0; dir <= 2 && out.length < max; dir++) {
-      for (const sign of dir === 0 ? [0] : [-1, 1]) {
-        const ir = irSun + sign * dir;
-        if (ir < 2 || ir >= nr - 1) continue;
-        for (let dz = -1; dz <= 1 && out.length < max; dz++) {
-          const iz = izMid + dz;
-          if (iz < 0 || iz >= nz) continue;
-          const cell = ir * nth * nz + it * nz + iz;
-          const n = slotsInCell(seed, cell);
-          const [s0, s1] = slotRangeForMass(n, 0.55, 1.35);
-          for (let s = s0; s < s1 && out.length < max; s++) {
-            const o = objectAt(seed, packId(cell, s));
-            if (!o) continue;
-            const st = o.star;
-            if (st.phase !== 'main_sequence') continue;
-            if (st.mk !== 'F' && st.mk !== 'G' && st.mk !== 'K') continue;
-            if (st.lumClass !== 'V' && st.lumClass !== 'VI') continue;
-            if (o.pop === 'halo') continue;
-            out.push(o);
-          }
-        }
-      }
+  for (let cell = 0; cell < field.pN && out.length < max; cell++) {
+    if (field.pKind[cell] === 2) continue;
+    const R = Math.hypot(field.pAX[cell], field.pAZ[cell]);
+    if (Math.abs(R - rSun) > 1.4 || Math.abs(field.pAY[cell]) > 0.5) continue;
+    const n = slotsInCell(seed, cell);
+    const [s0, s1] = slotRangeForMass(n, 0.55, 1.35);
+    const step = Math.max(1, Math.floor((s1 - s0) / 16));
+    for (let s = s0; s < s1 && out.length < max; s += step) {
+      const o = objectAt(seed, packId(cell, s));
+      if (!o) continue;
+      const st = o.star;
+      if (st.phase !== 'main_sequence') continue;
+      if (st.mk !== 'F' && st.mk !== 'G' && st.mk !== 'K') continue;
+      if (st.lumClass !== 'V' && st.lumClass !== 'VI') continue;
+      if (o.pop === 'halo') continue;
+      out.push(o);
     }
   }
   return out;
