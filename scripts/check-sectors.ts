@@ -4,7 +4,6 @@
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
 import { cellCount, cellCenter, dustPhysics, galToCart, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
-import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
   ringBounds,
@@ -267,7 +266,6 @@ const check = (cond: boolean, msg: string) => {
     const o = objectAt(seed, id);
     check(!!o && o.id === id, `silhouette id ${id} is not a catalog row`);
     const { cell, slot } = splitId(id);
-    const filled = slotsInCell(seed, cell);
     const cart = slotBirthCart(seed, cell, slot);
     check(Math.abs(cart.x - a.pos[i * 3]) < 1e-5 && Math.abs(cart.y - a.pos[i * 3 + 1]) < 1e-5, 'silhouette pose != slotBirthCart');
     if (a.bits[i] & BIT_NEBULA) check(!!o && o.star.nebula !== 'none', `nebula bit on ${id} but objectAt nebula is none`);
@@ -405,15 +403,7 @@ const check = (cond: boolean, msg: string) => {
   check(bins.size >= 40, `interest picks bunch into ${bins.size} bins`);
 }
 
-// --- saucer dome: zero slope at the centre (no cone / golden spike) ---
-{
-  const h0 = saucerHeight(0);
-  const hEps = saucerHeight(0.05);
-  const slope = (h0 - hEps) / 0.05;
-  check(Math.abs(slope) < 0.2, `bulge slope at R=0 is ${slope.toFixed(3)} (must be ~0, not a cone)`);
-  check(saucerHeight(4) < h0, 'dome must fall with R');
-  check(h0 > 2.2 * UNIVERSE.GALAXY_ZD, 'dome must sit above the disk slab');
-}
+// (The saucer chart is retired; its dome-height law went with it.)
 
 if (fail) {
   console.error(`check-sectors: ${fail} failure(s)`);

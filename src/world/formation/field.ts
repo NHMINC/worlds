@@ -13,8 +13,8 @@
  * cosmic time (a named toy compression, like TIME_SCALE). The baked
  * ageGyr fields are already in galaxy-clock units.
  */
-import type { FormationResult } from './sim';
-import { dlog10 } from './detmath';
+import { FORM, type FormationResult } from './sim';
+import { dexp, dlog10 } from './detmath';
 
 export interface GalaxyField {
   seed: string;
@@ -77,9 +77,16 @@ function fnv(h: number, x: number): number {
 const F32 = new Float32Array(1);
 const U32 = new Uint32Array(F32.buffer);
 
+/** exp-based tanh (no Math.tanh — keep the op set small and portable). */
+const tanhE = (x: number): number => (x > 20 ? 1 : 1 - 2 / (dexp(2 * x) + 1));
+
 /**
  * Bake. `ageSpanGyr` maps sim time onto the galaxy clock; `popTarget`
  * sets the density normalization so ∫ρ dV × GALAXY_N_K ≈ population.
+ * When `domain` (the catalog's cylinder: R ≤ rMax, |z| ≤ zMax) is
+ * given, the integral is taken over THAT volume — occupancy is the
+ * population by decree, so mass the catalog cannot address (outer
+ * disk, high halo) must not silently deflate it.
  */
 export function bakeField(
   seed: string,
@@ -88,6 +95,7 @@ export function bakeField(
   ageSpanGyr: number,
   popTarget: number,
   nK: number,
+  domain?: { rMax: number; zMax: number },
 ): GalaxyField {
   const t0 = performance.now();
   const OUT = FIELD.OUT;
@@ -247,16 +255,21 @@ export function bakeField(
       const gSig = ((m + mGas[k]) * r.gm) / cellArea;
       const h = sigZ2 / Math.max(1, Math.PI * gSig);
       hThin[k] = Math.min(FIELD.H_MAX, Math.max(FIELD.H_MIN, h));
+    } else {
+      hThin[k] = 0.3;
+    }
+    // Chemistry/age are mass-weighted means of whatever mass IS here —
+    // a sparse rim cell's few stars are its truth, not a placeholder.
+    if (m > 0) {
       feh[k] = sFeh[k] / m;
       ageGyr[k] = sAge[k] / m;
       youngFrac[k] = sYoung[k] / m;
     } else {
-      hThin[k] = 0.3;
       feh[k] = -1;
       ageGyr[k] = ageSpanGyr * 0.7;
       youngFrac[k] = 0;
     }
-    fehGas[k] = mGas[k] > 3 ? sFehGas[k] / mGas[k] : -1;
+    fehGas[k] = mGas[k] > 0 ? sFehGas[k] / mGas[k] : -1;
   }
 
   const sphRho = new Float32Array(FIELD.SPH_BINS);
@@ -269,6 +282,65 @@ export function bakeField(
     sphRho[b] = (sphM[b] / vol) * perStar;
     sphFeh[b] = sphM[b] > 0 ? sphFehS[b] / sphM[b] : -1.4;
     sphAge[b] = sphM[b] > 0 ? sphAgeS[b] / sphM[b] : ageSpanGyr * 0.85;
+  }
+
+  // Resolution law: the PM force is Plummer-softened at FORM.SOFT —
+  // the run cannot have made structure sharper than that, so a
+  // steeper central cusp is numerics, not physics. The nuclear mass
+  // is real; its unresolved profile is decreed a uniform-density
+  // core of the softening radius (same mass, honest shape).
+  {
+    const bSoft = Math.min(FIELD.SPH_BINS - 1, Math.floor(FORM.SOFT / sphDr));
+    let coreM = 0;
+    for (let b = 0; b <= bSoft; b++) coreM += sphM[b];
+    const coreVol = (4 / 3) * Math.PI * ((bSoft + 1) * sphDr) ** 3;
+    const coreRho = (coreM / coreVol) * perStar;
+    for (let b = 0; b <= bSoft; b++) sphRho[b] = coreRho;
+  }
+
+  // --- renormalize onto the catalog domain ---
+  // Occupancy is the population BY DECREE. Mass the catalog cannot
+  // address (outer disk beyond rMax, halo above zMax, sech² tails)
+  // must not deflate it, so integrate the baked stellar density over
+  // the catalog's own cylinder and scale the whole field so
+  // ∫ρ dV × nK = popTarget exactly.
+  let normScale = 1;
+  if (domain) {
+    const { rMax, zMax } = domain;
+    let integral = 0;
+    // Disk columns: ∫sech²(z/h)dz over |z|≤zMax is 2h·tanh(zMax/h),
+    // so each grid cell contributes Σ·area·tanh(zMax/h).
+    for (let k = 0; k < n2; k++) {
+      const gi = k % OUT;
+      const gj = (k - gi) / OUT;
+      const x = (gi + 0.5) * dx - box;
+      const y = (gj + 0.5) * dx - box;
+      if (x * x + y * y > rMax * rMax) continue;
+      const h = Math.max(FIELD.H_MIN, hThin[k]);
+      const hk = h * FIELD.H_THICK_RATIO;
+      integral += cellArea * (sigThin[k] * tanhE(zMax / h) + sigThick[k] * tanhE(zMax / hk));
+    }
+    // Spheroid: numeric cylinder integral of the spherical shells.
+    const NR = 160;
+    const NZ = 72;
+    const dR = rMax / NR;
+    const dzc = zMax / NZ;
+    for (let iR = 0; iR < NR; iR++) {
+      const R = (iR + 0.5) * dR;
+      for (let iz = 0; iz < NZ; iz++) {
+        const zc = (iz + 0.5) * dzc;
+        const rad = Math.sqrt(R * R + zc * zc);
+        const b = Math.min(FIELD.SPH_BINS - 1, Math.floor(rad / sphDr));
+        integral += sphRho[b] * 2 * Math.PI * R * dR * 2 * dzc;
+      }
+    }
+    normScale = popTarget / nK / Math.max(1e-9, integral);
+    for (let k = 0; k < n2; k++) {
+      sigThin[k] *= normScale;
+      sigThick[k] *= normScale;
+      sigGas[k] *= normScale;
+    }
+    for (let b = 0; b < FIELD.SPH_BINS; b++) sphRho[b] *= normScale;
   }
 
   const vcirc = new Float32Array(r.vcirc.length);
@@ -298,10 +370,19 @@ export function bakeField(
     sphDr,
     vcirc,
     vcDr: r.vcDr,
-    norm: perStar,
+    norm: perStar * normScale,
     hash,
     ms: performance.now() - t0,
   };
+}
+
+/** Bilinear sample of a field grid at in-plane (x, y) kpc. */
+export function fieldGridAt(f: GalaxyField, a: Float32Array, x: number, y: number): number {
+  const dx = (2 * f.box) / f.out;
+  const gx = (x + f.box) / dx - 0.5;
+  const gy = (y + f.box) / dx - 0.5;
+  if (gx <= -1 || gx >= f.out || gy <= -1 || gy >= f.out) return 0;
+  return bilinear(a, f.out, gx, gy);
 }
 
 function bilinear(a: Float32Array, out: number, gx: number, gy: number): number {

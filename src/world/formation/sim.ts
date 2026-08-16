@@ -29,7 +29,7 @@ import { dcos, dexp, dgauss, dlog, dsin, DTAU } from './detmath';
 import { PoissonSolver } from './fft';
 
 /** Bump when the sim's laws change: every address in the sky moves. */
-export const FORMATION_VERSION = 1;
+export const FORMATION_VERSION = 2;
 
 /** km/s → kpc/Myr. */
 const KV = 1 / 977.79222;
@@ -62,6 +62,13 @@ export interface FormationOpts {
   /** Number of steps. */
   steps?: number;
   onProgress?: (frac: number) => void;
+  /**
+   * Live view of the run (read-only borrow of the state arrays) every
+   * `snapEvery` steps — the boot movie. Pure observation: no rng, no
+   * writes, so determinism is untouched.
+   */
+  snapEvery?: number;
+  onSnapshot?: (step: number, px: Float64Array, py: Float64Array, star: Uint8Array, tBirth: Float32Array) => void;
   /** Conservation probe: called every 100 steps with bulk diagnostics. */
   onDebug?: (
     step: number,
@@ -134,7 +141,13 @@ export const FORM = {
   FB_KICK: 180,
   /** Per-pass conversion cap (probability). */
   SF_PMAX: 0.05,
-  /** Closed-box metal yield. */
+  /** Metal yield per stellar generation. Retention is NOT total:
+   * supernova ejecta escape the shallow, puffy, un-assembled early
+   * cloud as a galactic wind; once the baryons have settled into
+   * stars and a dense disk the ejecta are trapped. The retained
+   * fraction is the assembled stellar fraction — no extra constant —
+   * so the halo (born first) EMERGES metal-poor and the disk keeps
+   * enriching, without a population label. */
   YIELD: 0.028,
   /** Primordial metallicity. */
   Z0: 1e-4,
@@ -249,6 +262,7 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
   const gasE = new Float64Array(M * M);
   const dZ = new Float64Array(M * M);
   const heat = new Float64Array(M * M);
+  let nStarTot = 0;
   const solver = new PoissonSolver(M, dx, FORM.SOFT);
 
   const cellOf = (x: number, y: number): number => {
@@ -407,6 +421,8 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
       }
       dZ.fill(0);
       const t = step * DT;
+      // Wind retention: the assembled stellar fraction (see YIELD).
+      const fRet = nStarTot / N;
       for (let i = 0; i < N; i++) {
         if (star[i]) continue;
         const k = cellOf(px[i], py[i]);
@@ -437,11 +453,12 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
         if (rng() < p) {
           star[i] = 1;
           tBirth[i] = t;
+          nStarTot++;
           if (gasM[k] > 1) {
-            // Yield returned to the cell's remaining gas, and the
+            // Retained yield to the cell's remaining gas, and the
             // supernovae of this stellar generation reheat it (energy
             // per formed mass, shared over the cell's gas → variance).
-            dZ[k] += FORM.YIELD / gasM[k];
+            dZ[k] += (FORM.YIELD * fRet) / gasM[k];
             heat[k] += (FORM.FB_KICK * FORM.FB_KICK) / gasM[k];
           }
         }
@@ -449,6 +466,9 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
     }
 
     if (opts.onProgress && step % 64 === 0) opts.onProgress(step / STEPS);
+    if (opts.onSnapshot && opts.snapEvery && step % opts.snapEvery === 0) {
+      opts.onSnapshot(step, px, py, star, tBirth);
+    }
     if (opts.onDebug && step % 100 === 0) {
       let lz = 0;
       let ke = 0;

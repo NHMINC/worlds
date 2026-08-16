@@ -1,22 +1,25 @@
 /**
- * The shared galaxy: an SBbc (grand-design barred spiral) as a density
- * field plus an implicit stellar catalog. Nothing is stored. A star is
- * (seed, cell, slot) → position, population, IMF quantile, birth time,
- * chemistry, then stellar.evolve. The address *is* the star. We do not
- * keep a list of 7k samples; occupancy is the population.
+ * The shared galaxy: a FORMED disk (the gas-to-galaxy run baked into a
+ * GalaxyField) plus an implicit stellar catalog. Nothing is stored. A
+ * star is (seed, cell, slot) → position, population, IMF quantile,
+ * birth time, chemistry, then stellar.evolve. The address *is* the
+ * star. We do not keep a list of samples; occupancy is the population.
  *
  * Within a cell the IMF is stratified: slot 0 is the low-mass end,
  * slot n−1 is the high-mass end. Zooming in is “include more slots,”
  * not “load a bigger array.”
  *
- * Lin–Shu arms are a cosine overdensity on a logarithmic spiral; the bar
- * is a Ferrers ellipsoid; the halo is a potential-shaped envelope. We do
- * not integrate N-body for 10 Gyr — that is the decreed shortcut, same
- * family as “orbits are stable by fiat.”
+ * The density law is no longer an analytic SBbc formula. The seed runs
+ * a deterministic formation sim once (src/world/formation); its baked
+ * field — thin/thick disk, spheroid, gas, chemistry, ages — is what
+ * every function here samples. Bulge, bar, arms, the metallicity
+ * gradient and the age structure are OUTCOMES of that run.
  */
 import { mulberry32, xmur3 } from './rng';
 import { UNIVERSE } from './physics';
 import { evolve, imfMass, msLifetime, msLuminosity, msRadius, teffFromLR, type StellarState } from './stellar';
+import { ringAt, sampleField } from './formation/registry';
+import { FIELD, fieldDensityParts, fieldGridAt } from './formation/field';
 
 export type Population = 'thin' | 'thick' | 'halo' | 'bulge' | 'bar';
 
@@ -38,11 +41,6 @@ export interface GalaxyObject {
 }
 
 const TAU = Math.PI * 2;
-const sech2 = (x: number) => {
-  const e = Math.exp(x);
-  const s = 2 / (e + 1 / e);
-  return s * s;
-};
 
 function rngFor(seed: string, ...parts: Array<string | number>): () => number {
   return mulberry32(xmur3(`galaxy:${seed}:${parts.join(':')}`)());
@@ -52,45 +50,52 @@ function u01(seed: string, ...parts: Array<string | number>): number {
   return rngFor(seed, ...parts)();
 }
 
-/** Logarithmic-spiral phase. 0 = arm crest. */
-export function armPhase(R: number, theta: number): number {
-  const { GALAXY_ARM_M: m, GALAXY_PITCH: pitch, GALAXY_RD: rd } = UNIVERSE;
-  const cot = 1 / Math.max(0.05, Math.tan(pitch));
-  return m * theta - m * cot * Math.log(Math.max(R, 0.15) / rd);
-}
+/**
+ * The spheroid of the formed field is one kinematic family (hot,
+ * non-circular births). We split it at this radius for POP LABELS
+ * only — inner spheroid reads as "bulge", outer as "halo" — the
+ * density itself is one profile.
+ */
+const SPHEROID_BULGE_R = 3.0;
 
+/**
+ * Arm test: an arm is a composite structure — the stellar crest AND
+ * the gas lane the dissipative ISM piles up alongside it (offset
+ * downstream, as in real spirals). The run leaves ~5× gas contrast
+ * against ~1.2× stellar, so the flag is a union of the two local
+ * overdensities, each against its own ring mean. No spiral formula
+ * to disagree with the sky.
+ */
 export function inSpiralArm(R: number, theta: number): boolean {
-  const c = Math.cos(armPhase(R, theta));
-  return c > 0.25;
+  const { field, fits } = sampleField();
+  const x = R * Math.cos(theta);
+  const y = R * Math.sin(theta);
+  const gas = fieldGridAt(field, field.sigGas, x, y);
+  const gMean = ringAt(fits.gasSigMean, fits.ringDr, R);
+  const sig = fieldGridAt(field, field.sigThin, x, y) + fieldGridAt(field, field.sigThick, x, y);
+  const sMean = ringAt(fits.diskSigMean, fits.ringDr, R);
+  return (gMean > 1e-9 && gas > 1.3 * gMean) || (sMean > 1e-9 && sig > 1.15 * sMean);
 }
 
 /**
- * Component densities at a point (relative, not physical Msun/pc³).
- * The catalog only needs shape and contrast.
+ * Component densities at a point (occupancy units — × GALAXY_N_K =
+ * stars/kpc³), sampled from the formed field. 'bar' is retired as a
+ * component: the bar the run grew lives inside the thin grid where it
+ * kinematically belongs.
  */
 export function densityParts(p: GalPos): Record<Population, number> {
-  const U = UNIVERSE;
-  const r = Math.hypot(p.R, p.z);
-  const thin =
-    Math.exp(-p.R / U.GALAXY_RD) *
-    sech2(p.z / U.GALAXY_ZD) *
-    (1 + U.GALAXY_ARM_A * Math.cos(armPhase(p.R, p.theta)));
-  const thick = 0.14 * Math.exp(-p.R / U.GALAXY_RD_THICK) * sech2(p.z / U.GALAXY_Z_THICK);
-  const bulge = 4.2 * Math.exp(-3.5 * (r / U.GALAXY_RE_BULGE));
+  const { field } = sampleField();
   const x = p.R * Math.cos(p.theta);
   const y = p.R * Math.sin(p.theta);
-  const rb2 =
-    (x * x) / (U.GALAXY_BAR_A * U.GALAXY_BAR_A) +
-    (y * y) / (U.GALAXY_BAR_B * U.GALAXY_BAR_B) +
-    (p.z * p.z) / (U.GALAXY_BAR_C * U.GALAXY_BAR_C);
-  const bar = rb2 < 1 ? 3.4 * Math.pow(1 - rb2, 1.8) : 0;
-  const halo = 0.03 / Math.pow(1 + r / U.GALAXY_HALO_A, 3.2);
+  const parts = fieldDensityParts(field, x, y, p.z);
+  const r = Math.hypot(p.R, p.z);
+  const inner = r < SPHEROID_BULGE_R;
   return {
-    thin: Math.max(0, thin),
-    thick: Math.max(0, thick),
-    bulge: Math.max(0, bulge),
-    bar: Math.max(0, bar),
-    halo: Math.max(0, halo),
+    thin: parts.thin,
+    thick: parts.thick,
+    bulge: inner ? parts.spheroid : 0,
+    bar: 0,
+    halo: inner ? 0 : parts.spheroid,
   };
 }
 
@@ -122,11 +127,17 @@ function ismNoise(seed: string, x: number, y: number, z: number): number {
   return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
 }
 
-/** Gas disk is flatter than the stars: molecular gas hangs on past the stellar edge. */
+/**
+ * The formed gas disk, normalized so the densest complex is ~1. The
+ * sim left its gas where dissipation and the bar put it — arms and
+ * rings in the ISM are inherited, not painted on with a cosine.
+ */
 function gasBase(p: GalPos): number {
-  const U = UNIVERSE;
-  const armF = 1 + U.GALAXY_ARM_A * Math.cos(armPhase(p.R, p.theta));
-  return Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2(p.z / U.GALAXY_ZD) * armF;
+  const { field, fits } = sampleField();
+  const x = p.R * Math.cos(p.theta);
+  const y = p.R * Math.sin(p.theta);
+  const parts = fieldDensityParts(field, x, y, p.z);
+  return Math.min(1, parts.gas / fits.gasMidPeak);
 }
 
 let ismMemoSeed = '';
@@ -156,7 +167,8 @@ export function ismNorm(seed: string, cell: number): number {
       (ismNoise(seed, c.x * f, c.y * f, c.z * f) +
         0.5 * ismNoise(seed, c.x * f * 2.3 + 31.7, c.y * f * 2.3, c.z * f * 2.3)) /
       1.5;
-    const ceil = (1 + UNIVERSE.GALAXY_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
+    // gasBase is already normalized to ~1 at the densest complex.
+    const ceil = Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
     v = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s)) / ceil);
   }
   if (ismMemo.size > 400_000) ismMemo.clear();
@@ -204,7 +216,9 @@ export function dustPhysics(seed: string, cell: number): DustPhysics {
   const scatter = u01(seed, 'dustChem', cell);
   const { feh, carbon } = chemistry('thin', p.R, 0.5, scatter);
   // Radiation temperature proxy: hot inner disk, cooled by shielding.
-  const warm = Math.exp(-p.R / (UNIVERSE.GALAXY_RD * 2)) * (1 - 0.55 * field);
+  // Warmth follows the STELLAR disk's fitted length — dust is heated
+  // by starlight, and the leftover gas disk the run keeps is flat.
+  const warm = Math.exp(-p.R / (sampleField().fits.diskRd * 1.4)) * (1 - 0.55 * field);
   const iceFrac = clamp01(1.4 * (UNIVERSE.DUST_ICE_WARM - warm));
   const carbonFrac = clamp01((carbon - 1.2) * 0.9);
   return { field, feh, carbon, iceFrac, carbonFrac };
@@ -236,10 +250,20 @@ function pickPop(d: Record<Population, number>, u: number): Population {
   return 'thin';
 }
 
+/** Spheroid profile lookup (bulge + halo share one formed profile). */
+function sphProfileAt(arr: Float32Array, sphDr: number, r: number): number {
+  const b = Math.min(arr.length - 1, Math.max(0, Math.floor(r / sphDr)));
+  return arr[b];
+}
+
 /**
- * Inside-out, leaky-box chemistry. Inner disk formed earlier and is
- * metal-richer; halo is old and poor; bulge is old and rich. C/O climbs
- * with Z and with thin-disk youth (AGB return).
+ * Chemistry from the RUN, not a formula: the disk gradient is the
+ * mass-weighted [Fe/H] the enrichment law actually left at that
+ * radius; the spheroid's is the hot-birth profile (metal-rich where
+ * the bulge formed fast, poor in the slow outer halo). The thin disk
+ * keeps a small youth tilt (later births drink a richer box) and the
+ * thick disk sits one enrichment era below its ring. C/O climbs with
+ * Z and with thin-disk youth (AGB return).
  */
 export function chemistry(
   pop: Population,
@@ -247,31 +271,39 @@ export function chemistry(
   ageGyr: number,
   scatter: number,
 ): { feh: number; carbon: number } {
-  const rd = UNIVERSE.GALAXY_RD;
+  const { field, fits } = sampleField();
   const young = 1 - ageGyr / UNIVERSE.GALAXY_AGE_GYR;
+  const diskBase = ringAt(fits.fehDisk, fits.ringDr, R);
   let feh = 0;
-  if (pop === 'thin') feh = 0.18 - 0.07 * (R / rd) + 0.22 * young;
-  else if (pop === 'thick') feh = -0.55 - 0.03 * (R / rd);
-  else if (pop === 'halo') feh = -1.55 + 0.15 * (R / (rd * 4));
-  else if (pop === 'bulge') feh = 0.25 - 0.4 * Math.max(0, ageGyr - 8) / 5;
-  else feh = 0.05 - 0.04 * (R / rd);
+  if (pop === 'thin') feh = diskBase + 0.18 * young;
+  else if (pop === 'thick') feh = diskBase - 0.35;
+  else feh = sphProfileAt(field.sphFeh, field.sphDr, R);
   feh += (scatter - 0.5) * (pop === 'halo' ? 0.7 : 0.25);
   const zRel = Math.pow(10, feh);
   const carbon = 0.55 + 0.45 * Math.min(2.2, zRel) + 0.35 * Math.max(0, young) * (pop === 'thin' ? 1 : 0.2);
   return { feh, carbon };
 }
 
-/** Birth-age window (Gyr of age today) for a population at radius R. */
+/**
+ * Birth-age window (Gyr of age today) for a population at radius R —
+ * anchored on the run's own mean-age maps. Inside-out growth, the old
+ * thick disk and the ancient spheroid are what the sim produced, so
+ * the windows follow it instead of restating it.
+ */
 export function ageWindow(pop: Population, R: number): [number, number] {
   const T = UNIVERSE.GALAXY_AGE_GYR;
+  const { field, fits } = sampleField();
   if (pop === 'thin') {
-    const start = 0.35 * (R / UNIVERSE.GALAXY_R_MAX) * T;
-    return [0.02, T - start];
+    const mean = ringAt(fits.ageDisk, fits.ringDr, R);
+    return [0.02, Math.min(T - 0.2, Math.max(1.5, 2 * mean))];
   }
-  if (pop === 'thick') return [6.5, 11.5];
-  if (pop === 'halo') return [10, T];
-  if (pop === 'bulge') return [7.5, T];
-  return [6, T];
+  if (pop === 'thick') {
+    const mean = ringAt(fits.ageDisk, fits.ringDr, R);
+    return [Math.min(T - 1, Math.max(4, mean + 1.5)), T];
+  }
+  const sphMean = sphProfileAt(field.sphAge, field.sphDr, R);
+  if (pop === 'halo') return [Math.min(T - 0.2, Math.max(6, sphMean)), T];
+  return [Math.min(T - 0.5, Math.max(3, sphMean - 1.5)), T];
 }
 
 export function cellCount(): number {
@@ -867,32 +899,35 @@ function dominantPop(parts: Record<Population, number>): Population {
 }
 
 /**
- * Importance-sample the mass model. Arms, bar and bulge get more
- * particles because they are denser — that is why a face-on view
- * reads as a grand-design spiral, not a painted texture.
+ * Importance-sample the GAS disk — dust rides the gas, not the stars.
+ * The lanes, rings and arm segments the run left in its ISM are why a
+ * face-on view reads as a spiral, not a painted texture.
  */
 export function sampleDust(count: number, seed = UNIVERSE.CANONICAL_SEED): DensitySample[] {
   const rng = rngFor(seed, 'dust', count);
+  const { field, fits } = sampleField();
   const rMax = UNIVERSE.GALAXY_R_MAX;
-  const zd = UNIVERSE.GALAXY_ZD;
   const out: DensitySample[] = [];
-  // Saturate the core so the disk/arms still win draws (d ~ 0.1–0.7).
-  const dScale = 2.4;
   let tries = 0;
-  const maxTries = count * 80;
+  const maxTries = count * 400;
   while (out.length < count && tries < maxTries) {
     tries++;
     const R = rMax * Math.sqrt(rng());
     const theta = rng() * TAU;
+    const x = R * Math.cos(theta);
+    const y = R * Math.sin(theta);
+    // Accept on the local midplane gas density, then draw z from the
+    // sheet's own sech² column — the same law fieldDensityParts uses.
+    const h = Math.max(FIELD.H_MIN, fieldGridAt(field, field.hThin, x, y));
+    const hg = Math.max(FIELD.H_MIN, h * 0.5);
+    const mid = fieldGridAt(field, field.sigGas, x, y) / (2 * hg);
+    const d = mid / fits.gasMidPeak;
+    if (rng() > Math.min(1, d)) continue;
     const u = Math.min(0.999, Math.max(0.001, rng()));
-    const z = 0.5 * zd * Math.log(u / (1 - u));
-    if (Math.abs(z) > UNIVERSE.GALAXY_Z_THICK * 3) continue;
+    const z = hg * Math.atanh(2 * u - 1);
     const pos = { R, theta, z };
-    const parts = densityParts(pos);
-    const d = parts.thin + parts.thick + parts.bulge + parts.bar + parts.halo;
-    if (rng() > Math.min(1, d / dScale)) continue;
     const c = galToCart(pos);
-    out.push({ x: c.x, y: c.y, z: c.z, d, pop: dominantPop(parts) });
+    out.push({ x: c.x, y: c.y, z: c.z, d, pop: dominantPop(densityParts(pos)) });
   }
   return out;
 }

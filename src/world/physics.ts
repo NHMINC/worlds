@@ -379,9 +379,9 @@ export const UNIVERSE = {
   GALAXY_TURB_SIGMA: 1.35,
   GALAXY_TURB_FREQ: 0.85,
   GALAXY_RD_GAS: 1.6,
-  GALAXY_DUST_N_K: 6000,
+  GALAXY_DUST_N_K: 13_000,
   GALAXY_DUST_MAX: 8,
-  GALAXY_SFR_GAIN: 10,
+  GALAXY_SFR_GAIN: 14,
   GALAXY_CLOUD_HII: 0.1,
   GALAXY_DUST_RGB: [0.55, 1.0, 1.65] as [number, number, number],
 
@@ -394,14 +394,15 @@ export const UNIVERSE = {
    * population, not a sample of it. objectAt is O(1) at 10⁹ ids the
    * same as at ten. We never enumerate the galaxy; the explorer asks
    * objectsNear for the volume it occupies. GALAXY_POPULATION is the
-   * design headcount (∫ density dV × N_K). The grid is fine enough
-   * that the densest cell stays under MAX_SLOT. Halo cells stay
-   * sparse; arms fill up.
+   * design headcount (∫ density dV × N_K). MAX_SLOT is sized so the
+   * densest cell of the FORMED field (the softening-floored nuclear
+   * core) still fits — a smaller cap silently deletes bulge mass.
+   * Halo cells stay sparse; arms fill up.
    */
   GALAXY_NR: 288,
   GALAXY_NTH: 576,
   GALAXY_NZ: 18,
-  GALAXY_MAX_SLOT: 8192,
+  GALAXY_MAX_SLOT: 32768,
   GALAXY_N_K: 12_600_000,
   GALAXY_POPULATION: 1_000_000_000,
 

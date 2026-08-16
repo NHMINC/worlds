@@ -15,6 +15,7 @@ import { writeFileSync } from 'node:fs';
 import { UNIVERSE } from '../src/world/physics';
 import { runFormation, formationGenes, FORM, FORMATION_VERSION } from '../src/world/formation/sim';
 import { bakeField, fieldDensity, fieldDensityParts, FIELD } from '../src/world/formation/field';
+import { catalogDomain } from '../src/world/formation/registry';
 
 let fail = 0;
 const check = (cond: boolean, msg: string) => {
@@ -30,11 +31,11 @@ console.log('genes:', JSON.stringify(formationGenes(seed), (_, v) => (typeof v =
 
 const r1 = runFormation(seed);
 console.log(`run 1: ${r1.ms.toFixed(0)} ms  (${FORM.N} particles, ${FORM.STEPS} steps, mesh ${FORM.MESH})`);
-const f1 = bakeField(seed, FORMATION_VERSION, r1, UNIVERSE.GALAXY_AGE_GYR, UNIVERSE.GALAXY_POPULATION, UNIVERSE.GALAXY_N_K);
+const f1 = bakeField(seed, FORMATION_VERSION, r1, UNIVERSE.GALAXY_AGE_GYR, UNIVERSE.GALAXY_POPULATION, UNIVERSE.GALAXY_N_K, catalogDomain());
 console.log(`bake 1: ${f1.ms.toFixed(0)} ms  hash ${f1.hash.toString(16)}`);
 
 const r2 = runFormation(seed);
-const f2 = bakeField(seed, FORMATION_VERSION, r2, UNIVERSE.GALAXY_AGE_GYR, UNIVERSE.GALAXY_POPULATION, UNIVERSE.GALAXY_N_K);
+const f2 = bakeField(seed, FORMATION_VERSION, r2, UNIVERSE.GALAXY_AGE_GYR, UNIVERSE.GALAXY_POPULATION, UNIVERSE.GALAXY_N_K, catalogDomain());
 check(f1.hash === f2.hash, `determinism: hashes differ ${f1.hash.toString(16)} vs ${f2.hash.toString(16)}`);
 check(r1.ms < 45_000, `runtime ${r1.ms.toFixed(0)} ms over budget`);
 
