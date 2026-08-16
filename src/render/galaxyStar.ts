@@ -75,7 +75,8 @@ export const HARVEST_GLOW_MAX = 22;
  * compression, so a floor pin stays dim and an O can still
  * glow without everyone clipping to the same white.
  */
-export const HARVEST_SHINE_GAIN = 0.26;
+/** Photograph exposure. 0.13 is half the first asinh pass. */
+export const HARVEST_SHINE_GAIN = 0.13;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_FLUX_EPS = 0.16;
 /** Knee: ~6× a harvest-floor star at DREF. Linear below, log above. */
