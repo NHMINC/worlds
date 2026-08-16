@@ -19,7 +19,7 @@ const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
   { id: 'edge', label: 'Edge-on' },
   { id: 'home', label: 'Home' },
-  { id: 'arm', label: 'Arm' },
+  { id: 'back', label: 'Back' },
 ];
 
 interface Props {
@@ -184,23 +184,9 @@ export function GalaxyExplorer(props: Props) {
 
       <header className="galaxy-top">
         <div className="galaxy-brand">
-          <div className="galaxy-title">
-            {inRegion ? (
-              <>
-                <button className="gx-chip gx-crumb" onClick={() => viewRef.current?.exitRegion()}>
-                  Helix
-                </button>
-                <span className="gx-crumb-sep"> › </span>
-                {frame.sector}
-              </>
-            ) : (
-              'Helix'
-            )}
-          </div>
+          <div className="galaxy-title">Helix{frame.sector ? ` · ${frame.sector}` : ''}</div>
           <div className="galaxy-sub">
-            {inRegion
-              ? `${frame.population.toLocaleString()} in this volume · ${frame.backdrop.toLocaleString()} behind`
-              : `SBbc · ${UNIVERSE.GALAXY_POPULATION.toExponential(0)} addressable systems · tap the galaxy`}
+            {`${frame.population.toLocaleString()} in this volume · ${frame.backdrop.toLocaleString()} behind`}
           </div>
         </div>
         <div className="galaxy-presets">
@@ -282,9 +268,7 @@ export function GalaxyExplorer(props: Props) {
         )}
         <div className="galaxy-readout">
           i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
-          {inRegion
-            ? ' · ↑ / Warp to fly · ↓ / Stop to brake · drag to look'
-            : ' · tap the galaxy to enter a volume · markers are worlds'}
+          {' · ↑ / Warp to fly · ↓ / Stop to brake · drag to look'}
         </div>
       </footer>
     </div>

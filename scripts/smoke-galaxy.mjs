@@ -1,6 +1,6 @@
 /* Fresh boot + the galaxy explorer. Clears IndexedDB, loads the app,
  * waits for the universe mint, lands in the region on a living host,
- * checks the Helix saucer, taps a star, sets course.
+ * checks Face-on / Edge-on / Back / Home, taps a star, sets course.
  * Run: node scripts/smoke-galaxy.mjs (dev server on :5173). */
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -86,7 +86,6 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
     stars: window.__galaxyView?.beaconCount?.() ?? 0,
     inBall: window.__galaxyView?.cloudFitsRegion?.() ?? false,
     dossier: document.querySelector('.gd-class')?.textContent ?? null,
-    crumb: Boolean(document.querySelector('.gx-crumb')),
   }));
   console.log('REGION', JSON.stringify(arc));
   await page.screenshot({ path: 'previews/galaxy-2-arc.png' });
@@ -94,46 +93,57 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   if (!arc.stars || arc.stars < 8_000) errors.push(`region loaded only ${arc.stars} stars`);
   if (!arc.inBall) errors.push('region cloud has stars outside the ball');
   if (!arc.dossier) errors.push('open did not select the loaded star');
-  if (!arc.crumb) errors.push('region breadcrumb missing');
 
-  // Helix overview still exists: Face-on / Edge-on saucer.
-  await page.click('.gx-crumb');
-  await page.waitForTimeout(1200);
-  const map = await page.evaluate(() => window.__galaxyView?.currentMode?.() ?? null);
-  console.log('MAP', JSON.stringify({ mode: map }));
-  if (map !== 'map') errors.push('breadcrumb did not return to the map');
-  await page.screenshot({ path: 'previews/galaxy-1-map.png' });
-
-  // Oblique (~79°) — the bulge must be a dome, not a golden cone.
-  await page.evaluate(() => window.__galaxyView?.setPreset?.('edge'));
-  await page.waitForTimeout(1800);
-  await page.screenshot({ path: 'previews/galaxy-1b-oblique.png' });
+  const beforeOverview = await page.evaluate(() => window.__galaxyView?.currentRegion?.() ?? null);
   await page.evaluate(() => window.__galaxyView?.setPreset?.('face'));
-  await page.waitForTimeout(800);
+  await page.waitForTimeout(1200);
+  const face = await page.evaluate(() => ({
+    mode: window.__galaxyView?.currentMode?.() ?? null,
+    region: window.__galaxyView?.currentRegion?.() ?? null,
+  }));
+  const faceR = face.region ? Math.hypot(face.region.x, face.region.y, face.region.z) : 0;
+  console.log('FACE', JSON.stringify({ ...face, r: faceR }));
+  await page.screenshot({ path: 'previews/galaxy-1-face.png' });
+  if (face.mode !== 'region') errors.push('Face-on left the region');
+  if (faceR < 20) errors.push(`Face-on bubble not far enough (${faceR})`);
 
-  // Tap the home marker: re-enters home's region with the star selected.
-  const ring = await page.evaluate(() => {
-    const v = window.__galaxyView;
-    return v.projectClient(v.home);
-  });
-  console.log('HOME MARKER', JSON.stringify(ring));
-  if (ring) {
-    await page.mouse.click(ring.x, ring.y);
-    await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
-    await page.waitForTimeout(400);
-  }
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('edge'));
+  await page.waitForTimeout(1200);
+  const edge = await page.evaluate(() => ({
+    mode: window.__galaxyView?.currentMode?.() ?? null,
+    region: window.__galaxyView?.currentRegion?.() ?? null,
+  }));
+  const edgeR = edge.region ? Math.hypot(edge.region.x, edge.region.y, edge.region.z) : 0;
+  console.log('EDGE', JSON.stringify({ ...edge, r: edgeR }));
+  await page.screenshot({ path: 'previews/galaxy-1b-edge.png' });
+  if (edge.mode !== 'region') errors.push('Edge-on left the region');
+  if (edgeR < 20) errors.push(`Edge-on bubble not far enough (${edgeR})`);
+
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('back'));
+  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
+  const back = await page.evaluate(() => window.__galaxyView?.currentRegion?.() ?? null);
+  const backD = beforeOverview && back
+    ? Math.hypot(back.x - beforeOverview.x, back.y - beforeOverview.y, back.z - beforeOverview.z)
+    : 99;
+  console.log('BACK', JSON.stringify({ back, d: backD }));
+  if (backD > 0.2) errors.push(`Back did not restore the pre-overview pose (${backD})`);
+
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('home'));
+  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
   const homeDive = await page.evaluate(() => ({
     mode: window.__galaxyView?.currentMode?.() ?? null,
     selected: window.__galaxyView?.selectedObject?.()?.id ?? null,
+    here: window.__galaxyView?.here?.()?.id ?? null,
     home: window.__galaxyView?.home?.id ?? null,
     dossier: document.querySelector('.gd-class')?.textContent ?? null,
   }));
-  console.log('HOME DIVE', JSON.stringify(homeDive));
-  if (homeDive.mode !== 'region') errors.push('tapping home marker did not enter its region');
-  if (homeDive.home != null && homeDive.selected !== homeDive.home) {
-    errors.push('home marker tap did not select home');
+  console.log('HOME', JSON.stringify(homeDive));
+  if (homeDive.mode !== 'region') errors.push('Home left the region');
+  const homeExpect = homeDive.here ?? homeDive.home;
+  if (homeExpect != null && homeDive.selected !== homeExpect) {
+    errors.push(`Home selected ${homeDive.selected}, not ${homeExpect}`);
   }
-  if (!homeDive.dossier) errors.push('home marker tap did not open a dossier');
+  if (!homeDive.dossier) errors.push('Home did not open a dossier');
 
   const survey = await page.evaluate(() => {
     const v = window.__galaxyView;
@@ -231,28 +241,6 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   if (!grow || grow.a0 <= 0) errors.push('approached star has no growing point');
   if (grow && grow.a1 <= grow.a0 * 1.02) errors.push(`star did not grow on approach ${grow.a0} → ${grow.a1}`);
   if (!plate) errors.push('no compact sight HUD after approaching a star');
-
-  // Back out to the map via the breadcrumb, then re-enter by tapping the saucer.
-  await page.click('.gx-crumb');
-  await page.waitForTimeout(1200);
-  const backOut = await page.evaluate(() => window.__galaxyView?.currentMode?.() ?? null);
-  console.log('BACK', JSON.stringify({ mode: backOut }));
-  if (backOut !== 'map') errors.push('breadcrumb did not return to the map');
-  await page.waitForTimeout(1800);
-  await page.mouse.click(560, 330);
-  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 1_000, { timeout: 30000 });
-  await page.waitForTimeout(400);
-  const arc2 = await page.evaluate(() => ({
-    mode: window.__galaxyView?.currentMode?.() ?? null,
-    region: window.__galaxyView?.currentRegion?.()?.name ?? null,
-    stars: window.__galaxyView?.beaconCount?.() ?? 0,
-    inBall: window.__galaxyView?.cloudFitsRegion?.() ?? false,
-  }));
-  console.log('REGION 2', JSON.stringify(arc2));
-  await page.screenshot({ path: 'previews/galaxy-4-arc2.png' });
-  if (arc2.mode !== 'region') errors.push('tapping the saucer did not enter a region');
-  if (arc2.stars < 1_000) errors.push(`saucer tap loaded only ${arc2.stars} stars`);
-  if (!arc2.inBall) errors.push('saucer-tap cloud has stars outside the ball');
 
   // Latched warp: one tap accelerates, Stop brakes (same path as ↑ / ↓).
   const beforeCruise = await page.evaluate(() => window.__galaxyView?.currentRegion?.() ?? null);

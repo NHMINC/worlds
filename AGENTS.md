@@ -178,84 +178,43 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   front only multiplies the same Chapman transmittance the sky already
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
-- **The explorer is a saucer chart plus a regional dive, not a
-  camera-relative catalog.** The map mesh may still be cut into
-  `GALAXY_SECTORS` × `GALAXY_SECTOR_RINGS` tiles so the dome
-  tessellates (`src/world/sectors.ts`); that grid is fabric, not a
-  play verb. A tap is a coordinate. Two views; the catalog is static
-  in both:
-  - **Map**: a saucer mesh (`galaxySectors.ts`) coloured by the
-    density law — golden bulge/bar, blue crests, brown lanes — plus
-    markers for home, here, visited systems, and ~100 deterministic
-    systems of interest (`systemsOfInterest`). NO stars are drawn on
-    the map; the speckle is chart fabric, not a sky. The map camera
-    orbits the origin. The in-system galaxy icon does **not** land
-    here — it opens the region at the loaded star (`hereStarId`,
-    else `homeStar`) with that star on the reticle. An empty save
-    opens the same way on a discovered living host. The saucer is
-    the Helix breadcrumb / Face-on chart, not the landing page.
-  - **Region**: a magnification sphere of radius `GALAXY_REGION_R`
-    (~2 kpc) in catalog space. Near the centre (`GALAXY_REGION_FULL_R`)
-    every occupied slot is a point. Farther cells keep only the
-    massive tail of their IMF.     The camera sits at the sphere centre — it does not tour the
-    ball. Gestures **slide the sphere** through the catalog: stars
-    that cross in are minted, stars that leave drop out. The GPU
-    holds catalog positions; the vertex shader applies the
-    magnifier (`uCenter`, `uScale`). Membership is a **shell
-    walk** (`advanceRegionCloud`) on a worker — interior keepers
-    stay put; the frame only updates uniforms. We do not copy the
-    cloud or remesh on every slide. Space inside
-    is drawn in a `GALAXY_REGION_VIEW_R` (40 kpc) ball
-    (offsets × VIEW_R/REGION_R); star size is not scaled. Cheap
-    birth, no `evolve` until you tap. Distant stars are **1px
-    pinpricks**. Closer ones grow from luminosity and distance.
-    Behind the ball a **magnitude-limited backdrop**
-    (`buildSilhouetteCloud`) draws the rest of the disk from the
-    same clock: luminous living stars (A and hotter, giants, WR),
-    typed nebulae on their host ids (H II / PN / SNR), and **dust
-    clumps** minted from the coherent ISM field (`ismNorm`) — a
-    population with scattered positions, not fake stars, not
-    landings. The same field drives star formation (dense gas
-    births young stars — nurseries) and the H II condition.
-    Cached per seed — minted once at app boot (`prepareUniverse`)
-    on a worker, not on the dive. The local 2 kpc cloud is minted
-    on each enter (then slid by `advanceRegionCloud`); the dive
-    must not sync-walk the disk.
-    Envelope size is angular in both layers.
-    Nebulae are 50% transparent spheres on the host (cyan PN,
-    red SNR, white H II) — glass, not additive stacks. **Dust is
-    never drawn — it is sightline extinction** (`extinctGlsl`,
-    one law in both vertex shaders): every star and nebula row
-    marches the column from the bubble centre through the thin
-    gas sheet × the turbulence field and dims by
-    `exp(−τ · GALAXY_DUST_RGB)` — blue dies first, so rift-edge
-    stars redden before they vanish, and dust manifests as
-    irregular star-poor holes, the way Barnard found it. Dust
-    rows stay minted census-only, wearing `dustPhysics` grain
-    chemistry (silicate / sooty carbon / ice mantles). The
-    magnifier is unchanged: backdrop
-    dots are not pickable; a star is visitable only when the
-    2 kpc ball has resolved that id. The sphere itself is
-    untouched; the map saucer stays hidden. The breadcrumb
-    returns to the map.
-  Nothing queries or rebuilds the catalog per camera move in either
-  mode — the old free-flight explorer's blink / cluster / stutter /
-  re-roll bug class was structural, and it is retired along with the
-  raymarched field and the dynamic beacon system. A painted starfield
-  is still a lie: every individual star drawn anywhere is an
-  addressable catalog row. The in-system night shell (`buildStars`) is
-  still unseeded and must retire so ground and explorer agree.
-- **Explorer gestures.** On the **map**, zoom is direct, gentle, and
-  never redirects: wheel/pinch scale the orbit radius toward what is
-  already framed; the eased radius is the only smoothing and the look
-  point never moves on a zoom. One continuous motion crosses at most
-  `ZOOM_GESTURE_SPAN` (~2.6×); a ~0.6 s pause starts the next motion.
-  After a pinch, the surviving finger is NOT a drag — rotation resumes
-  only with a fresh single-finger touch. In **region** mode the camera
-  stays at the bubble centre. Fly is a **latched warp**: ↑ / W
-  (or the **Warp** button) accelerates to a cap at the same rate
-  ↓ / S / **Stop** brakes. A tap, not a hold. Drag looks. Wheel/pinch
-  do not fly. A/D still slide. The breadcrumb returns to the map.
+- **The explorer is one magnification sphere, not a saucer chart.**
+  App boot mints the whole-disk backdrop once (`prepareUniverse`)
+  and opens the region at the loaded star (`hereStarId`, else
+  `homeStar`) with that star on the reticle. An empty save opens
+  the same way on a discovered living host. The camera sits at the
+  sphere centre — it does not tour the ball. Gestures **slide the
+  sphere** through the catalog: stars that cross in are minted,
+  stars that leave drop out. The GPU holds catalog positions; the
+  vertex shader applies the magnifier (`uCenter`, `uScale`).
+  Membership is a **shell walk** (`advanceRegionCloud`) on a
+  worker. Space inside is drawn in a `GALAXY_REGION_VIEW_R`
+  (40 kpc) ball. Distant stars are **1px pinpricks**; closer ones
+  grow from luminosity and distance. Behind the ball a
+  magnitude-limited backdrop (`buildSilhouetteCloud`) draws the
+  rest of the disk. **Dust is never drawn — it is sightline
+  extinction** (`extinctGlsl`). A star is visitable only when the
+  2 kpc ball has resolved that id.
+  **Face-on / Edge-on** slide the bubble far enough that the whole
+  disk fits the screen (pole-on, or a few degrees above the plane)
+  and look back at the origin. **Home** parks on the loaded star
+  and pins that pose as the Back bookmark. **Back** restores the
+  pose from before Face-on or Edge-on (or Home, if Home was tapped).
+  Switching Face-on ↔ Edge-on does not overwrite the bookmark.
+  The old saucer chart is retired.
+  Nothing queries or rebuilds the catalog per camera move — the
+  old free-flight explorer's blink / cluster / stutter / re-roll
+  bug class is retired along with the raymarched field and the
+  dynamic beacon system. A painted starfield is still a lie: every
+  individual star drawn anywhere is an addressable catalog row.
+  The in-system night shell (`buildStars`) is still unseeded and
+  must retire so ground and explorer agree.
+- **Explorer gestures.** The camera stays at the bubble centre.
+  Fly is a **latched warp**: ↑ / W (or the **Warp** button)
+  accelerates to a cap at the same rate ↓ / S / **Stop** brakes.
+  A tap, not a hold. Drag looks. After a pinch, the surviving
+  finger is NOT a drag — rotation resumes only with a fresh
+  single-finger touch. A/D still slide.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
@@ -532,7 +491,7 @@ Code map (start here):
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
-| Galaxy explorer (saucer + region dive) | `src/render/galaxySectors.ts`, `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (magnification bubble) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |

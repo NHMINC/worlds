@@ -406,12 +406,12 @@ export const UNIVERSE = {
   GALAXY_POPULATION: 1_000_000_000,
 
   /**
-   * The saucer mesh is still cut into SECTORS × SECTOR_RINGS tiles
-   * (equal-mass rings) so the dome tessellates cleanly. That grid is
-   * chart fabric, not a play verb. A tap is a coordinate; the region
-   * is a ball of radius GALAXY_REGION_R around that point — a real
-   * neighbourhood, not a marble. Every occupied slot is kept near the
-   * tap (FULL_R). Farther cells keep only the massive tail of their
+   * The catalog neighbourhood is a ball of radius GALAXY_REGION_R
+   * around the bubble centre — a real neighbourhood, not a marble.
+   * Face-on / Edge-on slide that ball far enough that the disk fits
+   * the screen; they are the same magnifier, not a second viewer.
+   * Every occupied slot is kept near the
+   * centre (FULL_R). Farther cells keep only the massive tail of their
    * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
    * you can fly. Count is still an outcome — the bulge is denser.
    * Flying slides that ball through the catalog (border in / out).
