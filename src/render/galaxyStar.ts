@@ -68,15 +68,16 @@ export const HARVEST_PSF_WING_P = 1.25;
 export const HARVEST_PSF_SIG2 = 1.6;
 export const HARVEST_PSF_THRESH = 0.045;
 /**
- * Apparent magnitude. Flux is L / (d² + ε); display is
- * GAIN · (flux / fluxRef)^P. No bright-end cap. GAIN is the
- * photograph exposure — high enough that every harvest pin
- * reads on a phone; the two 50% cuts had left the field dark.
+ * Harvest photograph. The catalog cut already picked the luminous
+ * tail — I = GAIN · (L / LREF)^P. Distance does not hide a row
+ * (L/d² made the far disk vanish). No bright-end cap.
  */
 export const HARVEST_SHINE_GAIN = 0.6;
 export const HARVEST_SHINE_P = 0.55;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_FLUX_EPS = 0.16;
+/** Dust may dim a pin, not erase it. */
+export const HARVEST_EXTINCT_KEEP = 0.55;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). Unused on harvest pins. */
@@ -116,11 +117,9 @@ export function harvestGlowPx(L: number, pixelRatio = 1): number {
   return Math.max(harvestStarPx(pixelRatio), css * pixelRatio);
 }
 
-/** Apparent-magnitude intensity. Same formula the harvest vertex uses. */
-export function harvestShine(L: number, d: number): number {
-  const flux = Math.max(L, 1e-4) / (d * d + HARVEST_FLUX_EPS);
-  const fluxRef = HARVEST_L_REF / (HARVEST_SHINE_DIST_REF * HARVEST_SHINE_DIST_REF + HARVEST_FLUX_EPS);
-  return HARVEST_SHINE_GAIN * Math.pow(flux / Math.max(fluxRef, 1e-12), HARVEST_SHINE_P);
+/** Harvest intensity from luminosity. Distance is ignored — the catalog cut is the magnitude limit. */
+export function harvestShine(L: number, _d?: number): number {
+  return HARVEST_SHINE_GAIN * Math.pow(Math.max(L, 1e-4) / HARVEST_L_REF, HARVEST_SHINE_P);
 }
 
 /** Teff RGB pushed off grey. Same mix the harvest vertex uses. */

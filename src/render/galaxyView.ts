@@ -20,6 +20,7 @@ import {
   HARVEST_PSF_THRESH,
   HARVEST_PSF_WING_K,
   HARVEST_PSF_WING_P,
+  HARVEST_EXTINCT_KEEP,
   HARVEST_SHINE_DIST_REF,
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_P,
@@ -152,6 +153,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uShineLGain;
   uniform float uShineP;
   uniform float uShineDistRef;
+  uniform float uExtinctKeep;
   uniform float uShineSat;
   varying vec3 vColor;
   varying float vVis;
@@ -197,12 +199,10 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Apparent magnitude: (L / d²)^P. No bright-end cap.
-      float d = max(length(mv.xyz), 0.001);
+      // Catalog photograph: I from L, not L/d². The harvest cut
+      // already picked the luminous tail; distance must not hide it.
       float L = max(aLum, 1e-4);
-      float flux = L / (d * d + uFluxEps);
-      float fluxRef = uLRef / (uShineDistRef * uShineDistRef + uFluxEps);
-      float shine = uShineLGain * pow(flux / max(fluxRef, 1e-8), uShineP);
+      float shine = uShineLGain * pow(L / max(uLRef, 1.0), uShineP);
       float wingPeak = uPsfWingK * pow(max(shine, 0.0), uPsfWingP);
       float rCss = 0.0;
       if (wingPeak > uPsfThresh) {
@@ -218,7 +218,8 @@ const SILHOUETTE_VERT = /* glsl */ `
     // Extinction: march the column from the bubble to this row.
     vec3 ext = extinctT(uCenter, position);
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
-    vVis *= extLum;
+    // Dust reddens and dims. It does not erase a harvest pin.
+    vVis *= max(extLum, uExtinctKeep);
     vColor *= ext / max(extLum, 1e-3);
     gl_Position = projectionMatrix * mv;
   }
@@ -634,6 +635,7 @@ export class GalaxyView {
       uShineLGain: { value: HARVEST_SHINE_GAIN },
       uShineP: { value: HARVEST_SHINE_P },
       uShineDistRef: { value: HARVEST_SHINE_DIST_REF },
+      uExtinctKeep: { value: HARVEST_EXTINCT_KEEP },
       uShineSat: { value: HARVEST_SHINE_SAT },
       uFluxEps: { value: HARVEST_FLUX_EPS },
     };
@@ -1656,7 +1658,7 @@ export class GalaxyView {
         arr[i] = gain[i];
         continue;
       }
-      // Stars: aVis is a filter. Intensity is L / d² in the shader.
+      // Stars: aVis is a filter. Intensity is L in the shader.
       arr[i] = sketchMatches(bits[i], this.filter) ? 1 : 0.08;
     }
     this.starVis.needsUpdate = true;

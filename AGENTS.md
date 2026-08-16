@@ -196,9 +196,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   sits at the viewpoint centre. Gestures **slide** through
   catalog space (1:1, no `VIEW_R` stretch). Harvest stars are
   **point sources**: a 1px Teff core plus the eye’s PSF.
-  Apparent magnitude is `GAIN · (L / d²)^P` with no bright-end
-  cap. GAIN is high enough that every harvest pin reads; an O
-  glows and a hypergiant keeps growing. Magnitude lifts the wings; it does not stamp a
+  Harvest intensity is `GAIN · (L / LREF)^P` — the catalog cut
+  is the magnitude limit, so distance does not hide a row.
+  Dust reddens and dims; it does not erase a pin. An O glows
+  and a hypergiant keeps growing. Magnitude lifts the wings; it does not stamp a
   larger disc. Colour stays in the glow; only the photocentre
   of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
