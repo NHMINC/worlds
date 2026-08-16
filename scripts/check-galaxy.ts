@@ -278,9 +278,8 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
 }
 
 {
-  // Warp is a fixed catalog kpc/s. Fast enough to cross a 2 kpc
-  // ball, slow enough that MAG_SLIDE (0.01 kpc) has time to mint
-  // enterers (~125 ms at 0.08 kpc/s).
+  // Warp is a fixed catalog kpc/s. A 0.02 kpc ball is crossed in
+  // ~0.25 s; MAG_SLIDE (0.002 kpc) fires every ~25 ms.
   check(UNIVERSE.GALAXY_WARP > 0.02, `warp ${UNIVERSE.GALAXY_WARP} is a crawl, not a cruise`);
   check(UNIVERSE.GALAXY_WARP <= 0.1, `warp ${UNIVERSE.GALAXY_WARP} outruns the rim walk`);
   // Dust is a filter: blue must die first or a rift edge goes cold

@@ -22,7 +22,7 @@ export const POINT_MAX_PX = 56;
 /**
  * Magnifier paint radius — same as the glow pin (GLOW_K).
  * A 10× PHOTO_K made stars that mint on the IMF ramp (0.12–0.3 kpc
- * catalog) pop in as discs. The 2 kpc sample ball is unchanged.
+ * catalog) pop in as discs. The catalog sample ball is unchanged.
  */
 export const PHOTO_K = GLOW_K;
 export const PHOTO_P = GLOW_P;

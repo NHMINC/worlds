@@ -194,7 +194,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   magnitude-limited backdrop (`buildSilhouetteCloud`) draws the
   rest of the disk. **Dust is never drawn — it is sightline
   extinction** (`extinctGlsl`). A star is visitable only when the
-  2 kpc ball has resolved that id.
+  catalog ball (`GALAXY_REGION_R`) has resolved that id.
   **Face-on / Edge-on** slide the bubble far enough that the whole
   disk fits the screen (pole-on, or a few degrees above the plane)
   and look back at the origin. **Home** parks on the loaded star

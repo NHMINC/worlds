@@ -165,16 +165,16 @@ const check = (cond: boolean, msg: string) => {
   check(regionImfFloor(0) === 0, 'tap neighbourhood must keep every slot');
   check(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R) === 0, 'full-R edge must still be complete');
   check(Math.abs(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R + UNIVERSE.GALAXY_REGION_U_RAMP) - UNIVERSE.GALAXY_REGION_U_FAR) < 1e-9, 'ramp must reach U_FAR');
-  const rim = galToCart({ R: 14, theta: 0.4, z: 0 });
-  const a = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
-  const b4 = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
+  const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
+  const a = buildRegionCloud(seed, homeC.x, homeC.y, homeC.z, r);
+  const b4 = buildRegionCloud(seed, homeC.x, homeC.y, homeC.z, r);
   check(a.n === b4.n && a.n > 0, `region cloud not deterministic ${a.n} vs ${b4.n}`);
   check(a.ids[0] === b4.ids[0], 'region first id drifted');
-  check(a.n > 8_000 && a.n < 800_000, `outer-disk region ${a.n} is not a flyable sky`);
+  check(a.n > 0 && a.n < 50_000, `home region ${a.n} is not a local neighbourhood`);
   check(a.pos.length >= a.n * 3 && a.lum.length >= a.n && a.gain.length >= a.n, `region buffers shorter than n=${a.n}`);
   let maxD = 0;
   for (let i = 0; i < a.n; i++) {
-    const d = Math.hypot(a.pos[i * 3] - rim.x, a.pos[i * 3 + 1] - rim.y, a.pos[i * 3 + 2] - rim.z);
+    const d = Math.hypot(a.pos[i * 3] - homeC.x, a.pos[i * 3 + 1] - homeC.y, a.pos[i * 3 + 2] - homeC.z);
     if (d > maxD) maxD = d;
   }
   check(maxD <= r + 1e-6, `region point ${maxD} outside ball ${r}`);
@@ -185,12 +185,12 @@ const check = (cond: boolean, msg: string) => {
   check(Math.abs(cart.x - a.pos[0]) < 1e-5 && Math.abs(cart.y - a.pos[1]) < 1e-5, 'slotBirthCart != cloud pos');
   const o = objectAt(seed, a.ids[0]);
   check(!!o && o.pos.R === birth.pos.R && o.pos.theta === birth.pos.theta, 'region row pose != objectAt');
-  const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
-  const homeCloud = buildRegionCloud(seed, homeC.x, homeC.y, homeC.z, r);
-  check(homeCloud.n > a.n, `home region ${homeCloud.n} should outnumber the rim ${a.n}`);
-  console.log(`  outer region: ${a.n} slots in ${a.ms.toFixed(0)} ms; home-like ${homeCloud.n} in ${homeCloud.ms.toFixed(0)} ms`);
-  const nudged = { x: rim.x + 0.08, y: rim.y, z: rim.z };
-  const slid = advanceRegionCloud(seed, a, rim.x, rim.y, rim.z, nudged.x, nudged.y, nudged.z, r);
+  const rim = galToCart({ R: 14, theta: 0.4, z: 0 });
+  const rimCloud = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
+  check(a.n >= rimCloud.n, `home region ${a.n} should outnumber the rim ${rimCloud.n}`);
+  console.log(`  outer region: ${rimCloud.n} slots in ${rimCloud.ms.toFixed(0)} ms; home-like ${a.n} in ${a.ms.toFixed(0)} ms`);
+  const nudged = { x: homeC.x + r, y: homeC.y, z: homeC.z };
+  const slid = advanceRegionCloud(seed, a, homeC.x, homeC.y, homeC.z, nudged.x, nudged.y, nudged.z, r);
   const fresh = buildRegionCloud(seed, nudged.x, nudged.y, nudged.z, r);
   const slidIds = new Set(Array.from(slid.ids.subarray(0, slid.n)));
   const freshIds = new Set(Array.from(fresh.ids.subarray(0, fresh.n)));
@@ -293,7 +293,7 @@ const check = (cond: boolean, msg: string) => {
         break;
       }
     }
-    check(found, `backdrop star ${id} vanished when the 2 kpc ball reached it`);
+    check(found, `backdrop star ${id} vanished when the catalog ball reached it`);
     console.log(`  visit handshake: id ${id} kept in local ${local.n}`);
   }
   console.log(`  silhouette: ${a.n} (${stars} stars, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);

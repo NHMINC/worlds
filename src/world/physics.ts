@@ -449,16 +449,15 @@ export const UNIVERSE = {
   GALAXY_SECTOR_RINGS: 40,
   GALAXY_SECTOR_STARS: 2500,
   /** Catalog neighbourhood minted around the tap (kpc). */
-  GALAXY_REGION_R: 2.0,
+  GALAXY_REGION_R: 0.02,
   /** Flight / viewing ball (kpc). Same stars, expanded around the tap. */
   GALAXY_REGION_VIEW_R: 40,
   /**
    * Latched warp (catalog kpc / s). A fixed cruise — on is this
    * rate, off is stop. Independent of VIEW_R / REGION_R: the
-   * photograph cannot throttle the ship. 0.08 crosses a 2 kpc
-   * neighbourhood in ~25 s. Slow enough that MAG_SLIDE (0.01 kpc)
-   * fires every ~125 ms and the rim walk can mint enterers before
-   * the next step. WASD stays the slow look-around pace (arcPace).
+   * photograph cannot throttle the ship. 0.08 crosses a 0.02 kpc
+   * neighbourhood in ~0.25 s. MAG_SLIDE (0.002 kpc) fires every
+   * ~25 ms. WASD stays the slow look-around pace (arcPace).
    */
   GALAXY_WARP: 0.08,
   /** Within this of the tap, every occupied slot is drawn. */
@@ -541,7 +540,7 @@ export const UNIVERSE = {
   /** Sightline march taps (vertex-shader cost, once per row). */
   GALAXY_EXTINCT_STEPS: 12,
   /** Local-layer taps: the in-bubble column is at most REGION_R
-   *  (~2 kpc vs ~30 for the backdrop), so 3 taps sample it more
+   *  (~0.02 kpc vs ~30 for the backdrop), so 3 taps sample it more
    *  densely than the backdrop's 12 — same law, cheaper march. */
   GALAXY_EXTINCT_STEPS_LOCAL: 3,
   SILHOUETTE_STAR_PX: 14,

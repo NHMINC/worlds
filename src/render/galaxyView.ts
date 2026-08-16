@@ -93,9 +93,9 @@ const extinctGlsl = (steps: number) => /* glsl */ `
 `;
 
 /** Slide the catalog centre after it has moved this far (catalog kpc). */
-const MAG_SLIDE = 0.01;
+const MAG_SLIDE = 0.002;
 /** A jump bigger than this remints instead of walking the rim. */
-const MAG_REBUILD = 0.45;
+const MAG_REBUILD = 0.03;
 /** Latched warp. Speed is catalog kpc / s — see UNIVERSE.GALAXY_WARP. */
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
