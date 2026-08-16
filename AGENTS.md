@@ -193,11 +193,30 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   grow from luminosity and distance. Behind the ball a
   magnitude-limited backdrop (`buildSilhouetteCloud`) draws the
   rest of the disk. **Dust is never drawn — it is sightline
-  extinction** (`extinctGlsl`). A star is visitable only when the
-  2 kpc ball has resolved that id.
+  extinction** (`extinctGlsl`, clamped to the gas slab so the taps
+  are spent where the dust lives). A star is visitable only when
+  the 2 kpc ball has resolved that id.
+  **Integrated light** (`GLOW_FRAG`): the unresolved IMF below
+  `GALAXY_SILHOUETTE_L` reaches the eye as a per-pixel march of the
+  SAME density law the catalog samples (`densityParts` in GLSL),
+  absorbed by the SAME dust column inside the march — lanes are
+  absorption against glow, the thing lanes actually are. From
+  outside it is the Hubble photograph (golden bulge/bar, blue arm
+  crests, brown lanes); from inside it is the Milky Way band. Eye
+  adaptation (Weber–Fechner, `GALAXY_GLOW_ADAPT`) divides the
+  photograph stretch by the ambient density at the camera, so dark
+  space sees the full photograph and an embedded eye sees a subtle
+  band, not a lit ceiling. One law, every distance, no overview
+  mode; resolved rows sit above the luminosity cut, so nothing is
+  counted twice. Backdrop dots are **true flux**
+  (`GALAXY_EXPOSURE · L / d²` through `I/(1+I)`) — hue survives,
+  dense regions no longer clip to white. Unresolved nebulae keep
+  the marched line palette (an H II region stays a pink bead) and
+  conserve flux at the pixel floor.
   **Face-on / Edge-on** slide the bubble far enough that the whole
-  disk fits the screen (pole-on, or a few degrees above the plane)
-  and look back at the origin. **Home** parks on the loaded star
+  disk fits the screen (pole-on, or in the plane — the equatorial
+  lane is the picture, not a bug to dodge) and look back at the
+  origin. **Home** parks on the loaded star
   and pins that pose as the Back bookmark. **Back** restores the
   pose from before Face-on or Edge-on (or Home, if Home was tapped).
   Switching Face-on ↔ Edge-on does not overwrite the bookmark.
