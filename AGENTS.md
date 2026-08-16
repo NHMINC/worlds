@@ -187,7 +187,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     markers for home, here, visited systems, and ~100 deterministic
     systems of interest (`systemsOfInterest`). NO stars are drawn on
     the map; the speckle is chart fabric, not a sky. The map camera
-    orbits the origin.
+    orbits the origin. The in-system galaxy icon does **not** land
+    here — it opens the region at the loaded star (`hereStarId`,
+    else `homeStar`) with that star on the reticle. The saucer is
+    the Helix breadcrumb / Face-on chart, not the landing page.
   - **Region**: a magnification sphere of radius `GALAXY_REGION_R`
     (~2 kpc) in catalog space. Near the centre (`GALAXY_REGION_FULL_R`)
     every occupied slot is a point. Farther cells keep only the
@@ -211,7 +214,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
     population with scattered positions, not fake stars, not
     landings. The same field drives star formation (dense gas
     births young stars — nurseries) and the H II condition.
-    Cached per seed. Envelope size is angular in both layers.
+    Cached per seed — minted on a worker, not on the dive. The
+    local 2 kpc cloud is minted on each enter (then slid by
+    `advanceRegionCloud`); the dive must not sync-walk the disk.
+    Envelope size is angular in both layers.
     Nebulae are 50% transparent spheres on the host (cyan PN,
     red SNR, white H II) — glass, not additive stacks. **Dust is
     never drawn — it is sightline extinction** (`extinctGlsl`,

@@ -19,7 +19,9 @@
  * row, local or backdrop, marches the same sightline-extinction law
  * (extinctGlsl) from the bubble centre, so dust manifests as
  * irregular star-poor rifts, the way Barnard found it. The
- * breadcrumb returns to the map.
+ * in-system galaxy icon opens this mode on the loaded star
+ * (here, else home) with that star on the reticle. The breadcrumb
+ * returns to the map.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -629,7 +631,12 @@ export class GalaxyView {
   private selected: GalaxyObject | null = null;
   private censusMemo: Record<string, number> = {};
 
-  constructor(canvas: HTMLCanvasElement, seed: string, callbacks: Callbacks) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    seed: string,
+    callbacks: Callbacks,
+    hereStarId: number | null = null,
+  ) {
     this.canvas = canvas;
     this.callbacks = callbacks;
     this.seed = seed;
@@ -662,6 +669,7 @@ export class GalaxyView {
     window.setTimeout(() => {
       if (this.disposed) return;
       this.interestMk = this.makeMarkers(systemsOfInterest(this.seed, 100), [0.95, 0.85, 0.55], 9);
+      this.interestMk.pts.visible = this.mode === 'map';
       this.scene.add(this.interestMk.pts);
     }, 60);
 
@@ -677,11 +685,8 @@ export class GalaxyView {
     this.bootBorderWorker();
     this.bootSilhouetteWorker();
 
-    this.setPreset('face');
-    this.theta = this.tgtTheta;
-    this.phi = this.tgtPhi;
-    this.radius = this.tgtRadius;
-    this.applyCam();
+    this.setHere(hereStarId);
+    this.openAtHere();
     this.raf = requestAnimationFrame(this.frame);
   }
 
@@ -732,6 +737,11 @@ export class GalaxyView {
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     return { pts, geo, mat, objs };
+  }
+
+  /** Loaded system, if it is a catalog row. */
+  here(): GalaxyObject | null {
+    return this.hereObj;
   }
 
   setHere(id: number | null): void {
@@ -800,6 +810,9 @@ export class GalaxyView {
     this.lastEnterMs = cloud.ms;
     this.objects = [];
     this.buildArcStars();
+    // Backdrop is once-per-seed. The worker mints it; attach if the
+    // cache is already warm. Do not sync-mint here — that walk of the
+    // whole disk is the hitch after a saucer tap.
     this.buildSilhouetteStars();
     this.censusMemo = {};
     this.resetThrust();
@@ -1056,7 +1069,7 @@ export class GalaxyView {
   }
 
   private buildSilhouetteStars(): void {
-    const cloud = silhouetteCloud(this.seed) ?? buildSilhouetteCloud(this.seed);
+    const cloud = silhouetteCloud(this.seed);
     if (!cloud || cloud.n <= 0) return;
     this.disposeSilhouette();
     const geo = new THREE.BufferGeometry();
@@ -1227,6 +1240,25 @@ export class GalaxyView {
       if (dx * dx + dy * dy + dz * dz > r2) return false;
     }
     return true;
+  }
+
+  /**
+   * Open the region on the loaded star (else home) and park it
+   * just ahead of the centre reticle. Face-on map is only the
+   * fallback when the catalog has no home row.
+   */
+  openAtHere(): void {
+    const obj = this.hereObj ?? this.home;
+    if (!obj) {
+      this.setPreset('face');
+      this.theta = this.tgtTheta;
+      this.phi = this.tgtPhi;
+      this.radius = this.tgtRadius;
+      this.applyCam();
+      return;
+    }
+    this.focus(obj);
+    this.approachNearest();
   }
 
   setPreset(p: GalaxyPreset): void {

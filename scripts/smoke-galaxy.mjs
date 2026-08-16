@@ -1,5 +1,6 @@
-/* Fresh boot + the sector-map galaxy explorer. Clears IndexedDB, loads
- * the app, opens the map, dives into an arc, taps a star, sets course.
+/* Fresh boot + the galaxy explorer. Clears IndexedDB, loads the app,
+ * opens the region on the loaded star, checks the Helix saucer, taps
+ * a star, sets course.
  * Run: node scripts/smoke-galaxy.mjs (dev server on :5173). */
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
@@ -62,31 +63,21 @@ if (await galaxyBtn.count()) {
     title: document.querySelector('.galaxy-title')?.textContent ?? null,
     sub: document.querySelector('.galaxy-sub')?.textContent ?? null,
     mode: window.__galaxyView?.currentMode?.() ?? null,
+    selected: window.__galaxyView?.selectedObject?.()?.id ?? null,
+    here: window.__galaxyView?.here?.()?.id ?? null,
+    home: window.__galaxyView?.home?.id ?? null,
   }));
-  console.log('MAP', JSON.stringify(gx));
-  await page.screenshot({ path: 'previews/galaxy-1-map.png' });
-  if (gx.mode !== 'map') errors.push(`expected map mode, got ${gx.mode}`);
+  console.log('OPEN', JSON.stringify(gx));
+  await page.screenshot({ path: 'previews/galaxy-1-region.png' });
+  if (gx.mode !== 'region') errors.push(`expected region mode on open, got ${gx.mode}`);
+  const expectId = gx.here ?? gx.home;
+  if (expectId != null && gx.selected !== expectId) {
+    errors.push(`opened on ${gx.selected}, not here/home ${expectId}`);
+  }
 
+  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
   await page.waitForFunction(() => Boolean(window.__galaxyView?.home), { timeout: 8000 });
 
-  // Oblique (~79°) — the bulge must be a dome, not a golden cone.
-  await page.evaluate(() => window.__galaxyView?.setPreset?.('edge'));
-  await page.waitForTimeout(1800);
-  await page.screenshot({ path: 'previews/galaxy-1b-oblique.png' });
-  await page.evaluate(() => window.__galaxyView?.setPreset?.('face'));
-  await page.waitForTimeout(800);
-
-  // Tap the home marker: enters home's arc with the star selected.
-  const ring = await page.evaluate(() => {
-    const v = window.__galaxyView;
-    return v.projectClient(v.home);
-  });
-  console.log('HOME MARKER', JSON.stringify(ring));
-  if (ring) {
-    await page.mouse.click(ring.x, ring.y);
-    await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
-    await page.waitForTimeout(400);
-  }
   const arc = await page.evaluate(() => ({
     mode: window.__galaxyView?.currentMode?.() ?? null,
     region: window.__galaxyView?.currentRegion?.() ?? null,
@@ -97,10 +88,50 @@ if (await galaxyBtn.count()) {
   }));
   console.log('REGION', JSON.stringify(arc));
   await page.screenshot({ path: 'previews/galaxy-2-arc.png' });
-  if (arc.mode !== 'region') errors.push('tapping home marker did not enter its region');
+  if (arc.mode !== 'region') errors.push('toolbar did not open the region');
   if (!arc.stars || arc.stars < 8_000) errors.push(`region loaded only ${arc.stars} stars`);
   if (!arc.inBall) errors.push('region cloud has stars outside the ball');
-  if (!arc.dossier) errors.push('home marker tap did not open a dossier');
+  if (!arc.dossier) errors.push('open did not select the loaded star');
+  if (!arc.crumb) errors.push('region breadcrumb missing');
+
+  // Helix overview still exists: Face-on / Edge-on saucer.
+  await page.click('.gx-crumb');
+  await page.waitForTimeout(1200);
+  const map = await page.evaluate(() => window.__galaxyView?.currentMode?.() ?? null);
+  console.log('MAP', JSON.stringify({ mode: map }));
+  if (map !== 'map') errors.push('breadcrumb did not return to the map');
+  await page.screenshot({ path: 'previews/galaxy-1-map.png' });
+
+  // Oblique (~79°) — the bulge must be a dome, not a golden cone.
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('edge'));
+  await page.waitForTimeout(1800);
+  await page.screenshot({ path: 'previews/galaxy-1b-oblique.png' });
+  await page.evaluate(() => window.__galaxyView?.setPreset?.('face'));
+  await page.waitForTimeout(800);
+
+  // Tap the home marker: re-enters home's region with the star selected.
+  const ring = await page.evaluate(() => {
+    const v = window.__galaxyView;
+    return v.projectClient(v.home);
+  });
+  console.log('HOME MARKER', JSON.stringify(ring));
+  if (ring) {
+    await page.mouse.click(ring.x, ring.y);
+    await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 8_000, { timeout: 25000 });
+    await page.waitForTimeout(400);
+  }
+  const homeDive = await page.evaluate(() => ({
+    mode: window.__galaxyView?.currentMode?.() ?? null,
+    selected: window.__galaxyView?.selectedObject?.()?.id ?? null,
+    home: window.__galaxyView?.home?.id ?? null,
+    dossier: document.querySelector('.gd-class')?.textContent ?? null,
+  }));
+  console.log('HOME DIVE', JSON.stringify(homeDive));
+  if (homeDive.mode !== 'region') errors.push('tapping home marker did not enter its region');
+  if (homeDive.home != null && homeDive.selected !== homeDive.home) {
+    errors.push('home marker tap did not select home');
+  }
+  if (!homeDive.dossier) errors.push('home marker tap did not open a dossier');
 
   const survey = await page.evaluate(() => {
     const v = window.__galaxyView;

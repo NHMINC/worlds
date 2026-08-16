@@ -42,7 +42,7 @@ export function GalaxyExplorer(props: Props) {
   const [filter, setFilter] = useState<GalaxyFilter>('all');
   const [census, setCensus] = useState<Record<string, number>>({});
   const [frame, setFrame] = useState<GalaxyFrame>({
-    mode: 'map',
+    mode: 'region',
     theta: 0,
     phi: 0,
     radius: 40,
@@ -66,30 +66,34 @@ export function GalaxyExplorer(props: Props) {
     let ro: ResizeObserver | null = null;
     const boot = window.setTimeout(() => {
       if (cancelled) return;
-      view = new GalaxyView(canvas, seed, {
-        onSelect: setSelected,
-        onGo: (obj) => goRef.current(obj),
-        onFrame: (f) => {
-          setFrame((prev) =>
-            prev.mode !== f.mode ||
-            Math.abs(prev.radius - f.radius) > 0.08 ||
-            Math.abs(prev.phi - f.phi) > 0.02 ||
-            prev.pickable !== f.pickable ||
-            prev.resolved !== f.resolved ||
-            prev.grown !== f.grown ||
-            prev.sector !== f.sector ||
-            prev.warp !== f.warp ||
-            prev.backdrop !== f.backdrop ||
-            prev.focus?.id !== f.focus?.id ||
-            (f.focus != null &&
-              (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
-                Math.abs((prev.focus?.y ?? 0) - f.focus.y) > 2))
-              ? f
-              : prev,
-          );
+      view = new GalaxyView(
+        canvas,
+        seed,
+        {
+          onSelect: setSelected,
+          onGo: (obj) => goRef.current(obj),
+          onFrame: (f) => {
+            setFrame((prev) =>
+              prev.mode !== f.mode ||
+              Math.abs(prev.radius - f.radius) > 0.08 ||
+              Math.abs(prev.phi - f.phi) > 0.02 ||
+              prev.pickable !== f.pickable ||
+              prev.resolved !== f.resolved ||
+              prev.grown !== f.grown ||
+              prev.sector !== f.sector ||
+              prev.warp !== f.warp ||
+              prev.backdrop !== f.backdrop ||
+              prev.focus?.id !== f.focus?.id ||
+              (f.focus != null &&
+                (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
+                  Math.abs((prev.focus?.y ?? 0) - f.focus.y) > 2))
+                ? f
+                : prev,
+            );
+          },
         },
-      });
-      view.setHere(props.hereStarId ?? null);
+        props.hereStarId ?? null,
+      );
       viewRef.current = view;
       (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView = view;
       setReady(true);
@@ -138,7 +142,7 @@ export function GalaxyExplorer(props: Props) {
     <div className="galaxy-explorer">
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
-        {!ready && <div className="galaxy-loading">Charting the sectors…</div>}
+        {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}
         {inRegion && <div className="gx-pip" aria-hidden />}
         {inRegion && (
           <button
