@@ -7,7 +7,6 @@
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
-import { UNIVERSE } from '../world/physics';
 
 /**
  * Toy paint-pin radius (view kpc). Real R☉ is metres against
@@ -41,15 +40,14 @@ export const AIM_R_P = GLOW_P;
 export const AIM_R_MIN = 0.012;
 export const AIM_R_MAX = 0.22;
 /**
- * Photograph: I = EXPOSURE · L / d² (catalog kpc) — true flux under
- * the one exposure the integrated-light march shares. Display
- * brightness is I/(1+I) — hue survives. The old near-flat curve
- * (L^0.62 · (40/d)^0.45) painted every backdrop dot at ~0.9 and the
- * additive blend clipped dense regions to white; honest flux gives
- * the dots dynamic range and lets the glow integral carry the far
- * view. The +eps softens a star sitting on the bubble rim.
+ * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
+ * Steep in L so the luminous tail is not one white.
+ * Display brightness is I/(1+I) — hue survives.
  */
-export const SHINE_FLUX_EPS = 0.04;
+export const SHINE_L_GAIN = 0.14;
+export const SHINE_L_P = 0.62;
+export const SHINE_DIST_REF = 40;
+export const SHINE_DIST_P = 0.45;
 /** Photograph saturation: how far teff RGB is pushed off white. */
 export const SHINE_SAT = 1.55;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
@@ -95,14 +93,18 @@ export function photoApparentPx(L: number, dist: number, pxPerRad: number, dim =
   return Math.min(POINT_MAX_PX, Math.max(1, 2 * ang * pxPerRad));
 }
 
-/** Linear intensity from L and catalog distance (kpc). Same formula the star vertex uses. */
-export function shineFromLumDist(L: number, dCat: number): number {
-  return (UNIVERSE.GALAXY_EXPOSURE * Math.max(L, 1e-4)) / (dCat * dCat + SHINE_FLUX_EPS);
+/** Linear intensity from L and view distance. Same formula the star vertex uses. */
+export function shineFromLumDist(L: number, d: number): number {
+  return (
+    SHINE_L_GAIN *
+    Math.pow(Math.max(L, 1e-4), SHINE_L_P) *
+    Math.pow(SHINE_DIST_REF / Math.max(d, 1), SHINE_DIST_P)
+  );
 }
 
 /** What the fragment actually paints: I / (1 + I). */
-export function shineDisplay(L: number, dCat: number): number {
-  const I = shineFromLumDist(L, dCat);
+export function shineDisplay(L: number, d: number): number {
+  const I = shineFromLumDist(L, d);
   return I / (1 + I);
 }
 

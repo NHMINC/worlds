@@ -10,7 +10,7 @@
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
-import { density, galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
+import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
   GLOW_DIM,
@@ -23,7 +23,10 @@ import {
   PHOTO_MAX,
   PHOTO_MIN,
   PHOTO_P,
-  SHINE_FLUX_EPS,
+  SHINE_DIST_P,
+  SHINE_DIST_REF,
+  SHINE_L_GAIN,
+  SHINE_L_P,
   SHINE_SAT,
   glowRadiusKpc,
 } from './galaxyStar';
@@ -47,8 +50,6 @@ import { prepareUniverse } from '../world/universePrep';
 
 /** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
-const glslVec3 = (v: [number, number, number]): string =>
-  `vec3(${glslFloat(v[0])}, ${glslFloat(v[1])}, ${glslFloat(v[2])})`;
 
 /**
  * Dust is not drawn; it is subtraction — ONE law for both layers.
@@ -78,30 +79,13 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   // row — blue dies first, so rift-edge rows redden before they
   // vanish. Brightness must ride vVis (the star fragment
   // renormalizes colour to peak); colour carries the chroma shift.
-  // The march is clamped to the gas slab (|y| ≤ 4·ZD, where sech²
-  // has died) before stepping: a face-on column crosses the razor-
-  // thin sheet in ~1 kpc, and taps spread over a whole 46 kpc
-  // sightline sampled it as noise. Same law, taps spent where the
-  // dust lives; in-plane columns are unchanged (whole path in slab).
   vec3 extinctT(vec3 from, vec3 to) {
     float dCat = length(to - from);
+    float dt = dCat / ${glslFloat(steps)};
     vec3 dir = (to - from) / max(dCat, 1e-4);
-    float zc = ${glslFloat(UNIVERSE.GALAXY_ZD * 4)};
-    float t0 = 0.0;
-    float t1 = dCat;
-    if (abs(dir.y) > 1e-5) {
-      float ta = (-zc - from.y) / dir.y;
-      float tb = (zc - from.y) / dir.y;
-      t0 = max(0.0, min(ta, tb));
-      t1 = min(dCat, max(ta, tb));
-    } else if (abs(from.y) > zc) {
-      return vec3(1.0);
-    }
-    if (t1 <= t0) return vec3(1.0);
-    float dt = (t1 - t0) / ${glslFloat(steps)};
     float tau = 0.0;
     for (int i = 0; i < ${steps}; i++) {
-      tau += extinctRho(from + dir * (t0 + (float(i) + 0.5) * dt));
+      tau += extinctRho(from + dir * ((float(i) + 0.5) * dt));
     }
     tau = min(tau * uExtinctK * dt, uExtinctMax);
     return exp(-tau * uDustRgb);
@@ -169,6 +153,10 @@ const STAR_VERT = /* glsl */ `
   uniform float uPhotoP;
   uniform float uPhotoMin;
   uniform float uPhotoMax;
+  uniform float uShineLGain;
+  uniform float uShineLP;
+  uniform float uShineDistRef;
+  uniform float uShineDistP;
   uniform float uShineSat;
   varying vec3 vColor;
   varying float vVis;
@@ -178,7 +166,6 @@ const STAR_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
-  varying float vAngPx;
   void main() {
     // Cull for the pass HERE: the shared fragment discards the wrong
     // kinds anyway, but a discarded sprite still rasterizes its whole
@@ -201,8 +188,7 @@ const STAR_VERT = /* glsl */ `
       // aSize is the envelope radius in catalog kpc; the magnifier
       // scales space, so true angle = aSize * uScale / view distance.
       float ang = max(aSize, 0.005) * uScale / d;
-      vAngPx = 2.0 * ang * uPxPerRad;
-      gl_PointSize = clamp(vAngPx, 3.0, 512.0);
+      gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, 512.0);
       vVis = aVis;
       vCenterView = mv.xyz;
       vRadiusView = max(aSize, 0.005) * uScale;
@@ -226,7 +212,6 @@ const STAR_VERT = /* glsl */ `
       vRadiusView = 0.0;
       vCenterCat = vec3(0.0);
       vPx = gl_PointSize;
-      vAngPx = gl_PointSize;
     }
     // Same dust law as the backdrop, over the short in-bubble
     // column — a star does not brighten by crossing the bubble
@@ -264,7 +249,10 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uNebulaPx;
   uniform float uSuper;
   uniform float uFluxEps;
-  uniform float uExposure;
+  uniform float uShineLGain;
+  uniform float uShineLP;
+  uniform float uShineDistRef;
+  uniform float uShineDistP;
   uniform float uShineSat;
   varying vec3 vColor;
   varying float vVis;
@@ -274,7 +262,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
-  varying float vAngPx;
 
   void main() {
     vColor = aColor;
@@ -284,7 +271,6 @@ const SILHOUETTE_VERT = /* glsl */ `
     vRadiusView = 0.0;
     vCenterCat = vec3(0.0);
     vPx = 0.0;
-    vAngPx = 0.0;
     float dCat = length(position - uCenter);
     // Cull wrong-kind sprites for the pass here — a fragment discard
     // still rasterizes the whole quad, tripling core overdraw. Dust
@@ -306,26 +292,22 @@ const SILHOUETTE_VERT = /* glsl */ `
       float d = max(length(mv.xyz), 0.001);
       float ang = max(aSize, 0.005) * uScale / d;
       float floorPx = uNebulaPx * uPixel;
-      vAngPx = 2.0 * ang * uPxPerRad;
-      gl_PointSize = clamp(vAngPx, floorPx, 512.0);
+      gl_PointSize = clamp(2.0 * ang * uPxPerRad, floorPx, 512.0);
       vVis = aVis;
       vCenterView = mv.xyz;
       vRadiusView = max(aSize, 0.005) * uScale;
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // One photograph: true flux EXPOSURE · L / d² (catalog kpc),
-      // shared with the integrated-light march. The old near-flat
-      // curve painted every magnitude-limited dot at ~0.9 and the
-      // additive blend clipped dense regions to one white; honest
-      // flux keeps hue and hands the far view to the glow integral.
+      // Same point law as the local layer: one CSS pixel, L^P
+      // intensity, teff colour. No glow sprite.
+      float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
-      vVis = aVis * uExposure * L / (dCat * dCat + ${glslFloat(SHINE_FLUX_EPS)});
+      vVis = aVis * uShineLGain * pow(L, uShineLP) * pow(uShineDistRef / d, uShineDistP);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
       gl_PointSize = max(1.0, uPixel);
       vPx = gl_PointSize;
-      vAngPx = gl_PointSize;
     }
     // Extinction: march the column from the bubble to this row.
     vec3 ext = extinctT(uCenter, position);
@@ -333,119 +315,6 @@ const SILHOUETTE_VERT = /* glsl */ `
     vVis *= extLum;
     vColor *= ext / max(extLum, 1e-3);
     gl_Position = projectionMatrix * mv;
-  }
-`;
-
-/**
- * INTEGRATED LIGHT — the unresolved IMF below the silhouette cut
- * reaches the eye as a per-pixel march of the SAME density law the
- * catalog samples (densityParts, ported constant-for-constant),
- * absorbed by the SAME dust column (extinctRho × DUST_RGB) inside
- * the march — lanes are absorption against glow, the thing lanes
- * actually are. From outside this is the Hubble photograph (golden
- * bulge/bar, blue crests, brown lanes); from inside it is the Milky
- * Way band. One law, every distance, no overview mode. The resolved
- * layers draw ON TOP and sit above the luminosity cut, so nothing
- * is counted twice. Full-screen triangle; rays in catalog space
- * from the bubble centre (the camera never leaves it).
- */
-const GLOW_VERT = /* glsl */ `
-  varying vec2 vNdc;
-  void main() {
-    vNdc = position.xy;
-    gl_Position = vec4(position.xy, 0.0, 1.0);
-  }
-`;
-
-const GLOW_FRAG = /* glsl */ `
-  ${SHAPE_GLSL}
-  ${extinctGlsl(2)}
-  uniform vec3 uCenter;
-  uniform mat3 uCamRot;
-  uniform float uTanX;
-  uniform float uTanY;
-  uniform float uGlowGain;
-  varying vec2 vNdc;
-
-  // densityParts (galaxy.ts) in GLSL — same populations, same
-  // constants, baked at compile. Height is y in catalog cartesian.
-  // Colour is population chemistry: young thin disk pale blue-white,
-  // arm crests bluer (the youngest light), old bulge/bar/thick gold,
-  // halo old and faintly warm.
-  vec3 unresolvedLight(vec3 p) {
-    float R = length(p.xz);
-    float r = length(p);
-    float theta = atan(p.z, p.x);
-    float ezd = exp(min(abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_ZD)}, 12.0));
-    float sd = 2.0 / (ezd + 1.0 / ezd);
-    float thin = exp(-R / ${glslFloat(UNIVERSE.GALAXY_RD)}) * sd * sd;
-    float ph = ${glslFloat(UNIVERSE.GALAXY_ARM_M)} *
-      (theta - ${glslFloat(1 / Math.tan(UNIVERSE.GALAXY_PITCH))} *
-        log(max(R, 0.15) / ${glslFloat(UNIVERSE.GALAXY_RD)}));
-    float armAmp = 1.0 + ${glslFloat(UNIVERSE.GALAXY_ARM_A)} * cos(ph);
-    float ezt = exp(min(abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_Z_THICK)}, 12.0));
-    float st = 2.0 / (ezt + 1.0 / ezt);
-    float thick = 0.14 * exp(-R / ${glslFloat(UNIVERSE.GALAXY_RD_THICK)}) * st * st;
-    float bulge = 4.2 * exp(-3.5 * r / ${glslFloat(UNIVERSE.GALAXY_RE_BULGE)});
-    float rb2 =
-      p.x * p.x / ${glslFloat(UNIVERSE.GALAXY_BAR_A * UNIVERSE.GALAXY_BAR_A)} +
-      p.z * p.z / ${glslFloat(UNIVERSE.GALAXY_BAR_B * UNIVERSE.GALAXY_BAR_B)} +
-      p.y * p.y / ${glslFloat(UNIVERSE.GALAXY_BAR_C * UNIVERSE.GALAXY_BAR_C)};
-    float bar = rb2 < 1.0 ? 3.4 * pow(1.0 - rb2, 1.8) : 0.0;
-    float halo = 0.03 / pow(1.0 + r / ${glslFloat(UNIVERSE.GALAXY_HALO_A)}, 3.2);
-    vec3 thinCol = mix(
-      ${glslVec3(UNIVERSE.GALAXY_LIGHT_THIN)},
-      ${glslVec3(UNIVERSE.GALAXY_LIGHT_ARM)},
-      smoothstep(1.0, ${glslFloat(1 + UNIVERSE.GALAXY_ARM_A)}, armAmp));
-    return thin * max(armAmp, 0.0) * thinCol +
-      (thick + bulge + bar) * ${glslVec3(UNIVERSE.GALAXY_LIGHT_WARM)} +
-      halo * ${glslVec3(UNIVERSE.GALAXY_LIGHT_HALO)};
-  }
-
-  void main() {
-    vec3 rd = normalize(uCamRot * vec3(vNdc.x * uTanX, vNdc.y * uTanY, -1.0));
-    vec3 ro = uCenter;
-    // March only where the light lives: the |y| ≤ ZCAP slab clipped
-    // to the disk sphere. Face-on far columns cross ~7 kpc of slab,
-    // so the fixed step count samples the sheet densely.
-    float t0 = 0.0;
-    float t1 = 1e9;
-    float zc = ${glslFloat(UNIVERSE.GALAXY_GLOW_ZCAP)};
-    if (abs(rd.y) > 1e-5) {
-      float ta = (-zc - ro.y) / rd.y;
-      float tb = (zc - ro.y) / rd.y;
-      t0 = max(t0, min(ta, tb));
-      t1 = min(t1, max(ta, tb));
-    } else if (abs(ro.y) > zc) {
-      discard;
-    }
-    float rg = ${glslFloat(UNIVERSE.GALAXY_R_MAX * 1.05)};
-    float b = dot(ro, rd);
-    float cc = dot(ro, ro) - rg * rg;
-    float h = b * b - cc;
-    if (h <= 0.0) discard;
-    h = sqrt(h);
-    t0 = max(t0, -b - h);
-    t1 = min(t1, -b + h);
-    if (t1 <= t0) discard;
-    float dt = (t1 - t0) / ${glslFloat(UNIVERSE.GALAXY_GLOW_STEPS)};
-    // Per-pixel jitter turns step banding into grain.
-    float jit = dustHash(vec3(gl_FragCoord.xy * 0.7, 3.1));
-    vec3 acc = vec3(0.0);
-    vec3 T = vec3(1.0);
-    for (int i = 0; i < ${UNIVERSE.GALAXY_GLOW_STEPS}; i++) {
-      float t = t0 + (float(i) + jit) * dt;
-      vec3 p = ro + rd * t;
-      // Absorb, then emit: dust sits in front of the light behind it.
-      T *= exp(-extinctRho(p) * uExtinctK * dt * uDustRgb);
-      acc += unresolvedLight(p) * T * dt;
-    }
-    acc *= uGlowGain;
-    float l = dot(acc, vec3(0.2126, 0.7152, 0.0722));
-    if (l < 1e-4) discard;
-    // Same photograph curve as the dots: I/(1+I) on luminance, hue kept.
-    vec3 col = acc * ((l / (1.0 + l)) / max(l, 1e-4));
-    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
@@ -469,20 +338,6 @@ const STAR_FRAG = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
-  varying float vAngPx;
-  // The line spectrum, placed by IONIZATION STRATIFICATION:
-  // excitation e is highest near the hot source and in young
-  // (hard-spectrum) events, falling outward — [O III] teal cores,
-  // H-alpha pink bodies, [S II] deep-red cool edges. One palette
-  // for the marched shells AND the unresolved dots, so a nebula
-  // keeps its colour when distance shrinks it to a point.
-  vec3 nebLine(float e) {
-    vec3 lineSII = vec3(0.9, 0.18, 0.12);
-    vec3 lineHa = vec3(1.0, 0.4, 0.36);
-    vec3 lineOIII = vec3(0.3, 0.95, 0.8);
-    vec3 line = mix(lineSII, lineHa, smoothstep(0.1, 0.5, e));
-    return mix(line, lineOIII, smoothstep(0.55, 0.95, e));
-  }
   void main() {
     if (uPass < 0.5 && vKind > 0.5) discard;
     if (uPass > 0.5 && (vKind < 0.5 || vKind > 3.5)) discard;
@@ -511,21 +366,13 @@ const STAR_FRAG = /* glsl */ `
     // brightness so rings and filaments come from geometry.
     if (vPx < uDustMinPx * uPixel) {
       float mask = smoothstep(1.0, 0.5, length(p));
-      // Flux conservation at the pixel floor: a shell clamped to
-      // floorPx spreads its light over (floor/true)² too much area —
-      // dim by the fill so far shells fade instead of stacking.
-      float fill = clamp(vAngPx / max(vPx, 1.0), 0.0, 1.0);
       // Same photograph knob as the marched path — unresolved
       // shells used to ignore it and stack the midplane to white.
-      float a = vVis * uNebGain * 0.12 * mask * fill * fill;
+      float a = vVis * uNebGain * 0.12 * mask;
       if (a < 0.01) discard;
-      // Same line palette as the marched path (mid-shell excitation):
-      // an H II region stays pink when it shrinks to a bead, not
-      // host-tint white.
-      vec3 col = mix(nebLine(clamp(vVis * 1.05, 0.0, 1.0)), vColor, 0.25);
       // Premultiplied for the screen blend — dest + src·(1-dest).
       // Stacks saturate; they do not add to a white bar.
-      gl_FragColor = vec4(col * a, 1.0);
+      gl_FragColor = vec4(vColor * a, 1.0);
       return;
     }
     vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
@@ -556,8 +403,11 @@ const STAR_FRAG = /* glsl */ `
     float segCat = (t1 - t0) / uScale;
     em *= uNebGain * vVis * segCat / (steps * max(radiusCat, 1e-4));
     if (em < 0.012 || wSum < 1e-5) discard;
-    // Excitation from geometry (see nebLine): one nebula wears the
-    // whole mix; age slides the balance.
+    // The palette is a line spectrum, placed by IONIZATION
+    // STRATIFICATION: excitation is highest near the hot source and
+    // in young (hard-spectrum) events, falling outward — [O III]
+    // teal cores, H-alpha pink bodies, [S II] deep-red cool edges.
+    // One nebula wears the whole mix; age slides the balance.
     vec3 mrel = meanRel / wSum;
     float rMean = length(mrel) / max(radiusCat, 1e-4);
     float hard = clamp(vVis, 0.0, 1.0);
@@ -568,8 +418,13 @@ const STAR_FRAG = /* glsl */ `
       // lace survives ageing; the overall balance still reddens.
       e += 0.12 + 0.6 * nebField(vCenterCat + mrel * 2.6 + 91.0, uDustFreq * 1.6);
     }
+    vec3 lineSII = vec3(0.9, 0.18, 0.12);
+    vec3 lineHa = vec3(1.0, 0.4, 0.36);
+    vec3 lineOIII = vec3(0.3, 0.95, 0.8);
+    vec3 line = mix(lineSII, lineHa, smoothstep(0.1, 0.5, e));
+    line = mix(line, lineOIII, smoothstep(0.55, 0.95, e));
     // Chemistry keeps a voice: the host tint leans the line blend.
-    vec3 col = mix(nebLine(e), vColor, 0.25);
+    vec3 col = mix(line, vColor, 0.25);
     float glow = em / (1.0 + em);
     gl_FragColor = vec4(col * glow, 1.0);
   }
@@ -664,8 +519,6 @@ export class GalaxyView {
   private silMat: THREE.ShaderMaterial | null = null;
   private silEmisPts: THREE.Points | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
-  private glowMesh: THREE.Mesh | null = null;
-  private glowMat: THREE.ShaderMaterial | null = null;
   /** Catalog positions (the vertex shader applies the magnifier). */
   private cloud: StarCloud | null = null;
   private borderWorker: Worker | null = null;
@@ -734,7 +587,6 @@ export class GalaxyView {
 
     this.pickRing = this.makeRing(0xf4e4c1, 0.18);
     this.scene.add(this.pickRing);
-    this.buildGlow();
 
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown, { passive: false });
@@ -925,10 +777,13 @@ export class GalaxyView {
     };
   }
 
-  /** Point-source shine — one exposure, saturation. Shared by both layers. */
+  /** Point-source shine — L and distance. Shared by both layers. */
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
-      uExposure: { value: UNIVERSE.GALAXY_EXPOSURE },
+      uShineLGain: { value: SHINE_L_GAIN },
+      uShineLP: { value: SHINE_L_P },
+      uShineDistRef: { value: SHINE_DIST_REF },
+      uShineDistP: { value: SHINE_DIST_P },
       uShineSat: { value: SHINE_SAT },
       uFluxEps: { value: POINT_FLUX_EPS },
     };
@@ -1072,42 +927,6 @@ export class GalaxyView {
     this.pushMagUniforms();
   }
 
-  /**
-   * The integrated-light background (GLOW_FRAG): one full-screen
-   * triangle marched once per pixel. Static for the life of the
-   * view — only uniforms (bubble centre, camera basis) move.
-   */
-  private buildGlow(): void {
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute(
-      'position',
-      new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3),
-    );
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: GLOW_VERT,
-      fragmentShader: GLOW_FRAG,
-      uniforms: {
-        uCenter: { value: new THREE.Vector3() },
-        uCamRot: { value: new THREE.Matrix3() },
-        uTanX: { value: 1 },
-        uTanY: { value: 1 },
-        uGlowGain: { value: UNIVERSE.GALAXY_GLOW_GAIN },
-        ...this.extinctUniforms(),
-      },
-      transparent: true,
-      depthWrite: false,
-      depthTest: false,
-      blending: THREE.AdditiveBlending,
-      toneMapped: false,
-    });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.frustumCulled = false;
-    mesh.renderOrder = -3;
-    this.scene.add(mesh);
-    this.glowMesh = mesh;
-    this.glowMat = mat;
-  }
-
   private cloudMats(): THREE.ShaderMaterial[] {
     const out: THREE.ShaderMaterial[] = [];
     for (const m of [this.starMat, this.starEmisMat, this.silMat, this.silEmisMat]) {
@@ -1126,7 +945,6 @@ export class GalaxyView {
       mat.uniforms.uCenter.value.set(cx, cy, cz);
       mat.uniforms.uScale.value = s;
     }
-    this.glowMat?.uniforms.uCenter.value.set(cx, cy, cz);
   }
 
   /**
@@ -1230,13 +1048,11 @@ export class GalaxyView {
     return this.grownCount;
   }
 
-  /** True if every loaded point sits inside the region ball (with the
-   *  slide slack: openAtHere parks the bubble a hair behind the star
-   *  after minting, and the shell walk lags MAG_SLIDE behind). */
+  /** True if every loaded point sits inside the region ball. */
   cloudFitsRegion(): boolean {
     const cloud = this.cloud;
     if (!cloud || cloud.n <= 0) return false;
-    const r = UNIVERSE.GALAXY_REGION_R + 0.05;
+    const r = UNIVERSE.GALAXY_REGION_R + 1e-5;
     const r2 = r * r;
     const cx = this.arcCenter.x;
     const cy = this.arcCenter.y;
@@ -1321,10 +1137,12 @@ export class GalaxyView {
       this.enterRegion(0, d, 0, null);
       this.aimAt(0, -1, 0);
     } else {
-      // In the plane: the equatorial lane IS the edge-on picture —
-      // absorption against the integrated glow. Do not dodge it.
-      this.enterRegion(d, 0, 0, null);
-      this.aimAt(-1, 0, 0);
+      // A few degrees above the plane so the dust sheet does not eat the disk.
+      const elev = 0.14;
+      const c = Math.cos(elev);
+      const s = Math.sin(elev);
+      this.enterRegion(d * c, d * s, 0, null);
+      this.aimAt(-c, -s, 0);
     }
     this.applyCam();
     this.updateSight(true);
@@ -1389,23 +1207,6 @@ export class GalaxyView {
   /** Refresh sight uniforms — smoke / tests. */
   syncArc(): void {
     if (this.mode === 'region') this.updateSight(true);
-  }
-
-  /**
-   * Render one frame and read back a pixel (fractions of the canvas,
-   * y down, 0–255 RGB). Smoke proves the integrated light: warm
-   * bulge, blue crests, dark lanes — without preserveDrawingBuffer.
-   */
-  samplePixel(fx: number, fy: number): [number, number, number] {
-    this.renderer.render(this.scene, this.camera);
-    const gl = this.renderer.getContext();
-    const w = gl.drawingBufferWidth;
-    const h = gl.drawingBufferHeight;
-    const x = Math.max(0, Math.min(w - 1, Math.round(fx * (w - 1))));
-    const y = Math.max(0, Math.min(h - 1, Math.round((1 - fy) * (h - 1))));
-    const buf = new Uint8Array(4);
-    gl.readPixels(x, y, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-    return [buf[0], buf[1], buf[2]];
   }
 
   /** Apparent angle (rad) of a cloud star — smoke proves points grow. */
@@ -1517,13 +1318,6 @@ export class GalaxyView {
     this.borderWorker?.terminate();
     this.borderWorker = null;
     this.disposeArcStars();
-    if (this.glowMesh) {
-      this.scene.remove(this.glowMesh);
-      this.glowMesh.geometry.dispose();
-      this.glowMat?.dispose();
-      this.glowMesh = null;
-      this.glowMat = null;
-    }
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
     this.renderer.dispose();
@@ -2230,20 +2024,6 @@ export class GalaxyView {
       mat.uniforms.uPixel.value = px;
       mat.uniforms.uPxPerRad.value = pxPer;
       (mat.uniforms.uCamRotInv.value as THREE.Matrix3).copy(this.camRot3);
-    }
-    if (this.glowMat) {
-      (this.glowMat.uniforms.uCamRot.value as THREE.Matrix3).copy(this.camRot3);
-      const tanY = Math.tan((this.camera.fov * Math.PI) / 360);
-      this.glowMat.uniforms.uTanY.value = tanY;
-      this.glowMat.uniforms.uTanX.value = tanY * this.camera.aspect;
-      // Eye adaptation (Weber–Fechner): the stretch divides by the
-      // ambient stellar density at the camera — the same density law
-      // the march emits. Dark space sees the full photograph; inside
-      // the disk the band is subtle and the poles are dark.
-      const c = this.arcCenter;
-      const ambient = density({ R: Math.hypot(c.x, c.z), theta: Math.atan2(c.z, c.x), z: c.y });
-      this.glowMat.uniforms.uGlowGain.value =
-        UNIVERSE.GALAXY_GLOW_GAIN / (1 + UNIVERSE.GALAXY_GLOW_ADAPT * ambient);
     }
 
     const cam = this.camera.position;
