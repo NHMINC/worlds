@@ -15,8 +15,10 @@ gas-to-galaxy sim (`src/world/formation/`) collapses a rotating cloud
 in a static halo, stars form where the gas is dense, feedback
 regulates, and the disk goes bar- and spiral-unstable on its own. The
 evolved star particles of that run ARE the galaxy — 10 000 parents,
-each standing for ~10⁵ real stars. The catalog sits those stars next to
-their parent (an isotropic Gaussian so they fill the area). Gas / ISM stay a
+each standing for ~10⁵ real stars. Formation is an isolated cooling
+halo: hot rotating gas radiates, settles into a thin spinning disk,
+and the first cold stars in the centre are the bulge. The catalog sits
+stars next to their parent (an isotropic Gaussian). Gas / ISM stay a
 smooth field. Bulge, arms, the metallicity gradient and the age
 structure are outcomes, not inputs. Stars, remnants, and nebulae are
 a cheap function of that point cloud plus laws. You **discover** a
@@ -510,7 +512,7 @@ Code map (start here):
 | Area | Where |
 |------|--------|
 | Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
-| Formation sim (3D PM, 10k particles) | `src/world/formation/sim.ts` |
+| Formation sim (cooling halo → thin disk) | `src/world/formation/sim.ts` |
 | Baked field + resolution/renorm laws | `src/world/formation/field.ts` |
 | Active field registry + radial fits | `src/world/formation/registry.ts` |
 | Galaxy (formed field + implicit catalog) | `src/world/galaxy.ts` |

@@ -8,10 +8,9 @@
  * survive only for what is a medium —
  * gas / ISM / extinction — and for ring-profile fits.
  *
- * The sim is 3D. Parents keep the positions the run earned — no
- * sech² lift, no sphere-of-R remap (those painted a cylinder).
- * Populations are KINEMATIC OUTCOMES. Disk / thick / spheroid
- * labels still come from circularity, for the ISM grids only.
+ * The sim is a 3D cooling halo. Parents keep the positions the run
+ * earned. Disk / thick / spheroid labels still come from circularity,
+ * for the ISM grids only.
  *
  * Ages: SIM_GYR of dynamical time stand in for GALAXY_AGE_GYR of
  * cosmic time (a named toy compression, like TIME_SCALE). The baked
@@ -90,7 +89,7 @@ export const FIELD = {
    * a parent is that wide. A product-of-tents cube aligned with the
    * PM mesh (SOFT ~ mesh) printed a lattice in the nucleus.
    */
-    JITTER: 0.42,
+    JITTER: 0.22,
 } as const;
 
 const FEH_SUN = 0.0134;
