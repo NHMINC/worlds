@@ -1,9 +1,10 @@
 /**
- * The explorer sky is the luminous harvest. A star is one CSS
- * pixel at every fly distance, wearing its Teff colour. A soft
- * glow around the pin is the eye's PSF on luminosity — size is
- * f(L), not 1/d. Dust is never drawn. r/d grow is a later
- * close-survey law — not this photograph.
+ * The explorer sky is the luminous harvest. A star is a point:
+ * one CSS-pixel core wearing Teff colour, plus the eye's PSF.
+ * Magnitude lifts the wings of that PSF (a Gaussian core and a
+ * Lorentzian tail, the same glare shape as the in-system sun).
+ * The sprite is only room for those wings — it is not a disc.
+ * Dust is never drawn. r/d grow is a later close-survey law.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -50,26 +51,31 @@ export const SHINE_SAT = 1.55;
  * still reads O-blue / M-orange. The old SHINE_SAT was a backdrop
  * number; fly pins need more chroma.
  */
-export const HARVEST_SHINE_SAT = 2.55;
+export const HARVEST_SHINE_SAT = 2.7;
 /** Harvest glow / shine are referenced to the luminous-tail floor. */
 export const HARVEST_L_REF = UNIVERSE.GALAXY_SILHOUETTE_L;
 /**
- * Magnitude bloom (CSS px beyond the pin). Size is
- * 1 + K · max(0, (L/LREF)^P − 1), capped. A harvest-floor star
- * stays a pin; an O / supergiant grows a halo. Not 1/d.
+ * Eye PSF in CSS pixels — not sprite UVs. A Gaussian core
+ * (exp(−r² · CORE)) plus a Lorentzian tail TAIL/(A + B r²).
+ * Same shape as the in-system glare. Magnitude scales I; it
+ * does not stretch a filled circle.
  */
-export const HARVEST_GLOW_K = 4.5;
-export const HARVEST_GLOW_P = 0.4;
-export const HARVEST_GLOW_MAX = 18;
+export const HARVEST_PSF_CORE = 18;
+export const HARVEST_PSF_TAIL = 0.22;
+export const HARVEST_PSF_A = 0.07;
+export const HARVEST_PSF_B = 3.2;
+export const HARVEST_PSF_THRESH = 0.018;
+/** Sprite cap (CSS px). Room for wings, not a disc radius. */
+export const HARVEST_GLOW_MAX = 22;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
- * The old SHINE_* law saturates by ~3 kpc (I/(1+I) ≈ 1 for every
- * harvest row). This one still ranks L at fly distances.
+ * Steep in L so an O outshines the harvest floor. Shallow in d
+ * so approaching does not inflate a disc.
  */
-export const HARVEST_SHINE_GAIN = 0.55;
-export const HARVEST_SHINE_L_P = 0.42;
+export const HARVEST_SHINE_GAIN = 0.28;
+export const HARVEST_SHINE_L_P = 0.55;
 export const HARVEST_SHINE_DIST_REF = 8;
-export const HARVEST_SHINE_DIST_P = 0.28;
+export const HARVEST_SHINE_DIST_P = 0.22;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). Unused on harvest pins. */
@@ -87,10 +93,23 @@ export function harvestStarPx(pixelRatio = 1): number {
   return Math.max(1, pixelRatio);
 }
 
-/** Magnitude bloom (device px). f(L) only — approaching does not inflate it. */
+/** PSF intensity at a CSS-pixel radius. Same formula the harvest fragment uses. */
+export function harvestPsf(I: number, rCss: number): number {
+  const core = Math.exp(-rCss * rCss * HARVEST_PSF_CORE);
+  const tail = HARVEST_PSF_TAIL / (HARVEST_PSF_A + HARVEST_PSF_B * rCss * rCss);
+  return Math.max(0, I) * (0.95 * core + tail);
+}
+
+/** CSS-px radius where the Lorentzian wing drops through the visibility floor. */
+export function harvestPsfRadiusCss(I: number): number {
+  const num = (HARVEST_PSF_TAIL * Math.max(I, 0)) / HARVEST_PSF_THRESH - HARVEST_PSF_A;
+  return Math.sqrt(Math.max(0, num / HARVEST_PSF_B));
+}
+
+/** Sprite size (device px): room for visible wings. Not a filled disc. */
 export function harvestGlowPx(L: number, pixelRatio = 1): number {
-  const mag = Math.pow(Math.max(L, 1e-4) / HARVEST_L_REF, HARVEST_GLOW_P);
-  const css = Math.min(HARVEST_GLOW_MAX, 1 + HARVEST_GLOW_K * Math.max(0, mag - 1));
+  const I = harvestShine(L, HARVEST_SHINE_DIST_REF);
+  const css = Math.min(HARVEST_GLOW_MAX, Math.max(1, 1 + 2 * harvestPsfRadiusCss(I)));
   return Math.max(harvestStarPx(pixelRatio), css * pixelRatio);
 }
 

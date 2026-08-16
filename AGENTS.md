@@ -195,12 +195,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   opens the same way on a discovered living host. The camera
   sits at the viewpoint centre. Gestures **slide** through
   catalog space (1:1, no `VIEW_R` stretch). Harvest stars are
-  **1px pinpricks** wearing Teff colour (pushed off grey so a
-  pin still reads O-blue / M-orange). A soft glow around the
-  pin is the eye’s PSF on luminosity — size is `f(L)`, not
-  `1/d`. r/d grow is a planet-zoom law, not this sky. **Dust
-  is never drawn — it is sightline extinction** (`extinctGlsl`).
-  A harvest star is visitable
+  **point sources**: a 1px Teff core plus the eye’s PSF
+  (Gaussian core + Lorentzian tail — the same glare shape as
+  the in-system sun). Magnitude lifts the wings; it does not
+  stamp a larger disc. Colour stays in the glow; only the
+  photocentre of a very bright row bleaches. r/d grow is a
+  planet-zoom law, not this sky. **Dust is never drawn — it
+  is sightline extinction** (`extinctGlsl`). A harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble far enough that the whole
   disk fits the screen (pole-on, or a few degrees above the plane)

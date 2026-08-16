@@ -13,10 +13,13 @@ import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galax
 import {
   aimLocks,
   harvestGlowPx,
-  HARVEST_GLOW_K,
   HARVEST_GLOW_MAX,
-  HARVEST_GLOW_P,
   HARVEST_L_REF,
+  HARVEST_PSF_A,
+  HARVEST_PSF_B,
+  HARVEST_PSF_CORE,
+  HARVEST_PSF_TAIL,
+  HARVEST_PSF_THRESH,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_DIST_REF,
   HARVEST_SHINE_GAIN,
@@ -143,9 +146,12 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uSuper;
   uniform float uFluxEps;
   uniform float uLRef;
-  uniform float uGlowK;
-  uniform float uGlowP;
   uniform float uGlowMax;
+  uniform float uPsfCore;
+  uniform float uPsfTail;
+  uniform float uPsfA;
+  uniform float uPsfB;
+  uniform float uPsfThresh;
   uniform float uShineLGain;
   uniform float uShineLP;
   uniform float uShineDistRef;
@@ -195,15 +201,16 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Pin + magnitude glow. Size is f(L), not 1/d — approaching
-      // does not inflate the halo. Colour is Teff, pushed off grey.
+      // Point + eye PSF. Sprite size is room for visible wings,
+      // not a disc radius. Colour is Teff, pushed off grey.
       float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
-      float mag = pow(L / max(uLRef, 1.0), uGlowP);
-      float css = min(uGlowMax, 1.0 + uGlowK * max(0.0, mag - 1.0));
-      gl_PointSize = max(uPixel, css * uPixel);
       float shine = uShineLGain * pow(L / max(uLRef, 1.0), uShineLP)
         * pow(uShineDistRef / max(d, 0.4), uShineDistP);
+      float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
+      float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
+      float css = min(uGlowMax, max(1.0, 1.0 + 2.0 * rCss));
+      gl_PointSize = max(uPixel, css * uPixel);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
       vVis = shine;
@@ -230,6 +237,10 @@ const STAR_FRAG = /* glsl */ `
   uniform float uDustSteps;
   uniform float uDustMinPx;
   uniform float uDustFreq;
+  uniform float uPsfCore;
+  uniform float uPsfTail;
+  uniform float uPsfA;
+  uniform float uPsfB;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -243,22 +254,23 @@ const STAR_FRAG = /* glsl */ `
     if (uPass > 0.5 && (vKind < 0.5 || vKind > 3.5)) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
-      float r = length(p);
-      if (r > 1.0) discard;
+      float edge = length(p);
+      if (edge > 1.0) discard;
       float I = max(vVis, 0.0);
-      float peak = max(max(vColor.r, vColor.g), vColor.b);
-      vec3 chroma = vColor / max(peak, 1e-4);
-      // Core stays one CSS pixel. The rest is a soft PSF whose
-      // brightness still ranks L — I/(1+I) flattened every harvest
-      // row to the same white pin.
-      float rPx = r * vPx * 0.5;
-      float core = 1.0 - smoothstep(0.4 * uPixel, 1.15 * uPixel, rPx);
-      float halo = exp(-4.2 * r * r);
-      float coreI = I / (1.0 + 0.35 * I);
-      float haloI = 0.2 * I * halo;
-      float bright = core * coreI + haloI;
-      if (bright < 0.008) discard;
-      gl_FragColor = vec4(chroma * bright, 1.0);
+      // PSF lives in CSS pixels, not sprite UVs. Stretching a
+      // gaussian to fill the quad was the white-disc photograph.
+      float rCss = (edge * vPx * 0.5) / max(uPixel, 1.0);
+      float core = exp(-rCss * rCss * uPsfCore);
+      float tail = uPsfTail / (uPsfA + uPsfB * rCss * rCss);
+      float window = 1.0 - edge * edge;
+      window *= window;
+      float profile = I * (0.95 * core + tail) * window;
+      if (profile < 0.008) discard;
+      // Wings keep Teff. Only the photocentre of a very bright
+      // row bleaches — the way a plate overexposes a point.
+      float bleach = smoothstep(1.4, 3.2, I) * core;
+      vec3 c = mix(vColor, vec3(1.0), bleach) * profile;
+      gl_FragColor = vec4(c, 1.0);
       return;
     }
     // Emission nebulae: self-luminous shells. Brightness is emission
@@ -613,9 +625,12 @@ export class GalaxyView {
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
       uLRef: { value: HARVEST_L_REF },
-      uGlowK: { value: HARVEST_GLOW_K },
-      uGlowP: { value: HARVEST_GLOW_P },
       uGlowMax: { value: HARVEST_GLOW_MAX },
+      uPsfCore: { value: HARVEST_PSF_CORE },
+      uPsfTail: { value: HARVEST_PSF_TAIL },
+      uPsfA: { value: HARVEST_PSF_A },
+      uPsfB: { value: HARVEST_PSF_B },
+      uPsfThresh: { value: HARVEST_PSF_THRESH },
       uShineLGain: { value: HARVEST_SHINE_GAIN },
       uShineLP: { value: HARVEST_SHINE_L_P },
       uShineDistRef: { value: HARVEST_SHINE_DIST_REF },
@@ -666,7 +681,9 @@ export class GalaxyView {
       depthWrite: false,
       depthTest: false,
       blending: nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
-      blendSrc: nebula ? THREE.OneMinusDstColorFactor : THREE.SrcAlphaFactor,
+      // Stars add light (One, One): a PSF that falls to zero is a
+      // point, not a stamped disc. SrcAlpha + alpha=1 was the disc.
+      blendSrc: nebula ? THREE.OneMinusDstColorFactor : THREE.OneFactor,
       blendDst: THREE.OneFactor,
       toneMapped: false,
     });
