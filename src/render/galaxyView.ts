@@ -24,9 +24,14 @@ import {
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
   HARVEST_SHINE_SAT,
+  HARVEST_SPIKE_FADE,
+  HARVEST_SPIKE_GAIN,
+  HARVEST_SPIKE_W,
+  HARVEST_SPRITE_SCALE,
   HARVEST_SUPER_GAIN,
   HARVEST_SUPER_L,
   HARVEST_SUPER_P,
+  harvestIsSprite,
   POINT_FLUX_EPS,
   glowRadiusKpc,
 } from './galaxyStar';
@@ -41,6 +46,7 @@ import {
   BIT_DUST,
   BIT_NEBULA,
   KIND_DUST,
+  KIND_STAR,
   type StarCloud,
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
@@ -351,6 +357,104 @@ const STAR_FRAG = /* glsl */ `
   }
 `;
 
+/**
+ * Super-sun glare sprite. Camera-facing quad — not a gl_PointSize —
+ * so the GPU point cap cannot clip the tail. The harvest pin still
+ * owns the photocentre; this is halo + diffraction spikes only.
+ */
+const SPRITE_VERT = /* glsl */ `
+  ${SHAPE_GLSL}
+  ${extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)}
+  attribute vec3 aCenter;
+  attribute vec3 aColor;
+  attribute float aLum;
+  attribute float aVis;
+  uniform vec3 uCenter;
+  uniform float uScale;
+  uniform float uPixel;
+  uniform float uPxPerRad;
+  uniform float uLRef;
+  uniform float uShineLGain;
+  uniform float uShineLP;
+  uniform float uShineDistRef;
+  uniform float uShineDistP;
+  uniform float uShineSat;
+  uniform float uSuperL;
+  uniform float uSuperGain;
+  uniform float uSuperP;
+  uniform float uPsfTail;
+  uniform float uPsfA;
+  uniform float uPsfB;
+  uniform float uPsfThresh;
+  uniform float uSpriteScale;
+  varying vec3 vColor;
+  varying float vVis;
+  varying float vHalfCss;
+  varying vec2 vUv;
+  void main() {
+    vec3 view = (aCenter - uCenter) * uScale;
+    vec4 mv = modelViewMatrix * vec4(view, 1.0);
+    float d = max(length(mv.xyz), 0.001);
+    float L = max(aLum, 1e-4);
+    float distF = pow(uShineDistRef / max(d, 0.4), uShineDistP);
+    float base = uShineLGain * pow(L / max(uLRef, 1.0), uShineLP);
+    float superX = L / max(uSuperL, 1.0);
+    float extra = superX > 1.0
+      ? uSuperGain * (pow(superX, uSuperP) - 1.0)
+      : 0.0;
+    float shine = (base + extra) * distF;
+    float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
+    float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
+    float css = max(1.0, 1.0 + 2.0 * rCss * uSpriteScale);
+    float halfRad = (css * 0.5 * uPixel) / max(uPxPerRad, 1.0);
+    vec3 ext = vec3(position.xy * halfRad * d, 0.0);
+    vec3 extCol = extinctT(uCenter, aCenter);
+    float extLum = dot(extCol, vec3(0.2126, 0.7152, 0.0722));
+    float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
+    vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
+    vColor *= extCol / max(extLum, 1e-3);
+    vVis = shine * extLum * aVis;
+    vHalfCss = css * 0.5;
+    vUv = position.xy;
+    gl_Position = projectionMatrix * vec4(mv.xyz + ext, 1.0);
+  }
+`;
+
+const SPRITE_FRAG = /* glsl */ `
+  uniform float uPsfTail;
+  uniform float uPsfA;
+  uniform float uPsfB;
+  uniform float uSpikeGain;
+  uniform float uSpikeW;
+  uniform float uSpikeFade;
+  varying vec3 vColor;
+  varying float vVis;
+  varying float vHalfCss;
+  varying vec2 vUv;
+  void main() {
+    float r = length(vUv);
+    if (r > 1.0) discard;
+    float I = max(vVis, 0.0);
+    float xCss = vUv.x * vHalfCss;
+    float yCss = vUv.y * vHalfCss;
+    float r2 = xCss * xCss + yCss * yCss;
+    // Same Lorentzian wing as the pin — no Gaussian core. The
+    // harvest point already owns the photocentre.
+    float halo = uPsfTail / (uPsfA + uPsfB * r2);
+    float armX = uSpikeGain / (0.08 + uSpikeW * yCss * yCss)
+      * exp(-uSpikeFade * abs(xCss));
+    float armY = uSpikeGain / (0.08 + uSpikeW * xCss * xCss)
+      * exp(-uSpikeFade * abs(yCss));
+    float window = 1.0 - r * r;
+    window *= window;
+    // Soft hole so the 1px pin stays the photocentre.
+    float hole = smoothstep(1.2, 3.6, sqrt(r2));
+    float profile = I * (halo + armX + armY) * window * hole;
+    if (profile < 0.008) discard;
+    gl_FragColor = vec4(vColor * profile, 1.0);
+  }
+`;
+
 export interface GalaxyFocus {
   id: number;
   name: string;
@@ -436,6 +540,11 @@ export class GalaxyView {
   private silMat: THREE.ShaderMaterial | null = null;
   private silEmisPts: THREE.Points | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
+  private silSprite: THREE.Mesh | null = null;
+  private silSpriteGeo: THREE.InstancedBufferGeometry | null = null;
+  private silSpriteMat: THREE.ShaderMaterial | null = null;
+  private spriteVis: THREE.InstancedBufferAttribute | null = null;
+  private spriteCloudIndex: Uint32Array | null = null;
   /** Catalog positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
 
@@ -611,6 +720,16 @@ export class GalaxyView {
   }
 
   private disposeSilhouette(): void {
+    if (this.silSprite) {
+      this.scene.remove(this.silSprite);
+      this.silSpriteGeo?.dispose();
+      this.silSpriteMat?.dispose();
+      this.silSprite = null;
+      this.silSpriteGeo = null;
+      this.silSpriteMat = null;
+      this.spriteVis = null;
+      this.spriteCloudIndex = null;
+    }
     if (this.silEmisPts) {
       this.scene.remove(this.silEmisPts);
       this.silEmisMat?.dispose();
@@ -648,6 +767,22 @@ export class GalaxyView {
       uSuperGain: { value: HARVEST_SUPER_GAIN },
       uSuperP: { value: HARVEST_SUPER_P },
       uFluxEps: { value: POINT_FLUX_EPS },
+    };
+  }
+
+  private spriteUniforms(): Record<string, THREE.IUniform> {
+    return {
+      uCenter: { value: new THREE.Vector3() },
+      uScale: { value: 1 },
+      uPixel: { value: this.renderer.getPixelRatio() },
+      uPxPerRad: { value: this.pxPerRad() },
+      uCamRotInv: { value: new THREE.Matrix3() },
+      uSpriteScale: { value: HARVEST_SPRITE_SCALE },
+      uSpikeGain: { value: HARVEST_SPIKE_GAIN },
+      uSpikeW: { value: HARVEST_SPIKE_W },
+      uSpikeFade: { value: HARVEST_SPIKE_FADE },
+      ...this.shineUniforms(),
+      ...this.extinctUniforms(),
     };
   }
 
@@ -750,6 +885,7 @@ export class GalaxyView {
     this.scene.add(emisPts);
     this.silEmisPts = emisPts;
     this.silEmisMat = emisMat;
+    this.buildSuperSprites(cloud);
     // No dust pass: dust is not visible, it filters. The rows stay
     // minted (census, grain-tint check, future local layer) and the
     // per-pass kind gates cull them; the sightline extinction march
@@ -757,9 +893,74 @@ export class GalaxyView {
     this.pushMagUniforms();
   }
 
+  /**
+   * Camera-facing glare quads for the SUPER_L tail only. Ordinary
+   * harvest pins are untouched. The pin still draws; this is extra
+   * wing (halo + spikes) the GPU point size cannot hold.
+   */
+  private buildSuperSprites(cloud: StarCloud): void {
+    const idx: number[] = [];
+    for (let i = 0; i < cloud.n; i++) {
+      if (cloud.kind[i] !== KIND_STAR) continue;
+      if (!harvestIsSprite(cloud.lum[i])) continue;
+      idx.push(i);
+    }
+    if (idx.length === 0) return;
+    const n = idx.length;
+    const map = new Uint32Array(n);
+    const centers = new Float32Array(n * 3);
+    const colors = new Float32Array(n * 3);
+    const lums = new Float32Array(n);
+    const vis = new Float32Array(n);
+    for (let j = 0; j < n; j++) {
+      const i = idx[j];
+      map[j] = i;
+      centers[j * 3] = cloud.pos[i * 3];
+      centers[j * 3 + 1] = cloud.pos[i * 3 + 1];
+      centers[j * 3 + 2] = cloud.pos[i * 3 + 2];
+      colors[j * 3] = cloud.col[i * 3];
+      colors[j * 3 + 1] = cloud.col[i * 3 + 1];
+      colors[j * 3 + 2] = cloud.col[i * 3 + 2];
+      lums[j] = cloud.lum[i];
+      vis[j] = 1;
+    }
+    const geo = new THREE.InstancedBufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0], 3));
+    geo.setIndex([0, 1, 2, 0, 2, 3]);
+    geo.setAttribute('aCenter', new THREE.InstancedBufferAttribute(centers, 3));
+    geo.setAttribute('aColor', new THREE.InstancedBufferAttribute(colors, 3));
+    geo.setAttribute('aLum', new THREE.InstancedBufferAttribute(lums, 1));
+    const visAttr = new THREE.InstancedBufferAttribute(vis, 1);
+    visAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aVis', visAttr);
+    geo.instanceCount = n;
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: SPRITE_VERT,
+      fragmentShader: SPRITE_FRAG,
+      uniforms: this.spriteUniforms(),
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.AdditiveBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneFactor,
+      toneMapped: false,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 0;
+    this.scene.add(mesh);
+    this.silSprite = mesh;
+    this.silSpriteGeo = geo;
+    this.silSpriteMat = mat;
+    this.spriteVis = visAttr;
+    this.spriteCloudIndex = map;
+  }
+
   private cloudMats(): THREE.ShaderMaterial[] {
     const out: THREE.ShaderMaterial[] = [];
-    for (const m of [this.silMat, this.silEmisMat]) {
+    for (const m of [this.silMat, this.silEmisMat, this.silSpriteMat]) {
       if (m) out.push(m);
     }
     return out;
@@ -1672,6 +1873,14 @@ export class GalaxyView {
       arr[i] = sketchMatches(bits[i], this.filter) ? 1 : 0.08;
     }
     this.starVis.needsUpdate = true;
+    if (this.spriteVis && this.spriteCloudIndex) {
+      const sarr = this.spriteVis.array as Float32Array;
+      const map = this.spriteCloudIndex;
+      for (let j = 0; j < map.length; j++) {
+        sarr[j] = sketchMatches(bits[map[j]], this.filter) ? 1 : 0.08;
+      }
+      this.spriteVis.needsUpdate = true;
+    }
   }
 
   // --------------------------------------------------------------- frame

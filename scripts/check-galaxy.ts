@@ -19,6 +19,8 @@ import {
   harvestPsf,
   harvestShine,
   harvestStarPx,
+  harvestIsSprite,
+  harvestSpriteCss,
   harvestSuperExtra,
   HARVEST_L_REF,
   HARVEST_SHINE_DIST_P,
@@ -301,6 +303,12 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
     `super-sun must get extra I: ${harvestShine(1e6, 8).toFixed(1)} vs core ${coreShine(1e6, 8).toFixed(1)}`);
   check(harvestGlowPx(1e6, 1) > harvestGlowPx(8000, 1) * 3,
     `super-sun glow must outgrow an O: ${harvestGlowPx(1e6, 1).toFixed(1)} vs ${harvestGlowPx(8000, 1).toFixed(1)}`);
+  check(!harvestIsSprite(8000) && !harvestIsSprite(HARVEST_SUPER_L - 1),
+    'ordinary harvest stars must not wear the glare sprite');
+  check(harvestIsSprite(HARVEST_SUPER_L) && harvestIsSprite(1.5e5),
+    'SUPER_L tail must wear the glare sprite');
+  check(harvestSpriteCss(HARVEST_SUPER_L) > harvestGlowPx(HARVEST_SUPER_L, 1) * 1.8,
+    `sprite must outgrow the pin: ${harvestSpriteCss(HARVEST_SUPER_L).toFixed(1)} vs ${harvestGlowPx(HARVEST_SUPER_L, 1).toFixed(1)}`);
   const floorCore = harvestPsf(shineFloor, 0);
   const floorWing = harvestPsf(shineFloor, 2.4);
   const oCore = harvestPsf(shineO, 0);
