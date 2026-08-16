@@ -16,7 +16,7 @@ in a static halo, stars form where the gas is dense, feedback
 regulates, and the disk goes bar- and spiral-unstable on its own. The
 evolved star particles of that run ARE the galaxy — each is a parent
 and stands for ~10⁴ real stars. The catalog sits those stars next to
-their parent (a small tent so they fill the area). Gas / ISM stay a
+their parent (an isotropic Gaussian so they fill the area). Gas / ISM stay a
 smooth field. Bulge, arms, the metallicity gradient and the age
 structure are outcomes, not inputs. Stars, remnants, and nebulae are
 a cheap function of that point cloud plus laws. You **discover** a
@@ -105,7 +105,7 @@ is the job.
 ```
 CANONICAL_SEED → formation genes → gas-to-galaxy run (deterministic)
   → baked GalaxyField (star-particle parents + gas/ISM grids)
-  → catalog star = parent + tent jitter; identity from the parent
+  → catalog star = parent + isotropic Gaussian; identity from the parent
   → IMF mass, birth time, [Fe/H], C/O
   → evolve(mass, age, Z) → MK class / remnant / nebula
   → disk chemistry at orbital radius (condensation sequence)

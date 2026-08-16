@@ -10,7 +10,8 @@
  *
  * The sim is 2D (galaxies are thin). Disk parents get a sech² height
  * from the measured sheet; hot non-circular parents are the spheroid
- * and get a fatter sech². Populations are KINEMATIC OUTCOMES.
+ * and are lifted onto a sphere (planar R is the 3D radius).
+ * Populations are KINEMATIC OUTCOMES.
  *
  * Ages: SIM_GYR of dynamical time stand in for GALAXY_AGE_GYR of
  * cosmic time (a named toy compression, like TIME_SCALE). The baked
