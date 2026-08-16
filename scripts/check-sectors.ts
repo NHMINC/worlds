@@ -241,14 +241,16 @@ const check = (cond: boolean, msg: string) => {
   }
   check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
   check(inside < a.n, 'silhouette must reach past the sample ball');
-  check(stars > 10_000 && stars < 50_000, `silhouette stars ${stars} is not the bright tail`);
+  // L ≥ 300 keeps ~79k of the ~83k stars the M=5 floor clocks — most
+  // of the luminous tail, still nowhere near the full disk.
+  check(stars > 60_000 && stars < 110_000, `silhouette stars ${stars} is not the luminous tail`);
   check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
   // The harvest keeps only the greatest complexes (SILHOUETTE_DUST_R
   // after three median halvings) — thousands, not tens of thousands.
   check(dust > 2_000 && dust < 80_000, `dust count ${dust} is not the large-field set`);
   check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
   check(minStarL >= UNIVERSE.GALAXY_SILHOUETTE_L, `silhouette star dim L=${minStarL}`);
-  check(stars + nebulae < 80_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
+  check(stars + nebulae < 110_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');
