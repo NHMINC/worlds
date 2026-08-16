@@ -209,7 +209,7 @@ const check = (cond: boolean, msg: string) => {
   check(a === b5, 'silhouette must be cached per seed');
   check(a.n === b5.n && a.ids[0] === b5.ids[0], 'silhouette not deterministic');
   check(a.kind.length >= a.n, 'silhouette missing kind');
-  check(a.n > 20_000 && a.n < 130_000, `silhouette ${a.n} is not a bright tail`);
+  check(a.n > 20_000 && a.n < 220_000, `silhouette ${a.n} is not a bright tail`);
   let stars = 0;
   let nebulae = 0;
   let dust = 0;
@@ -245,9 +245,9 @@ const check = (cond: boolean, msg: string) => {
   // of the luminous tail, still nowhere near the full disk.
   check(stars > 60_000 && stars < 110_000, `silhouette stars ${stars} is not the luminous tail`);
   check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
-  // The harvest keeps only the greatest complexes (SILHOUETTE_DUST_R
-  // after three median halvings) — thousands, not tens of thousands.
-  check(dust > 2_000 && dust < 80_000, `dust count ${dust} is not the large-field set`);
+  // Dust is census-only (never drawn; extinction is the visible law),
+  // so the full clump population rides along — tens of thousands.
+  check(dust > 60_000 && dust < 150_000, `dust count ${dust} is not the full clump census`);
   check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
   check(minStarL >= UNIVERSE.GALAXY_SILHOUETTE_L, `silhouette star dim L=${minStarL}`);
   check(stars + nebulae < 110_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
@@ -354,10 +354,9 @@ const check = (cond: boolean, msg: string) => {
     );
     if (tints.size > 40) break;
   }
-  // The thin harvest keeps only the biggest complexes (dense inner
-  // gas), so the sampled spread narrows; 5+ quantized tints still
-  // proves silicate / soot / ice reach the grains.
-  check(tints.size >= 5, `dust wears ${tints.size} tints — composition is not reaching the grains`);
+  // The full clump census spans the whole disk, so silicate / soot /
+  // ice chemistry should show a broad spread of grain tints again.
+  check(tints.size >= 8, `dust wears ${tints.size} tints — composition is not reaching the grains`);
   check(UNIVERSE.DUST_ALPHA_MAX > 0.5 && UNIVERSE.DUST_ALPHA_MAX < 1, 'dense cores must obscure but never be a solid wall');
   console.log(`  dust chemistry: ice ${iceIn.toFixed(2)} -> ${iceOut.toFixed(2)} with radius; ${tints.size}+ grain tints`);
 }
