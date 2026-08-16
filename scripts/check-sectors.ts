@@ -197,13 +197,27 @@ const check = (cond: boolean, msg: string) => {
     if (d > maxD) maxD = d;
   }
   check(maxD <= r + 1e-6, `region point ${maxD} outside ball ${r}`);
-  const { cell, slot } = splitId(a.ids[0]);
-  const filled = slotsInCell(seed, cell);
-  const birth = slotBirthRaw(seed, cell, slot, filled);
-  const cart = slotBirthCart(seed, cell, slot);
-  check(Math.abs(cart.x - a.pos[0]) < 1e-5 && Math.abs(cart.y - a.pos[1]) < 1e-5, 'slotBirthCart != cloud pos');
-  const o = objectAt(seed, a.ids[0]);
-  check(!!o && o.pos.R === birth.pos.R && o.pos.theta === birth.pos.theta, 'region row pose != objectAt');
+  let starI = -1;
+  for (let i = 0; i < a.n; i++) {
+    if (!isDustId(a.ids[i])) {
+      starI = i;
+      break;
+    }
+  }
+  if (starI < 0) {
+    check(false, `outer-disk region at R=14 is dust-only (${a.n} rows) — disk did not reach`);
+  } else {
+    const { cell, slot } = splitId(a.ids[starI]);
+    const filled = slotsInCell(seed, cell);
+    const birth = slotBirthRaw(seed, cell, slot, filled);
+    const cart = slotBirthCart(seed, cell, slot);
+    check(
+      Math.abs(cart.x - a.pos[starI * 3]) < 1e-5 && Math.abs(cart.y - a.pos[starI * 3 + 1]) < 1e-5,
+      'slotBirthCart != cloud pos',
+    );
+    const o = objectAt(seed, a.ids[starI]);
+    check(!!o && o.pos.R === birth.pos.R && o.pos.theta === birth.pos.theta, 'region row pose != objectAt');
+  }
   const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
   const homeCloud = buildRegionCloud(seed, homeC.x, homeC.y, homeC.z, r);
   check(homeCloud.n > a.n, `home region ${homeCloud.n} should outnumber the rim ${a.n}`);
@@ -231,7 +245,7 @@ const check = (cond: boolean, msg: string) => {
   check(a === b5, 'silhouette must be cached per seed');
   check(a.n === b5.n && a.ids[0] === b5.ids[0], 'silhouette not deterministic');
   check(a.kind.length >= a.n, 'silhouette missing kind');
-  check(a.n > 20_000 && a.n < 220_000, `silhouette ${a.n} is not a bright tail`);
+  check(a.n > 20_000 && a.n < 300_000, `silhouette ${a.n} is not a bright tail`);
   let stars = 0;
   let nebulae = 0;
   let dust = 0;

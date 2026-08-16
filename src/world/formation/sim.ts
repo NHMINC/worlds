@@ -111,8 +111,10 @@ export const FORM = {
   T_FLOOR: 1e4,
   /** Stars form only colder than this (K). */
   T_SF: 2.5e4,
-  /** Density contrast over the mean corona for the Schmidt gate. */
-  SF_OVER: 7,
+  /** Density contrast over the mean corona for the Schmidt gate.
+   *  The temperature floor already keeps the hot corona sterile;
+   *  this only has to pick the cooled sheet over empty cells. */
+  SF_OVER: 3,
   SF_RATE: 0.00022,
   SF_PMAX: 0.06,
   /** Feedback: specific energy added to the birth cell's remaining gas. */
@@ -192,9 +194,9 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
     const s = Math.sqrt(Math.max(0, 1 - mu * mu));
     const c = dcos(th);
     const sn = dsin(th);
-    px[i] = r * s * c * 1.35;
-    py[i] = r * s * sn * 1.35;
-    pz[i] = r * mu * 0.5;
+    px[i] = r * s * c * 1.5;
+    py[i] = r * s * sn * 1.5;
+    pz[i] = r * mu * 0.45;
     const R = Math.max(1e-6, Math.hypot(px[i], py[i]));
     const vc = Math.sqrt((v2 * R * R) / (R * R + rc2));
     const vphi = genes.spin * vc;
