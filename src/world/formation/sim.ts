@@ -17,7 +17,7 @@
  * detmath so every engine reprints the same galaxy. 10 000 particles.
  */
 import { mulberry32, xmur3 } from '../rng';
-import { dcos, dexp, dgauss, dpow, dsin, DTAU } from './detmath';
+import { dcos, dexp, dgauss, dsin, DTAU } from './detmath';
 import { PoissonSolver3D } from './fft';
 
 /** Bump when the sim's laws change: every address in the sky moves. */
@@ -100,11 +100,11 @@ export interface FormationResult {
 
 export const FORM = {
   N: 10_000,
-  MESH: 64,
+  MESH: 32,
   BOX: 22,
-  DT: 2,
-  STEPS: 3200,
-  SOFT: 0.55,
+  DT: 2.5,
+  STEPS: 2400,
+  SOFT: 0.7,
   GRAV_EVERY: 2,
   SF_EVERY: 4,
   /** Hydrogen cooling floor (K). Below this, gas stays a warm ISM. */
@@ -112,11 +112,11 @@ export const FORM = {
   /** Stars form only colder than this (K). */
   T_SF: 2.5e4,
   /** Density contrast over the mean corona for the Schmidt gate. */
-  SF_OVER: 18,
-  SF_RATE: 0.0004,
+  SF_OVER: 7,
+  SF_RATE: 0.00022,
   SF_PMAX: 0.06,
   /** Feedback: specific energy added to the birth cell's remaining gas. */
-  FB_U: 800,
+  FB_U: 160,
   YIELD: 0.028,
   Z0: 1e-4,
   /** Corona truncated at this fraction of the box. */
@@ -129,8 +129,10 @@ export function formationGenes(seed: string): FormationGenes {
     vHalo: 150 + 45 * rng(),
     rcHalo: 2.8 + 2.2 * rng(),
     // Low spin → compact, bulge-heavier. High spin → extended thin disk.
-    spin: 0.14 + 0.16 * rng(),
-    coolTau: 180 + 420 * rng(),
+    // Toy box is ~R_vir, not 200 kpc, so spin must be high or the
+    // cooled disk sits at ~2 kpc. Range: compact+bulge → extended thin.
+    spin: 0.70 + 0.22 * rng(),
+    coolTau: 80 + 200 * rng(),
     sfEff: 0.7 + 0.7 * rng(),
     gmBaryon: (2.2 + 1.4 * rng()) * 1e5,
   };
@@ -190,12 +192,12 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
     const s = Math.sqrt(Math.max(0, 1 - mu * mu));
     const c = dcos(th);
     const sn = dsin(th);
-    px[i] = r * s * c;
-    py[i] = r * s * sn;
-    pz[i] = r * mu;
+    px[i] = r * s * c * 1.35;
+    py[i] = r * s * sn * 1.35;
+    pz[i] = r * mu * 0.5;
     const R = Math.max(1e-6, Math.hypot(px[i], py[i]));
-    const vc = Math.sqrt((v2 * r * r) / (r * r + rc2));
-    const vphi = genes.spin * vc * (R / Math.max(r, 1e-6));
+    const vc = Math.sqrt((v2 * R * R) / (R * R + rc2));
+    const vphi = genes.spin * vc;
     const ux = px[i] / R;
     const uy = py[i] / R;
     // Pressure holds the corona up; a little turbulence seeds the disk.
@@ -203,7 +205,8 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
     vx[i] = -vphi * uy + turb * dgauss(rng);
     vy[i] = vphi * ux + turb * dgauss(rng);
     vz[i] = turb * dgauss(rng);
-    uu[i] = uVir;
+    // Bound: cooler than virial so the corona does not boil off the mesh.
+    uu[i] = 0.45 * uVir;
     metal[i] = FORM.Z0;
   }
 
@@ -335,7 +338,7 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
           for (let i = 1; i < M - 1; i++) {
             const t = k * M2 + j * M + i;
             const rho = massG[t] / dV;
-            if (rho < 1e-12) continue;
+            if (rho < 0.08 * rhoChar) continue;
             pax[t] = -((press[t + 1] - press[t - 1]) * h2) / rho;
             pay[t] = -((press[t + M] - press[t - M]) * h2) / rho;
             paz[t] = -((press[t + M2] - press[t - M2]) * h2) / rho;
@@ -379,14 +382,12 @@ export function runFormation(seed: string, opts: FormationOpts = {}): FormationR
     for (let i = 0; i < N; i++) {
       if (star[i]) continue;
       const rho = Math.max(1e-9, sample(massG, px[i], py[i], pz[i]) / dV);
-      const prev = rhoP[i] > 0 ? rhoP[i] : rho;
-      // Adiabatic PdV from the density change, then radiative losses.
-      uu[i] *= dpow(rho / prev, GM1);
       rhoP[i] = rho;
       const T = uToT(uu[i]);
       const tc = tCool(T, rho);
       uu[i] *= dexp(-DT / Math.max(tc, DT * 0.25));
       if (uu[i] < uFloor) uu[i] = uFloor;
+      if (uu[i] > uVir * 2) uu[i] = uVir * 2;
     }
     for (let i = 0; i < N; i++) {
       if (star[i]) continue;

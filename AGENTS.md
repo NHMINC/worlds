@@ -11,19 +11,17 @@ win** — the README still describes an earlier realistic-globe era.
 
 A **procedural galaxy in a bottle**. The canonical seed does not pick a
 shape from a table — it **runs a formation**: a deterministic
-gas-to-galaxy sim (`src/world/formation/`) collapses a rotating cloud
-in a static halo, stars form where the gas is dense, feedback
-regulates, and the disk goes bar- and spiral-unstable on its own. The
-evolved star particles of that run ARE the galaxy — 10 000 parents,
-each standing for ~10⁵ real stars. Formation is an isolated cooling
-halo: hot rotating gas radiates, settles into a thin spinning disk,
-and the first cold stars in the centre are the bulge. The catalog sits
-stars next to their parent (an isotropic Gaussian). Gas / ISM stay a
-smooth field. Bulge, arms, the metallicity gradient and the age
-structure are outcomes, not inputs. Stars, remnants, and nebulae are
-a cheap function of that point cloud plus laws. You **discover** a
-star system by going there; you do not mint one. The stars in the
-sky **are** that catalog.
+gas-to-galaxy sim (`src/world/formation/`) starts a hot rotating corona
+in a static halo. The gas radiates, settles into a thin spinning disk,
+and the first cold stars in the centre are the bulge. The evolved star
+particles of that run ARE the galaxy — 10 000 parents, each standing
+for ~10⁵ real stars. Variety is starting conditions (halo, spin,
+cooling time, baryon mass) and age, not a Hubble-type switch. The
+catalog sits stars next to their parent (an isotropic Gaussian). Gas /
+ISM stay a smooth field. Stars, remnants, and nebulae are a cheap
+function of that point cloud plus laws. You **discover** a star system
+by going there; you do not mint one. The stars in the sky **are** that
+catalog.
 
 Worlds stay small Goldberg-hex globes with layered strata (Godus-like
 onion rings) in Caribbean / cel-shaded tones. The feeling: a perfect

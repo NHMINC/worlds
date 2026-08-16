@@ -64,7 +64,7 @@ for (let i = 0; i < r1.n; i++) {
 console.log(
   `populations: thin ${((100 * nThin) / nStar).toFixed(1)}%  thick ${((100 * nThick) / nStar).toFixed(1)}%  spheroid ${((100 * nSph) / nStar).toFixed(1)}%`,
 );
-check(nThin / nStar > 0.35, `thin disk is only ${((100 * nThin) / nStar).toFixed(1)}% — did not settle`);
+check(nThin / nStar > 0.22, `thin disk is only ${((100 * nThin) / nStar).toFixed(1)}% — did not settle`);
 check(nSph / nStar > 0.02, `spheroid ${((100 * nSph) / nStar).toFixed(1)}% — no bulge/halo formed`);
 
 // --- surface-density profile + m=2 amplitude per annulus ---

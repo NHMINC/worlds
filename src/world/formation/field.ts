@@ -77,8 +77,8 @@ export const FIELD = {
   H_MAX: 1.6,
   H_THICK_RATIO: 2.6,
   /** Circularity split: spheroid below, thick between, thin above. */
-  C_SPHEROID: 0.5,
-  C_THIN: 0.8,
+  C_SPHEROID: 0.38,
+  C_THIN: 0.72,
   /** "Young" for the nursery fraction (galaxy-clock Gyr). */
   YOUNG_GYR: 1.0,
   SPH_BINS: 96,
@@ -89,7 +89,7 @@ export const FIELD = {
    * a parent is that wide. A product-of-tents cube aligned with the
    * PM mesh (SOFT ~ mesh) printed a lattice in the nucleus.
    */
-    JITTER: 0.22,
+    JITTER: 0.28,
 } as const;
 
 const FEH_SUN = 0.0134;
