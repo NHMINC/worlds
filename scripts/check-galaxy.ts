@@ -264,17 +264,20 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const far = shineDisplay(20, 240);
   check(near > far * 1.25, `same L at 80 kpc (${near.toFixed(2)}) must beat 240 kpc (${far.toFixed(2)})`);
   const pxPer = 1288;
-  const rim = photoApparentPx(1, 40, pxPer);
+  const diskPx = photoApparentPx(1, 40, pxPer);
   const midPx = photoApparentPx(1, 8, pxPer);
   const close = photoApparentPx(1, 0.5, pxPer);
-  check(rim <= 1.5, `rim must be a pin, got ${rim.toFixed(1)}px`);
-  check(midPx <= 2.2, `mid-ball must still be a pin, got ${midPx.toFixed(1)}px`);
+  const inside = photoApparentPx(1, UNIVERSE.GALAXY_REGION_R * 0.4, pxPer);
+  check(diskPx <= 1.5, `40 kpc must be a pin, got ${diskPx.toFixed(1)}px`);
+  check(midPx <= 2.2, `8 kpc must still be a pin, got ${midPx.toFixed(1)}px`);
   check(close > 6, `close photosphere ${close.toFixed(1)} must grow off the pin`);
-  // Visit lock is not the paint pin: a fly-by in the magnifier is real.
-  check(aimLocks(1, 20), 'solar analog at 20 view-kpc must lock the reticle');
-  check(aimLocks(0.01, 8), 'faint M dwarf flying past (8 view-kpc) must lock');
-  check(!aimLocks(0.01, 40), 'faint M on the far wall must stay a backdrop speck');
-  check(!aimLocks(1, 40), 'solar analog on the far wall is not yet a visit');
+  check(inside > 8, `in-bubble star ${inside.toFixed(1)}px must read as nearby`);
+  // Visit lock is not the paint pin: a fly-by in the bubble is real.
+  check(aimLocks(1, UNIVERSE.GALAXY_REGION_R), 'in-bubble solar analog must lock');
+  check(aimLocks(1, 20), 'solar analog at 20 kpc must lock the reticle');
+  check(aimLocks(0.01, 8), 'faint M dwarf flying past (8 kpc) must lock');
+  check(!aimLocks(0.01, 40), 'faint M at 40 kpc must stay a backdrop speck');
+  check(!aimLocks(1, 40), 'solar analog at 40 kpc is not yet a visit');
 }
 
 {

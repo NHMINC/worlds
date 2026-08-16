@@ -435,30 +435,29 @@ export const UNIVERSE = {
    * The catalog neighbourhood is a ball of radius GALAXY_REGION_R
    * around the bubble centre — a real neighbourhood, not a marble.
    * Face-on / Edge-on slide that ball far enough that the disk fits
-   * the screen; they are the same magnifier, not a second viewer.
+   * the screen; they are the same bubble, not a second viewer.
    * Every occupied slot is kept near the
    * centre (FULL_R). Farther cells keep only the massive tail of their
    * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
    * you can fly. Count is still an outcome — the bulge is denser.
    * Flying slides that ball through the catalog (border in / out).
-   * The same stars are drawn in a VIEW_R ball (offsets from the
-   * centre × VIEW_R/REGION_R) so the gaps are flyable. Star size
-   * is not scaled.
+   * Inside the ball the sky is 1:1 with the catalog — no VIEW_R
+   * stretch. The bubble's only job is membership: every occupied
+   * slot is drawn and visitable; outside it, only the magnitude-
+   * limited backdrop. Star size is the photograph (r / d), not a
+   * second scale.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,
   GALAXY_SECTOR_STARS: 2500,
-  /** Catalog neighbourhood minted around the tap (kpc). */
+  /** Catalog neighbourhood minted around the tap (kpc). View is 1:1. */
   GALAXY_REGION_R: 0.02,
-  /** Flight / viewing ball (kpc). Same stars, expanded around the tap. */
-  GALAXY_REGION_VIEW_R: 40,
   /**
    * Latched warp (catalog kpc / s). A fixed cruise — on is this
-   * rate, off is stop. Independent of VIEW_R / REGION_R: the
-   * photograph cannot throttle the ship. 0.25 crosses a 0.02 kpc
-   * neighbourhood in ~0.08 s. MAG_SLIDE (0.002 kpc) fires every
-   * ~8 ms; the small ball remints cheaply. WASD stays the slow
-   * look-around pace (arcPace).
+   * rate, off is stop. 0.25 crosses a 0.02 kpc neighbourhood in
+   * ~0.08 s. MAG_SLIDE (0.002 kpc) fires every ~8 ms; the small
+   * ball remints cheaply. WASD stays the slow look-around pace
+   * (arcPace).
    */
   GALAXY_WARP: 0.25,
   /** Within this of the tap, every occupied slot is drawn. */
@@ -475,7 +474,7 @@ export const UNIVERSE = {
    * youngest / brightest nebula hosts (gain ≥ SILHOUETTE_NEB_GAIN),
    * and the full dust-clump census (SILHOUETTE_DUST_R = 0; the rows
    * are never drawn — dust reaches the eye as sightline extinction)
-   * — is placed with the same magnifier. Distant discs are toy angular
+   * — is placed in the same catalog frame. Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
    * so rings and filament crossings are geometry. Colour is a LINE

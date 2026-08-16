@@ -182,7 +182,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   front only multiplies the same Chapman transmittance the sky already
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
-- **The explorer is one magnification sphere, not a saucer chart.**
+- **The explorer is one catalog bubble, not a saucer chart.**
   App boot mints the whole-disk backdrop once (`prepareUniverse`)
   and opens the region at the loaded star (`hereStarId`, else
   `homeStar`) with that star on the reticle. The explorer canvas
@@ -192,15 +192,16 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   sphere centre — it does not tour the ball. Gestures **slide the
   sphere** through the catalog: stars that cross in are minted,
   stars that leave drop out. The GPU holds catalog positions; the
-  vertex shader applies the magnifier (`uCenter`, `uScale`).
-  Membership is a **shell walk** (`advanceRegionCloud`) on a
-  worker. Space inside is drawn in a `GALAXY_REGION_VIEW_R`
-  (40 kpc) ball. Distant stars are **1px pinpricks**; closer ones
-  grow from luminosity and distance. Behind the ball a
-  magnitude-limited backdrop (`buildSilhouetteCloud`) draws the
-  rest of the disk. **Dust is never drawn — it is sightline
-  extinction** (`extinctGlsl`). A star is visitable only when the
-  catalog ball (`GALAXY_REGION_R`) has resolved that id.
+  vertex shader subtracts `uCenter` (a sliding window, 1:1 with
+  the catalog — no `VIEW_R` stretch). Membership is a **shell
+  walk** (`advanceRegionCloud`) on a worker. The bubble’s only
+  job is membership: inside `GALAXY_REGION_R` every occupied slot
+  is drawn and visitable; outside, only the magnitude-limited
+  backdrop (`buildSilhouetteCloud`). Distant stars are **1px
+  pinpricks**; closer ones grow from luminosity and distance.
+  **Dust is never drawn — it is sightline extinction**
+  (`extinctGlsl`). A star is visitable only when the catalog
+  ball has resolved that id.
   **Face-on / Edge-on** slide the bubble far enough that the whole
   disk fits the screen (pole-on, or a few degrees above the plane)
   and look back at the origin. **Home** parks on the loaded star
@@ -497,7 +498,7 @@ Code map (start here):
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
-| Galaxy explorer (magnification bubble) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (catalog bubble) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |

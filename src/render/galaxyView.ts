@@ -1,12 +1,14 @@
 /**
- * The galaxy explorer is one magnification sphere in catalog space.
- * The camera sits at the centre. Look-drag slides the heading. Warp
- * latches acceleration; Stop brakes. Face-on / Edge-on slide the
- * bubble far enough that the whole disk fits the screen; Back
- * restores the pose from before that overview; Home parks on the
- * loaded star (else the canonical home) and pins that pose as Back.
- * Behind the ball a magnitude-limited backdrop sketches the rest of
- * the disk. Dust is never drawn — it is sightline extinction.
+ * The galaxy explorer is one catalog bubble. Inside it every
+ * occupied slot is drawn and visitable; outside, only the
+ * magnitude-limited backdrop. View is 1:1 with the catalog —
+ * the camera sits at the bubble centre. Look-drag slides the
+ * heading. Warp latches a fixed cruise; Stop brakes. Face-on /
+ * Edge-on slide the bubble far enough that the whole disk fits
+ * the screen; Back restores the pose from before that overview;
+ * Home parks on the loaded star (else the canonical home) and
+ * pins that pose as Back. Dust is never drawn — it is sightline
+ * extinction.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -185,8 +187,8 @@ const STAR_VERT = /* glsl */ `
     vSeed = aSeed;
     vColor = aColor;
     if (aKind > 0.5) {
-      // aSize is the envelope radius in catalog kpc; the magnifier
-      // scales space, so true angle = aSize * uScale / view distance.
+      // aSize is the envelope radius in catalog kpc. View is 1:1,
+      // so true angle = aSize * uScale / view distance (uScale = 1).
       float ang = max(aSize, 0.005) * uScale / d;
       gl_PointSize = clamp(2.0 * ang * uPxPerRad, 3.0, 512.0);
       vVis = aVis;
@@ -195,9 +197,9 @@ const STAR_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Magnifier: original glow pin (GLOW_K). max(1px, 2 r/d) —
-      // a point at the rim and on the IMF ramp; a disc only when
-      // the bubble is on top of it. Flux L/d², colour teff.
+      // Glow pin (GLOW_K). max(1px, 2 r/d) — a point at the rim;
+      // a disc only when the bubble is on top of it. Flux L/d²,
+      // colour teff. View is catalog kpc (1:1).
       float L = max(aLum, 1e-4);
       float r = max(L < 0.05 ? uGlowDim : uPhotoMin, uPhotoK * pow(L, uPhotoP));
       r = min(r, uPhotoMax);
@@ -224,10 +226,9 @@ const STAR_VERT = /* glsl */ `
   }
 `;
 
-/** Catalog diameter × magnifier, with slack — far-disk stars must stay in the frustum. */
+/** Disk diameter with slack — Face-on sits several R_MAX out. */
 function regionCamFar(): number {
-  const mag = UNIVERSE.GALAXY_REGION_VIEW_R / Math.max(1e-6, UNIVERSE.GALAXY_REGION_R);
-  return UNIVERSE.GALAXY_R_MAX * 2 * mag * 4;
+  return UNIVERSE.GALAXY_R_MAX * 8;
 }
 
 const SILHOUETTE_VERT = /* glsl */ `
@@ -288,7 +289,7 @@ const SILHOUETTE_VERT = /* glsl */ `
     if (aKind > 0.5) {
       // Same angular law as the local layer: radiusKpc / distance,
       // with a pixel floor so far sources stay findable. No pop at
-      // the magnifier boundary.
+      // the bubble boundary.
       float d = max(length(mv.xyz), 0.001);
       float ang = max(aSize, 0.005) * uScale / d;
       float floorPx = uNebulaPx * uPixel;
@@ -520,7 +521,7 @@ export class GalaxyView {
   private silMat: THREE.ShaderMaterial | null = null;
   private silEmisPts: THREE.Points | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
-  /** Catalog positions (the vertex shader applies the magnifier). */
+  /** Catalog positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
   private borderWorker: Worker | null = null;
   private borderGen = 0;
@@ -636,19 +637,13 @@ export class GalaxyView {
 
   // ------------------------------------------------------------- region mode
 
-  /** VIEW_R / REGION_R — same stars, larger flight ball. */
-  private magScale(): number {
-    return UNIVERSE.GALAXY_REGION_VIEW_R / Math.max(1e-6, UNIVERSE.GALAXY_REGION_R);
-  }
-
-  /** Catalog cartesian → magnified frame (camera at the origin). */
+  /** Catalog cartesian → camera frame (origin at the bubble centre). */
   private toView(x: number, y: number, z: number): { x: number; y: number; z: number } {
     if (this.mode !== 'region') return { x, y, z };
-    const s = this.magScale();
     return {
-      x: (x - this.arcCenter.x) * s,
-      y: (y - this.arcCenter.y) * s,
-      z: (z - this.arcCenter.z) * s,
+      x: x - this.arcCenter.x,
+      y: y - this.arcCenter.y,
+      z: z - this.arcCenter.z,
     };
   }
 
@@ -658,7 +653,7 @@ export class GalaxyView {
   }
 
   /**
-   * Open the magnification sphere around a world point. `select` is
+   * Open the catalog bubble around a world point. `select` is
    * pinned when the dive is a star. Flying slides this ball through
    * the catalog.
    */
@@ -854,7 +849,7 @@ export class GalaxyView {
     this.starGeo = geo;
     this.starMat = mat;
     this.starVis = visAttr;
-    // In-bubble NEBULA envelopes stay OFF for now: magnified ×20 they
+    // In-bubble NEBULA envelopes stay OFF for now: nearby shells
     // rasterize hundreds of px each and every fragment marches the
     // turbulence field — a measured majority of the core-facing frame
     // (and the on-bubble nebulae had their own artefacts). The catalog
@@ -936,15 +931,14 @@ export class GalaxyView {
     return out;
   }
 
-  /** Catalog positions stay on the GPU; only the magnifier uniforms move. */
+  /** Catalog positions stay on the GPU; only the bubble centre moves. */
   private pushMagUniforms(): void {
     const cx = this.arcCenter.x;
     const cy = this.arcCenter.y;
     const cz = this.arcCenter.z;
-    const s = this.magScale();
     for (const mat of this.cloudMats()) {
       mat.uniforms.uCenter.value.set(cx, cy, cz);
-      mat.uniforms.uScale.value = s;
+      mat.uniforms.uScale.value = 1;
     }
   }
 
@@ -1122,7 +1116,7 @@ export class GalaxyView {
 
   /**
    * Sit far enough that the disk diameter fits ~70% of the vertical
-   * FOV. Scale cancels in the magnifier, so this is catalog kpc.
+   * FOV. Catalog kpc — view is 1:1.
    */
   private overviewDistance(): number {
     const r = UNIVERSE.GALAXY_R_MAX;
@@ -1179,7 +1173,7 @@ export class GalaxyView {
     if (this.mode !== 'region') this.focus(best);
     const cat = galToCart(best.pos);
     this.orientArc();
-    const off = 0.028 / this.magScale();
+    const off = UNIVERSE.GALAXY_REGION_R * 0.4;
     this.arcCenter.set(
       cat.x - this.arcFwd.x * off,
       cat.y - this.arcFwd.y * off,
@@ -1239,7 +1233,6 @@ export class GalaxyView {
     const e = this.camera.matrixWorldInverse.elements;
     const p = this.camera.projectionMatrix.elements;
     const step = Math.max(1, Math.floor(cloud.n / 4000));
-    const s = this.magScale();
     const cx = this.arcCenter.x;
     const cy = this.arcCenter.y;
     const cz = this.arcCenter.z;
@@ -1248,9 +1241,9 @@ export class GalaxyView {
       if ((cloud.bits[i] & BIT_DUST) !== 0 || cloud.kind[i] === KIND_DUST) continue;
       if (!sketchMatches(cloud.bits[i], this.filter)) continue;
       const i3 = i * 3;
-      const x = (cat[i3] - cx) * s;
-      const y = (cat[i3 + 1] - cy) * s;
-      const z = (cat[i3 + 2] - cz) * s;
+      const x = cat[i3] - cx;
+      const y = cat[i3 + 1] - cy;
+      const z = cat[i3 + 2] - cz;
       const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
       const my = e[1] * x + e[5] * y + e[9] * z + e[13];
       const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
@@ -1407,21 +1400,19 @@ export class GalaxyView {
    * Cruise speed. Cap is small and fixed so extra space between
    * stars is felt as more zoom, not a faster ship. Slow further
    * only when a star is already close (examine, don't overshoot).
-   * Star size is not scaled with the viewing ball.
    */
   private arcPace(): number {
     const cloud = this.cloud;
     let minD = 8;
     if (cloud) {
       const step = Math.max(1, Math.floor(cloud.n / 6000));
-      const s = this.magScale();
       const cx = this.arcCenter.x;
       const cy = this.arcCenter.y;
       const cz = this.arcCenter.z;
       const cat = cloud.pos;
       for (let i = 0; i < cloud.n; i += step) {
         const i3 = i * 3;
-        const d = Math.hypot((cat[i3] - cx) * s, (cat[i3 + 1] - cy) * s, (cat[i3 + 2] - cz) * s);
+        const d = Math.hypot(cat[i3] - cx, cat[i3 + 1] - cy, cat[i3 + 2] - cz);
         if (d > 1e-4 && d < minD) minD = d;
       }
     }
@@ -1434,18 +1425,17 @@ export class GalaxyView {
   }
 
   /**
-   * Gestures are in the magnified frame. The camera stays at the
-   * origin; the sphere centre moves by dView / scale. The GPU holds
-   * catalog positions — the vertex shader applies the magnifier.
-   * Membership is a shell walk once the centre has moved MAG_SLIDE,
-   * run on a worker so the frame only updates the magnifier uniforms.
+   * Gestures are catalog kpc. The camera stays at the origin; the
+   * bubble centre slides. The GPU holds catalog positions — the
+   * vertex shader subtracts uCenter. Membership is a shell walk
+   * once the centre has moved MAG_SLIDE, run on a worker so the
+   * frame only updates the centre uniform.
    */
   private moveBubble(vx: number, vy: number, vz: number, force = false): void {
     if (this.mode !== 'region' || !this.cloud) return;
-    const s = this.magScale();
-    this.arcCenter.x += vx / s;
-    this.arcCenter.y += vy / s;
-    this.arcCenter.z += vz / s;
+    this.arcCenter.x += vx;
+    this.arcCenter.y += vy;
+    this.arcCenter.z += vz;
     const d = this.arcCenter.distanceTo(this.mintAt);
     if (force || d > MAG_REBUILD) {
       this.applyMembership(buildRegionCloud(this.seed, this.arcCenter.x, this.arcCenter.y, this.arcCenter.z), true);
@@ -1604,7 +1594,7 @@ export class GalaxyView {
 
   /**
    * Pinch / wheel slides the ball along the look (the camera stays
-   * at the centre; the magnifier moves).
+   * at the centre; the bubble moves).
    */
   private zoom(factor: number): void {
     this.idle = 0;
@@ -1652,7 +1642,6 @@ export class GalaxyView {
     const e = this.camera.matrixWorldInverse.elements;
     const p = this.camera.projectionMatrix.elements;
     const rect = this.canvas.getBoundingClientRect();
-    const s = this.magScale();
     const ox = this.arcCenter.x;
     const oy = this.arcCenter.y;
     const oz = this.arcCenter.z;
@@ -1667,9 +1656,9 @@ export class GalaxyView {
       if ((bits[i] & BIT_DUST) !== 0) continue;
       if (!sketchMatches(bits[i], this.filter)) continue;
       const i3 = i * 3;
-      const x = (cat[i3] - ox) * s;
-      const y = (cat[i3 + 1] - oy) * s;
-      const z = (cat[i3 + 2] - oz) * s;
+      const x = cat[i3] - ox;
+      const y = cat[i3 + 1] - oy;
+      const z = cat[i3 + 2] - oz;
       const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
       const my = e[1] * x + e[5] * y + e[9] * z + e[13];
       const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
@@ -1829,8 +1818,7 @@ export class GalaxyView {
     this.thrustSpeed = this.thrustOn ? UNIVERSE.GALAXY_WARP : 0;
     if (this.thrustSpeed <= 0) return;
     this.orientArc();
-    // thrustSpeed is catalog kpc/s; moveBubble takes the magnified frame.
-    const step = this.thrustSpeed * this.magScale() * dt;
+    const step = this.thrustSpeed * dt;
     this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
   }
 
@@ -1896,7 +1884,6 @@ export class GalaxyView {
     const cy = 0;
     const cz = 0;
     const cosCone = Math.cos(0.028);
-    const s = this.magScale();
     const ox = this.arcCenter.x;
     const oy = this.arcCenter.y;
     const oz = this.arcCenter.z;
@@ -1913,9 +1900,9 @@ export class GalaxyView {
       if ((bits[i] & BIT_DUST) !== 0) continue;
       if (!sketchMatches(bits[i], this.filter)) continue;
       const i3 = i * 3;
-      const dx = (cat[i3] - ox) * s - cx;
-      const dy = (cat[i3 + 1] - oy) * s - cy;
-      const dz = (cat[i3 + 2] - oz) * s - cz;
+      const dx = cat[i3] - ox - cx;
+      const dy = cat[i3 + 1] - oy - cy;
+      const dz = cat[i3 + 2] - oz - cz;
       const d2 = dx * dx + dy * dy + dz * dz;
       if (d2 < 1e-12) continue;
       const dist = Math.sqrt(d2);
@@ -2048,7 +2035,7 @@ export class GalaxyView {
       mode: this.mode,
       theta: this.theta,
       phi: this.phi,
-      radius: UNIVERSE.GALAXY_REGION_VIEW_R,
+      radius: UNIVERSE.GALAXY_REGION_R,
       pickable: true,
       resolved: this.cloud?.n ?? 0,
       grown: this.grownCount,

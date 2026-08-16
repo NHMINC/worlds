@@ -205,7 +205,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
     };
   });
   console.log('STRAFE', JSON.stringify(strafe));
-  if (!strafe || strafe.bubbleMoved < 0.02) errors.push('strafe did not slide the magnification sphere');
+  if (!strafe || strafe.bubbleMoved < 0.02) errors.push('strafe did not slide the catalog bubble');
   if (strafe && strafe.camAtOrigin > 1e-4) errors.push('camera left the bubble centre');
 
   // Approach: park next to the selected star; its point must grow.

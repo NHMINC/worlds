@@ -55,7 +55,7 @@ export function GalaxyExplorer(props: Props) {
     mode: 'region',
     theta: 0,
     phi: 0,
-    radius: 40,
+    radius: UNIVERSE.GALAXY_REGION_R,
     pickable: false,
     resolved: 0,
     grown: 0,
@@ -297,7 +297,7 @@ export function GalaxyExplorer(props: Props) {
           </div>
         )}
         <div className="galaxy-readout">
-          i {incDeg.toFixed(0)}° · {frame.radius.toFixed(1)} kpc
+          i {incDeg.toFixed(0)}° · {frame.radius.toFixed(3)} kpc
           {' · ↑ / Warp to fly · ↓ / Stop · drag to look'}
         </div>
       </footer>
