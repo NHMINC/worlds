@@ -5,8 +5,9 @@
  * then stellar.evolve. The address *is* the star. Occupancy is
  * density × volume × GALAXY_N_K.
  *
- * Birth positions stay in the scatter cube around the cell so the
- * magnifier rim walk stays a rim. Within a cell the IMF is stratified:
+ * Birth positions scatter around the cell so the polar lattice never
+ * prints as rings. Vertical scatter follows the local flared scale
+ * height, not a 0.4 kpc brick. Within a cell the IMF is stratified:
  * slot 0 is the low-mass end, slot n−1 is the high-mass end.
  *
  * Arms are a midplane overdensity only. The bar / boxy bulge / X-peanut
@@ -85,6 +86,33 @@ function diskSigma(R: number): number {
   const U = UNIVERSE;
   const blend = 1 / (1 + Math.exp((R - U.GALAXY_R_BREAK) / U.GALAXY_R_BREAK_W));
   return blend * Math.exp(-R / U.GALAXY_RD_INNER) + (1 - blend) * Math.exp(-R / U.GALAXY_RD);
+}
+
+/** Thin-disk scale height (kpc). Flares outside FLARE_R. */
+export function thinScaleHeight(R: number): number {
+  const U = UNIVERSE;
+  const x = Math.max(0, R - U.GALAXY_FLARE_R);
+  return U.GALAXY_ZD * (1 + U.GALAXY_FLARE_K * Math.pow(x, U.GALAXY_FLARE_P));
+}
+
+/**
+ * Local midplane height (kpc). Outer warp (S-curve edge-on) plus
+ * corrugation (the plane is not a polished sheet). Analytic — one
+ * law, no seed. Inner R stays flat so the axle stays empty.
+ */
+export function midplaneZ(R: number, theta: number): number {
+  const U = UNIVERSE;
+  const span = Math.max(1e-3, U.GALAXY_R_MAX - U.GALAXY_WARP_R);
+  const w = Math.max(0, (R - U.GALAXY_WARP_R) / span);
+  const warp = U.GALAXY_WARP_Z * w * w * Math.sin(theta - U.GALAXY_WARP_PHI);
+  const t = Math.min(1, R / 3.5);
+  const corr =
+    U.GALAXY_CORRUGATE *
+    t *
+    (0.55 * Math.sin(2 * theta + 0.38 * R) +
+      0.32 * Math.sin(3 * theta - 0.62 * R) +
+      0.22 * Math.sin(theta + 0.85 * R));
+  return warp + corr;
 }
 
 /**
@@ -256,7 +284,19 @@ export function dustPhysics(seed: string, cell: number): DustPhysics {
   return { field, feh, carbon, iceFrac, carbonFrac };
 }
 
-/** Clump position: the same isotropic scatter cube stars use. No lattice. */
+/** Vertical half-width of the birth scatter at this radius (kpc). */
+function birthZHalf(R: number): number {
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
+  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
+  return Math.max(dz, 2.2 * thinScaleHeight(R));
+}
+
+/** Birth height: cell z + local midplane (warp/corrugation) + flared scatter. */
+function birthZ(midZ: number, R: number, theta: number, u: number): number {
+  return midZ + midplaneZ(R, theta) + (u - 0.5) * birthZHalf(R);
+}
+
+/** Clump position: the same scatter stars use. No lattice. */
 export function dustBirthCart(seed: string, cell: number, k: number): { x: number; y: number; z: number } {
   const rng = rngFor(seed, 'dustPos', cell, k);
   const mid = cellCenter(cell);
@@ -264,7 +304,7 @@ export function dustBirthCart(seed: string, cell: number, k: number): { x: numbe
   const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
   const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
   const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
-  const z = mid.z + (rng() - 0.5) * dz;
+  const z = birthZ(mid.z, R, theta, rng());
   return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
 }
 
@@ -337,11 +377,12 @@ export function packId(cell: number, slot: number): number {
   return cell * UNIVERSE.GALAXY_MAX_SLOT + slot;
 }
 
-/** Half-diagonal of the slot scatter cube (kpc). A star may sit this far from its cell centre. */
+/** Half-reach of the slot scatter (kpc). A star may sit this far from its cell centre. */
 export function slotScatterKpc(): number {
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  return 0.5 * dz * Math.sqrt(3);
+  const zReach = UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE + birthZHalf(UNIVERSE.GALAXY_R_MAX) * 0.5;
+  return Math.max(0.5 * dz * Math.sqrt(3), zReach);
 }
 
 /**
@@ -534,7 +575,7 @@ export function slotBirthCart(seed: string, cell: number, slot: number): { x: nu
   const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
   const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
   const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
-  const z = mid.z + (rng() - 0.5) * dz;
+  const z = birthZ(mid.z, R, theta, rng());
   return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
 }
 
@@ -544,18 +585,22 @@ export function slotBirthRaw(seed: string, cell: number, slot: number, filled: n
   const { GALAXY_NZ: nz } = UNIVERSE;
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / nz;
-  // Scatter ISOTROPICALLY over the largest bin dimension. The cell is an
-  // address bin, not a physical box: cells are needles (fine in R and θ,
-  // 0.4 kpc tall), and confining slots to their own needle printed the
-  // lattice as vertical chains of stars. One cube of side dz for all
-  // three axes dissolves the grid; occupancy still carries the density
-  // law, and a star's id (cell, slot) never moves.
+  // The cell is a quota, not a brick. In-plane scatter still uses the
+  // bin diagonal so the polar lattice never prints as rings. Vertical
+  // scatter follows the local flared scale height so edge-on is a
+  // fuzzy ribbon, not 18 stacked sheets. Occupancy still carries the
+  // density law; a star's id (cell, slot) never moves.
+  const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
+  const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
+  const uZ = rng();
   const pos: GalPos = {
-    R: Math.max(0.05, mid.R + (rng() - 0.5) * dz),
-    theta: mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R),
-    z: mid.z + (rng() - 0.5) * dz,
+    R,
+    theta,
+    z: birthZ(mid.z, R, theta, uZ),
   };
-  const parts = densityParts(pos);
+  // Pop drinks the un-puffed height so warp/flare move the photograph
+  // without re-rolling the clock.
+  const parts = densityParts({ R, theta, z: mid.z + (uZ - 0.5) * dz });
   const pop = pickPop(parts, rng());
   const [ageLo, ageHi] = ageWindow(pop, pos.R);
   const arm = inSpiralArm(pos.R, pos.theta);
@@ -920,7 +965,6 @@ function dominantPop(parts: Record<Population, number>): Population {
 export function sampleDust(count: number, seed = UNIVERSE.CANONICAL_SEED): DensitySample[] {
   const rng = rngFor(seed, 'dust', count);
   const rMax = UNIVERSE.GALAXY_R_MAX;
-  const zd = UNIVERSE.GALAXY_ZD;
   const out: DensitySample[] = [];
   // Saturate the core so the disk/arms still win draws (d ~ 0.1–0.7).
   const dScale = 2.4;
@@ -931,8 +975,9 @@ export function sampleDust(count: number, seed = UNIVERSE.CANONICAL_SEED): Densi
     const R = rMax * Math.sqrt(rng());
     const theta = rng() * TAU;
     const u = Math.min(0.999, Math.max(0.001, rng()));
-    const z = 0.5 * zd * Math.log(u / (1 - u));
-    if (Math.abs(z) > UNIVERSE.GALAXY_Z_THICK * 3) continue;
+    const zd = thinScaleHeight(R);
+    const z = midplaneZ(R, theta) + 0.5 * zd * Math.log(u / (1 - u));
+    if (Math.abs(z) > UNIVERSE.GALAXY_Z_THICK * 4) continue;
     const pos = { R, theta, z };
     const parts = densityParts(pos);
     const d = parts.thin + parts.thick + parts.bulge + parts.bar + parts.halo;

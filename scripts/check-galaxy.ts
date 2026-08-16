@@ -7,6 +7,7 @@ import { UNIVERSE } from '../src/world/physics';
 import {
   objectAt, objectsNear, homeStar, density, inSpiralArm, chemistry,
   catalogSize, slotsInCell, cellCount, sampleDust, packId,
+  midplaneZ, thinScaleHeight, slotBirthRaw, cellCenter,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar, teffToRgb } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
@@ -131,6 +132,39 @@ check(gapMean > 0.02, `inter-arm emptied (ribbons, not a disc): ${gapMean.toFixe
     }
   }
   check(axleSlots / Math.max(1, axleCells) < 0.4, `axle through the core: ${axleSlots} slots in ${axleCells} high-|z| inner cells`);
+}
+
+// Vertical law: the sheet is not a brick. Outer zd flares; the
+// midplane warps and corrugates so edge-on is an irregular ribbon.
+{
+  check(thinScaleHeight(14) > thinScaleHeight(4) * 1.5,
+    `outer disk must flare: zd(14)=${thinScaleHeight(14).toFixed(2)} zd(4)=${thinScaleHeight(4).toFixed(2)}`);
+  const up = midplaneZ(15, Math.PI / 2 + UNIVERSE.GALAXY_WARP_PHI);
+  const dn = midplaneZ(15, -Math.PI / 2 + UNIVERSE.GALAXY_WARP_PHI);
+  check(Math.abs(up - dn) > 0.35, `outer warp too flat: ${up.toFixed(2)} vs ${dn.toFixed(2)}`);
+  check(Math.abs(midplaneZ(1.2, 0.4)) < 0.12, `inner midplane must stay flat, got ${midplaneZ(1.2, 0.4).toFixed(2)}`);
+  const corr = [0, 1, 2, 3, 4, 5].map((i) => midplaneZ(8, i).toFixed(2));
+  check(new Set(corr).size >= 4, `corrugation collapsed to a single height: ${corr.join(',')}`);
+  const nth = UNIVERSE.GALAXY_NTH;
+  const nz = UNIVERSE.GALAXY_NZ;
+  const nr = UNIVERSE.GALAXY_NR;
+  const innerCell = Math.floor(0.2 * nr) * nth * nz + 3 * nz + Math.floor(nz / 2);
+  const outerCell = Math.floor(0.88 * nr) * nth * nz + 3 * nz + Math.floor(nz / 2);
+  const nIn = slotsInCell(seed, innerCell);
+  const nOut = slotsInCell(seed, outerCell);
+  if (nIn > 0 && nOut > 0) {
+    const zIn: number[] = [];
+    const zOut: number[] = [];
+    for (let s = 0; s < Math.min(12, nIn); s++) zIn.push(slotBirthRaw(seed, innerCell, s, nIn).pos.z);
+    for (let s = 0; s < Math.min(12, nOut); s++) zOut.push(slotBirthRaw(seed, outerCell, s, nOut).pos.z);
+    const span = (a: number[]) => Math.max(...a) - Math.min(...a);
+    check(span(zOut) > span(zIn) * 1.15,
+      `outer birth z must spread more than inner: ${span(zOut).toFixed(2)} vs ${span(zIn).toFixed(2)}`);
+  }
+  const mid = cellCenter(outerCell);
+  const born = slotBirthRaw(seed, outerCell, 0, Math.max(1, nOut));
+  check(Math.abs(born.pos.z - mid.z) > 0.05 || Math.abs(midplaneZ(mid.R, mid.theta)) < 0.05,
+    'outer birth z must pick up the local midplane');
 }
 
 // Census — sample cells. Never walk the address space.
