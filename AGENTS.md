@@ -65,10 +65,13 @@ types or star types.
   store the galaxy. A star is an address: `objectAt(seed, id)` is O(1)
   at a billion ids the same as at ten. Occupancy is
   `density × volume × GALAXY_N_K` — that *is* the population
-  (~`GALAXY_POPULATION`). We never `collectCatalog`. The explorer
-  asks `objectsNear` for the volume it occupies; within a cell the
-  IMF is stratified so zooming in is “include more slots,” not
-  “load a bigger array.”
+  (~`GALAXY_POPULATION`). A cell is a quota, not a brick: birth
+  height follows a flared, warped, corrugated midplane
+  (`GALAXY_FLARE_*`, `GALAXY_WARP_*`, `GALAXY_CORRUGATE`) so
+  edge-on is an irregular ribbon. We never `collectCatalog`.
+  The explorer asks `objectsNear` for the volume it occupies; within
+  a cell the IMF is stratified so zooming in is “include more slots,”
+  not “load a bigger array.”
 - **Toy constants live in `UNIVERSE` (`src/world/physics.ts`).** Compress
   mass, distance, and time so a whole system fits in a bottle and stays
   fun — but keep the compression **visible and named**, not scattered

@@ -334,13 +334,25 @@ export const UNIVERSE = {
    *
    * Rd, zd: Bland-Hawthorn & Gerhard 2016. Bar ~4.2 kpc, peanut
    * R=1.67 z=0.65. Four-arm stellar contrast is mild; gas carries
-   * the rest (GAS_ARM_A). Birth positions stay in the scatter cube
-   * so the magnifier rim walk stays a rim.
+   * the rest (GAS_ARM_A). The thin sheet is not a brick: it flares
+   * outside FLARE_R, the outer midplane warps, and corrugation
+   * wrinkles the plane — edge-on is an irregular ribbon, not a
+   * ruler. Birth scatter follows that local scale height.
    */
   GALAXY_RD: 2.6,
   GALAXY_R_MAX: 16,
   GALAXY_ZD: 0.3,
   GALAXY_Z_THICK: 0.9,
+  /** Flare onset (kpc). zd(R) = ZD · (1 + K · max(0, R − FLARE_R)^P). */
+  GALAXY_FLARE_R: 6,
+  GALAXY_FLARE_K: 0.16,
+  GALAXY_FLARE_P: 1.2,
+  /** Outer-disk warp onset (kpc) and amplitude at R_MAX (kpc). */
+  GALAXY_WARP_R: 8.5,
+  GALAXY_WARP_Z: 0.7,
+  GALAXY_WARP_PHI: 0.4,
+  /** Midplane corrugation amplitude (kpc). Several Fourier modes. */
+  GALAXY_CORRUGATE: 0.22,
   GALAXY_RD_THICK: 3.0,
   GALAXY_RD_INNER: 8.0,
   GALAXY_R_BREAK: 7.5,
