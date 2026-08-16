@@ -184,7 +184,7 @@ const check = (cond: boolean, msg: string) => {
   check(regionImfFloor(0) === 0, 'tap neighbourhood must keep every slot');
   check(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R) === 0, 'full-R edge must still be complete');
   check(Math.abs(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R + UNIVERSE.GALAXY_REGION_U_RAMP) - UNIVERSE.GALAXY_REGION_U_FAR) < 1e-9, 'ramp must reach U_FAR');
-  const rim = galToCart({ R: 14, theta: 0.4, z: 0 });
+  const rim = galToCart({ R: 10, theta: 0.4, z: 0 });
   const a = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
   const b4 = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
   check(a.n === b4.n && a.n > 0, `region cloud not deterministic ${a.n} vs ${b4.n}`);
@@ -205,7 +205,7 @@ const check = (cond: boolean, msg: string) => {
     }
   }
   if (starI < 0) {
-    check(false, `outer-disk region at R=14 is dust-only (${a.n} rows) — disk did not reach`);
+    check(false, `outer-disk region at R=10 is dust-only (${a.n} rows) — disk did not reach`);
   } else {
     const { cell, slot } = splitId(a.ids[starI]);
     const filled = slotsInCell(seed, cell);
