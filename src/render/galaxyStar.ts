@@ -83,21 +83,6 @@ export const HARVEST_SHINE_DIST_P = 0.22;
 export const HARVEST_SUPER_L = 50_000;
 export const HARVEST_SUPER_GAIN = 4;
 export const HARVEST_SUPER_P = 1;
-/**
- * Glare sprite on the same SUPER_L tail. The 1px pin stays; this is
- * extra wing the GPU point cannot hold — a camera-facing quad with
- * the Lorentzian halo plus instrument diffraction spikes. Identically
- * off below SUPER_L (~650 harvest stars on helix, not a handful).
- */
-export const HARVEST_SPRITE_L = HARVEST_SUPER_L;
-/** Sprite radius in units of the point's visible PSF radius. */
-export const HARVEST_SPRITE_SCALE = 3.6;
-/** On-axis spike intensity, relative to I. */
-export const HARVEST_SPIKE_GAIN = 0.14;
-/** Perpendicular Lorentzian width (1 / css²). Thin arms, not a cross stamp. */
-export const HARVEST_SPIKE_W = 2.8;
-/** Along-arm fade (1 / css). */
-export const HARVEST_SPIKE_FADE = 0.028;
 /** Inverse-square floor so a star on top of the camera does not blow the shader. */
 export const POINT_FLUX_EPS = 0.0006;
 /** Near-field brightness punch: flux = L / (d² + ε). Unused on harvest pins. */
@@ -133,17 +118,6 @@ export function harvestGlowPx(L: number, pixelRatio = 1): number {
   const I = harvestShine(L, HARVEST_SHINE_DIST_REF);
   const css = Math.max(1, 1 + 2 * harvestPsfRadiusCss(I));
   return Math.max(harvestStarPx(pixelRatio), css * pixelRatio);
-}
-
-/** True when a harvest star wears the glare sprite. */
-export function harvestIsSprite(L: number): boolean {
-  return L >= HARVEST_SPRITE_L;
-}
-
-/** Sprite size (CSS px): room for spikes. Same I the point already uses. */
-export function harvestSpriteCss(L: number, d = HARVEST_SHINE_DIST_REF): number {
-  const I = harvestShine(L, d);
-  return Math.max(1, 1 + 2 * harvestPsfRadiusCss(I) * HARVEST_SPRITE_SCALE);
 }
 
 /** Leftover luminosity above SUPER_L. Zero for every other harvest star. */
