@@ -69,11 +69,13 @@ export const HARVEST_PSF_SIG2 = 1.6;
 export const HARVEST_PSF_THRESH = 0.045;
 /**
  * Apparent magnitude. Flux is L / (d² + ε); display is
- * GAIN · (flux / fluxRef)^P. No bright-end cap. GAIN is the
- * photograph exposure — high enough that every harvest pin
- * reads on a phone; the two 50% cuts had left the field dark.
+ * max(MIN, GAIN · (flux / fluxRef)^P). MIN is 2× the reference
+ * pin so the dim field shines through; stars already brighter
+ * are unchanged.
  */
 export const HARVEST_SHINE_GAIN = 0.6;
+/** Visible floor: 2× the reference pin. Does not lift giants. */
+export const HARVEST_SHINE_MIN = 2 * HARVEST_SHINE_GAIN;
 export const HARVEST_SHINE_P = 0.55;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_FLUX_EPS = 0.16;
@@ -120,7 +122,10 @@ export function harvestGlowPx(L: number, pixelRatio = 1): number {
 export function harvestShine(L: number, d: number): number {
   const flux = Math.max(L, 1e-4) / (d * d + HARVEST_FLUX_EPS);
   const fluxRef = HARVEST_L_REF / (HARVEST_SHINE_DIST_REF * HARVEST_SHINE_DIST_REF + HARVEST_FLUX_EPS);
-  return HARVEST_SHINE_GAIN * Math.pow(flux / Math.max(fluxRef, 1e-12), HARVEST_SHINE_P);
+  return Math.max(
+    HARVEST_SHINE_MIN,
+    HARVEST_SHINE_GAIN * Math.pow(flux / Math.max(fluxRef, 1e-12), HARVEST_SHINE_P),
+  );
 }
 
 /** Teff RGB pushed off grey. Same mix the harvest vertex uses. */

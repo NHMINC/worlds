@@ -22,6 +22,7 @@ import {
   HARVEST_PSF_WING_P,
   HARVEST_SHINE_DIST_REF,
   HARVEST_SHINE_GAIN,
+  HARVEST_SHINE_MIN,
   HARVEST_SHINE_P,
   HARVEST_SHINE_SAT,
   glowRadiusKpc,
@@ -150,6 +151,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uPsfSig2;
   uniform float uPsfThresh;
   uniform float uShineLGain;
+  uniform float uShineMin;
   uniform float uShineP;
   uniform float uShineDistRef;
   uniform float uShineSat;
@@ -202,7 +204,7 @@ const SILHOUETTE_VERT = /* glsl */ `
       float L = max(aLum, 1e-4);
       float flux = L / (d * d + uFluxEps);
       float fluxRef = uLRef / (uShineDistRef * uShineDistRef + uFluxEps);
-      float shine = uShineLGain * pow(flux / max(fluxRef, 1e-8), uShineP);
+      float shine = max(uShineMin, uShineLGain * pow(flux / max(fluxRef, 1e-8), uShineP));
       float wingPeak = uPsfWingK * pow(max(shine, 0.0), uPsfWingP);
       float rCss = 0.0;
       if (wingPeak > uPsfThresh) {
@@ -632,6 +634,7 @@ export class GalaxyView {
       uPsfSig2: { value: HARVEST_PSF_SIG2 },
       uPsfThresh: { value: HARVEST_PSF_THRESH },
       uShineLGain: { value: HARVEST_SHINE_GAIN },
+      uShineMin: { value: HARVEST_SHINE_MIN },
       uShineP: { value: HARVEST_SHINE_P },
       uShineDistRef: { value: HARVEST_SHINE_DIST_REF },
       uShineSat: { value: HARVEST_SHINE_SAT },
