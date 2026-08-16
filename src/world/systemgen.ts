@@ -23,9 +23,7 @@ import { rgbToHex, teffToRgb, type StellarState } from './stellar';
  * keeping the old behavior available for systems pinned to it.
  */
 
-// v15: the galaxy density law is the FORMED field (gas-to-galaxy sim)
-// instead of the analytic SBbc — every catalog address re-rolls.
-export const CURRENT_GEN_VERSION = 20;
+export const CURRENT_GEN_VERSION = 14;
 
 export type RGB = [number, number, number];
 

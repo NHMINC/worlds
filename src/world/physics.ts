@@ -379,9 +379,9 @@ export const UNIVERSE = {
   GALAXY_TURB_SIGMA: 1.35,
   GALAXY_TURB_FREQ: 0.85,
   GALAXY_RD_GAS: 1.6,
-  GALAXY_DUST_N_K: 13_000,
+  GALAXY_DUST_N_K: 6000,
   GALAXY_DUST_MAX: 8,
-  GALAXY_SFR_GAIN: 14,
+  GALAXY_SFR_GAIN: 10,
   GALAXY_CLOUD_HII: 0.1,
   GALAXY_DUST_RGB: [0.55, 1.0, 1.65] as [number, number, number],
 
@@ -389,19 +389,19 @@ export const UNIVERSE = {
   R_SUN: 8.2,
 
   /**
-   * Implicit catalog: a star is (parent, slot), never a stored row.
-   * Each evolved formation particle is a parent and stands for
-   * starW = GALAXY_POPULATION / nParents real stars. objectAt is O(1)
-   * at 10⁹ ids the same as at ten. We never enumerate the galaxy; the
-   * explorer asks objectsNear for the volume it occupies. MAX_SLOT is
-   * sized so starW fits (~10⁵ at 10k parents). The polar lattice
-   * (NR × NTH × NZ) remains
-   * the ISM / dust address — a medium, not the stellar catalog.
+   * Implicit catalog: a star is (cell, slot), never a stored row.
+   * Occupancy is density × volume × GALAXY_N_K — that product *is* the
+   * population, not a sample of it. objectAt is O(1) at 10⁹ ids the
+   * same as at ten. We never enumerate the galaxy; the explorer asks
+   * objectsNear for the volume it occupies. GALAXY_POPULATION is the
+   * design headcount (∫ density dV × N_K). The grid is fine enough
+   * that the densest cell stays under MAX_SLOT. Halo cells stay
+   * sparse; arms fill up.
    */
   GALAXY_NR: 288,
   GALAXY_NTH: 576,
   GALAXY_NZ: 18,
-  GALAXY_MAX_SLOT: 262144,
+  GALAXY_MAX_SLOT: 8192,
   GALAXY_N_K: 12_600_000,
   GALAXY_POPULATION: 1_000_000_000,
 
@@ -411,12 +411,9 @@ export const UNIVERSE = {
    * Face-on / Edge-on slide that ball far enough that the disk fits
    * the screen; they are the same magnifier, not a second viewer.
    * Every occupied slot is kept near the
-   * centre (FULL_R). Farther than that, the region cloud is the
-   * same luminous tail as the silhouette — not a filled 2 kpc
-   * cookie of every massive slot (that pancake, seen edge-on, was
-   * the flat-topped core box). U_FAR is the slot gate; the
-   * silhouette brightness cut is the eye. Count is still an
-   * outcome — the bulge is denser.
+   * centre (FULL_R). Farther cells keep only the massive tail of their
+   * IMF (U_FAR): that is the catalog zoom law, so the sky has gaps
+   * you can fly. Count is still an outcome — the bulge is denser.
    * Flying slides that ball through the catalog (border in / out).
    * The same stars are drawn in a VIEW_R ball (offsets from the
    * centre × VIEW_R/REGION_R) so the gaps are flyable. Star size

@@ -3,7 +3,8 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, cellCenter, dustPhysics, galToCart, ismNorm, objectAt, polarCellCenter, polarCellOf, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { cellCount, cellCenter, dustPhysics, galToCart, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
   ringBounds,
@@ -30,7 +31,6 @@ import {
   cellFromDustId,
 } from '../src/world/sectors';
 import { emissionLook, shapeAt, KIND_HII, KIND_PN, KIND_SNR } from '../src/world/skyShape';
-import { sampleField } from '../src/world/formation/registry';
 
 const seed = UNIVERSE.CANONICAL_SEED;
 let fail = 0;
@@ -93,8 +93,7 @@ const check = (cond: boolean, msg: string) => {
 
 // --- addressing round-trips ---
 {
-  const nCells = cellCount();
-  for (const cell of [0, Math.floor(nCells / 3), Math.floor(nCells / 2), nCells - 1]) {
+  for (const cell of [0, 12345, 999_999, cellCount() - 1]) {
     const id = sectorOfCell(cell);
     check(sectorCells(id).includes(cell), `cell ${cell} not inside its own arc ${sectorName(id)}`);
   }
@@ -107,23 +106,7 @@ const check = (cond: boolean, msg: string) => {
 
 // --- arc content: deterministic, real, bright-first ---
 {
-  // 10k parents do not fill every pizza slice. Pick a populated
-  // solar-circle arc rather than assuming a fixed (R, θ) is occupied.
-  let id = sectorOfPos({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
-  {
-    let best = sectorCells(id).length;
-    for (let sector = 0; sector < UNIVERSE.GALAXY_SECTORS; sector++) {
-      for (let ring = 0; ring < UNIVERSE.GALAXY_SECTOR_RINGS; ring++) {
-        const cand = { ring, sector };
-        const n = sectorCells(cand).length;
-        const R = sectorCenter(cand).R;
-        if (n > best && Math.abs(R - UNIVERSE.R_SUN) < 3.5) {
-          best = n;
-          id = cand;
-        }
-      }
-    }
-  }
+  const id = sectorOfPos({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
   const a = sectorSample(seed, id, 400);
   const b2 = sectorSample(seed, id, 400);
   check(a.length === 400, `sample size ${a.length}`);
@@ -169,12 +152,10 @@ const check = (cond: boolean, msg: string) => {
   // Equal-mass rings: populations of arcs across rings stay comparable.
   const pops: number[] = [];
   for (let ring = 0; ring < UNIVERSE.GALAXY_SECTOR_RINGS; ring += 8) {
-    const p = sectorPopulation(seed, { ring, sector: 17 });
-    if (p > 0) pops.push(p);
+    pops.push(sectorPopulation(seed, { ring, sector: 17 }));
   }
-  const ratio = pops.length >= 2 ? Math.max(...pops) / Math.max(1, Math.min(...pops)) : 1;
-  check(pops.length >= 2, 'too few occupied arcs to test ring mass');
-  check(ratio < 200, `arc populations vary ${ratio.toFixed(0)}x across rings (azimuth structure allows some)`);
+  const ratio = Math.max(...pops) / Math.max(1, Math.min(...pops));
+  check(ratio < 40, `arc populations vary ${ratio.toFixed(0)}x across rings (azimuth structure allows some)`);
 }
 
 // --- region ball: fixed R, every occupant, pose matches objectAt ---
@@ -184,12 +165,12 @@ const check = (cond: boolean, msg: string) => {
   check(regionImfFloor(0) === 0, 'tap neighbourhood must keep every slot');
   check(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R) === 0, 'full-R edge must still be complete');
   check(Math.abs(regionImfFloor(UNIVERSE.GALAXY_REGION_FULL_R + UNIVERSE.GALAXY_REGION_U_RAMP) - UNIVERSE.GALAXY_REGION_U_FAR) < 1e-9, 'ramp must reach U_FAR');
-  const rim = galToCart({ R: 10, theta: 0.4, z: 0 });
+  const rim = galToCart({ R: 14, theta: 0.4, z: 0 });
   const a = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
   const b4 = buildRegionCloud(seed, rim.x, rim.y, rim.z, r);
   check(a.n === b4.n && a.n > 0, `region cloud not deterministic ${a.n} vs ${b4.n}`);
   check(a.ids[0] === b4.ids[0], 'region first id drifted');
-  check(a.n > 200 && a.n < 800_000, `outer-disk region ${a.n} is not a flyable sky`);
+  check(a.n > 8_000 && a.n < 800_000, `outer-disk region ${a.n} is not a flyable sky`);
   check(a.pos.length >= a.n * 3 && a.lum.length >= a.n && a.gain.length >= a.n, `region buffers shorter than n=${a.n}`);
   let maxD = 0;
   for (let i = 0; i < a.n; i++) {
@@ -197,27 +178,13 @@ const check = (cond: boolean, msg: string) => {
     if (d > maxD) maxD = d;
   }
   check(maxD <= r + 1e-6, `region point ${maxD} outside ball ${r}`);
-  let starI = -1;
-  for (let i = 0; i < a.n; i++) {
-    if (!isDustId(a.ids[i])) {
-      starI = i;
-      break;
-    }
-  }
-  if (starI < 0) {
-    check(false, `outer-disk region at R=10 is dust-only (${a.n} rows) — disk did not reach`);
-  } else {
-    const { cell, slot } = splitId(a.ids[starI]);
-    const filled = slotsInCell(seed, cell);
-    const birth = slotBirthRaw(seed, cell, slot, filled);
-    const cart = slotBirthCart(seed, cell, slot);
-    check(
-      Math.abs(cart.x - a.pos[starI * 3]) < 1e-5 && Math.abs(cart.y - a.pos[starI * 3 + 1]) < 1e-5,
-      'slotBirthCart != cloud pos',
-    );
-    const o = objectAt(seed, a.ids[starI]);
-    check(!!o && o.pos.R === birth.pos.R && o.pos.theta === birth.pos.theta, 'region row pose != objectAt');
-  }
+  const { cell, slot } = splitId(a.ids[0]);
+  const filled = slotsInCell(seed, cell);
+  const birth = slotBirthRaw(seed, cell, slot, filled);
+  const cart = slotBirthCart(seed, cell, slot);
+  check(Math.abs(cart.x - a.pos[0]) < 1e-5 && Math.abs(cart.y - a.pos[1]) < 1e-5, 'slotBirthCart != cloud pos');
+  const o = objectAt(seed, a.ids[0]);
+  check(!!o && o.pos.R === birth.pos.R && o.pos.theta === birth.pos.theta, 'region row pose != objectAt');
   const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
   const homeCloud = buildRegionCloud(seed, homeC.x, homeC.y, homeC.z, r);
   check(homeCloud.n > a.n, `home region ${homeCloud.n} should outnumber the rim ${a.n}`);
@@ -227,13 +194,10 @@ const check = (cond: boolean, msg: string) => {
   const fresh = buildRegionCloud(seed, nudged.x, nudged.y, nudged.z, r);
   const slidIds = new Set(Array.from(slid.ids.subarray(0, slid.n)));
   const freshIds = new Set(Array.from(fresh.ids.subarray(0, fresh.n)));
+  check(slidIds.size === freshIds.size, `slide n ${slidIds.size} != remint ${freshIds.size}`);
   let miss = 0;
   for (const id of freshIds) if (!slidIds.has(id)) miss++;
   check(miss === 0, `slide missed ${miss} stars a remint has`);
-  check(
-    Math.abs(slidIds.size - freshIds.size) <= 16,
-    `slide n ${slidIds.size} != remint ${freshIds.size}`,
-  );
   check(slid.n !== a.n, 'sliding the sphere did not change membership');
   console.log(`  slide ${slid.ms.toFixed(1)} ms vs remint ${fresh.ms.toFixed(0)} ms`);
 }
@@ -245,7 +209,7 @@ const check = (cond: boolean, msg: string) => {
   check(a === b5, 'silhouette must be cached per seed');
   check(a.n === b5.n && a.ids[0] === b5.ids[0], 'silhouette not deterministic');
   check(a.kind.length >= a.n, 'silhouette missing kind');
-  check(a.n > 20_000 && a.n < 300_000, `silhouette ${a.n} is not a bright tail`);
+  check(a.n > 20_000 && a.n < 220_000, `silhouette ${a.n} is not a bright tail`);
   let stars = 0;
   let nebulae = 0;
   let dust = 0;
@@ -266,7 +230,7 @@ const check = (cond: boolean, msg: string) => {
       dustSeen.add(id);
       check(!objectAt(seed, id), `dust id ${id} claims to be a living star`);
       // A population scatters; a lattice pins to cell centres.
-      const mid = galToCart(polarCellCenter(cellFromDustId(id)));
+      const mid = galToCart(cellCenter(cellFromDustId(id)));
       const off = Math.hypot(a.pos[i * 3] - mid.x, a.pos[i * 3 + 1] - mid.y, a.pos[i * 3 + 2] - mid.z);
       if (off > 0.02) dustOffLattice++;
       continue;
@@ -279,14 +243,14 @@ const check = (cond: boolean, msg: string) => {
   check(inside < a.n, 'silhouette must reach past the sample ball');
   // L ≥ 300 keeps ~79k of the ~83k stars the M=5 floor clocks — most
   // of the luminous tail, still nowhere near the full disk.
-  check(stars > 3_000 && stars < 40_000, `silhouette stars ${stars} is not the luminous tail`);
+  check(stars > 60_000 && stars < 110_000, `silhouette stars ${stars} is not the luminous tail`);
   check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
   // Dust is census-only (never drawn; extinction is the visible law),
   // so the full clump population rides along — tens of thousands.
-  check(dust > 8_000 && dust < 250_000, `dust count ${dust} is not the full clump census`);
+  check(dust > 60_000 && dust < 150_000, `dust count ${dust} is not the full clump census`);
   check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
   check(minStarL >= UNIVERSE.GALAXY_SILHOUETTE_L, `silhouette star dim L=${minStarL}`);
-  check(stars + nebulae < 170_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
+  check(stars + nebulae < 110_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');
@@ -303,6 +267,7 @@ const check = (cond: boolean, msg: string) => {
     const o = objectAt(seed, id);
     check(!!o && o.id === id, `silhouette id ${id} is not a catalog row`);
     const { cell, slot } = splitId(id);
+    const filled = slotsInCell(seed, cell);
     const cart = slotBirthCart(seed, cell, slot);
     check(Math.abs(cart.x - a.pos[i * 3]) < 1e-5 && Math.abs(cart.y - a.pos[i * 3 + 1]) < 1e-5, 'silhouette pose != slotBirthCart');
     if (a.bits[i] & BIT_NEBULA) check(!!o && o.star.nebula !== 'none', `nebula bit on ${id} but objectAt nebula is none`);
@@ -311,13 +276,10 @@ const check = (cond: boolean, msg: string) => {
   // Visit handshake: a backdrop star must be a local keeper when the ball sits on it.
   let host = -1;
   for (let i = 0; i < a.n; i++) {
-    if (a.kind[i] !== KIND_STAR || a.lum[i] < 8) continue;
-    // Skip the nuclear spike — a 2 kpc ball on the core mints the
-    // whole bulge. The handshake is "a disk backdrop star is local."
-    const R = Math.hypot(a.pos[i * 3], a.pos[i * 3 + 2]);
-    if (R < 4) continue;
-    host = i;
-    break;
+    if (a.kind[i] === KIND_STAR && a.lum[i] >= 8) {
+      host = i;
+      break;
+    }
   }
   check(host >= 0, 'no luminous backdrop star for the visit handshake');
   if (host >= 0) {
@@ -400,16 +362,16 @@ const check = (cond: boolean, msg: string) => {
 
 // --- nursery law: dense gas births young stars (causal, not painted) ---
 {
-  const { field } = sampleField();
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
+  const izMid = Math.floor(nz / 2);
+  const ir = Math.floor((UNIVERSE.R_SUN / rMax) * nr);
   type Row = { ism: number; young: number };
   const rows: Row[] = [];
-  for (let cell = 0; cell < field.pN; cell++) {
-    if (field.pKind[cell] !== 0) continue;
-    const R = Math.hypot(field.pAX[cell], field.pAZ[cell]);
-    if (Math.abs(R - UNIVERSE.R_SUN) > 1.8) continue;
+  for (let it = 0; it < nth; it += 2) {
+    const cell = ir * nth * nz + it * nz + izMid;
     const filled = slotsInCell(seed, cell);
     if (filled < 12) continue;
-    const ism = ismNorm(seed, polarCellOf(cellCenter(cell)));
+    const ism = ismNorm(seed, cell);
     let young = 0;
     const probe = 10;
     for (let j = 0; j < probe; j++) {
@@ -427,7 +389,7 @@ const check = (cond: boolean, msg: string) => {
   const botY = mean(bot);
   const topY = mean(top);
   check(rows.length > 60, `nursery probe too small (${rows.length} cells)`);
-  check(topY > botY * 1.05, `nursery law not causal: young frac top ${topY.toFixed(3)} vs bottom ${botY.toFixed(3)}`);
+  check(topY > botY * 1.5 + 0.01, `nursery law not causal: young frac top ${topY.toFixed(3)} vs bottom ${botY.toFixed(3)}`);
   console.log(`  nursery: young frac ${botY.toFixed(3)} (thin gas) -> ${topY.toFixed(3)} (dense gas) over ${rows.length} cells`);
 }
 
@@ -443,7 +405,15 @@ const check = (cond: boolean, msg: string) => {
   check(bins.size >= 40, `interest picks bunch into ${bins.size} bins`);
 }
 
-// (The saucer chart is retired; its dome-height law went with it.)
+// --- saucer dome: zero slope at the centre (no cone / golden spike) ---
+{
+  const h0 = saucerHeight(0);
+  const hEps = saucerHeight(0.05);
+  const slope = (h0 - hEps) / 0.05;
+  check(Math.abs(slope) < 0.2, `bulge slope at R=0 is ${slope.toFixed(3)} (must be ~0, not a cone)`);
+  check(saucerHeight(4) < h0, 'dome must fall with R');
+  check(h0 > 2.2 * UNIVERSE.GALAXY_ZD, 'dome must sit above the disk slab');
+}
 
 if (fail) {
   console.error(`check-sectors: ${fail} failure(s)`);

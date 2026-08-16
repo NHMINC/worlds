@@ -14,7 +14,6 @@ import type {
 } from './world/types';
 import { Toolbar } from './ui/Toolbar';
 import { GalaxyExplorer } from './ui/GalaxyExplorer';
-import { UniverseBoot } from './ui/UniverseBoot';
 import { SystemManager } from './ui/SystemManager';
 import { SettingsModal } from './ui/SettingsModal';
 import { PlaceDialog } from './ui/PlaceDialog';
@@ -86,10 +85,7 @@ export default function App() {
   const [mapOpen, setMapOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [galaxyOpen, setGalaxyOpen] = useState(false);
-  /** Boot: cinematic (prep) → relocation flight → done. */
-  const [bootStage, setBootStage] = useState<'prep' | 'flight' | 'done'>('prep');
-  /** The cinematic veil fades once the explorer has taken over. */
-  const [veil, setVeil] = useState<'solid' | 'leaving' | 'gone'>('solid');
+  const [preparing, setPreparing] = useState(true);
   const [lookStarId, setLookStarId] = useState<number | null>(null);
   const [placeDialog, setPlaceDialog] = useState<PlaceDialogState | null>(null);
   const [inspected, setInspected] = useState<InspectedCell | null>(null);
@@ -177,6 +173,8 @@ export default function App() {
     ro.observe(wrap);
     engine.resize(wrap.clientWidth, wrap.clientHeight);
 
+    void boot(engine);
+
     return () => {
       ro.disconnect();
       engine.dispose();
@@ -187,8 +185,6 @@ export default function App() {
 
   function visitAlive(s: SystemMeta): boolean {
     if (s.starId == null) return false;
-    // A generator bump re-addresses the sky: older visits are void.
-    if (s.genVersion !== CURRENT_GEN_VERSION) return false;
     return objectAt(s.galaxySeed ?? UNIVERSE.CANONICAL_SEED, s.starId) != null;
   }
 
@@ -199,14 +195,8 @@ export default function App() {
     setGalaxyOpen(true);
   }
 
-  /**
-   * The universe is minted (UniverseBoot watched it happen). Validate
-   * visits against the formed catalog, load the last system behind the
-   * veil, then start the relocation flight to the start (or last) star.
-   */
-  async function handlePrepared(): Promise<void> {
-    const engine = engineRef.current;
-    if (!engine) return;
+  async function boot(engine: Engine): Promise<void> {
+    const prep = prepareUniverse();
     const raw = await db.systems.orderBy('updatedAt').reverse().toArray();
     for (const s of raw) {
       if (s.starId != null && !visitAlive(s)) await deleteSystem(s.id);
@@ -214,21 +204,15 @@ export default function App() {
     const list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
     setSystems(list);
     if (list.length === 0) {
-      const start = discoverHabitable();
-      setLookStarId(start.starId);
-    } else {
-      const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
-      const target = list.find((s) => s.id === lastId) ?? list[0];
-      if (target) await openSystem(target.id, engine);
+      await prep;
+      await openFreshGalaxy();
+      return;
     }
-    setBootStage('flight');
-    setGalaxyOpen(true);
-  }
-
-  /** The flight arrived. A saved system closes the explorer over it. */
-  function handleIntroDone(): void {
-    setBootStage('done');
-    if (systemRef.current) setGalaxyOpen(false);
+    await prep;
+    const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
+    const target = list.find((s) => s.id === lastId) ?? list[0];
+    if (target) await openSystem(target.id, engine);
+    setPreparing(false);
   }
 
   async function openSystem(id: string, engineArg?: Engine): Promise<void> {
@@ -288,7 +272,7 @@ export default function App() {
       else {
         setSystem(null);
         setSpec(null);
-        // The formed field and backdrop are already cached in memory.
+        setPreparing(true);
         await prepareUniverse();
         await openFreshGalaxy();
       }
@@ -487,19 +471,16 @@ export default function App() {
           hereStarId={system?.starId ?? lookStarId}
           visitedStarIds={systems.map((s) => s.starId).filter((id): id is number => id != null)}
           canClose={system != null}
-          intro={bootStage === 'flight'}
           onSetCourse={(o) => void handleSetCourse(o)}
           onClose={() => setGalaxyOpen(false)}
-          onReady={() => {
-            setVeil((v) => (v === 'solid' ? 'leaving' : v));
-            window.setTimeout(() => setVeil('gone'), 950);
-          }}
-          onIntroDone={handleIntroDone}
+          onReady={() => setPreparing(false)}
         />
       )}
 
-      {veil !== 'gone' && (
-        <UniverseBoot onDone={() => void handlePrepared()} leaving={veil === 'leaving'} />
+      {preparing && (
+        <div className="universe-boot" role="status">
+          Preparing the universe
+        </div>
       )}
 
       {!galaxyOpen && (

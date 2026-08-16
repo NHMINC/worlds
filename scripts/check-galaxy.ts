@@ -84,7 +84,7 @@ const zin = chemistry('thin', 2, 2, 0.5);
 const zout = chemistry('thin', 12, 2, 0.5);
 check(zin.feh > zout.feh + 0.15, `thin-disk [Fe/H] does not fall with R: ${zin.feh} vs ${zout.feh}`);
 const zhalo = chemistry('halo', 8, 12, 0.5);
-check(zhalo.feh < -0.7, `halo is not metal-poor: ${zhalo.feh}`);
+check(zhalo.feh < -1, `halo is not metal-poor: ${zhalo.feh}`);
 
 // Arms denser than interarm at the same R.
 const R = 7;
@@ -221,7 +221,7 @@ for (const s of dust) {
   else dGap++;
 }
 check(dust.length > 2000, `dust sample too thin: ${dust.length}`);
-check(dArm > 200, `dust never sits on overdensities: arm=${dArm} gap=${dGap}`);
+check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
 
 function asObj(star: StellarState): GalaxyObject {
   return { id: 1, pos: { R: 8, theta: 0, z: 0 }, pop: 'thin', inArm: true, star };
