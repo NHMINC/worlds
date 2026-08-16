@@ -8,13 +8,18 @@ import {
   objectAt, objectsNear, homeStar, density, inSpiralArm, chemistry,
   catalogSize, slotsInCell, cellCount, sampleDust, packId,
 } from '../src/world/galaxy';
-import { imfMass, msLifetime, evolve, classifyStar } from '../src/world/stellar';
+import { imfMass, msLifetime, evolve, classifyStar, teffToRgb } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
 import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
 import {
   aimLocks,
+  harvestChroma,
+  harvestGlowPx,
+  harvestShine,
   harvestStarPx,
+  HARVEST_GLOW_MAX,
+  HARVEST_L_REF,
   shineDisplay,
   starKind,
   visualRadiusKpc,
@@ -265,6 +270,23 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(near > far * 1.25, `same L at 80 kpc (${near.toFixed(2)}) must beat 240 kpc (${far.toFixed(2)})`);
   check(harvestStarPx(1) === 1, `harvest star must be one CSS pixel, got ${harvestStarPx(1)}`);
   check(harvestStarPx(3) === 3, `harvest pin must track device pixels, got ${harvestStarPx(3)}`);
+  const pin = harvestGlowPx(HARVEST_L_REF, 1);
+  const midL = harvestGlowPx(1000, 1);
+  const hotL = harvestGlowPx(8000, 1);
+  const cap = harvestGlowPx(1e6, 1);
+  check(pin <= 1.05, `harvest-floor star must stay a pin, got ${pin.toFixed(2)}px`);
+  check(hotL > midL && midL > pin, `glow must rank L: ${pin.toFixed(1)} / ${midL.toFixed(1)} / ${hotL.toFixed(1)}`);
+  check(cap <= HARVEST_GLOW_MAX + 1e-6, `glow cap ${cap} exceeded ${HARVEST_GLOW_MAX}`);
+  const shineFloor = harvestShine(HARVEST_L_REF, 8);
+  const shineO = harvestShine(8000, 8);
+  check(shineO > shineFloor * 2.5, `O shine ${shineO.toFixed(2)} must beat floor ${shineFloor.toFixed(2)}`);
+  check(harvestShine(400, 2) > harvestShine(400, 12) * 1.2, 'same L must dim with distance');
+  const oHue = harvestChroma(teffToRgb(28000));
+  const mHue = harvestChroma(teffToRgb(3400));
+  const gHue = harvestChroma(teffToRgb(5800));
+  check(oHue[2] > oHue[0] + 0.08, `O chroma must read blue ${oHue}`);
+  check(mHue[0] > mHue[2] + 0.25, `M chroma must read orange ${mHue}`);
+  check(oHue[2] - oHue[0] > gHue[2] - gHue[0], 'O must be cooler-white than G');
   check(aimLocks(1, 20), 'solar analog at 20 kpc must lock the reticle');
   check(aimLocks(1, 0.35), 'focus park must lock');
   check(!aimLocks(0.01, 40), 'faint M at 40 kpc must stay a speck');

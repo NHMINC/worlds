@@ -231,7 +231,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   await page.screenshot({ path: 'previews/galaxy-3-discs.png' });
   if (!close.ang) errors.push('approached star has no apparent size');
   if (close.grown < 1) errors.push('no aim-lock after approaching a star');
-  if (close.ang > 3) errors.push(`harvest star is not a pin (${close.ang}px)`);
+  if (close.ang > 40) errors.push(`harvest glow blew the pin (${close.ang}px)`);
 
   const grow = await page.evaluate(() => {
     const v = window.__galaxyView;

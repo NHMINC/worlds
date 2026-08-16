@@ -12,14 +12,17 @@ import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
-  harvestStarPx,
+  harvestGlowPx,
+  HARVEST_GLOW_K,
+  HARVEST_GLOW_MAX,
+  HARVEST_GLOW_P,
+  HARVEST_L_REF,
+  HARVEST_SHINE_DIST_P,
+  HARVEST_SHINE_DIST_REF,
+  HARVEST_SHINE_GAIN,
+  HARVEST_SHINE_L_P,
+  HARVEST_SHINE_SAT,
   POINT_FLUX_EPS,
-  POINT_NEAR_BOOST,
-  SHINE_DIST_P,
-  SHINE_DIST_REF,
-  SHINE_L_GAIN,
-  SHINE_L_P,
-  SHINE_SAT,
   glowRadiusKpc,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
@@ -138,8 +141,11 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uRegionR;
   uniform float uNebulaPx;
   uniform float uSuper;
-  uniform float uNearBoost;
   uniform float uFluxEps;
+  uniform float uLRef;
+  uniform float uGlowK;
+  uniform float uGlowP;
+  uniform float uGlowMax;
   uniform float uShineLGain;
   uniform float uShineLP;
   uniform float uShineDistRef;
@@ -189,17 +195,18 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Harvest stars are one CSS pixel at every fly distance.
-      // r/d grow is a planet-zoom law — it does not belong on a
-      // kpc-scale fly. Nearby rows are brighter pins, not discs.
+      // Pin + magnitude glow. Size is f(L), not 1/d — approaching
+      // does not inflate the halo. Colour is Teff, pushed off grey.
       float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
-      gl_PointSize = max(1.0, uPixel);
-      float flux = L / (d * d + uFluxEps);
-      float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
+      float mag = pow(L / max(uLRef, 1.0), uGlowP);
+      float css = min(uGlowMax, 1.0 + uGlowK * max(0.0, mag - 1.0));
+      gl_PointSize = max(uPixel, css * uPixel);
+      float shine = uShineLGain * pow(L / max(uLRef, 1.0), uShineLP)
+        * pow(uShineDistRef / max(d, 0.4), uShineDistP);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
-      vVis = min(aVis * punch, 8.0);
+      vVis = shine;
       vPx = gl_PointSize;
     }
     // Extinction: march the column from the bubble to this row.
@@ -236,10 +243,20 @@ const STAR_FRAG = /* glsl */ `
     if (uPass > 0.5 && (vKind < 0.5 || vKind > 3.5)) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
+      float r = length(p);
+      if (r > 1.0) discard;
       float I = max(vVis, 0.0);
       float peak = max(max(vColor.r, vColor.g), vColor.b);
       vec3 chroma = vColor / max(peak, 1e-4);
-      float bright = I / (1.0 + I);
+      // Core stays one CSS pixel. The rest is a soft PSF whose
+      // brightness still ranks L — I/(1+I) flattened every harvest
+      // row to the same white pin.
+      float rPx = r * vPx * 0.5;
+      float core = 1.0 - smoothstep(0.4 * uPixel, 1.15 * uPixel, rPx);
+      float halo = exp(-4.2 * r * r);
+      float coreI = I / (1.0 + 0.35 * I);
+      float haloI = 0.2 * I * halo;
+      float bright = core * coreI + haloI;
       if (bright < 0.008) discard;
       gl_FragColor = vec4(chroma * bright, 1.0);
       return;
@@ -595,11 +612,15 @@ export class GalaxyView {
 
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
-      uShineLGain: { value: SHINE_L_GAIN },
-      uShineLP: { value: SHINE_L_P },
-      uShineDistRef: { value: SHINE_DIST_REF },
-      uShineDistP: { value: SHINE_DIST_P },
-      uShineSat: { value: SHINE_SAT },
+      uLRef: { value: HARVEST_L_REF },
+      uGlowK: { value: HARVEST_GLOW_K },
+      uGlowP: { value: HARVEST_GLOW_P },
+      uGlowMax: { value: HARVEST_GLOW_MAX },
+      uShineLGain: { value: HARVEST_SHINE_GAIN },
+      uShineLP: { value: HARVEST_SHINE_L_P },
+      uShineDistRef: { value: HARVEST_SHINE_DIST_REF },
+      uShineDistP: { value: HARVEST_SHINE_DIST_P },
+      uShineSat: { value: HARVEST_SHINE_SAT },
       uFluxEps: { value: POINT_FLUX_EPS },
     };
   }
@@ -660,7 +681,6 @@ export class GalaxyView {
       uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
-      uNearBoost: { value: POINT_NEAR_BOOST },
       ...this.shineUniforms(),
       ...this.dustUniforms(),
       ...this.extinctUniforms(),
@@ -940,14 +960,16 @@ export class GalaxyView {
     if (this.mode === 'region') this.updateSight(true);
   }
 
-  /** Harvest paint size (device px). Always a pin — smoke proves we do not grow. */
+  /** Harvest glow size (device px). f(L), not 1/d — smoke proves approach does not inflate it. */
   pointApparent(id: number): number {
     const cloud = this.cloud;
+    const px = this.renderer.getPixelRatio();
     if (!cloud) return 0;
     for (let i = 0; i < cloud.n; i++) {
-      if (cloud.ids[i] === id) return harvestStarPx(this.renderer.getPixelRatio());
+      if (cloud.ids[i] === id) return harvestGlowPx(cloud.lum[i], px);
     }
-    return objectAt(this.seed, id) ? harvestStarPx(this.renderer.getPixelRatio()) : 0;
+    const o = objectAt(this.seed, id);
+    return o ? harvestGlowPx(o.star.luminosity, px) : 0;
   }
 
   /**
