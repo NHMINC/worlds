@@ -208,7 +208,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   if (!strafe || strafe.bubbleMoved < 0.02) errors.push('strafe did not slide the catalog bubble');
   if (strafe && strafe.camAtOrigin > 1e-4) errors.push('camera left the bubble centre');
 
-  // Approach: park next to the selected star; its point must grow.
+  // Approach: park next to the selected star; the pin must stay a pin.
   const approached = await page.evaluate(() => {
     const v = window.__galaxyView;
     const o = v.approachNearest?.();
@@ -230,7 +230,8 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   console.log('CLOSE', JSON.stringify(close));
   await page.screenshot({ path: 'previews/galaxy-3-discs.png' });
   if (!close.ang) errors.push('approached star has no apparent size');
-  if (close.grown < 1) errors.push('no grown points after approaching a star');
+  if (close.grown < 1) errors.push('no aim-lock after approaching a star');
+  if (close.ang > 3) errors.push(`harvest star is not a pin (${close.ang}px)`);
 
   const grow = await page.evaluate(() => {
     const v = window.__galaxyView;
@@ -244,9 +245,9 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   });
   await page.waitForTimeout(200);
   const plate = await page.locator('.gx-plate').count();
-  console.log('GROW', JSON.stringify({ ...grow, plate }));
-  if (!grow || grow.a0 <= 0) errors.push('approached star has no growing point');
-  if (grow && grow.a1 <= grow.a0 * 1.02) errors.push(`star did not grow on approach ${grow.a0} → ${grow.a1}`);
+  console.log('PIN', JSON.stringify({ ...grow, plate }));
+  if (!grow || grow.a0 <= 0) errors.push('approached star has no paint size');
+  if (grow && grow.a1 !== grow.a0) errors.push(`harvest star grew on approach ${grow.a0} → ${grow.a1}`);
   if (!plate) errors.push('no compact sight HUD after approaching a star');
 
   // Latched warp: one tap accelerates, Stop brakes (same path as ↑ / ↓).

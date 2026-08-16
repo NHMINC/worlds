@@ -14,7 +14,7 @@ import { discoverHabitable } from '../src/world/discover';
 import { mulberry32, xmur3 } from '../src/world/rng';
 import {
   aimLocks,
-  photoApparentPx,
+  harvestStarPx,
   shineDisplay,
   starKind,
   visualRadiusKpc,
@@ -263,15 +263,8 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const near = shineDisplay(20, 80);
   const far = shineDisplay(20, 240);
   check(near > far * 1.25, `same L at 80 kpc (${near.toFixed(2)}) must beat 240 kpc (${far.toFixed(2)})`);
-  const pxPer = 1288;
-  const diskPx = photoApparentPx(1, 40, pxPer);
-  const midDisk = photoApparentPx(1, 8, pxPer);
-  const close = photoApparentPx(1, 0.5, pxPer);
-  const focus = photoApparentPx(1, 0.35, pxPer);
-  check(diskPx <= 1.5, `40 kpc must be a pin, got ${diskPx.toFixed(1)}px`);
-  check(midDisk <= 2.2, `8 kpc must still be a pin, got ${midDisk.toFixed(1)}px`);
-  check(close > 6, `close photosphere ${close.toFixed(1)} must grow off the pin`);
-  check(focus > close, `focus park ${focus.toFixed(1)} must read larger than 0.5 kpc`);
+  check(harvestStarPx(1) === 1, `harvest star must be one CSS pixel, got ${harvestStarPx(1)}`);
+  check(harvestStarPx(3) === 3, `harvest pin must track device pixels, got ${harvestStarPx(3)}`);
   check(aimLocks(1, 20), 'solar analog at 20 kpc must lock the reticle');
   check(aimLocks(1, 0.35), 'focus park must lock');
   check(!aimLocks(0.01, 40), 'faint M at 40 kpc must stay a speck');

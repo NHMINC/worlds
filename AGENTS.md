@@ -194,10 +194,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   set course; only the splash is once-per-load. An empty save
   opens the same way on a discovered living host. The camera
   sits at the viewpoint centre. Gestures **slide** through
-  catalog space (1:1, no `VIEW_R` stretch). Distant harvest
-  stars are **1px pinpricks**; closer ones grow from luminosity
-  and distance. **Dust is never drawn — it is sightline
-  extinction** (`extinctGlsl`). A harvest star is visitable
+  catalog space (1:1, no `VIEW_R` stretch). Harvest stars are
+  **1px pinpricks** at every fly distance — r/d grow is a
+  planet-zoom law, not this sky. **Dust is never drawn — it is
+  sightline extinction** (`extinctGlsl`). A harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble far enough that the whole
   disk fits the screen (pole-on, or a few degrees above the plane)

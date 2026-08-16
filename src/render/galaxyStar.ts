@@ -1,18 +1,17 @@
 /**
  * The explorer sky is the luminous harvest. A star is one CSS
- * pixel across the disk and grows as 1/d when you close on it.
- * Paint radius is catalog kpc (view is 1:1). Brightness L/d²,
- * colour teff. Dust is never drawn. The faint 95% is a later
- * survey — not this photograph.
+ * pixel at every fly distance. Brightness is L/d², colour teff.
+ * Dust is never drawn. r/d grow is a later close-survey law —
+ * not this photograph.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
 
 /**
- * Toy paint-pin radius (catalog kpc). Real R☉ is metres against
- * kiloparsecs — unusable. Size is max(1px, 2 r/d). A pin at
- * several kpc; a disc when the camera is on the star. This is
- * the photograph, not the visit lock — see AIM_R_K.
+ * Toy close-survey paint radius (catalog kpc). Real R☉ is metres
+ * against kiloparsecs — unusable. Harvest GPU size is
+ * harvestStarPx — always one CSS pixel. These knobs stay for a
+ * later faint-survey disc; they must not be wired to the harvest.
  */
 export const GLOW_K = 0.0024;
 export const GLOW_P = 0.16;
@@ -56,7 +55,12 @@ export function glowRadiusKpc(L: number, dim = false): number {
   return Math.max(dim ? GLOW_DIM : PHOTO_MIN, Math.min(PHOTO_MAX, r));
 }
 
-/** Paint radius. Same body as glowRadiusKpc — one pin. */
+/** Harvest paint size (device px): one CSS pixel, at every distance. */
+export function harvestStarPx(pixelRatio = 1): number {
+  return Math.max(1, pixelRatio);
+}
+
+/** Unused close-survey radius. Harvest GPU size is harvestStarPx. */
 export function photoRadiusKpc(L: number, dim = false): number {
   return glowRadiusKpc(L, dim);
 }
@@ -81,7 +85,7 @@ export function pointApparentPx(L: number, dist: number, pxPerRad: number, dim =
   return Math.min(POINT_MAX_PX, Math.max(1, 2 * ang * pxPerRad));
 }
 
-/** Paint size (px) at a catalog distance. */
+/** Close-survey size (px). Harvest stars use harvestStarPx, not this. */
 export function photoApparentPx(L: number, dist: number, pxPerRad: number, dim = false): number {
   const ang = apparentAngle(photoRadiusKpc(L, dim), dist);
   return Math.min(POINT_MAX_PX, Math.max(1, 2 * ang * pxPerRad));

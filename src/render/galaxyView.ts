@@ -12,14 +12,9 @@ import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
-  GLOW_DIM,
+  harvestStarPx,
   POINT_FLUX_EPS,
-  POINT_MAX_PX,
   POINT_NEAR_BOOST,
-  PHOTO_K,
-  PHOTO_MAX,
-  PHOTO_MIN,
-  PHOTO_P,
   SHINE_DIST_P,
   SHINE_DIST_REF,
   SHINE_L_GAIN,
@@ -141,15 +136,8 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uPixel;
   uniform float uPxPerRad;
   uniform float uRegionR;
-  uniform float uStarPx;
   uniform float uNebulaPx;
   uniform float uSuper;
-  uniform float uGlowDim;
-  uniform float uPhotoK;
-  uniform float uPhotoP;
-  uniform float uPhotoMin;
-  uniform float uPhotoMax;
-  uniform float uMaxPx;
   uniform float uNearBoost;
   uniform float uFluxEps;
   uniform float uShineLGain;
@@ -201,15 +189,12 @@ const SILHOUETTE_VERT = /* glsl */ `
       vCenterCat = position;
       vPx = gl_PointSize;
     } else {
-      // Pin across the disk; disc when the camera closes. Same
-      // r/d photograph as the old local layer — the harvest is
-      // the only sky now.
+      // Harvest stars are one CSS pixel at every fly distance.
+      // r/d grow is a planet-zoom law — it does not belong on a
+      // kpc-scale fly. Nearby rows are brighter pins, not discs.
       float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
-      float r = max(L < 0.05 ? uGlowDim : uPhotoMin, uPhotoK * pow(L, uPhotoP));
-      r = min(r, uPhotoMax);
-      float ang = r / d;
-      gl_PointSize = clamp(max(uPixel, 2.0 * ang * uPxPerRad), 1.0, uMaxPx);
+      gl_PointSize = max(1.0, uPixel);
       float flux = L / (d * d + uFluxEps);
       float punch = 1.0 + uNearBoost * flux / (1.0 + 0.18 * flux);
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
@@ -254,16 +239,6 @@ const STAR_FRAG = /* glsl */ `
       float I = max(vVis, 0.0);
       float peak = max(max(vColor.r, vColor.g), vColor.b);
       vec3 chroma = vColor / max(peak, 1e-4);
-      if (vPx > 4.0) {
-        // Only a disc once the pin has actually grown. Below this
-        // the sprite is still a point of light.
-        float r = length(p);
-        if (r > 1.0) discard;
-        float limb = 1.0 - 0.22 * r * r;
-        float bright = I / (1.0 + 0.22 * I);
-        gl_FragColor = vec4(chroma * limb * bright, 1.0);
-        return;
-      }
       float bright = I / (1.0 + I);
       if (bright < 0.008) discard;
       gl_FragColor = vec4(chroma * bright, 1.0);
@@ -683,15 +658,8 @@ export class GalaxyView {
       uPixel: { value: this.renderer.getPixelRatio() },
       uPxPerRad: { value: this.pxPerRad() },
       uRegionR: { value: UNIVERSE.GALAXY_REGION_R },
-      uStarPx: { value: UNIVERSE.SILHOUETTE_STAR_PX },
       uNebulaPx: { value: UNIVERSE.SILHOUETTE_NEBULA_PX },
       uSuper: { value: UNIVERSE.SILHOUETTE_SUPER_GAIN },
-      uGlowDim: { value: GLOW_DIM },
-      uPhotoK: { value: PHOTO_K },
-      uPhotoP: { value: PHOTO_P },
-      uPhotoMin: { value: PHOTO_MIN },
-      uPhotoMax: { value: PHOTO_MAX },
-      uMaxPx: { value: POINT_MAX_PX },
       uNearBoost: { value: POINT_NEAR_BOOST },
       ...this.shineUniforms(),
       ...this.dustUniforms(),
@@ -972,22 +940,14 @@ export class GalaxyView {
     if (this.mode === 'region') this.updateSight(true);
   }
 
-  /** Apparent angle (rad) of a cloud star — smoke proves points grow. */
+  /** Harvest paint size (device px). Always a pin — smoke proves we do not grow. */
   pointApparent(id: number): number {
     const cloud = this.cloud;
     if (!cloud) return 0;
     for (let i = 0; i < cloud.n; i++) {
-      if (cloud.ids[i] !== id) continue;
-      const v = this.toView(cloud.pos[i * 3], cloud.pos[i * 3 + 1], cloud.pos[i * 3 + 2]);
-      const dist = Math.hypot(v.x, v.y, v.z);
-      const dim = (cloud.bits[i] & BIT_REMNANT) !== 0 || cloud.lum[i] < 0.05;
-      return glowRadiusKpc(cloud.lum[i], dim) / Math.max(1e-5, dist);
+      if (cloud.ids[i] === id) return harvestStarPx(this.renderer.getPixelRatio());
     }
-    const o = objectAt(this.seed, id);
-    if (!o) return 0;
-    const c = this.viewCart(o);
-    const dist = Math.hypot(c.x, c.y, c.z);
-    return glowRadiusKpc(o.star.luminosity, o.star.luminosity < 0.05) / Math.max(1e-5, dist);
+    return objectAt(this.seed, id) ? harvestStarPx(this.renderer.getPixelRatio()) : 0;
   }
 
   /**
