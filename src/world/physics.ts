@@ -488,8 +488,11 @@ export const UNIVERSE = {
    */
   GALAXY_SILHOUETTE_M: 5,
   /** Backdrop stars: present-day L / L☉. Brightness is this continuous
-   *  luminosity, not a magnitude bin. 1000 L☉ is a mid-B / bright giant. */
-  GALAXY_SILHOUETTE_L: 1000,
+   *  luminosity, not a magnitude bin. 300 L☉ is a late-B / modest giant —
+   *  ~79k of the ~83k stars the M-floor clocks. Stars are the cheap
+   *  citizens (one pixel, vertex-only cost); the count knob that
+   *  matters for the GPU is envelopes, not this one. */
+  GALAXY_SILHOUETTE_L: 300,
   /** Backdrop nebulae: emissionLook surface-brightness gain. Young
    *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
    *  Three median halvings from 0.65: the top eighth — showpieces. */
