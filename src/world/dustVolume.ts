@@ -1,19 +1,11 @@
 /**
- * Dust clumps are the fog. Each harvest clump is a sphere of
- * influence (radius + gain from the ISM field). The explorer
- * never draws those rows — it bakes them into a density volume
- * and marches the sightline. A star behind a cloud goes dark.
+ * Dust is the ISM field, not a census of balls. The explorer never
+ * draws dust — it bakes dustDensity(seed, x, y, z) into a volume
+ * and marches the sightline. A star behind a ridge goes dark; a
+ * short hop through the mean sheet stays mostly clear.
  */
 import { UNIVERSE } from './physics';
-import { KIND_DUST } from './skyShape';
-
-export interface DustRows {
-  n: number;
-  pos: ArrayLike<number>;
-  size: ArrayLike<number>;
-  gain: ArrayLike<number>;
-  kind: ArrayLike<number>;
-}
+import { dustDensity } from './galaxy';
 
 export interface DustVolume {
   nx: number;
@@ -31,7 +23,7 @@ export function dustVolumeBounds(): {
   origin: [number, number, number];
   size: [number, number, number];
 } {
-  const pad = UNIVERSE.GALAXY_DUST_R_MAX;
+  const pad = 0.2;
   const half = UNIVERSE.GALAXY_R_MAX + pad;
   const yHalf = UNIVERSE.GALAXY_Z_THICK * 4 + pad;
   return {
@@ -40,25 +32,8 @@ export function dustVolumeBounds(): {
   };
 }
 
-/** Envelope at a point: gain · max(0, 1 − r²/R²). Same skin writeDust stores. */
-export function clumpEnvelope(
-  px: number,
-  py: number,
-  pz: number,
-  cx: number,
-  cy: number,
-  cz: number,
-  radius: number,
-  gain: number,
-): number {
-  const r = Math.max(radius, 1e-4);
-  const d2 = (px - cx) ** 2 + (py - cy) ** 2 + (pz - cz) ** 2;
-  const t = 1 - d2 / (r * r);
-  return t > 0 ? gain * t : 0;
-}
-
-/** Splat every dust row into a 3D density field. Empty space stays 0. */
-export function bakeDustVolume(rows: DustRows): DustVolume {
+/** Sample the ISM dust field into a 3D density volume. Empty space stays 0. */
+export function bakeDustVolume(seed: string): DustVolume {
   const nx = UNIVERSE.GALAXY_DUST_VOL_N;
   const ny = UNIVERSE.GALAXY_DUST_VOL_NY;
   const nz = nx;
@@ -67,47 +42,21 @@ export function bakeDustVolume(rows: DustRows): DustVolume {
   const vx = size[0] / nx;
   const vy = size[1] / ny;
   const vz = size[2] / nz;
-  // Splat the true radius. A wisp smaller than a cell still writes
-  // the nearest sample below — do not inflate R or the 50% cut
-  // becomes a voxel-sized sheet again.
   const [ox, oy, oz] = origin;
-  for (let i = 0; i < rows.n; i++) {
-    if (rows.kind[i] !== KIND_DUST) continue;
-    const cx = rows.pos[i * 3];
-    const cy = rows.pos[i * 3 + 1];
-    const cz = rows.pos[i * 3 + 2];
-    const R = Math.max(rows.size[i], 1e-4);
-    const gain = Math.max(0, rows.gain[i]);
-    const peak = UNIVERSE.GALAXY_DUST_RHO0 + UNIVERSE.GALAXY_DUST_RHO1 * gain;
-    const Rs = R;
-    if (peak <= 0) continue;
-    const ix0 = Math.max(0, Math.floor((cx - Rs - ox) / vx));
-    const ix1 = Math.min(nx - 1, Math.floor((cx + Rs - ox) / vx));
-    const iy0 = Math.max(0, Math.floor((cy - Rs - oy) / vy));
-    const iy1 = Math.min(ny - 1, Math.floor((cy + Rs - oy) / vy));
-    const iz0 = Math.max(0, Math.floor((cz - Rs - oz) / vz));
-    const iz1 = Math.min(nz - 1, Math.floor((cz + Rs - oz) / vz));
-    let wrote = 0;
-    for (let iz = iz0; iz <= iz1; iz++) {
-      const z = oz + (iz + 0.5) * vz;
-      for (let iy = iy0; iy <= iy1; iy++) {
-        const y = oy + (iy + 0.5) * vy;
-        const row = nx * (iy + ny * iz);
-        for (let ix = ix0; ix <= ix1; ix++) {
-          const x = ox + (ix + 0.5) * vx;
-          const env = clumpEnvelope(x, y, z, cx, cy, cz, Rs, peak);
-          if (env > 0) {
-            data[row + ix] += env;
-            wrote++;
-          }
-        }
+  // The molecular sheet is ~0.12 kpc; warp + corrugation lift the
+  // midplane by ≲ 1 kpc. Skip the empty halo so the bake stays cheap.
+  const ySkip = UNIVERSE.GALAXY_ZD_GAS * 10 + UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE;
+  for (let iz = 0; iz < nz; iz++) {
+    const z = oz + (iz + 0.5) * vz;
+    for (let iy = 0; iy < ny; iy++) {
+      const y = oy + (iy + 0.5) * vy;
+      if (Math.abs(y) > ySkip) continue;
+      const row = nx * (iy + ny * iz);
+      for (let ix = 0; ix < nx; ix++) {
+        const x = ox + (ix + 0.5) * vx;
+        const rho = dustDensity(seed, x, y, z);
+        if (rho > 0) data[row + ix] = rho;
       }
-    }
-    if (wrote === 0) {
-      const ix = Math.max(0, Math.min(nx - 1, Math.round((cx - ox) / vx - 0.5)));
-      const iy = Math.max(0, Math.min(ny - 1, Math.round((cy - oy) / vy - 0.5)));
-      const iz = Math.max(0, Math.min(nz - 1, Math.round((cz - oz) / vz - 0.5)));
-      data[ix + nx * (iy + ny * iz)] += peak;
     }
   }
   return { nx, ny, nz, origin, size, data };

@@ -477,12 +477,9 @@ function dustRadiusKpc(seed: string, cell: number, k: number): number {
 }
 
 /**
- * One dust clump: scattered position (no lattice), sphere of
- * influence from the field — wisps at R_MIN, complexes up to
- * GALAXY_DUST_R_MAX. Grain colour is chemistry (silicate / sooty
- * carbon / ice mantles); `gain` is field × dust-to-gas. The
- * extinction volume remaps that to a peak density so a cloud
- * can extinguish.
+ * One dust clump (census): scattered position, envelope from the
+ * field. Grain colour is chemistry; `gain` is field × dust-to-gas.
+ * These rows are not the fog — the volume samples the ISM field.
  */
 function writeDust(seed: string, cell: number, k: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
   const cart = dustBirthCart(seed, cell, k);
@@ -677,8 +674,8 @@ function catalogCellVolume(ir: number): number {
 let silhouetteMemo: { seed: string; cloud: StarCloud } | null = null;
 let dustVolMemo: { seed: string; vol: DustVolume } | null = null;
 
-function rememberDustVolume(seed: string, cloud: StarCloud): void {
-  dustVolMemo = { seed, vol: bakeDustVolume(cloud) };
+function rememberDustVolume(seed: string): void {
+  dustVolMemo = { seed, vol: bakeDustVolume(seed) };
 }
 
 /** Cached harvest, or null until the worker (or a sync mint) finishes. */
@@ -686,7 +683,7 @@ export function silhouetteCloud(seed: string): StarCloud | null {
   return silhouetteMemo?.seed === seed ? silhouetteMemo.cloud : null;
 }
 
-/** Baked clump fog for this seed, or null until the harvest is in. */
+/** Baked ISM fog for this seed, or null until the harvest is in. */
 export function harvestDustVolume(seed: string): DustVolume | null {
   return dustVolMemo?.seed === seed ? dustVolMemo.vol : null;
 }
@@ -694,7 +691,7 @@ export function harvestDustVolume(seed: string): DustVolume | null {
 /** Install a harvest minted off-thread. Same cache `buildSilhouetteCloud` uses. */
 export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
   silhouetteMemo = { seed, cloud };
-  rememberDustVolume(seed, cloud);
+  rememberDustVolume(seed);
 }
 
 /**
@@ -716,7 +713,7 @@ function gasDensityCeil(R: number, z: number): number {
  * larger than SILHOUETTE_DUST_R. Sparse cells emit nothing. Minted
  * once per seed — this IS the explorer sky. Harvest stars are
  * pickable. Dust ids are (cell, clump), never catalog stars.
- * Those dust rows are splat into the extinction volume.
+ * Dust rows are the census; the extinction volume is the ISM field.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
@@ -770,7 +767,7 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
   }
   const cloud = finishCloud(c, n, t0);
   silhouetteMemo = { seed, cloud };
-  rememberDustVolume(seed, cloud);
+  rememberDustVolume(seed);
   return cloud;
 }
 

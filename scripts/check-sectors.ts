@@ -3,7 +3,7 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, cellCenter, dustPhysics, galToCart, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { cellCount, cellCenter, dustPhysics, galToCart, ismAt, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
 import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
@@ -301,77 +301,86 @@ const check = (cond: boolean, msg: string) => {
   console.log(`  silhouette: ${a.n} (${stars} stars, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);
 }
 
-// --- clump fog: a cloud extinguishes; empty space does not ---
+// --- ISM fog: thin sheet + rare ridges, not 10k spheres ---
 {
-  const one: {
-    n: number;
-    pos: Float32Array;
-    size: Float32Array;
-    gain: Float32Array;
-    kind: Uint8Array;
-  } = {
-    n: 1,
-    pos: new Float32Array([0, 0, 0]),
-    size: new Float32Array([0.3]),
-    gain: new Float32Array([0.8]),
-    kind: new Uint8Array([KIND_DUST]),
-  };
-  const vol = bakeDustVolume(one);
-  const vol2 = bakeDustVolume(one);
-  check(vol.data.length === vol2.data.length && vol.data[0] === vol2.data[0], 'dust volume must be deterministic');
-  const THit = clumpTransmittance(vol, [-2, 0, 0], [2, 0, 0]);
-  const TMiss = clumpTransmittance(vol, [-2, 2, 0], [2, 2, 0]);
-  const hitLum = 0.2126 * THit[0] + 0.7152 * THit[1] + 0.0722 * THit[2];
-  const missLum = 0.2126 * TMiss[0] + 0.7152 * TMiss[1] + 0.0722 * TMiss[2];
-  check(hitLum < 0.12, `a dense clump must extinguish (T=${hitLum.toFixed(3)})`);
-  check(missLum > 0.9, `a miss must stay clear (T=${missLum.toFixed(3)})`);
-  check(THit[0] > THit[2], 'blue must die first through a clump');
-  const TLimb = clumpTransmittance(vol, [-2, 0.28, 0], [2, 0.28, 0]);
-  const limbLum = 0.2126 * TLimb[0] + 0.7152 * TLimb[1] + 0.0722 * TLimb[2];
-  check(limbLum > hitLum * 1.4 && limbLum < missLum * 0.95,
-    `a resolved limb must be a red edge (core ${hitLum.toFixed(3)} limb ${limbLum.toFixed(3)} miss ${missLum.toFixed(3)})`);
-  check(TLimb[0] > TLimb[2] * 1.1, 'limb must go warm (blue dies first)');
-  const wisp = bakeDustVolume({
-    n: 1,
-    pos: new Float32Array([0, 0, 0]),
-    size: new Float32Array([0.08]),
-    gain: new Float32Array([0.35]),
-    kind: new Uint8Array([KIND_DUST]),
-  });
-  const TWisp = clumpTransmittance(wisp, [-1, 0, 0], [1, 0, 0]);
-  const TWispMiss = clumpTransmittance(wisp, [-1, 0.4, 0], [1, 0.4, 0]);
-  const wispLum = 0.2126 * TWisp[0] + 0.7152 * TWisp[1] + 0.0722 * TWisp[2];
-  const wispMiss = 0.2126 * TWispMiss[0] + 0.7152 * TWispMiss[1] + 0.0722 * TWispMiss[2];
-  check(wispLum < 0.35, `a small wisp core must go dark (T=${wispLum.toFixed(3)})`);
-  check(wispMiss > 0.9, `a wisp miss must stay clear (T=${wispMiss.toFixed(3)})`);
-  check(TWisp[0] > TWisp[2] * 1.1, 'wisp core must go warm (blue dies first)');
   const helix = harvestDustVolume(seed);
-  check(!!helix, 'harvest must bake a clump volume');
-  if (helix) {
-    let filled = 0;
-    for (let i = 0; i < helix.data.length; i++) if (helix.data[i] > 1e-5) filled++;
-    check(filled > 3_000 && filled < helix.data.length * 0.12,
-      `clump volume fill ${filled}/${helix.data.length} is not a pocket fog`);
-    const TEdge = clumpTransmittance(helix, [18, 0, 0], [-18, 0, 0]);
-    const THigh = clumpTransmittance(helix, [18, 3.2, 0], [-18, 3.2, 0]);
-    const lum = (t: [number, number, number]) => 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
-    const faceSamples: number[] = [];
-    for (let k = 0; k < 16; k++) {
-      const th = (k + 0.5) * (Math.PI / 8);
-      const x = 8.2 * Math.cos(th);
-      const z = 8.2 * Math.sin(th);
-      faceSamples.push(lum(clumpTransmittance(helix, [x, 10, z], [x, -10, z])));
-    }
-    faceSamples.sort((a, b) => a - b);
-    const faceLum = faceSamples[8];
-    const edgeLum = lum(TEdge);
-    const highLum = lum(THigh);
-    check(highLum > 0.55, `above the sheet must stay open (T=${highLum.toFixed(3)})`);
-    check(edgeLum < highLum * 0.5, `edge-on lane must be darker than a high ray: ${edgeLum.toFixed(3)} vs ${highLum.toFixed(3)}`);
-    check(edgeLum < 0.35, `edge-on through the disc must go dark (T=${edgeLum.toFixed(3)})`);
-    check(faceLum > 0.70, `face-on median at the solar circle must stay mostly clear (T=${faceLum.toFixed(3)})`);
-    console.log(`  clump fog: hit ${hitLum.toFixed(3)} miss ${missLum.toFixed(3)}; edge ${edgeLum.toFixed(3)} high ${highLum.toFixed(3)} face ${faceLum.toFixed(3)}`);
+  check(!!helix, 'harvest must bake the ISM volume');
+  const vol = helix ?? bakeDustVolume(seed);
+  const vol2 = bakeDustVolume(seed);
+  check(vol.data.length === vol2.data.length && vol.data[0] === vol2.data[0], 'dust volume must be deterministic');
+  const lum = (t: [number, number, number]) => 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
+  const TEdge = clumpTransmittance(vol, [18, 0, 0], [-18, 0, 0]);
+  const THigh = clumpTransmittance(vol, [18, 3.2, 0], [-18, 3.2, 0]);
+  const edgeLum = lum(TEdge);
+  const highLum = lum(THigh);
+  check(highLum >= 0.9, `above the sheet must stay open (T=${highLum.toFixed(3)})`);
+  check(edgeLum <= 0.05, `edge-on through the disc must be a dark lane (T=${edgeLum.toFixed(3)})`);
+  check(edgeLum < highLum * 0.5, `edge-on lane must be darker than a high ray: ${edgeLum.toFixed(3)} vs ${highLum.toFixed(3)}`);
+  const faceSamples: number[] = [];
+  for (let k = 0; k < 16; k++) {
+    const th = (k + 0.5) * (Math.PI / 8);
+    const x = 8.2 * Math.cos(th);
+    const z = 8.2 * Math.sin(th);
+    faceSamples.push(lum(clumpTransmittance(vol, [x, 10, z], [x, -10, z])));
   }
+  faceSamples.sort((a, b) => a - b);
+  const faceLum = faceSamples[8];
+  check(faceLum >= 0.7, `face-on median at the solar circle must stay mostly clear (T=${faceLum.toFixed(3)})`);
+  const hops: number[] = [];
+  for (let k = 0; k < 16; k++) {
+    const th = (k + 0.5) * (Math.PI / 8);
+    const x0 = 8.2 * Math.cos(th);
+    const z0 = 8.2 * Math.sin(th);
+    const x1 = x0 + Math.cos(th + 0.7);
+    const z1 = z0 + Math.sin(th + 0.7);
+    hops.push(lum(clumpTransmittance(vol, [x0, 0, z0], [x1, 0, z1])));
+  }
+  hops.sort((a, b) => a - b);
+  const hopLum = hops[8];
+  check(hopLum >= 0.75, `1 kpc midplane hop must stay mostly light (median T=${hopLum.toFixed(3)})`);
+  const { nx, ny, nz, origin, size, data } = vol;
+  const vx = size[0] / nx;
+  const vy = size[1] / ny;
+  const vz = size[2] / nz;
+  let highFilled = 0;
+  let highN = 0;
+  let midN = 0;
+  let midDense = 0;
+  let peak = 0;
+  let peakX = 0;
+  let peakY = 0;
+  let peakZ = 0;
+  for (let iz = 0; iz < nz; iz++) {
+    const z = origin[2] + (iz + 0.5) * vz;
+    for (let iy = 0; iy < ny; iy++) {
+      const y = origin[1] + (iy + 0.5) * vy;
+      for (let ix = 0; ix < nx; ix++) {
+        const x = origin[0] + (ix + 0.5) * vx;
+        const rho = data[ix + nx * (iy + ny * iz)];
+        if (Math.abs(y) >= 1) {
+          highN++;
+          if (rho > 1e-5) highFilled++;
+        }
+        if (Math.abs(y) < 0.25 && Math.hypot(x, z) < UNIVERSE.GALAXY_R_MAX) {
+          midN++;
+          if (ismAt(seed, x, y, z).field > UNIVERSE.GALAXY_DUST_DENSE_CUT) midDense++;
+        }
+        if (rho > peak) {
+          peak = rho;
+          peakX = x;
+          peakY = y;
+          peakZ = z;
+        }
+      }
+    }
+  }
+  check(highN > 0 && highFilled / highN < 0.02, `high |z| must be empty fog (${highFilled}/${highN})`);
+  check(midN > 0 && midDense / midN < 0.08, `dense tail must be rare in the midplane (${midDense}/${midN})`);
+  const TRidge = clumpTransmittance(vol, [peakX - 0.6, peakY, peakZ], [peakX + 0.6, peakY, peakZ]);
+  const ridgeLum = lum(TRidge);
+  check(ridgeLum <= 0.15, `a dense ridge must go dark (T=${ridgeLum.toFixed(3)} at ${peak.toFixed(3)})`);
+  check(TRidge[0] > TRidge[2], 'blue must die first through a ridge');
+  console.log(`  field fog: edge ${edgeLum.toFixed(3)} high ${highLum.toFixed(3)} face ${faceLum.toFixed(3)} hop ${hopLum.toFixed(3)} ridge ${ridgeLum.toFixed(3)}`);
 }
 
 // --- emission event laws: expansion, fading, hue from the clock ---

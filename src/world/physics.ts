@@ -498,18 +498,16 @@ export const UNIVERSE = {
    * photograph stretch. They screen-blend (they glow, they do not
    * add to a white bar).
    * DUST IS NOT VISIBLE. It is never drawn in EITHER layer — it is
-   * a filter on the light law. Harvest dust rows are the clouds:
-   * each clump is a sphere (radius + gain from the ISM field),
-   * baked once into a density volume and marched from the bubble
-   * centre to the star (EXTINCT_K per kpc of envelope density;
-   * EXTINCT_STEPS taps). Transmittance is exp(−τ · DUST_RGB).
-   * Blue dies first, so a cloud-edge star reddens before it
-   * vanishes; a sightline through a dense clump goes dark. That
-   * is how edge-on dark parts appear — holes, not a painted lane.
-   * EXTINCT_MAX lets a thick column saturate to black (a clump
-   * is allowed to extinguish). Dust rows stay in the census
-   * (HUD, grain-tint chemistry) but they are the fog, not a
-   * decoration.
+   * a filter on the light law. The fog is the ISM field (thin gas
+   * sheet × arms × log-normal turbulence), baked once into a density
+   * volume and marched from the bubble centre to the star
+   * (EXTINCT_STEPS taps). Transmittance is exp(−τ · DUST_RGB).
+   * Blue dies first, so a ridge-edge star reddens before it
+   * vanishes. The mean sheet builds the edge-on lane; the dense
+   * tail is a rare dark region. A short in-plane hop stays mostly
+   * clear. EXTINCT_MAX lets a thick column saturate to black.
+   * Harvest dust rows stay in the census (HUD, grain-tint chemistry)
+   * — they are not the fog.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX as the pixel floor so far shells stay findable;
    * shells under DUST_MINPX skip the march (a disc).
@@ -533,24 +531,30 @@ export const UNIVERSE = {
    *  Three median halvings from 0.65: the top eighth — showpieces. */
   GALAXY_SILHOUETTE_NEB_GAIN: 0.932,
   /** Backdrop dust: envelope radius (kpc) census gate. 0 keeps every
-   *  occupied clump. Those rows are the extinction volume — never
-   *  drawn, but every one is splat into the fog. */
+   *  occupied clump. Those rows are the census — never drawn, never
+   *  splat. The fog is the ISM field. */
   GALAXY_SILHOUETTE_DUST_R: 0,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
-  /** Sightline extinction: optical depth per kpc of clump envelope
-   *  (gain · (1 − r²/R²)). Small clouds, high K: a core goes dark,
-   *  a limb reddens, a miss stays white. Dust is a filter, not a sprite. */
-  GALAXY_EXTINCT_K: 90,
+  /** March multiplier. The volume already carries K_DIFFUSE / K_DENSE
+   *  (opacity per kpc). Leave at 1 — do not re-scale the field. */
+  GALAXY_EXTINCT_K: 1,
+  /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on
+   *  lane vs a clear face-on / in-plane hop. */
+  GALAXY_DUST_K_DIFFUSE: 0.42,
+  /** Extra opacity on the turbulent tail above DENSE_CUT. Rare ridges. */
+  GALAXY_DUST_K_DENSE: 18,
+  /** ismAt field threshold. Most of the disk is below this — flight
+   *  stays light; a hit is a significant dark region. */
+  GALAXY_DUST_DENSE_CUT: 0.22,
   /** Column cap. High enough that a dense clump (or a stack along
    *  the plane) can extinguish; not a “keep the core glorious” floor. */
   GALAXY_EXTINCT_MAX: 8,
-  /** Sightline march taps (vertex-shader cost, once per row).
-   *  Dense enough to hit a 0.025 kpc wisp on a disk-wide path. */
+  /** Sightline march taps (vertex-shader cost, once per row). */
   GALAXY_EXTINCT_STEPS: 64,
-  /** Density volume for the clump fog (xz × y). Catalog kpc.
-   *  320 × 64: a 0.025 kpc wisp is one cell on the thin axis. */
+  /** Density volume for the ISM fog (xz × y). Catalog kpc.
+   *  Resolves the ~1 kpc turbulent complexes, not 0.09 kpc cirrus. */
   GALAXY_DUST_VOL_N: 320,
   GALAXY_DUST_VOL_NY: 64,
   /** Local-layer taps: the in-bubble column is at most REGION_R
@@ -570,14 +574,11 @@ export const UNIVERSE = {
   SNR_R_MAX: 0.15,
   /** Strömgren scale: H II radius = HII_R_K · L^(1/3), clamped. */
   HII_R_K: 0.004,
-  /** Largest dust complex radius (kpc). Half the previous pocket
-   *  so covering stays a speck, not a sheet. */
+  /** Census envelope (kpc) — HUD / occupancy only, not the fog. */
   GALAXY_DUST_R_MAX: 0.16,
-  /** Photograph wisp (kpc). Small covering fraction — most sightlines
-   *  miss, so the harvest stays white except at the clouds. */
+  /** Census wisp (kpc). The fog is the ISM field, not this radius. */
   GALAXY_DUST_R_MIN: 0.025,
-  /** Peak envelope density: RHO0 + RHO1 · gain. A wisp core must
-   *  be dark (high K × this peak); the limb is the red edge. */
+  /** Leftover sphere-peak knobs. Unused: the field is the fog. */
   GALAXY_DUST_RHO0: 0.45,
   GALAXY_DUST_RHO1: 2.0,
   /** Raymarch steps through a nebula shell (perf knob; 1 = cheap slice). */
