@@ -555,8 +555,8 @@ export const UNIVERSE = {
    * vertices will not fit; ALL_CAP is the bottle. Those pins are
    * a uniform stride through each cell's occupancy so the million
    * is the mass model, not a late-B photograph plus leftovers.
-   * Nebulae stay a complete clock pass (they are not this budget).
-   * Flip false to restore the dual harvest.
+   * Nebulae stay the old showpiece gate (H II + NEB_GAIN ≈ 2k),
+   * not every faded shell. Flip false to restore the dual harvest.
    */
   GALAXY_HARVEST_ALL: true,
   GALAXY_HARVEST_ALL_CAP: 1_000_000,
