@@ -184,8 +184,20 @@ export function density(p: GalPos): number {
 }
 
 /** Lattice hash for the ISM noise, in [-1, 1]. Pure of the corner. */
+let ismCornerSeed = '';
+const ismCornerMemo = new Map<number, number>();
+
 function ismCorner(seed: string, ix: number, iy: number, iz: number): number {
-  return 2 * u01(seed, 'ism', ix, iy, iz) - 1;
+  if (seed !== ismCornerSeed) {
+    ismCornerMemo.clear();
+    ismCornerSeed = seed;
+  }
+  const key = ((ix + 512) << 20) | ((iy + 512) << 10) | (iz + 512);
+  const hit = ismCornerMemo.get(key);
+  if (hit !== undefined) return hit;
+  const v = 2 * u01(seed, 'ism', ix, iy, iz) - 1;
+  ismCornerMemo.set(key, v);
+  return v;
 }
 
 const smooth = (t: number) => t * t * (3 - 2 * t);
@@ -212,6 +224,54 @@ function gasBase(p: GalPos): number {
   return (
     Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2(p.z / U.GALAXY_ZD_GAS) * gasArm(p.R, p.theta)
   );
+}
+
+/** Same two-octave interpolated turbulence `ismNorm` drinks. In ~[-1, 1]. */
+function ismTurbulence(seed: string, x: number, y: number, z: number): number {
+  const f = UNIVERSE.GALAXY_TURB_FREQ;
+  return (
+    (ismNoise(seed, x * f, y * f, z * f) +
+      0.5 * ismNoise(seed, x * f * 2.3 + 31.7, y * f * 2.3, z * f * 2.3)) /
+    1.5
+  );
+}
+
+/**
+ * Continuous ISM at a catalog point (disk in XZ, Y is height).
+ * Same gasBase × log-normal as `ismNorm`, but no cell snap — the
+ * fog samples the field, occupancy still samples the cell.
+ */
+export function ismAt(
+  seed: string,
+  x: number,
+  y: number,
+  z: number,
+): { base: number; field: number; turb: number } {
+  const p = cartToGal(x, y, z);
+  const base = gasBase(p);
+  if (base <= 1e-5) return { base: 0, field: 0, turb: 0 };
+  const turb = ismTurbulence(seed, x, y, z);
+  const ceil = (1 + UNIVERSE.GALAXY_GAS_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
+  const field = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * turb)) / ceil);
+  return { base, field, turb };
+}
+
+/** Dust-to-gas from the mean thin-disk [Fe/H] at this radius. */
+function dustToGasAtR(R: number): number {
+  const { feh } = chemistry('thin', R, 0.5, 0.5);
+  return Math.min(1.6, Math.pow(10, 0.5 * feh));
+}
+
+/**
+ * Extinction coefficient (per kpc) at a catalog point. Diffuse sheet
+ * plus a rare dense tail. Occupancy / clump IDs do not use this.
+ */
+export function dustDensity(seed: string, x: number, y: number, z: number): number {
+  const { base, field } = ismAt(seed, x, y, z);
+  if (base <= 0 && field <= 0) return 0;
+  const d2g = dustToGasAtR(Math.hypot(x, z));
+  const dense = Math.max(0, field - UNIVERSE.GALAXY_DUST_DENSE_CUT);
+  return d2g * (UNIVERSE.GALAXY_DUST_K_DIFFUSE * base + UNIVERSE.GALAXY_DUST_K_DENSE * dense);
 }
 
 /** Pull z to the midplane when the cell overlaps the gas sheet. */
@@ -243,11 +303,7 @@ export function ismNorm(seed: string, cell: number): number {
   let v = 0;
   if (base > 1e-5) {
     const c = galToCart(p);
-    const f = UNIVERSE.GALAXY_TURB_FREQ;
-    const s =
-      (ismNoise(seed, c.x * f, c.y * f, c.z * f) +
-        0.5 * ismNoise(seed, c.x * f * 2.3 + 31.7, c.y * f * 2.3, c.z * f * 2.3)) /
-      1.5;
+    const s = ismTurbulence(seed, c.x, c.y, c.z);
     const ceil = (1 + UNIVERSE.GALAXY_GAS_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
     v = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s)) / ceil);
   }

@@ -693,7 +693,7 @@ export class GalaxyView {
     };
   }
 
-  /** Upload the baked clump fog. Empty 1³ if the harvest is not in yet. */
+  /** Upload the baked ISM fog. Empty 1³ if the harvest is not in yet. */
   private ensureDustTexture(): THREE.Data3DTexture {
     if (this.silDustTex) return this.silDustTex;
     const vol = harvestDustVolume(this.seed);

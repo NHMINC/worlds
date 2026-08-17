@@ -209,9 +209,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
-  is sightline extinction** (`extinctGlsl`): harvest clumps are
-  baked into a density volume and a star behind a cloud goes
-  dark. A harvest star is visitable
+  is sightline extinction** (`extinctGlsl`): the ISM field (thin
+  gas sheet × arms × turbulence) is baked into a density volume.
+  The mean sheet is the edge-on lane; the dense tail is a rare
+  dark ridge. Harvest clumps are the census, not the fog. A
+  harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills
   the screen (pole-on, or in the plane). Edge-on sits in the midplane
@@ -526,7 +528,7 @@ Code map (start here):
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
-| Clump fog (harvest dust → extinction volume) | `src/world/dustVolume.ts` |
+| ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
 | Galaxy explorer (luminous harvest) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
