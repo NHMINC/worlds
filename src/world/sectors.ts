@@ -430,8 +430,9 @@ function writeFromBirth(
   c: Omit<StarCloud, 'n' | 'ms'>,
   b: SlotBirth,
   alive: boolean,
+  forceCheap = false,
 ): void {
-  if (maybeClockRow(b)) {
+  if (!forceCheap && maybeClockRow(b)) {
     writeEvolved(cell, slot, i, c, b, sketchEvolve(b));
     return;
   }
@@ -803,10 +804,9 @@ function mintHarvestCloud(seed: string, t0: number): StarCloud {
 }
 
 /**
- * Harvester off. The bottle's ALL_CAP pins are a uniform stride
- * through occupancy — the mass model, every mass equally. The
- * massive-end luminous walk is not added on top. Nebulae are a
- * complete clock pass so H II / PN / SNR do not vanish.
+ * Harvester off for stars. The bottle's ALL_CAP pins are a
+ * uniform stride through occupancy — the mass model. Nebulae
+ * stay the old showpiece gate (H II + NEB_GAIN), not every shell.
  */
 function mintAllCloud(seed: string, t0: number): StarCloud {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } =
@@ -846,6 +846,7 @@ function mintAllCloud(seed: string, t0: number): StarCloud {
             if (!maybeClockRow(birth)) continue;
             const ev = sketchEvolve(birth);
             if (ev.nebula === 'none') continue;
+            if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
             if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
             writeEvolved(cell, slot, n++, c, birth, ev);
           }
@@ -882,6 +883,28 @@ function massSlotKept(seed: string, cell: number, filled: number, f: number, slo
   return false;
 }
 
+/** Mass pin: faded shells stay a star/remnant, not an envelope. */
+function writeMassPin(
+  seed: string,
+  cell: number,
+  slot: number,
+  filled: number,
+  i: number,
+  c: Omit<StarCloud, 'n' | 'ms'>,
+): void {
+  const b = slotBirthRaw(seed, cell, slot, filled);
+  if (maybeClockRow(b)) {
+    const ev = sketchEvolve(b);
+    if (ev.nebula !== 'none' && !keepSilhouettePhase(ev, packId(cell, slot))) {
+      writeFromBirth(cell, slot, i, c, b, isSlotAlive(b.massZams, b.ageGyr), true);
+      return;
+    }
+    writeEvolved(cell, slot, i, c, b, ev);
+    return;
+  }
+  writeFromBirth(cell, slot, i, c, b, isSlotAlive(b.massZams, b.ageGyr));
+}
+
 /** Uniform stride through every occupied slot. f = 1 keeps the cell. */
 function writeAllMass(
   seed: string,
@@ -896,7 +919,7 @@ function writeAllMass(
   if (nKeep >= filled) {
     for (let slot = 0; slot < filled; slot++) {
       if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-      writeBirth(seed, cell, slot, filled, n++, c);
+      writeMassPin(seed, cell, slot, filled, n++, c);
     }
     return { c, n };
   }
@@ -905,7 +928,7 @@ function writeAllMass(
   for (let k = 0; k < nKeep; k++) {
     const slot = Math.min(filled - 1, Math.floor(offset + k * stride));
     if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-    writeBirth(seed, cell, slot, filled, n++, c);
+    writeMassPin(seed, cell, slot, filled, n++, c);
   }
   return { c, n };
 }

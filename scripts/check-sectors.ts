@@ -258,7 +258,7 @@ const check = (cond: boolean, msg: string) => {
   check(inside < a.n, 'silhouette must reach past the sample ball');
   if (UNIVERSE.GALAXY_HARVEST_ALL) {
     check(stars > 800_000 && stars < 1_100_000, `all-sky stars ${stars} is not the million-mass bottle`);
-    check(nebulae > 20 && nebulae < 80_000, `all-sky nebulae ${nebulae} vanished`);
+    check(nebulae > 200 && nebulae < 8_000, `all-sky nebulae ${nebulae} is not the old showpiece set`);
     check(minStarL < 0.1, `all-sky must include faint IMF pins, min L=${minStarL}`);
   } else {
     // Dual harvest: late-B tail (M ≥ 4.2 / L ≥ 210) plus a 10⁻⁴
