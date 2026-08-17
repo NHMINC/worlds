@@ -623,17 +623,17 @@ export const UNIVERSE = {
    * (number-weighted thin is M-dwarf oatmeal). YOUNG_FLOOR is the
    * interarm remnant of that tail — arms are gasArm, not if (R).
    */
-  GALAXY_GLOW_GAIN: 0.95,
+  GALAXY_GLOW_GAIN: 1.15,
   GALAXY_GLOW_STEPS: 56,
-  GALAXY_GLOW_YOUNG: 3.6,
+  GALAXY_GLOW_YOUNG: 12,
   GALAXY_GLOW_YOUNG_FLOOR: 0.16,
   GALAXY_GLOW_OLD_TEFF: 3650,
-  GALAXY_GLOW_YOUNG_TEFF: 22000,
+  GALAXY_GLOW_YOUNG_TEFF: 28000,
   /** Photograph chroma on the two light-weighted photospheres.
-   *  teffToRgb of a 22 kK star is almost white; this is the same
+   *  teffToRgb of a hot MS star is almost white; this is the same
    *  saturation push harvest pins use, so arms read blue and the
    *  bulge cream. */
-  GALAXY_GLOW_SAT: 2.4,
+  GALAXY_GLOW_SAT: 3.6,
   /**
    * Young light follows dense gas (Schmidt — the same ISM field
    * the dust volume already is). CLUMP_REF is the dustDensity that
