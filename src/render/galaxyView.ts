@@ -57,7 +57,6 @@ const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}
  * empty space stays clear. `steps` is baked per shader.
  */
 const extinctGlsl = (steps: number) => /* glsl */ `
-  precision highp sampler3D;
   uniform float uExtinctK;
   uniform float uExtinctMax;
   uniform vec3 uDustRgb;
