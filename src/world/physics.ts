@@ -440,6 +440,8 @@ export const UNIVERSE = {
   GALAXY_DUST_RAYS: 5,
   GALAXY_DUST_LOFT: 0.95,
   GALAXY_DUST_V_CIRC: 225,
+  /** Per-voxel add of one filament. One pocket is a veil, not a wall. */
+  GALAXY_DUST_SMEAR_RHO: 0.22,
   GALAXY_DUST_N_K: 6000,
   GALAXY_DUST_MAX: 8,
   GALAXY_SFR_GAIN: 18,
@@ -529,9 +531,9 @@ export const UNIVERSE = {
    * Small — one event is a thin filament, not a blackout. Messy —
    * off the midplane, over the core, out of the disc. Edge-on the
    * stack is a mottled strip, not a painted lane. Baked once and
-   * marched from the bubble centre (EXTINCT_STEPS taps). Look:
-   * any positive column is black (hard occluder). Beer–Lambert
-   * returns when the geometry is right.
+   * marched from the bubble centre (EXTINCT_STEPS taps).
+   * Transmittance is Beer–Lambert: exp(−τ · DUST_RGB). Each
+   * pocket is a veil (SMEAR_RHO); stacked pockets go darker.
    * Harvest does not mint dust rows.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX as the pixel floor so far shells stay findable;

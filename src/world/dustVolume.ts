@@ -33,12 +33,13 @@ export function dustVolumeBounds(): {
   };
 }
 
-function splat(data: Float32Array, nx: number, ny: number, nz: number, fx: number, fy: number, fz: number): void {
+function splat(data: Float32Array, nx: number, ny: number, nz: number, fx: number, fy: number, fz: number, rho: number): void {
   const ix = Math.round(fx);
   const iy = Math.round(fy);
   const iz = Math.round(fz);
   if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return;
-  data[ix + nx * (iy + ny * iz)] = 1;
+  const i = ix + nx * (iy + ny * iz);
+  data[i] = Math.min(1, data[i] + rho);
 }
 
 /** Sample death-smears into a 3D density volume. Empty space stays 0. */
@@ -52,6 +53,7 @@ export function bakeDustVolume(seed: string): DustVolume {
   const vy = size[1] / ny;
   const vz = size[2] / nz;
   const step = Math.min(vx, vy, vz) * 0.7;
+  const rho = UNIVERSE.GALAXY_DUST_SMEAR_RHO;
   const smears = collectDustSmears(seed);
   for (let e = 0; e < smears.length; e++) {
     const ev = smears[e];
@@ -77,7 +79,7 @@ export function bakeDustVolume(seed: string): DustVolume {
         const fx = ((x2 - origin[0]) / size[0]) * nx - 0.5;
         const fy = ((py - origin[1]) / size[1]) * ny - 0.5;
         const fz = ((z2 - origin[2]) / size[2]) * nz - 0.5;
-        splat(data, nx, ny, nz, fx, fy, fz);
+        splat(data, nx, ny, nz, fx, fy, fz, rho);
       }
     }
   }
@@ -131,12 +133,13 @@ export function clumpColumnTau(
   return Math.min(tau * k * dt, cap);
 }
 
-/** RGB transmittance. Dust is a hard occluder for this look. */
+/** RGB transmittance exp(−τ · DUST_RGB). */
 export function clumpTransmittance(
   vol: DustVolume,
   from: [number, number, number],
   to: [number, number, number],
 ): [number, number, number] {
   const tau = clumpColumnTau(vol, from, to);
-  return tau > 0 ? [0, 0, 0] : [1, 1, 1];
+  const rgb = UNIVERSE.GALAXY_DUST_RGB;
+  return [Math.exp(-tau * rgb[0]), Math.exp(-tau * rgb[1]), Math.exp(-tau * rgb[2])];
 }

@@ -223,8 +223,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Each smear is an explosion that never ends, sheared into a
   trailing arc by differential rotation. Older death, longer
   swirl. Small, messy, off the midplane. Edge-on the stack is a
-  mottled strip, not a painted lane. Look: any positive column
-  is black (hard occluder). Not harvest rows. A
+  mottled strip, not a painted lane. Each pocket is a veil
+  (Beer–Lambert); stacked pockets go darker. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills

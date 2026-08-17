@@ -74,10 +74,8 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     // texture3D fails to compile and the whole harvest Points program dies.
     return texture(uDustVol, uv).r;
   }
-  // Look: dust is a hard occluder. Any positive column from the
-  // bubble to the row is black — the blank bands are the fog's
-  // true shape. Beer–Lambert (exp(−τ · DUST_RGB)) comes back
-  // when the geometry is right.
+  // Beer–Lambert: T = exp(−τ · DUST_RGB). Each smear is a veil,
+  // not a wall. Blue dies first. Stacked pockets go darker.
   vec3 extinctT(vec3 from, vec3 to) {
     float dCat = length(to - from);
     float dt = dCat / ${glslFloat(steps)};
@@ -87,7 +85,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
       tau += extinctRho(from + dir * ((float(i) + 0.5) * dt));
     }
     tau = min(tau * uExtinctK * dt, uExtinctMax);
-    return tau > 0.0 ? vec3(0.0) : vec3(1.0);
+    return exp(-tau * uDustRgb);
   }
 `;
 
