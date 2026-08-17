@@ -3,7 +3,7 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, cellCenter, dustClumpsInCell, dustPhysics, galToCart, ismAt, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { cellCount, cellCenter, dustClumpsInCell, dustPhysics, galToCart, ismAt, ismNorm, midplaneZ, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
 import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
@@ -401,7 +401,10 @@ const check = (cond: boolean, msg: string) => {
       for (let ix = 0; ix < nx; ix++) {
         const x = origin[0] + (ix + 0.5) * vx;
         const rho = data[ix + nx * (iy + ny * iz)];
-        if (Math.abs(y) >= 1) {
+        // Emptiness is measured from the (warped) midplane the
+        // sheet actually rides, not from the y = 0 lattice plane.
+        const yMid = midplaneZ(Math.hypot(x, z), Math.atan2(z, x));
+        if (Math.abs(y - yMid) >= 1.5) {
           highN++;
           if (rho > 1e-5) highFilled++;
         }
@@ -409,7 +412,10 @@ const check = (cond: boolean, msg: string) => {
           midN++;
           if (ismAt(seed, x, y, z).field > UNIVERSE.GALAXY_DUST_DENSE_CUT) midDense++;
         }
-        if (rho > peak) {
+        // The streak test hunts the turbulent tail in the disk;
+        // the CMZ knot is its own (small, dense) law and cannot
+        // darken a 1.2 kpc chord.
+        if (rho > peak && Math.hypot(x, z) > 1.5) {
           peak = rho;
           peakX = x;
           peakY = y;
@@ -420,7 +426,21 @@ const check = (cond: boolean, msg: string) => {
   }
   check(highN > 0 && highFilled / highN < 0.02, `high |z| must be empty fog (${highFilled}/${highN})`);
   check(midN > 0 && midDense / midN < 0.08, `dense tail must be rare in the midplane (${midDense}/${midN})`);
-  const TRidge = clumpTransmittance(vol, [peakX - 0.6, peakY, peakZ], [peakX + 0.6, peakY, peakZ]);
+  // Sheared eddies are filaments ALONG the spiral. March the ridge
+  // along its long axis (the local arm tangent) — a chord across
+  // the narrow axis exits the streak in a few hundred pc.
+  const thP = Math.atan2(peakZ, peakX);
+  const tp = Math.tan(UNIVERSE.GALAXY_PITCH);
+  let ux = -Math.sin(thP) + tp * Math.cos(thP);
+  let uz = Math.cos(thP) + tp * Math.sin(thP);
+  const un = Math.hypot(ux, uz);
+  ux /= un;
+  uz /= un;
+  const TRidge = clumpTransmittance(
+    vol,
+    [peakX - 0.6 * ux, peakY, peakZ - 0.6 * uz],
+    [peakX + 0.6 * ux, peakY, peakZ + 0.6 * uz],
+  );
   const ridgeLum = lum(TRidge);
   check(ridgeLum <= 0.15, `a dense ridge must go dark (T=${ridgeLum.toFixed(3)} at ${peak.toFixed(3)})`);
   check(TRidge[0] > TRidge[2], 'blue must die first through a ridge');

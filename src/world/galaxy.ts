@@ -279,16 +279,61 @@ function dustToGasAtR(R: number): number {
 }
 
 /**
+ * Optical gas-sheet scale height (kpc). Real gas flares: e-fold per
+ * GAS_FLARE_RD outward of the solar circle, thinning inward toward
+ * the ~50 pc central molecular zone. `dustGasBase` conserves the
+ * column through the ZD_FLOOR the baked volume can resolve.
+ */
+export function gasScaleHeight(R: number): number {
+  return UNIVERSE.GALAXY_ZD_GAS * Math.exp((R - UNIVERSE.R_SUN) / UNIVERSE.GALAXY_GAS_FLARE_RD);
+}
+
+/**
+ * Radial molecular profile: exponential envelope × (bar-swept
+ * hole × molecular ring) + nuclear knot. The bar moves gas, it
+ * does not destroy it — the ring and the CMZ are where it went.
+ */
+export function molecularRadial(R: number): number {
+  const U = UNIVERSE;
+  const envelope = Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS));
+  const hole = 1 - U.GALAXY_GAS_HOLE_A * Math.exp(-((R / U.GALAXY_GAS_HOLE_R) ** 2));
+  const ring = 1 + U.GALAXY_GAS_RING_A * Math.exp(-0.5 * ((R - U.GALAXY_GAS_RING_R) / U.GALAXY_GAS_RING_W) ** 2);
+  const cmz = U.GALAXY_GAS_CMZ_A * Math.exp(-((R / U.GALAXY_GAS_CMZ_R) ** 2));
+  return envelope * hole * ring + cmz;
+}
+
+/**
+ * The OPTICAL gas sheet (fog only). It rides the same warped,
+ * corrugated midplane as the stars — gas warps more than stars in
+ * real disks, so a flat fog under a warped star ribbon was
+ * backwards — flares outward, and carries the molecular ring.
+ * Amplitude scales by zdTrue/zd so a sheet thinner than the bake's
+ * ZD_FLOOR keeps its column (τ conserved). `gasBase` (occupancy,
+ * SFR age law, H II) stays on the flat catalog sheet: moving those
+ * moves star ages and addresses — a gen-version decision, not a
+ * fog tweak.
+ */
+function dustGasBase(p: GalPos): number {
+  const zRel = p.z - midplaneZ(p.R, p.theta);
+  const zdTrue = gasScaleHeight(p.R);
+  const zd = Math.max(zdTrue, UNIVERSE.GALAXY_DUST_ZD_FLOOR);
+  return molecularRadial(p.R) * (zdTrue / zd) * sech2(zRel / zd) * gasArm(p.R, p.theta);
+}
+
+/**
  * Extinction coefficient (per kpc) at a catalog point. The mean
- * sheet is the thin gas disk (pancake from geometry, not a painted
- * lane). Positive sheared turbulence raises sparse streaks and
- * blobs on that sheet — the photograph. Occupancy / clump IDs
- * still drink `ismAt.field`; they do not use this.
+ * sheet is the warped, flared, ringed molecular disk (pancake from
+ * geometry, not a painted lane). Positive sheared turbulence raises
+ * sparse streaks and blobs on that sheet — the photograph.
+ * Occupancy / clump IDs still drink `ismAt.field`; they do not use
+ * this.
  */
 export function dustDensity(seed: string, x: number, y: number, z: number): number {
-  const { base, turb } = ismAt(seed, x, y, z);
-  if (base <= 0) return 0;
-  const d2g = dustToGasAtR(Math.hypot(x, z));
+  const p = cartToGal(x, y, z);
+  const base = dustGasBase(p);
+  if (base <= 1e-5) return 0;
+  const turb = ismTurbulence(seed, x, y, z);
+  const d2g = dustToGasAtR(p.R);
   const lane = Math.pow(Math.max(0, turb), UNIVERSE.GALAXY_DUST_STREAK);
   return d2g * base * (UNIVERSE.GALAXY_DUST_K_DIFFUSE + UNIVERSE.GALAXY_DUST_K_DENSE * lane);
 }
