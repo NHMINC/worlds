@@ -445,14 +445,16 @@ export const UNIVERSE = {
   GALAXY_POPULATION: 1_000_000_000,
 
   /**
-   * The explorer sky is the luminous harvest (SILHOUETTE_*), not a
-   * magnifier ball. You steer by bright stars, nebulae, and dust
-   * (dust is extinction). “Here” is a focus in front of the camera;
-   * other samples can highlight as points of interest. The faint
-   * 95% — adjacent dull stars around a camp — is a later survey.
-   * GALAXY_REGION_* is that future neighbourhood law, not the
-   * explorer. Face-on / Edge-on slide the viewpoint far enough
-   * that the disk fits the screen. View is 1:1 catalog kpc.
+   * The explorer sky is the harvest: the luminous tail
+   * (SILHOUETTE_*) plus a sparse occupancy shape sample
+   * (HARVEST_SHAPE_*). You steer by those stars, nebulae, and
+   * dust (dust is extinction). “Here” is a focus in front of the
+   * camera; other samples can highlight as points of interest.
+   * The faint 95% around a camp — every neighbour, not the
+   * 10⁻⁴ shape pin — is a later survey. GALAXY_REGION_* is that
+   * future neighbourhood law, not the explorer. Face-on / Edge-on
+   * slide the viewpoint far enough that the disk fits the screen.
+   * View is 1:1 catalog kpc.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,
@@ -476,14 +478,18 @@ export const UNIVERSE = {
   /** Far cells: keep only this upper quantile of the IMF. */
   GALAXY_REGION_U_FAR: 0.9985,
   /**
-   * Distant luminous backdrop (region dive). The flyable ball does
-   * not change. Outside it, a magnitude-limited harvest of the rest
-   * of the disk — living stars above SILHOUETTE_L (late-B and
-   * hotter, giants, WR; SILHOUETTE_M is the IMF slot gate), the
-   * youngest / brightest nebula hosts (gain ≥ SILHOUETTE_NEB_GAIN),
-   * and the full dust-clump census (SILHOUETTE_DUST_R = 0; the rows
-   * are the extinction volume — never drawn, they are the fog)
-   * — is placed in the same catalog frame. Distant discs are toy angular
+   * Distant harvest (region dive). The flyable ball does
+   * not change. Outside it, the rest of the disk is two laws in
+   * one mint: the luminous tail — living stars above SILHOUETTE_L
+   * (late-B and hotter, giants, WR; SILHOUETTE_M is the IMF slot
+   * gate) — and a 10⁻⁴ occupancy shape sample of long-lived
+   * photospheres (HARVEST_SHAPE_*), so the sky follows the mass
+   * model (core / bar / disk) and not only the young massive
+   * clock. Plus the youngest / brightest nebula hosts (gain ≥
+   * SILHOUETTE_NEB_GAIN), and the full dust-clump census
+   * (SILHOUETTE_DUST_R = 0; the rows are the extinction volume —
+   * never drawn, they are the fog) — in the same catalog frame.
+   * Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
    * so rings and filament crossings are geometry. Colour is a LINE
@@ -535,6 +541,17 @@ export const UNIVERSE = {
    *  occupied clump. Those rows are the census — never drawn, never
    *  splat. The fog is the ISM field. */
   GALAXY_SILHOUETTE_DUST_R: 0,
+  /**
+   * Occupancy shape sample. The luminous tail is a late-B photograph;
+   * bulge ages kill that tail, so a tail-only sky is a young-disk
+   * map, not the mass model. Keep a living photosphere at this
+   * fraction of each cell's occupancy, drawn from the long-lived
+   * band [SHAPE_M, SILHOUETTE_M) so it does not overlap the tail
+   * walk. One law — no if (core). 10⁻⁴ of ~1.6×10⁹ slots is ~1.6×10⁵
+   * extra pins; G and up (L_ms ≥ 1) so the 7px floor can still paint.
+   */
+  GALAXY_HARVEST_SHAPE_F: 1e-4,
+  GALAXY_HARVEST_SHAPE_M: 1.0,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,

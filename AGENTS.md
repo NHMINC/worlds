@@ -119,7 +119,9 @@ function. Every occupied slot is addressable, the way No Man’s Sky
 addresses a system: the id *is* the star, not an index into a stored
 list. The **galaxy explorer** is how you discover: the Hubble glow
 is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
-The explorer shows the luminous harvest; a later survey will
+The explorer shows the harvest: the luminous tail plus a
+10⁻⁴ occupancy shape sample so the sky follows the mass
+model, not only young massive stars. A later survey will
 resolve the faint neighbours of a camp. Set course loads a
 picked harvest star (or the here / POI focus). We **store
 visits only** (overlays, camera, labels). We do
@@ -187,13 +189,17 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   front only multiplies the same Chapman transmittance the sky already
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
-- **The explorer is the luminous harvest, not a magnifier ball.**
-  App boot mints the bright catalog once (`prepareUniverse` /
-  `buildSilhouetteCloud`) — living stars above `SILHOUETTE_L`
-  (late-B MS floor and hotter), nebulae, and dust as sightline
-  extinction. You steer by those
-  upper-magnitude objects. The faint 95% (adjacent dull stars)
-  around a camp) is a later survey, not this sky. “Here” (the
+- **The explorer is the harvest, not a magnifier ball.**
+  App boot mints the catalog once (`prepareUniverse` /
+  `buildSilhouetteCloud`) — the luminous tail (living stars
+  above `SILHOUETTE_L`, late-B MS floor and hotter), a 10⁻⁴
+  occupancy shape sample of long-lived photospheres
+  (`HARVEST_SHAPE_F` / `HARVEST_SHAPE_M`, the G-and-up band
+  below the tail so the core / bar / disk read as mass, not
+  only as a young-disk clock), nebulae, and dust as sightline
+  extinction. You steer by those objects. The faint 95%
+  (every adjacent dull star around a camp) is a later survey,
+  not this sky. “Here” (the
   loaded star, else `homeStar`) is a **focus highlight** parked
   in front of the camera; visited samples can mark other points
   of interest. The explorer canvas stays alive after Return /
@@ -537,7 +543,7 @@ Code map (start here):
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
-| Galaxy explorer (luminous harvest) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (harvest) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |

@@ -17,6 +17,7 @@
  * stored; the map is mathematics.
  */
 import { UNIVERSE } from './physics';
+import { mulberry32, xmur3 } from './rng';
 import {
   cellCenter,
   cellsOverlappingAnnulus,
@@ -550,6 +551,20 @@ function keepSilhouettePhase(ev: ReturnType<typeof evolve>, id: number): boolean
   return isLuminousPhase(ev.phase, ev.mk, ev.luminosity) && ev.luminosity >= UNIVERSE.GALAXY_SILHOUETTE_L;
 }
 
+/** Living photosphere — not a remnant, not a nebula. Shape sample only. */
+function keepShapePhotosphere(ev: ReturnType<typeof evolve>): boolean {
+  if (ev.nebula !== 'none') return false;
+  if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
+    return false;
+  }
+  return ev.luminosity >= 0.3;
+}
+
+/** Deterministic [0,1) for the occupancy shape sample. Not a player seed. */
+function harvestShapeUnit(seed: string, cell: number, lane: number, attempt: number): number {
+  return mulberry32(xmur3(`galaxy:${seed}:harvestShape:${cell}:${lane}:${attempt}`)())();
+}
+
 /**
  * One point per occupied slot in an arc tile. Kept for the saucer
  * tessellation checks — play uses `buildRegionCloud`.
@@ -708,12 +723,14 @@ function gasDensityCeil(R: number, z: number): number {
 }
 
 /**
- * Magnitude-limited luminous tail of the whole disk. Living stars
- * above SILHOUETTE_L, young/bright nebula hosts, and dust envelopes
- * larger than SILHOUETTE_DUST_R. Sparse cells emit nothing. Minted
- * once per seed — this IS the explorer sky. Harvest stars are
- * pickable. Dust ids are (cell, clump), never catalog stars.
- * Dust rows are the census; the extinction volume is the ISM field.
+ * Whole-disk harvest: luminous tail + occupancy shape sample.
+ * Living stars above SILHOUETTE_L, a 10⁻⁴ living-photosphere
+ * sample of the mass model (HARVEST_SHAPE_*), young/bright nebula
+ * hosts, and dust envelopes larger than SILHOUETTE_DUST_R. Sparse
+ * cells emit nothing. Minted once per seed — this IS the explorer
+ * sky. Harvest stars are pickable. Dust ids are (cell, clump),
+ * never catalog stars. Dust rows are the census; the extinction
+ * volume is the ISM field.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
@@ -723,8 +740,10 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const mLo = UNIVERSE.GALAXY_SILHOUETTE_M;
   const uLive = imfQuantile(mLo);
+  const uPhoto = imfQuantile(UNIVERSE.GALAXY_HARVEST_SHAPE_M);
   const liveFrac = Math.max(1e-6, 1 - uLive);
-  let c = allocCloud(180_000);
+  const shapeF = UNIVERSE.GALAXY_HARVEST_SHAPE_F;
+  let c = allocCloud(280_000);
   let n = 0;
   for (let ir = 0; ir < nr; ir++) {
     const vol = catalogCellVolume(ir);
@@ -733,24 +752,36 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
       const ceil = thinDensityCeil(R, z) * vol * nK;
       const dustCeil = gasDensityCeil(R, z) * vol * UNIVERSE.GALAXY_DUST_N_K;
-      if (ceil * liveFrac < 0.2 && dustCeil < 0.05) continue;
+      // Walk the ring if the tail, the dust, or the shape sample
+      // could emit. Shape is occupancy × f — do not drop a mass
+      // ring just because its massive stars are already dead.
+      if (ceil * liveFrac < 0.2 && dustCeil < 0.05 && ceil * shapeF * nth < 0.15) continue;
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
         const mid = cellCenter(cell);
         const parts = densityParts(mid);
         const spheroid = mid.R < UNIVERSE.GALAXY_BOX_A * 2.6 ? parts.bulge + parts.bar : 0;
         const expect = (parts.thin + spheroid) * vol * nK;
-        if (expect * liveFrac >= 0.2) {
+        const wantTail = expect * liveFrac >= 0.2;
+        const wantShape = ceil * shapeF >= 1e-8;
+        if (wantTail || wantShape) {
           const filled = slotsInCell(seed, cell);
           if (filled > 0) {
-            const sLive = Math.floor(uLive * filled);
-            for (let slot = sLive; slot < filled; slot++) {
-              const birth = slotBirthRaw(seed, cell, slot, filled);
-              if (!maybeClockRow(birth)) continue;
-              const ev = sketchEvolve(birth);
-              if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
-              if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-              writeEvolved(cell, slot, n++, c, birth, ev);
+            if (wantTail) {
+              const sLive = Math.floor(uLive * filled);
+              for (let slot = sLive; slot < filled; slot++) {
+                const birth = slotBirthRaw(seed, cell, slot, filled);
+                if (!maybeClockRow(birth)) continue;
+                const ev = sketchEvolve(birth);
+                if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
+                if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+                writeEvolved(cell, slot, n++, c, birth, ev);
+              }
+            }
+            if (wantShape) {
+              const grown = writeShapeSample(seed, cell, filled, uPhoto, uLive, c, n);
+              c = grown.c;
+              n = grown.n;
             }
           }
         }
@@ -769,6 +800,53 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
   silhouetteMemo = { seed, cloud };
   rememberDustVolume(seed);
   return cloud;
+}
+
+/**
+ * One living photosphere per occupancy × SHAPE_F, picked in the
+ * long-lived band [SHAPE_M, SILHOUETTE_M). Uniform in that band so
+ * the sample is the mass model, not a second luminous walk. Dead
+ * 2–4 M☉ slots retry; the longest-lived slot (low-mass end) is
+ * the fallback. Remnants and nebulae stay on the tight tail gate.
+ */
+function writeShapeSample(
+  seed: string,
+  cell: number,
+  filled: number,
+  uPhoto: number,
+  uLive: number,
+  c: Omit<StarCloud, 'n' | 'ms'>,
+  n: number,
+): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } {
+  const expect = filled * UNIVERSE.GALAXY_HARVEST_SHAPE_F;
+  if (expect <= 0) return { c, n };
+  const s0 = Math.min(filled, Math.floor(uPhoto * filled));
+  const s1 = Math.min(filled, Math.floor(uLive * filled));
+  const band = s1 - s0;
+  if (band <= 0) return { c, n };
+  const nFloor = Math.floor(expect);
+  const frac = expect - nFloor;
+  const nKeep = nFloor + (harvestShapeUnit(seed, cell, 0, 0) < frac ? 1 : 0);
+  for (let k = 0; k < nKeep; k++) {
+    let wrote = false;
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const slot = s0 + Math.floor(harvestShapeUnit(seed, cell, k + 1, attempt) * band);
+      const birth = slotBirthRaw(seed, cell, slot, filled);
+      const ev = sketchEvolve(birth);
+      if (!keepShapePhotosphere(ev)) continue;
+      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+      writeEvolved(cell, slot, n++, c, birth, ev);
+      wrote = true;
+      break;
+    }
+    if (wrote) continue;
+    const birth = slotBirthRaw(seed, cell, s0, filled);
+    const ev = sketchEvolve(birth);
+    if (!keepShapePhotosphere(ev)) continue;
+    if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+    writeEvolved(cell, s0, n++, c, birth, ev);
+  }
+  return { c, n };
 }
 
 function cellDist(cell: number, x: number, y: number, z: number): number {
