@@ -470,6 +470,12 @@ are overlays. See **Player layer**.
 
 ## How we change things
 
+These procedural universes are **extremely delicate**. A need to fix
+something in one area is not a licence to adjust something in another.
+Work **incrementally**: one law, one knob family, one failure mode.
+Failure to solve a problem is not a licence to damage other parts of
+the universe. Leave the rest of the bottle alone.
+
 1. **Reproduce with a seed**, not a one-off mesh edit. Sample `objectAt`,
    land, walk. `scripts/check-galaxy.ts` is the
    catalog law; smoke scripts in `scripts/smoke-*.mjs` (Playwright against
@@ -562,5 +568,6 @@ broken.
 
 If a picture looks wrong, write down which law failed (opacity vs
 backdrop, handoff radius vs tessellation, insolation frame, missing
-precip, etc.) and fix that — then walk a high-sea world, a hothouse, a
-night side, and an airless rock before calling it done.
+precip, etc.) and fix **that** — then walk a high-sea world, a hothouse, a
+night side, and an airless rock before calling it done. Do not retune
+an unrelated constant because the first fix did not land.
