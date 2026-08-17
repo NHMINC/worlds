@@ -625,11 +625,12 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     const d = cellDist(cells[i], x, y, z);
     // Far cells keep the massive tail. A harvest star can sit a
     // scale-height away from its lattice centre (the core bump);
-    // if this cell can reach the tap, include that tail so the
-    // star you are on does not vanish.
+    // if this cell can reach the tap, include the harvest band
+    // (shape sample + luminous tail) so the star you are on
+    // does not vanish.
     let s0 = Math.floor(regionImfFloor(d) * f);
     if (d <= slotScatterKpc() + r) {
-      s0 = Math.min(s0, Math.floor(imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M) * f));
+      s0 = Math.min(s0, Math.floor(imfQuantile(UNIVERSE.GALAXY_HARVEST_SHAPE_M) * f));
     }
     slot0[i] = s0;
     cap += f - s0;
@@ -802,6 +803,31 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
   return cloud;
 }
 
+/** MS photosphere is a cheap birth row; only the giant window needs the clock. */
+function tryShapeSlot(
+  seed: string,
+  cell: number,
+  slot: number,
+  filled: number,
+  c: Omit<StarCloud, 'n' | 'ms'>,
+  n: number,
+): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } | null {
+  const birth = slotBirthRaw(seed, cell, slot, filled);
+  const tMs = msLifetime(birth.massZams);
+  if (birth.ageGyr < tMs) {
+    if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+    writeFromBirth(cell, slot, n++, c, birth, true);
+    return { c, n };
+  }
+  const deadFor = birth.ageGyr - tMs - giantWindow(birth.massZams);
+  if (deadFor > 0) return null;
+  const ev = sketchEvolve(birth);
+  if (!keepShapePhotosphere(ev)) return null;
+  if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+  writeEvolved(cell, slot, n++, c, birth, ev);
+  return { c, n };
+}
+
 /**
  * One living photosphere per occupancy × SHAPE_F, picked in the
  * long-lived band [SHAPE_M, SILHOUETTE_M). Uniform in that band so
@@ -831,20 +857,18 @@ function writeShapeSample(
     let wrote = false;
     for (let attempt = 0; attempt < 4; attempt++) {
       const slot = s0 + Math.floor(harvestShapeUnit(seed, cell, k + 1, attempt) * band);
-      const birth = slotBirthRaw(seed, cell, slot, filled);
-      const ev = sketchEvolve(birth);
-      if (!keepShapePhotosphere(ev)) continue;
-      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-      writeEvolved(cell, slot, n++, c, birth, ev);
+      const grown = tryShapeSlot(seed, cell, slot, filled, c, n);
+      if (!grown) continue;
+      c = grown.c;
+      n = grown.n;
       wrote = true;
       break;
     }
     if (wrote) continue;
-    const birth = slotBirthRaw(seed, cell, s0, filled);
-    const ev = sketchEvolve(birth);
-    if (!keepShapePhotosphere(ev)) continue;
-    if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-    writeEvolved(cell, s0, n++, c, birth, ev);
+    const grown = tryShapeSlot(seed, cell, s0, filled, c, n);
+    if (!grown) continue;
+    c = grown.c;
+    n = grown.n;
   }
   return { c, n };
 }

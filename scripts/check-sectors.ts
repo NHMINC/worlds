@@ -290,7 +290,7 @@ const check = (cond: boolean, msg: string) => {
   // Visit handshake: a backdrop star must be a local keeper when the ball sits on it.
   let host = -1;
   for (let i = 0; i < a.n; i++) {
-    if (a.kind[i] === KIND_STAR && a.lum[i] >= 8) {
+    if (a.kind[i] === KIND_STAR && a.lum[i] >= UNIVERSE.GALAXY_SILHOUETTE_L) {
       host = i;
       break;
     }
