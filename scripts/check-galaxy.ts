@@ -19,11 +19,13 @@ import {
   harvestChroma,
   harvestGlowPx,
   harvestPinCell,
+  harvestPinWeight,
   harvestPsf,
   harvestShine,
   harvestStarPx,
   harvestSuperExtra,
   HARVEST_L_REF,
+  HARVEST_PIN_AA,
   HARVEST_PIN_CANVAS,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_DIST_REF,
@@ -345,6 +347,11 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
     'diamond middle must be four cells wide');
   check(!harvestPinCell(0, 0) && !harvestPinCell(2, 0) && !harvestPinCell(3, 3),
     'diamond must discard the 4×4 corners and the empty row');
+  check(harvestPinWeight(1.5, 1.5) > 0.95, `plus core must be solid, got ${harvestPinWeight(1.5, 1.5)}`);
+  const tipEdge = harvestPinWeight(1.5, 0);
+  check(tipEdge > 0.35 && tipEdge < 0.65,
+    `plus tip must be half at the AA edge, got ${tipEdge.toFixed(2)} (aa=${HARVEST_PIN_AA})`);
+  check(harvestPinWeight(3.5, 3.5) < 0.05, `plus must die in the empty corner, got ${harvestPinWeight(3.5, 3.5)}`);
   const pin = harvestGlowPx(HARVEST_L_REF, 1);
   const midL = harvestGlowPx(1000, 1);
   const hotL = harvestGlowPx(8000, 1);

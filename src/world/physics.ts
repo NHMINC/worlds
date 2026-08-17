@@ -511,9 +511,10 @@ export const UNIVERSE = {
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX as the pixel floor so far shells stay findable;
    * shells under DUST_MINPX skip the march (a disc).
-   * Stars are a 6-pixel diamond of photosphere colour (coverage
-   * so a 1-device-pixel hop still overlaps) — a point of light,
-   * no disc, no bloom sprite. Intensity is L^P · (D/d)^q
+   * Stars are a filtered plus of photosphere colour (coverage
+   * so a 1-device-pixel hop still overlaps; AA so the tips do
+   * not strobe) — a point of light, no disc, no bloom sprite.
+   * Intensity is L^P · (D/d)^q
    * then I/(1+I) so hue survives. STAR_PX is unused for stars
    * (kept so older comments that name the knob still resolve).
    * SUPER_GAIN is leftover exposure. Optical approximations,

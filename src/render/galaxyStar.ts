@@ -1,7 +1,8 @@
 /**
  * The explorer sky is the luminous harvest. A star is a point:
- * a 6-pixel diamond floor (coverage so a 1-device-pixel hop still
- * overlaps) wearing Teff colour, plus the eye's PSF once the
+ * a filtered plus floor (same 4-direction support as the 6-pixel
+ * diamond, with a 1-device-pixel AA so a slide does not strobe
+ * the tips) wearing Teff colour, plus the eye's PSF once the
  * wings need more room than that stamp. Magnitude lifts the wings
  * of that PSF (a Gaussian core and a Lorentzian tail, the same
  * glare shape as the in-system sun). The sprite is only room for
@@ -72,17 +73,21 @@ export const HARVEST_PSF_B = 3.2;
 export const HARVEST_PSF_THRESH = 0.018;
 /**
  * Floor-pin canvas (device px). A 1px GL_POINTS sprite hops to
- * the neighbour pixel as uCenter slides. The stamp is a 6-pixel
- * diamond on this 4×4 canvas so a one-pixel hop still overlaps
- * in ±x and ±y:
+ * the neighbour pixel as uCenter slides. The stamp is a plus on
+ * this 4×4 canvas so a one-pixel hop still overlaps in ±x and ±y:
  *   . # . .
  *   # # # #
  *   . # . .
  *   . . . .
- * Bright rows whose PSF wings need more room keep the Gaussian.
- * Not a filled disc — six fragments, then discard.
+ * Binary cells flashed: the tips are 1-pixel features, and distant
+ * floor stars crawl slowly, so every snap was visible. The same
+ * plus is a pair of boxes with PIN_AA of AA — energy slides
+ * instead of six pixels slamming on/off. Bright rows whose PSF
+ * wings need more room keep the Gaussian. Not a filled disc.
  */
 export const HARVEST_PIN_CANVAS = 4;
+/** Half-width (device px) of the floor-plus AA. 0.5 = one pixel of fade. */
+export const HARVEST_PIN_AA = 0.5;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
  * Steep in L so an O outshines the harvest floor. Shallow in d
@@ -113,12 +118,35 @@ export function glowRadiusKpc(L: number, dim = false): number {
   return Math.max(dim ? GLOW_DIM : PHOTO_MIN, Math.min(PHOTO_MAX, r));
 }
 
-/** True for the six diamond cells. Same mask the harvest fragment uses. */
+function pinBoxSd(x: number, y: number, cx: number, cy: number, hx: number, hy: number): number {
+  const dx = Math.abs(x - cx) - hx;
+  const dy = Math.abs(y - cy) - hy;
+  const ox = Math.max(dx, 0);
+  const oy = Math.max(dy, 0);
+  return Math.hypot(ox, oy) + Math.min(Math.max(dx, dy), 0);
+}
+
+function pinSmoothstep(e0: number, e1: number, x: number): number {
+  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * Floor-plus weight at a point in 4×4 canvas space (0..4).
+ * Same formula the harvest fragment uses: union of a 4-wide bar
+ * and a 3-tall stem, then 1-device-pixel AA.
+ */
+export function harvestPinWeight(x: number, y: number): number {
+  const bar = pinBoxSd(x, y, 2, 1.5, 2, 0.5);
+  const stem = pinBoxSd(x, y, 1.5, 1.5, 0.5, 1.5);
+  const sd = Math.min(bar, stem);
+  const w = 1 - pinSmoothstep(-HARVEST_PIN_AA, HARVEST_PIN_AA, sd);
+  return Math.max(0, Math.min(1, w));
+}
+
+/** True when the cell centre is inside the plus (weight > ½). */
 export function harvestPinCell(x: number, y: number): boolean {
-  if (x < 0 || y < 0 || x >= HARVEST_PIN_CANVAS || y >= HARVEST_PIN_CANVAS) {
-    return false;
-  }
-  return (y === 0 && x === 1) || y === 1 || (y === 2 && x === 1);
+  return harvestPinWeight(x + 0.5, y + 0.5) > 0.5;
 }
 
 /** Harvest floor paint size (device px): the diamond canvas. */

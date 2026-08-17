@@ -201,8 +201,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   opens the same way on a discovered living host. The camera
   sits at the viewpoint centre. Gestures **slide** through
   catalog space (1:1, no `VIEW_R` stretch).   Harvest stars are
-  **point sources**: a 6-pixel diamond floor (4-wide bar, one
-  above, one below — so a 1-device-pixel hop still overlaps)
+  **point sources**: a filtered plus floor (4-wide bar, one
+  above, one below — so a 1-device-pixel hop still overlaps;
+  1px AA so the tips do not strobe as the sprite slides)
   plus the eye’s PSF once the wings need more room than that
   stamp (Gaussian core + Lorentzian tail — the same glare
   shape as the in-system sun). Magnitude lifts the wings with
