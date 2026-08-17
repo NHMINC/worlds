@@ -119,12 +119,11 @@ function. Every occupied slot is addressable, the way No Man’s Sky
 addresses a system: the id *is* the star, not an index into a stored
 list. The **galaxy explorer** is how you discover: the Hubble glow
 is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
-The explorer shows the harvest: the luminous tail plus a
-10⁻⁴ occupancy shape sample so the sky follows the mass
-model, not only young massive stars. `HARVEST_ALL` is a
-look test that turns those gates off: up to one million pins
-of photograph light (giant branch + hot MS; I from L), nebulae
-on the old showpiece gate. A later survey will
+The explorer shows the harvest: one magnitude-limited survey —
+every living star above `SILHOUETTE_L` (~10⁵ stars; the count
+is the floor's outcome, not a cap) plus the showpiece nebulae.
+The shape sample and the `HARVEST_ALL` million-pin photograph
+are retired. A later survey will
 resolve the faint neighbours of a camp. Set course loads a
 picked harvest star (or the here / POI focus). We **store
 visits only** (overlays, camera, labels). We do
@@ -194,13 +193,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `src/render/star.ts`.
 - **The explorer is the harvest, not a magnifier ball.**
   App boot mints the catalog once (`prepareUniverse` /
-  `buildSilhouetteCloud`) — the luminous tail (living stars
-  above `SILHOUETTE_L`, late-B MS floor and hotter), a 10⁻⁴
-  occupancy shape sample of long-lived photospheres
-  (`HARVEST_SHAPE_F` / `HARVEST_SHAPE_M`, the G-and-up band
-  below the tail so the core / bar / disk read as mass, not
-  only as a young-disk clock), nebulae, and dust as sightline
-  extinction. You steer by those objects. The faint 95%
+  `buildSilhouetteCloud`) — one magnitude-limited survey:
+  every living star above `SILHOUETTE_L` (late-B MS floor and
+  hotter, giants, WR; `SILHOUETTE_M` is the IMF slot gate that
+  keeps the walk cheap), ~10⁵ stars as the floor's outcome,
+  plus nebulae, and dust as sightline extinction. Old faint
+  populations do not clear the floor, so the core is dark
+  except its nebula hosts — that is the survey's honest light,
+  not a bug. You steer by those objects. The faint bulk
   (every adjacent dull star around a camp) is a later survey,
   not this sky. “Here” (the
   loaded star, else `homeStar`) is a **focus highlight** parked

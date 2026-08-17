@@ -86,7 +86,7 @@ export const HARVEST_PIN_CORE = 0.85;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
  * Steep enough in L that an O still outshines the floor; shallow
- * enough that a K-giant (ALL_L) clears the pin discard instead of
+ * enough that the survey floor clears the pin discard instead of
  * reading as a dark-filtered sky. Shallow in d so approaching
  * does not inflate a disc. Not an I_MIN floor — that painted
  * every pin at the same I (yellow fog).

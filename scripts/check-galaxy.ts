@@ -447,26 +447,14 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(HARVEST_L_REF === 300, `harvest shine zero-point must stay 300 Lsun, got ${HARVEST_L_REF}`);
   check(UNIVERSE.GALAXY_SILHOUETTE_M < 5 && UNIVERSE.GALAXY_SILHOUETTE_L < 300,
     `harvest floor must be deeper than 5 Msun / 300 Lsun (M=${UNIVERSE.GALAXY_SILHOUETTE_M} L=${UNIVERSE.GALAXY_SILHOUETTE_L})`);
-  if (UNIVERSE.GALAXY_HARVEST_ALL) {
-    check(UNIVERSE.GALAXY_HARVEST_ALL_CAP === 1_000_000,
-      `all-sky bottle must be one million (cap=${UNIVERSE.GALAXY_HARVEST_ALL_CAP})`);
-    check(UNIVERSE.GALAXY_HARVEST_ALL_I_MIN === 0,
-      `photograph must not floor I (I_MIN=${UNIVERSE.GALAXY_HARVEST_ALL_I_MIN})`);
-    check(UNIVERSE.GALAXY_HARVEST_ALL_L === 16,
-      `photograph floor must be the faint K-giant (L=${UNIVERSE.GALAXY_HARVEST_ALL_L})`);
-    const floorI = harvestShine(UNIVERSE.GALAXY_HARVEST_ALL_L, 40);
-    check(floorI > 0.06,
-      `K-giant at face-on distance must clear the pin discard, I=${floorI.toFixed(3)}`);
-    check(UNIVERSE.GALAXY_DUST_K_DIFFUSE === 0.42,
-      `edge-on sheet must stay the field (K_DIFFUSE=${UNIVERSE.GALAXY_DUST_K_DIFFUSE})`);
-    check(UNIVERSE.GALAXY_EXTINCT_K > 1 && UNIVERSE.GALAXY_EXTINCT_K <= 1.4,
-      `dust light-filter is EXTINCT_K, not a thicker pancake (K=${UNIVERSE.GALAXY_EXTINCT_K})`);
-  } else {
-    check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 1e-4,
-      `shape sample must stay 1e-4 of occupancy (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);
-    check(UNIVERSE.GALAXY_HARVEST_SHAPE_M === 1,
-      `shape band must start at 1 Msun (M=${UNIVERSE.GALAXY_HARVEST_SHAPE_M})`);
-  }
+  // One survey: the floor at the survey distance must still paint.
+  const floorI = harvestShine(UNIVERSE.GALAXY_SILHOUETTE_L, 40);
+  check(floorI > 0.06,
+    `survey floor at face-on distance must clear the pin discard, I=${floorI.toFixed(3)}`);
+  check(UNIVERSE.GALAXY_DUST_K_DIFFUSE === 0.42,
+    `edge-on sheet must stay the field (K_DIFFUSE=${UNIVERSE.GALAXY_DUST_K_DIFFUSE})`);
+  check(UNIVERSE.GALAXY_EXTINCT_K > 1 && UNIVERSE.GALAXY_EXTINCT_K <= 1.4,
+    `dust light-filter is EXTINCT_K, not a thicker pancake (K=${UNIVERSE.GALAXY_EXTINCT_K})`);
   check(harvestStarPx(1) === HARVEST_PIN_CANVAS && harvestStarPx(3) === HARVEST_PIN_CANVAS,
     `harvest floor is the ${HARVEST_PIN_CANVAS}px Gaussian canvas, got ${harvestStarPx(1)} / ${harvestStarPx(3)}`);
   check(harvestPinWeight(0, 0) === 1, `floor core must be 1, got ${harvestPinWeight(0, 0)}`);

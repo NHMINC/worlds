@@ -475,9 +475,9 @@ export const UNIVERSE = {
   GALAXY_POPULATION: 1_000_000_000,
 
   /**
-   * The explorer sky is the harvest (SILHOUETTE_* + HARVEST_SHAPE_*),
-   * unless HARVEST_ALL is on — a look test that disables the
-   * luminosity gates and shows every star the bottle can hold.
+   * The explorer sky is the harvest (SILHOUETTE_*): one
+   * magnitude-limited survey — every living star above the
+   * luminosity floor, and nothing else.
    * Dust is extinction. “Here” is a focus in front of the camera.
    * GALAXY_REGION_* is the future neighbourhood law, not the
    * explorer. Face-on / Edge-on slide the viewpoint far enough
@@ -506,13 +506,14 @@ export const UNIVERSE = {
   GALAXY_REGION_U_FAR: 0.9985,
   /**
    * Distant harvest (region dive). The flyable ball does
-   * not change. Outside it, the rest of the disk is two laws in
-   * one mint: the luminous tail — living stars above SILHOUETTE_L
+   * not change. Outside it, the rest of the disk is one law:
+   * a magnitude-limited survey — living stars above SILHOUETTE_L
    * (late-B and hotter, giants, WR; SILHOUETTE_M is the IMF slot
-   * gate) — and a 10⁻⁴ occupancy shape sample of long-lived
-   * photospheres (HARVEST_SHAPE_*), so the sky follows the mass
-   * model (core / bar / disk) and not only the young massive
-   * clock. Plus the youngest / brightest nebula hosts (gain ≥
+   * gate that keeps the walk cheap). The count (~10⁵) is an
+   * outcome of that floor, not a cap. Old faint populations
+   * (the bulge's dead clock) simply do not shine above the
+   * floor — the core is dark except its nebula hosts. Plus the
+   * youngest / brightest nebula hosts (gain ≥
    * SILHOUETTE_NEB_GAIN). Dust is not a harvest row — clumps stay
    * addressable in the catalog (dustId / dustPhysics); the fog is
    * the ISM field. Same catalog frame.
@@ -552,14 +553,14 @@ export const UNIVERSE = {
    * SUPER_GAIN is leftover exposure. Optical approximations,
    * like AIR_LINE. Not pickable.
    */
-  GALAXY_SILHOUETTE_M: 4.2,
+  GALAXY_SILHOUETTE_M: 3.89,
   /** Backdrop stars: present-day L / L☉. Brightness is this continuous
-   *  luminosity, not a magnitude bin. 210 L☉ is the MS light of the
-   *  4.2 M☉ late-B floor (L ≈ 1.4 M^3.5) — one step down the IMF
-   *  from the old 5 M☉ / 300 L☉ cut, about twice the harvest.
+   *  luminosity, not a magnitude bin. 162 L☉ is the MS light of the
+   *  3.89 M☉ late-B floor (L ≈ 1.4 M^3.5) — the depth at which the
+   *  survey holds ~10⁵ stars. Count is the floor's outcome, not a cap.
    *  Stars are the cheap citizens (a small Gaussian, vertex-only cost);
    *  the count knob that matters for the GPU is envelopes, not this. */
-  GALAXY_SILHOUETTE_L: 210,
+  GALAXY_SILHOUETTE_L: 162,
   /** Backdrop nebulae: emissionLook surface-brightness gain. Young
    *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
    *  Three median halvings from 0.65: the top eighth — showpieces. */
@@ -568,39 +569,6 @@ export const UNIVERSE = {
    *  older comments that name the knob still resolve. The fog is
    *  the ISM field; clumps stay addressable via dustId. */
   GALAXY_SILHOUETTE_DUST_R: 0,
-  /**
-   * Occupancy shape sample. The luminous tail is a late-B photograph;
-   * bulge ages kill that tail, so a tail-only sky is a young-disk
-   * map, not the mass model. Keep a living photosphere at this
-   * fraction of each cell's occupancy, drawn from the long-lived
-   * band [SHAPE_M, SILHOUETTE_M) so it does not overlap the tail
-   * walk. One law — no if (core). 10⁻⁴ of ~1.6×10⁹ slots is ~1.6×10⁵
-   * extra pins; G and up (L_ms ≥ 1) so the 7px floor can still paint.
-   */
-  GALAXY_HARVEST_SHAPE_F: 1e-4,
-  GALAXY_HARVEST_SHAPE_M: 1.0,
-  /**
-   * Look test: turn the luminosity harvester off. Every occupied
-   * slot is eligible (full IMF — no M / L / gain gate). 1.6×10⁹
-   * vertices will not fit; ALL_CAP is the bottle. Those pins are
-   * a uniform stride through the photograph band (SHAPE_M and up)
-   * so the million follows mass among stars that actually emit.
-   * A Hubble plate is luminosity-weighted: old light is the giant
-   * branch (yellow-white bulge), young light is hot MS. Not M-dwarf
-   * oatmeal, and not a floor that paints every pin at the same I.
-   * ALL_L is the faint K-giant / ~2 M☉ MS floor — G dwarfs (L~1)
-   * do not earn a pin; they do not make a bulge plate. Nebulae
-   * stay the old showpiece gate (H II + NEB_GAIN ≈ 2k).
-   * Flip false to restore the dual harvest.
-   */
-  GALAXY_HARVEST_ALL: true,
-  GALAXY_HARVEST_ALL_CAP: 1_000_000,
-  /** 0 = photograph law (I from L). A floor here turns the IMF
-   *  into a yellow fog: every M dwarf paints at the same I. */
-  GALAXY_HARVEST_ALL_I_MIN: 0,
-  /** Faint end of the low-mass giant (L = 40×0.4). Below this,
-   *  a pin does not photograph. */
-  GALAXY_HARVEST_ALL_L: 16,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
