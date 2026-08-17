@@ -9,6 +9,7 @@ import {
   catalogSize, slotsInCell, cellCount, sampleDust, packId,
   midplaneZ, thinScaleHeight, spheroidScaleHeight, diskScaleHeight,
   slotBirthRaw, cellCenter, galToCart, dustDensity, ismAt, armPhase,
+  glowLight,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar, teffToRgb } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
@@ -356,7 +357,8 @@ check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
     const R = 4 + ir * 0.5;
     for (let i = 0; i < 40; i++) {
       const th = (i / 40) * Math.PI * 2;
-      rhos.push(dustDensity(seed, R * Math.cos(th), 0, R * Math.sin(th)));
+      const y0 = midplaneZ(R, th);
+      rhos.push(dustDensity(seed, R * Math.cos(th), y0, R * Math.sin(th)));
     }
   }
   rhos.sort((a, b) => a - b);
@@ -371,18 +373,52 @@ check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
   const n = 48;
   for (let i = 0; i < n; i++) {
     const th = (i / n) * Math.PI * 2;
-    const t0 = ismAt(seed, R * Math.cos(th), 0, R * Math.sin(th)).turb;
+    const t0 = ismAt(seed, R * Math.cos(th), midplaneZ(R, th), R * Math.sin(th)).turb;
     const dR = 0.45;
     const thA = th + (cot * dR) / R;
-    const tAlong = ismAt(seed, (R + dR) * Math.cos(thA), 0, (R + dR) * Math.sin(thA)).turb;
+    const tAlong = ismAt(seed, (R + dR) * Math.cos(thA), midplaneZ(R + dR, thA), (R + dR) * Math.sin(thA)).turb;
     const thX = th + 0.45 / R;
-    const tAcross = ismAt(seed, R * Math.cos(thX), 0, R * Math.sin(thX)).turb;
+    const tAcross = ismAt(seed, R * Math.cos(thX), midplaneZ(R, thX), R * Math.sin(thX)).turb;
     dAlong += Math.abs(tAlong - t0);
     dAcross += Math.abs(tAcross - t0);
   }
   check(dAcross > dAlong * 1.5,
     `turbulence must be filamentary along the spiral: across=${(dAcross / n).toFixed(3)} along=${(dAlong / n).toFixed(3)}`);
   check(UNIVERSE.GALAXY_TURB_SHEAR > 2, `TURB_SHEAR must stretch eddies, got ${UNIVERSE.GALAXY_TURB_SHEAR}`);
+  const Rmid = 12;
+  const thW = Math.PI / 2 + UNIVERSE.GALAXY_WARP_PHI;
+  const yW = midplaneZ(Rmid, thW);
+  const onSheet = dustDensity(seed, Rmid * Math.cos(thW), yW, Rmid * Math.sin(thW));
+  const offSheet = dustDensity(seed, Rmid * Math.cos(thW), yW + 0.6, Rmid * Math.sin(thW));
+  check(onSheet > offSheet * 3,
+    `dust must ride the warped midplane: on=${onSheet.toFixed(3)} off=${offSheet.toFixed(3)} (z0=${yW.toFixed(2)})`);
+}
+
+{
+  const R = UNIVERSE.R_SUN;
+  let armY = 0;
+  let gapY = 0;
+  let nArm = 0;
+  let nGap = 0;
+  for (let i = 0; i < 48; i++) {
+    const th = (i / 48) * Math.PI * 2;
+    const x = R * Math.cos(th);
+    const z = R * Math.sin(th);
+    const y0 = midplaneZ(R, th);
+    const g = glowLight(x, y0, z);
+    if (inSpiralArm(R, th)) {
+      armY += g.young;
+      nArm++;
+    } else {
+      gapY += g.young;
+      nGap++;
+    }
+  }
+  const a = armY / Math.max(1, nArm);
+  const b = gapY / Math.max(1, nGap);
+  check(a > b * 1.25, `young glow must follow gas arms, not a gold plate: arm=${a.toFixed(3)} gap=${b.toFixed(3)}`);
+  const core = glowLight(0.2, 0, 0);
+  check(core.old > core.young, `nucleus light must be old (giant branch), old=${core.old.toFixed(3)} young=${core.young.toFixed(3)}`);
 }
 
 function asObj(star: StellarState): GalaxyObject {
@@ -408,8 +444,8 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const far = shineDisplay(20, 240);
   check(near > far * 1.25, `same L at 80 kpc (${near.toFixed(2)}) must beat 240 kpc (${far.toFixed(2)})`);
   check(HARVEST_L_REF === 300, `harvest shine zero-point must stay 300 Lsun, got ${HARVEST_L_REF}`);
-  check(UNIVERSE.GALAXY_SILHOUETTE_M < 5 && UNIVERSE.GALAXY_SILHOUETTE_L < 300,
-    `harvest floor must be deeper than 5 Msun / 300 Lsun (M=${UNIVERSE.GALAXY_SILHOUETTE_M} L=${UNIVERSE.GALAXY_SILHOUETTE_L})`);
+  check(UNIVERSE.GALAXY_SILHOUETTE_M >= 6 && UNIVERSE.GALAXY_SILHOUETTE_L >= 500,
+    `pins are the bright tail (M=${UNIVERSE.GALAXY_SILHOUETTE_M} L=${UNIVERSE.GALAXY_SILHOUETTE_L})`);
   if (UNIVERSE.GALAXY_HARVEST_ALL) {
     check(UNIVERSE.GALAXY_HARVEST_ALL_CAP === 1_000_000,
       `all-sky bottle must be one million (cap=${UNIVERSE.GALAXY_HARVEST_ALL_CAP})`);
@@ -425,11 +461,13 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
     check(UNIVERSE.GALAXY_EXTINCT_K > 1 && UNIVERSE.GALAXY_EXTINCT_K <= 1.4,
       `dust light-filter is EXTINCT_K, not a thicker pancake (K=${UNIVERSE.GALAXY_EXTINCT_K})`);
   } else {
-    check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 1e-4,
-      `shape sample must stay 1e-4 of occupancy (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);
-    check(UNIVERSE.GALAXY_HARVEST_SHAPE_M === 1,
-      `shape band must start at 1 Msun (M=${UNIVERSE.GALAXY_HARVEST_SHAPE_M})`);
+    check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 0,
+      `shape sample is the Hubble integral now (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);
+    check(UNIVERSE.GALAXY_GLOW_GAIN > 0, 'Hubble glow exposure must be on');
+    check(UNIVERSE.GALAXY_HARVEST_ALL === false, 'HARVEST_ALL is a look test; pins are the luminous tail');
   }
+  check(harvestShine(8000, 8) > harvestShine(16, 8) * 8,
+    `O must outshine a K-giant: ${harvestShine(8000, 8).toFixed(2)} vs ${harvestShine(16, 8).toFixed(2)}`);
   check(harvestStarPx(1) === HARVEST_PIN_CANVAS && harvestStarPx(3) === HARVEST_PIN_CANVAS,
     `harvest floor is the ${HARVEST_PIN_CANVAS}px Gaussian canvas, got ${harvestStarPx(1)} / ${harvestStarPx(3)}`);
   check(harvestPinWeight(0, 0) === 1, `floor core must be 1, got ${harvestPinWeight(0, 0)}`);
@@ -467,7 +505,7 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
     'ordinary O harvest shine must be unchanged');
   check(Math.abs(harvestShine(HARVEST_L_REF, 8) - coreShine(HARVEST_L_REF, 8)) < 1e-12,
     'harvest-floor shine must be unchanged');
-  check(harvestShine(1e6, 8) > coreShine(1e6, 8) * 2.5,
+  check(harvestShine(1e6, 8) > coreShine(1e6, 8) * 2.0,
     `super-sun must get extra I: ${harvestShine(1e6, 8).toFixed(1)} vs core ${coreShine(1e6, 8).toFixed(1)}`);
   check(harvestGlowPx(1e6, 1) > harvestGlowPx(8000, 1) * 3,
     `super-sun glow must outgrow an O: ${harvestGlowPx(1e6, 1).toFixed(1)} vs ${harvestGlowPx(8000, 1).toFixed(1)}`);

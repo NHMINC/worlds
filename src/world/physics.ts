@@ -450,9 +450,11 @@ export const UNIVERSE = {
   GALAXY_POPULATION: 1_000_000_000,
 
   /**
-   * The explorer sky is the harvest (SILHOUETTE_* + HARVEST_SHAPE_*),
-   * unless HARVEST_ALL is on — a look test that disables the
-   * luminosity gates and shows every star the bottle can hold.
+   * The explorer sky is three lights: the Hubble integral (unresolved
+   * ~10⁹, densityParts × light-weighted pop colour), the harvest
+   * pins (exceptions you can aim at), and dust as extinction on both.
+   * HARVEST_ALL is a look test that disables the luminosity gates
+   * and photographs the faint giant branch as pins — mustard. Off.
    * Dust is extinction. “Here” is a focus in front of the camera.
    * GALAXY_REGION_* is the future neighbourhood law, not the
    * explorer. Face-on / Edge-on slide the viewpoint far enough
@@ -527,14 +529,12 @@ export const UNIVERSE = {
    * SUPER_GAIN is leftover exposure. Optical approximations,
    * like AIR_LINE. Not pickable.
    */
-  GALAXY_SILHOUETTE_M: 4.2,
+  GALAXY_SILHOUETTE_M: 7.5,
   /** Backdrop stars: present-day L / L☉. Brightness is this continuous
-   *  luminosity, not a magnitude bin. 210 L☉ is the MS light of the
-   *  4.2 M☉ late-B floor (L ≈ 1.4 M^3.5) — one step down the IMF
-   *  from the old 5 M☉ / 300 L☉ cut, about twice the harvest.
-   *  Stars are the cheap citizens (a small Gaussian, vertex-only cost);
-   *  the count knob that matters for the GPU is envelopes, not this. */
-  GALAXY_SILHOUETTE_L: 210,
+   *  luminosity, not a magnitude bin. 900 L☉ is early-B / bright-giant
+   *  light — the exceptions. The late-B floor (210 L☉) was a pin carpet
+   *  once the integral went missing; the integral is the carpet now. */
+  GALAXY_SILHOUETTE_L: 900,
   /** Backdrop nebulae: emissionLook surface-brightness gain. Young
    *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
    *  Three median halvings from 0.65: the top eighth — showpieces. */
@@ -544,15 +544,12 @@ export const UNIVERSE = {
    *  splat. The fog is the ISM field. */
   GALAXY_SILHOUETTE_DUST_R: 0,
   /**
-   * Occupancy shape sample. The luminous tail is a late-B photograph;
-   * bulge ages kill that tail, so a tail-only sky is a young-disk
-   * map, not the mass model. Keep a living photosphere at this
-   * fraction of each cell's occupancy, drawn from the long-lived
-   * band [SHAPE_M, SILHOUETTE_M) so it does not overlap the tail
-   * walk. One law — no if (core). 10⁻⁴ of ~1.6×10⁹ slots is ~1.6×10⁵
-   * extra pins; G and up (L_ms ≥ 1) so the 7px floor can still paint.
+   * Occupancy shape sample. Retired as a pin list: the Hubble
+   * integral is that mass model now. 0 = no G-dwarf / faint-giant
+   * stamps. SHAPE_M stays so HARVEST_ALL (look test) still has a
+   * photograph band if someone flips it on.
    */
-  GALAXY_HARVEST_SHAPE_F: 1e-4,
+  GALAXY_HARVEST_SHAPE_F: 0,
   GALAXY_HARVEST_SHAPE_M: 1.0,
   /**
    * Look test: turn the luminosity harvester off. Every occupied
@@ -566,9 +563,9 @@ export const UNIVERSE = {
    * ALL_L is the faint K-giant / ~2 M☉ MS floor — G dwarfs (L~1)
    * do not earn a pin; they do not make a bulge plate. Nebulae
    * stay the old showpiece gate (H II + NEB_GAIN ≈ 2k).
-   * Flip false to restore the dual harvest.
+   * Off: pins are the luminous tail; the integral is the carpet.
    */
-  GALAXY_HARVEST_ALL: true,
+  GALAXY_HARVEST_ALL: false,
   GALAXY_HARVEST_ALL_CAP: 1_000_000,
   /** 0 = photograph law (I from L). A floor here turns the IMF
    *  into a yellow fog: every M dwarf paints at the same I. */
@@ -587,10 +584,13 @@ export const UNIVERSE = {
    *  lane vs a clear face-on / in-plane hop. */
   GALAXY_DUST_K_DIFFUSE: 0.42,
   /** Extra opacity on sheared overdensities (rise^STREAK). Lanes
-   *  and blobs; the sheet knob is untouched. */
-  GALAXY_DUST_K_DENSE: 10,
-  /** Power on positive turbulence. Higher → rarer, darker streaks. */
-  GALAXY_DUST_STREAK: 2.1,
+   *  and blobs; the sheet knob is untouched. High enough that a
+   *  Face-on filament in front of the bulge goes dark (τ≳ a few
+   *  through the 0.12 kpc sheet), not a thicker mean pancake. */
+  GALAXY_DUST_K_DENSE: 48,
+  /** Power on positive turbulence. Lower → more of the overdense tail
+   *  is optically thick (Face-on lanes). Higher → rarer, darker streaks. */
+  GALAXY_DUST_STREAK: 1.35,
   /** ismAt field threshold. Most of the disk is below this — flight
    *  stays light; a hit is a significant dark region. */
   GALAXY_DUST_DENSE_CUT: 0.22,
@@ -614,6 +614,26 @@ export const UNIVERSE = {
    *  Shells screen-blend: dest + src·(1-dest). They glow and
    *  saturate; they do not add to a white bar. This is one cloud. */
   NEB_EMISSION: 0.7,
+  /**
+   * Hubble integral — unresolved starlight. GAIN is the photograph
+   * exposure (TIME_SCALE family). OLD_TEFF / YOUNG_TEFF are the
+   * light-weighted photospheres: K-giant branch vs hot MS. Colour
+   * still comes from teffToRgb, not a painted ramp. YOUNG boosts
+   * thin-disk light so the IMF's luminous tail wins the arms
+   * (number-weighted thin is M-dwarf oatmeal). YOUNG_FLOOR is the
+   * interarm remnant of that tail — arms are gasArm, not if (R).
+   */
+  GALAXY_GLOW_GAIN: 0.95,
+  GALAXY_GLOW_STEPS: 56,
+  GALAXY_GLOW_YOUNG: 3.6,
+  GALAXY_GLOW_YOUNG_FLOOR: 0.16,
+  GALAXY_GLOW_OLD_TEFF: 3650,
+  GALAXY_GLOW_YOUNG_TEFF: 22000,
+  /** Photograph chroma on the two light-weighted photospheres.
+   *  teffToRgb of a 22 kK star is almost white; this is the same
+   *  saturation push harvest pins use, so arms read blue and the
+   *  bulge cream. */
+  GALAXY_GLOW_SAT: 2.4,
   /** Full-grown planetary-nebula shell radius (kpc, toy). */
   PN_R_MAX: 0.08,
   /** Full-grown supernova-remnant shell radius (kpc, toy). */

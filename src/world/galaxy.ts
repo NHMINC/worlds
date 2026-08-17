@@ -74,7 +74,7 @@ function stellarArm(R: number, theta: number): number {
 }
 
 /** Gas / dust / H II arm factor — stronger, still in-plane. */
-function gasArm(R: number, theta: number): number {
+export function gasArm(R: number, theta: number): number {
   return 1 + UNIVERSE.GALAXY_GAS_ARM_A * Math.cos(armPhase(R, theta));
 }
 
@@ -184,6 +184,113 @@ export function density(p: GalPos): number {
   return d.thin + d.thick + d.bulge + d.bar + d.halo;
 }
 
+/**
+ * Light-weighted glow at a catalog point: old spheroid + leftover
+ * thin, vs young thin-disk. Number density is M dwarfs; light is
+ * the giant branch (old) and hot MS (young). Youth follows gasArm
+ * (Schmidt — dense gas, recent births), not galactocentric radius.
+ */
+export function glowLight(x: number, y: number, z: number): { old: number; young: number } {
+  const p = cartToGal(x, y, z);
+  const U = UNIVERSE;
+  const z0 = midplaneZ(p.R, p.theta);
+  const zDisk = p.z - z0;
+  const thin =
+    U.GALAXY_THIN_AMP * diskSigma(p.R) * sech2(zDisk / U.GALAXY_ZD) * stellarArm(p.R, p.theta);
+  const thick = 0.13 * Math.exp(-p.R / U.GALAXY_RD_THICK) * sech2(zDisk / U.GALAXY_Z_THICK);
+  const sph = densityParts(p);
+  const A = U.GALAXY_GAS_ARM_A;
+  const g01 = (gasArm(p.R, p.theta) - (1 - A)) / Math.max(1e-4, 2 * A);
+  const yFrac = U.GALAXY_GLOW_YOUNG_FLOOR + (1 - U.GALAXY_GLOW_YOUNG_FLOOR) * Math.max(0, Math.min(1, g01));
+  return {
+    old: sph.bulge + sph.bar + sph.halo + thick + thin * (1 - yFrac),
+    young: thin * yFrac * U.GALAXY_GLOW_YOUNG,
+  };
+}
+
+const gxF = (n: number): string => {
+  if (!Number.isFinite(n)) return '0.0';
+  const s = Math.abs(n) >= 100 || Number.isInteger(n) ? n.toFixed(1) : n.toFixed(5);
+  return s.includes('.') ? s : `${s}.0`;
+};
+
+/**
+ * GLSL twin of glowLight + midplane. `gxGlow(p)` returns
+ *   x: old light (bulge / bar / thick / halo / old thin)
+ *   y: young light (thin × gasArm youth × YOUNG)
+ * Sampled as a field — no if (core). Dust is a separate march.
+ */
+export const GALAXY_GLOW_GLSL = /* glsl */ `
+float gxSech2(float x) {
+  float e = exp(x);
+  float s = 2.0 / (e + 1.0 / e);
+  return s * s;
+}
+float gxArmPhase(float R, float theta, float m, float cot) {
+  return m * theta - m * cot * log(max(R, 0.15) / ${gxF(UNIVERSE.GALAXY_RD)});
+}
+float gxMidplane(float R, float theta) {
+  float span = ${gxF(UNIVERSE.GALAXY_R_MAX - UNIVERSE.GALAXY_WARP_R)};
+  float w = max(0.0, (R - ${gxF(UNIVERSE.GALAXY_WARP_R)}) / span);
+  float warp = ${gxF(UNIVERSE.GALAXY_WARP_Z)} * w * w * sin(theta - ${gxF(UNIVERSE.GALAXY_WARP_PHI)});
+  float t = min(1.0, R / 3.5);
+  float corr = ${gxF(UNIVERSE.GALAXY_CORRUGATE)} * t * (
+    0.55 * sin(2.0 * theta + 0.38 * R) +
+    0.32 * sin(3.0 * theta - 0.62 * R) +
+    0.22 * sin(theta + 0.85 * R));
+  return warp + corr;
+}
+float gxDiskSigma(float R) {
+  float blend = 1.0 / (1.0 + exp((R - ${gxF(UNIVERSE.GALAXY_R_BREAK)}) / ${gxF(UNIVERSE.GALAXY_R_BREAK_W)}));
+  return blend * exp(-R / ${gxF(UNIVERSE.GALAXY_RD_INNER)}) + (1.0 - blend) * exp(-R / ${gxF(UNIVERSE.GALAXY_RD)});
+}
+float gxStellarArm(float R, float theta) {
+  float p1 = gxArmPhase(R, theta, ${gxF(UNIVERSE.GALAXY_ARM_M)}, ${gxF(1 / Math.tan(UNIVERSE.GALAXY_PITCH))});
+  float p2 = gxArmPhase(R, theta, ${gxF(UNIVERSE.GALAXY_ARM_M2)}, ${gxF(1 / Math.tan(UNIVERSE.GALAXY_PITCH2))});
+  return 1.0 + ${gxF(UNIVERSE.GALAXY_ARM_A)} * cos(p1) + ${gxF(UNIVERSE.GALAXY_ARM_A2)} * cos(p2);
+}
+float gxGasArm(float R, float theta) {
+  float p1 = gxArmPhase(R, theta, ${gxF(UNIVERSE.GALAXY_ARM_M)}, ${gxF(1 / Math.tan(UNIVERSE.GALAXY_PITCH))});
+  return 1.0 + ${gxF(UNIVERSE.GALAXY_GAS_ARM_A)} * cos(p1);
+}
+vec2 gxGlow(vec3 p) {
+  float R = length(p.xz);
+  float theta = atan(p.z, p.x);
+  float z0 = gxMidplane(R, theta);
+  float zDisk = p.y - z0;
+  float thin = ${gxF(UNIVERSE.GALAXY_THIN_AMP)} * gxDiskSigma(R) * gxSech2(zDisk / ${gxF(UNIVERSE.GALAXY_ZD)}) * gxStellarArm(R, theta);
+  float thick = 0.13 * exp(-R / ${gxF(UNIVERSE.GALAXY_RD_THICK)}) * gxSech2(zDisk / ${gxF(UNIVERSE.GALAXY_Z_THICK)});
+  float x = p.x;
+  float y = p.z;
+  float z = p.y;
+  float rb2 = (x * x) / ${gxF(UNIVERSE.GALAXY_BAR_A * UNIVERSE.GALAXY_BAR_A)}
+    + (y * y) / ${gxF(UNIVERSE.GALAXY_BAR_B * UNIVERSE.GALAXY_BAR_B)}
+    + (z * z) / ${gxF(UNIVERSE.GALAXY_BAR_C * UNIVERSE.GALAXY_BAR_C)};
+  float bar = rb2 < 1.0 ? ${gxF(UNIVERSE.GALAXY_BAR_AMP)} * pow(1.0 - rb2, 1.6) : 0.0;
+  float box = ${gxF(UNIVERSE.GALAXY_BOX_AMP)} * exp(-0.5 * (
+    (x * x) / ${gxF(UNIVERSE.GALAXY_BOX_A * UNIVERSE.GALAXY_BOX_A)}
+    + (y * y) / ${gxF(UNIVERSE.GALAXY_BOX_B * UNIVERSE.GALAXY_BOX_B)}
+    + (z * z) / ${gxF(UNIVERSE.GALAXY_BOX_C * UNIVERSE.GALAXY_BOX_C)}));
+  float k = ${gxF(UNIVERSE.GALAXY_PEANUT_Z / UNIVERSE.GALAXY_PEANUT_R)};
+  float xa = min(abs(x), 2.2);
+  float ridge = exp(-0.5 * ((x * x) / (1.45 * 1.45) + (y * y) / (0.42 * 0.42)));
+  float peanut = ${gxF(UNIVERSE.GALAXY_PEANUT_AMP)} * ridge * (
+    exp(-0.5 * pow((z - k * xa) / 0.2, 2.0)) + exp(-0.5 * pow((z + k * xa) / 0.2, 2.0)));
+  float nuc = ${gxF(UNIVERSE.GALAXY_NUC_AMP)} * exp(-R / ${gxF(UNIVERSE.GALAXY_NUC_RD)}) * gxSech2(z / ${gxF(UNIVERSE.GALAXY_NUC_ZD)});
+  float bulge = box + peanut + nuc;
+  float rSph = length(p);
+  float halo = ${gxF(UNIVERSE.GALAXY_HALO_AMP)} / pow(1.0 + rSph / ${gxF(UNIVERSE.GALAXY_HALO_A)}, 3.5);
+  float A = ${gxF(UNIVERSE.GALAXY_GAS_ARM_A)};
+  float g01 = (gxGasArm(R, theta) - (1.0 - A)) / max(1e-4, 2.0 * A);
+  float yFrac = ${gxF(UNIVERSE.GALAXY_GLOW_YOUNG_FLOOR)}
+    + (1.0 - ${gxF(UNIVERSE.GALAXY_GLOW_YOUNG_FLOOR)}) * clamp(g01, 0.0, 1.0);
+  float oldL = bulge + bar + halo + thick + thin * (1.0 - yFrac);
+  float youngL = thin * yFrac * ${gxF(UNIVERSE.GALAXY_GLOW_YOUNG)};
+  return vec2(max(oldL, 0.0), max(youngL, 0.0));
+}
+`;
+
+
 /** Lattice hash for the ISM noise, in [-1, 1]. Pure of the corner. */
 let ismCornerSeed = '';
 const ismCornerMemo = new Map<number, number>();
@@ -219,11 +326,15 @@ function ismNoise(seed: string, x: number, y: number, z: number): number {
   return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
 }
 
-/** Molecular sheet: thinner than the stars, stronger arm contrast, in-plane only. */
+/** Molecular sheet: thinner than the stars, stronger arm contrast.
+ *  Height is relative to the warped / corrugated midplane so dust
+ *  rides the same ribbon the stars do — a perfectly flat slit was
+ *  the sheet sitting on y = 0. */
 function gasBase(p: GalPos): number {
   const U = UNIVERSE;
+  const zRel = p.z - midplaneZ(p.R, p.theta);
   return (
-    Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2(p.z / U.GALAXY_ZD_GAS) * gasArm(p.R, p.theta)
+    Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2(zRel / U.GALAXY_ZD_GAS) * gasArm(p.R, p.theta)
   );
 }
 
@@ -243,7 +354,8 @@ function ismTurbulence(seed: string, x: number, y: number, z: number): number {
   // widens that circle so filaments are narrow compared to
   // their length.
   const along = (R * f) / S;
-  const vert = y * f;
+  const z0 = midplaneZ(R, Math.atan2(z, x));
+  const vert = (y - z0) * f;
   const w = f * S;
   return (
     (ismNoise(seed, along, vert, w * Math.cos(a)) +
