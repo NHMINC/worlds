@@ -52,8 +52,12 @@ export const SHINE_SAT = 1.55;
  * number; fly pins need more chroma.
  */
 export const HARVEST_SHINE_SAT = 2.7;
-/** Harvest glow / shine are referenced to the luminous-tail floor. */
-export const HARVEST_L_REF = UNIVERSE.GALAXY_SILHOUETTE_L;
+/**
+ * Photograph zero-point (L☉). Stays at the original late-B floor
+ * so deepening SILHOUETTE_L adds fainter pins instead of
+ * re-exposing every star already in the sky.
+ */
+export const HARVEST_L_REF = 300;
 /**
  * Eye PSF in CSS pixels — not sprite UVs. A Gaussian core
  * (exp(−r² · CORE)) plus a Lorentzian tail TAIL/(A + B r²).

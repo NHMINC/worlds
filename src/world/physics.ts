@@ -478,8 +478,8 @@ export const UNIVERSE = {
   /**
    * Distant luminous backdrop (region dive). The flyable ball does
    * not change. Outside it, a magnitude-limited harvest of the rest
-   * of the disk — living stars above SILHOUETTE_L (bright B, O,
-   * giants, WR; SILHOUETTE_M is only the IMF slot gate), the
+   * of the disk — living stars above SILHOUETTE_L (late-B and
+   * hotter, giants, WR; SILHOUETTE_M is the IMF slot gate), the
    * youngest / brightest nebula hosts (gain ≥ SILHOUETTE_NEB_GAIN),
    * and the full dust-clump census (SILHOUETTE_DUST_R = 0; the rows
    * are never drawn — dust reaches the eye as sightline extinction)
@@ -521,13 +521,14 @@ export const UNIVERSE = {
    * SUPER_GAIN is leftover exposure. Optical approximations,
    * like AIR_LINE. Not pickable.
    */
-  GALAXY_SILHOUETTE_M: 5,
+  GALAXY_SILHOUETTE_M: 4.2,
   /** Backdrop stars: present-day L / L☉. Brightness is this continuous
-   *  luminosity, not a magnitude bin. 300 L☉ is a late-B / modest giant —
-   *  ~79k of the ~83k stars the M-floor clocks. Stars are the cheap
-   *  citizens (one pixel, vertex-only cost); the count knob that
-   *  matters for the GPU is envelopes, not this one. */
-  GALAXY_SILHOUETTE_L: 300,
+   *  luminosity, not a magnitude bin. 210 L☉ is the MS light of the
+   *  4.2 M☉ late-B floor (L ≈ 1.4 M^3.5) — one step down the IMF
+   *  from the old 5 M☉ / 300 L☉ cut, about twice the harvest.
+   *  Stars are the cheap citizens (one pixel, vertex-only cost);
+   *  the count knob that matters for the GPU is envelopes, not this. */
+  GALAXY_SILHOUETTE_L: 210,
   /** Backdrop nebulae: emissionLook surface-brightness gain. Young
    *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
    *  Three median halvings from 0.65: the top eighth — showpieces. */
