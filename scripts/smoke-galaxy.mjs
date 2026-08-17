@@ -313,6 +313,9 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
 }
 
 const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+// Same SwiftShader allowance as the first page: a fresh page re-mints
+// the whole survey before the splash drops.
+phone.setDefaultTimeout(240000);
 await phone.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' });
 await phone.waitForFunction(() => !document.getElementById('universe-boot'), { timeout: 90000 });
 const phoneGalaxy = phone.locator('button[title="Galaxy — the shared catalog"]');
