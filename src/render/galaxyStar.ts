@@ -1,9 +1,8 @@
 /**
  * The explorer sky is the luminous harvest. A star is a point:
- * a filtered plus floor (same 4-direction support as the 6-pixel
- * diamond, with a 1-device-pixel AA so a slide does not strobe
- * the tips) wearing Teff colour, plus the eye's PSF once the
- * wings need more room than that stamp. Magnitude lifts the wings
+ * a soft device-pixel Gaussian floor (so a 1-pixel GL_POINTS hop
+ * only moves the faint halo) wearing Teff colour, plus the eye's
+ * PSF once the wings need more room than that stamp. Magnitude lifts the wings
  * of that PSF (a Gaussian core and a Lorentzian tail, the same
  * glare shape as the in-system sun). The sprite is only room for
  * those wings — it is not a disc. Dust is never drawn. r/d grow
@@ -15,7 +14,7 @@ import type { GalaxyObject } from '../world/galaxy';
 /**
  * Toy close-survey paint radius (catalog kpc). Real R☉ is metres
  * against kiloparsecs — unusable. Harvest GPU size is
- * harvestStarPx — the 4×4 diamond canvas. These knobs stay for a
+ * harvestStarPx — the floor Gaussian canvas. These knobs stay for a
  * later faint-survey disc; they must not be wired to the harvest.
  */
 export const GLOW_K = 0.0024;
@@ -72,22 +71,18 @@ export const HARVEST_PSF_A = 0.07;
 export const HARVEST_PSF_B = 3.2;
 export const HARVEST_PSF_THRESH = 0.018;
 /**
- * Floor-pin canvas (device px). A 1px GL_POINTS sprite hops to
- * the neighbour pixel as uCenter slides. The stamp is a plus on
- * this 4×4 canvas so a one-pixel hop still overlaps in ±x and ±y:
- *   . # . .
- *   # # # #
- *   . # . .
- *   . . . .
- * Binary cells flashed: the tips are 1-pixel features, and distant
- * floor stars crawl slowly, so every snap was visible. The same
- * plus is a pair of boxes with PIN_AA of AA — energy slides
- * instead of six pixels slamming on/off. Bright rows whose PSF
- * wings need more room keep the Gaussian. Not a filled disc.
+ * Floor-pin canvas (device px). GL_POINTS rasterises a square
+ * whose covered pixel set hops by one device pixel as the centre
+ * slides. A 4-pixel plus is still a thin stamp — most of its
+ * energy sits in a few cells, so the hop reads as a blink,
+ * worse on distant floor stars that crawl. The floor is a
+ * device-pixel Gaussian (exp(−r² · PIN_CORE)) on this canvas:
+ * a 1-pixel hop only exchanges faint halo. Bright rows whose
+ * CSS PSF already needs more room keep that PSF. Not a disc.
  */
-export const HARVEST_PIN_CANVAS = 4;
-/** Half-width (device px) of the floor-plus AA. 0.5 = one pixel of fade. */
-export const HARVEST_PIN_AA = 0.5;
+export const HARVEST_PIN_CANVAS = 7;
+/** Device-px⁻². FWHM ≈ 1.3 px; halo dies by ~2.5 px. */
+export const HARVEST_PIN_CORE = 0.85;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
  * Steep in L so an O outshines the harvest floor. Shallow in d
@@ -118,38 +113,12 @@ export function glowRadiusKpc(L: number, dim = false): number {
   return Math.max(dim ? GLOW_DIM : PHOTO_MIN, Math.min(PHOTO_MAX, r));
 }
 
-function pinBoxSd(x: number, y: number, cx: number, cy: number, hx: number, hy: number): number {
-  const dx = Math.abs(x - cx) - hx;
-  const dy = Math.abs(y - cy) - hy;
-  const ox = Math.max(dx, 0);
-  const oy = Math.max(dy, 0);
-  return Math.hypot(ox, oy) + Math.min(Math.max(dx, dy), 0);
+/** Floor Gaussian at a device-pixel offset from the photocentre. */
+export function harvestPinWeight(dx: number, dy: number): number {
+  return Math.exp(-(dx * dx + dy * dy) * HARVEST_PIN_CORE);
 }
 
-function pinSmoothstep(e0: number, e1: number, x: number): number {
-  const t = Math.max(0, Math.min(1, (x - e0) / (e1 - e0)));
-  return t * t * (3 - 2 * t);
-}
-
-/**
- * Floor-plus weight at a point in 4×4 canvas space (0..4).
- * Same formula the harvest fragment uses: union of a 4-wide bar
- * and a 3-tall stem, then 1-device-pixel AA.
- */
-export function harvestPinWeight(x: number, y: number): number {
-  const bar = pinBoxSd(x, y, 2, 1.5, 2, 0.5);
-  const stem = pinBoxSd(x, y, 1.5, 1.5, 0.5, 1.5);
-  const sd = Math.min(bar, stem);
-  const w = 1 - pinSmoothstep(-HARVEST_PIN_AA, HARVEST_PIN_AA, sd);
-  return Math.max(0, Math.min(1, w));
-}
-
-/** True when the cell centre is inside the plus (weight > ½). */
-export function harvestPinCell(x: number, y: number): boolean {
-  return harvestPinWeight(x + 0.5, y + 0.5) > 0.5;
-}
-
-/** Harvest floor paint size (device px): the diamond canvas. */
+/** Harvest floor paint size (device px): the Gaussian canvas. */
 export function harvestStarPx(_pixelRatio = 1): number {
   return HARVEST_PIN_CANVAS;
 }
@@ -167,7 +136,7 @@ export function harvestPsfRadiusCss(I: number): number {
   return Math.sqrt(Math.max(0, num / HARVEST_PSF_B));
 }
 
-/** Sprite size (device px): diamond floor, or room for visible wings. */
+/** Sprite size (device px): Gaussian floor, or room for visible wings. */
 export function harvestGlowPx(L: number, pixelRatio = 1): number {
   const I = harvestShine(L, HARVEST_SHINE_DIST_REF);
   const css = Math.max(1, 1 + 2 * harvestPsfRadiusCss(I));

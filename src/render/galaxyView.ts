@@ -14,8 +14,8 @@ import {
   aimLocks,
   harvestGlowPx,
   HARVEST_L_REF,
-  HARVEST_PIN_AA,
   HARVEST_PIN_CANVAS,
+  HARVEST_PIN_CORE,
   HARVEST_PSF_A,
   HARVEST_PSF_B,
   HARVEST_PSF_CORE,
@@ -237,9 +237,9 @@ const SILHOUETTE_VERT = /* glsl */ `
       float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
       float css = max(1.0, 1.0 + 2.0 * rCss);
       float wingPx = css * uPixel;
-      // Floor pin: filtered plus on a 4×4 canvas so a 1-device-pixel
-      // hop still overlaps. Binary cells flashed (tips are 1px).
-      // Wings that already need more room keep the Gaussian.
+      // Floor pin: soft device-pixel Gaussian. A thin plus still
+      // blinked — GL_POINTS hops the covered set by 1px. Wings
+      // that already need more room keep the CSS PSF.
       if (wingPx <= uPinCanvas) {
         gl_PointSize = uPinCanvas;
         vStamp = 1.0;
@@ -276,7 +276,7 @@ const STAR_FRAG = /* glsl */ `
   uniform float uPsfTail;
   uniform float uPsfA;
   uniform float uPsfB;
-  uniform float uPinAa;
+  uniform float uPinCore;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -291,15 +291,11 @@ const STAR_FRAG = /* glsl */ `
     if (uPass > 0.5 && (vKind < 0.5 || vKind > 3.5)) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
-      // Same filtered plus as harvestPinWeight. Coverage, not a disc.
+      // Same device-pixel Gaussian as harvestPinWeight. A 1px hop
+      // only exchanges faint halo — not a disc, not a plus.
       if (vStamp > 0.5) {
-        vec2 q = gl_PointCoord * 4.0;
-        vec2 dBar = abs(q - vec2(2.0, 1.5)) - vec2(2.0, 0.5);
-        vec2 dStem = abs(q - vec2(1.5, 1.5)) - vec2(0.5, 1.5);
-        float bar = length(max(dBar, 0.0)) + min(max(dBar.x, dBar.y), 0.0);
-        float stem = length(max(dStem, 0.0)) + min(max(dStem.x, dStem.y), 0.0);
-        float aa = max(uPinAa, 1e-4);
-        float w = 1.0 - smoothstep(-aa, aa, min(bar, stem));
+        vec2 d = (gl_PointCoord - 0.5) * vPx;
+        float w = exp(-dot(d, d) * uPinCore);
         float I = max(vVis, 0.0) * w;
         if (I < 0.008) discard;
         gl_FragColor = vec4(vColor * I, 1.0);
@@ -693,7 +689,7 @@ export class GalaxyView {
       uSuperGain: { value: HARVEST_SUPER_GAIN },
       uSuperP: { value: HARVEST_SUPER_P },
       uPinCanvas: { value: HARVEST_PIN_CANVAS },
-      uPinAa: { value: HARVEST_PIN_AA },
+      uPinCore: { value: HARVEST_PIN_CORE },
       uFluxEps: { value: POINT_FLUX_EPS },
     };
   }
