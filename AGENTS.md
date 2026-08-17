@@ -485,13 +485,29 @@ are overlays. See **Player layer**.
    older files.
 5. **Do not commit secrets.** Do not drive-by refactors. Update this file
    when the contract changes.
-6. **Ship on `main`.** The live app (GitHub Pages) only builds from
+6. **Ship on `main`, then prove Pages is serving it.** The live app
+   (GitHub Pages, `https://nhminc.github.io/worlds/`) only builds from
    `main`; that is the only way the owner can test. Always **commit,
    push, and merge onto `main`** in the same session. Do not leave work
    sitting on a feature-branch PR. A draft PR is an unpublished
-   universe — that is how “the music didn’t change” happened. After a
-   Pages deploy, **hard-refresh once** so the PWA picks up the new
-   build.
+   universe — that is how “the music didn’t change” happened.
+   **`origin/main` is not the live sky.** The `pages` workflow
+   (`.github/workflows/pages.yml`) must go **green for that merge
+   SHA**. A red or skipped deploy means the owner is still on the
+   previous universe — that is how “doesn’t look merged” happened
+   when `tsc -b` failed after a successful push. In the same session:
+   1. `git fetch origin main` and confirm `origin/main` *is* your merge.
+   2. Watch `gh run list --branch main --workflow pages --limit 1`
+      until it finishes. The run’s `headSha` must equal
+      `origin/main`. Conclusion must be `success`.
+   3. If it fails: read the log (`gh run view <id> --log-failed`),
+      fix the build, merge that fix onto `main`, and repeat. Do not
+      tell the owner it is live while Pages is red.
+   4. Confirm the baked id: production sets `VITE_BUILD_ID` to
+      `github.sha`. Fetch the live JS and check that string is the
+      merge SHA (the service worker URL is `sw.js?v=<sha>`).
+   5. Then tell the owner to **hard-refresh once** so the PWA
+      drops the previous worker.
    One owner, **many threads**: other agents and machines land on
    `main` while you work. Expect commits you did not make. Before
    merging, `git fetch origin main` and read `git log HEAD..origin/main`.
