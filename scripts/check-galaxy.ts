@@ -8,7 +8,7 @@ import {
   objectAt, objectsNear, homeStar, density, inSpiralArm, chemistry,
   catalogSize, slotsInCell, cellCount, sampleDust, packId,
   midplaneZ, thinScaleHeight, spheroidScaleHeight, diskScaleHeight,
-  slotBirthRaw, cellCenter, galToCart,
+  slotBirthRaw, cellCenter, galToCart, dustDensity, ismAt, armPhase,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar, teffToRgb } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
@@ -349,6 +349,42 @@ for (const s of dust) {
 check(dust.length > 2000, `dust sample too thin: ${dust.length}`);
 check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
 
+// Photograph dust is sheared and patchy, not a smooth sheet.
+{
+  const rhos: number[] = [];
+  for (let ir = 0; ir < 16; ir++) {
+    const R = 4 + ir * 0.5;
+    for (let i = 0; i < 40; i++) {
+      const th = (i / 40) * Math.PI * 2;
+      rhos.push(dustDensity(seed, R * Math.cos(th), 0, R * Math.sin(th)));
+    }
+  }
+  rhos.sort((a, b) => a - b);
+  const p50 = rhos[Math.floor(rhos.length * 0.5)];
+  const p95 = rhos[Math.floor(rhos.length * 0.95)];
+  check(p50 > 0, 'dust field empty');
+  check(p95 > p50 * 2.4, `dust must be patchy, not a sheet: p95/p50=${(p95 / p50).toFixed(2)}`);
+  const cot = 1 / Math.tan(UNIVERSE.GALAXY_PITCH);
+  let dAcross = 0;
+  let dAlong = 0;
+  const R = UNIVERSE.R_SUN;
+  const n = 48;
+  for (let i = 0; i < n; i++) {
+    const th = (i / n) * Math.PI * 2;
+    const t0 = ismAt(seed, R * Math.cos(th), 0, R * Math.sin(th)).turb;
+    const dR = 0.45;
+    const thA = th + (cot * dR) / R;
+    const tAlong = ismAt(seed, (R + dR) * Math.cos(thA), 0, (R + dR) * Math.sin(thA)).turb;
+    const thX = th + 0.45 / R;
+    const tAcross = ismAt(seed, R * Math.cos(thX), 0, R * Math.sin(thX)).turb;
+    dAlong += Math.abs(tAlong - t0);
+    dAcross += Math.abs(tAcross - t0);
+  }
+  check(dAcross > dAlong * 1.5,
+    `turbulence must be filamentary along the spiral: across=${(dAcross / n).toFixed(3)} along=${(dAlong / n).toFixed(3)}`);
+  check(UNIVERSE.GALAXY_TURB_SHEAR > 2, `TURB_SHEAR must stretch eddies, got ${UNIVERSE.GALAXY_TURB_SHEAR}`);
+}
+
 function asObj(star: StellarState): GalaxyObject {
   return { id: 1, pos: { R: 8, theta: 0, z: 0 }, pop: 'thin', inArm: true, star };
 }
@@ -381,6 +417,13 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
       `photograph must not floor I (I_MIN=${UNIVERSE.GALAXY_HARVEST_ALL_I_MIN})`);
     check(UNIVERSE.GALAXY_HARVEST_ALL_L === 16,
       `photograph floor must be the faint K-giant (L=${UNIVERSE.GALAXY_HARVEST_ALL_L})`);
+    const floorI = harvestShine(UNIVERSE.GALAXY_HARVEST_ALL_L, 40);
+    check(floorI > 0.06,
+      `K-giant at face-on distance must clear the pin discard, I=${floorI.toFixed(3)}`);
+    check(UNIVERSE.GALAXY_DUST_K_DIFFUSE === 0.42,
+      `edge-on sheet must stay the field (K_DIFFUSE=${UNIVERSE.GALAXY_DUST_K_DIFFUSE})`);
+    check(UNIVERSE.GALAXY_EXTINCT_K > 1 && UNIVERSE.GALAXY_EXTINCT_K <= 1.4,
+      `dust light-filter is EXTINCT_K, not a thicker pancake (K=${UNIVERSE.GALAXY_EXTINCT_K})`);
   } else {
     check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 1e-4,
       `shape sample must stay 1e-4 of occupancy (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);

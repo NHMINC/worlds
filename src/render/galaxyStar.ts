@@ -85,11 +85,14 @@ export const HARVEST_PIN_CANVAS = 7;
 export const HARVEST_PIN_CORE = 0.85;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
- * Steep in L so an O outshines the harvest floor. Shallow in d
- * so approaching does not inflate a disc.
+ * Steep enough in L that an O still outshines the floor; shallow
+ * enough that a K-giant (ALL_L) clears the pin discard instead of
+ * reading as a dark-filtered sky. Shallow in d so approaching
+ * does not inflate a disc. Not an I_MIN floor — that painted
+ * every pin at the same I (yellow fog).
  */
-export const HARVEST_SHINE_GAIN = 0.28;
-export const HARVEST_SHINE_L_P = 0.55;
+export const HARVEST_SHINE_GAIN = 0.55;
+export const HARVEST_SHINE_L_P = 0.48;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_SHINE_DIST_P = 0.22;
 /**

@@ -358,7 +358,7 @@ const check = (cond: boolean, msg: string) => {
   }
 }
 
-// --- ISM fog: thin sheet + rare ridges, not 10k spheres ---
+// --- ISM fog: thin sheet + sheared streaks, not 10k spheres ---
 {
   const helix = harvestDustVolume(seed);
   check(!!helix, 'harvest must bake the ISM volume');
@@ -394,7 +394,7 @@ const check = (cond: boolean, msg: string) => {
   }
   hops.sort((a, b) => a - b);
   const hopLum = hops[8];
-  check(hopLum >= 0.75, `1 kpc midplane hop must stay mostly light (median T=${hopLum.toFixed(3)})`);
+  check(hopLum >= 0.45, `1 kpc midplane hop median must not be a wall (T=${hopLum.toFixed(3)})`);
   const { nx, ny, nz, origin, size, data } = vol;
   const vx = size[0] / nx;
   const vy = size[1] / ny;

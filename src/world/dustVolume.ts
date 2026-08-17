@@ -1,8 +1,9 @@
 /**
  * Dust is the ISM field, not a census of balls. The explorer never
  * draws dust — it bakes dustDensity(seed, x, y, z) into a volume
- * and marches the sightline. A star behind a ridge goes dark; a
- * short hop through the mean sheet stays mostly clear.
+ * and marches the sightline. Sheared turbulence prints streaks and
+ * blobs; a star behind a filament goes dark. A short hop through
+ * a void stays mostly clear. The pancake is the thin gas disk.
  */
 import { UNIVERSE } from './physics';
 import { dustDensity } from './galaxy';
