@@ -61,6 +61,7 @@ const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}
 const extinctGlsl = (steps: number) => /* glsl */ `
   uniform float uExtinctK;
   uniform float uExtinctMax;
+  uniform float uDustDebug;
   uniform vec3 uDustRgb;
   uniform sampler3D uDustVol;
   uniform vec3 uDustOrigin;
@@ -88,6 +89,12 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     return exp(-tau * uDustRgb);
   }
 `;
+
+/** Look test: `?dust=green` paints the extinction columns green. */
+function dustDebugOn(): boolean {
+  if (typeof location === 'undefined') return false;
+  return /[?&]dust=green/.test(location.search);
+}
 
 /** Park “here” this far ahead of the camera (catalog kpc). */
 const FOCUS_PARK = 0.35;
@@ -255,8 +262,15 @@ const SILHOUETTE_VERT = /* glsl */ `
     // Extinction: march the column from the bubble to this row.
     vec3 ext = extinctT(uCenter, position);
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
-    vVis *= extLum;
-    vColor *= ext / max(extLum, 1e-3);
+    if (uDustDebug > 0.5) {
+      // Look test (?dust=green): paint the marched column on the
+      // stars. Clear rows dim; obscured rows keep vVis and go
+      // green, so the fog's true shape is the green shape.
+      vColor = mix(vec3(0.05, 1.0, 0.12), vColor * 0.12, extLum);
+    } else {
+      vVis *= extLum;
+      vColor *= ext / max(extLum, 1e-3);
+    }
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -716,6 +730,7 @@ export class GalaxyView {
     return {
       uExtinctK: { value: UNIVERSE.GALAXY_EXTINCT_K },
       uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
+      uDustDebug: { value: dustDebugOn() ? 1 : 0 },
       uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
       uDustVol: { value: tex },
       uDustOrigin: { value: new THREE.Vector3(origin[0], origin[1], origin[2]) },

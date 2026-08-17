@@ -350,13 +350,15 @@ check(dust.length > 2000, `dust sample too thin: ${dust.length}`);
 check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
 
 // Photograph dust is sheared and patchy, not a smooth sheet.
+// Sample ON the (warped, corrugated) midplane — that is where the
+// sheet lives now, not at y = 0.
 {
   const rhos: number[] = [];
   for (let ir = 0; ir < 16; ir++) {
     const R = 4 + ir * 0.5;
     for (let i = 0; i < 40; i++) {
       const th = (i / 40) * Math.PI * 2;
-      rhos.push(dustDensity(seed, R * Math.cos(th), 0, R * Math.sin(th)));
+      rhos.push(dustDensity(seed, R * Math.cos(th), midplaneZ(R, th), R * Math.sin(th)));
     }
   }
   rhos.sort((a, b) => a - b);
@@ -383,6 +385,41 @@ check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
   check(dAcross > dAlong * 1.5,
     `turbulence must be filamentary along the spiral: across=${(dAcross / n).toFixed(3)} along=${(dAlong / n).toFixed(3)}`);
   check(UNIVERSE.GALAXY_TURB_SHEAR > 2, `TURB_SHEAR must stretch eddies, got ${UNIVERSE.GALAXY_TURB_SHEAR}`);
+}
+
+// Molecular geometry: ring + bar-swept hole + nuclear knot, and the
+// sheet must ride the warped midplane, not the y = 0 lattice plane.
+{
+  const midMedian = (R: number): number => {
+    const vals: number[] = [];
+    for (let i = 0; i < 48; i++) {
+      const th = (i / 48) * Math.PI * 2;
+      vals.push(dustDensity(seed, R * Math.cos(th), midplaneZ(R, th), R * Math.sin(th)));
+    }
+    vals.sort((a, b) => a - b);
+    return vals[24];
+  };
+  const cmz = midMedian(0.08);
+  const hole = midMedian(1.8);
+  const ring = midMedian(UNIVERSE.GALAXY_GAS_RING_R);
+  const sun = midMedian(UNIVERSE.R_SUN);
+  check(ring > hole * 2, `molecular ring must beat the bar-swept hole: ring=${ring.toFixed(3)} hole=${hole.toFixed(3)}`);
+  check(ring > sun * 2, `molecular ring must beat the solar circle: ring=${ring.toFixed(3)} sun=${sun.toFixed(3)}`);
+  check(cmz > ring, `CMZ knot must be the densest gas: cmz=${cmz.toFixed(3)} ring=${ring.toFixed(3)}`);
+  let onSheet = 0;
+  let offSheet = 0;
+  const Rw = UNIVERSE.GALAXY_R_MAX * 0.95;
+  let lifted = 0;
+  for (let i = 0; i < 48; i++) {
+    const th = (i / 48) * Math.PI * 2;
+    const zMid = midplaneZ(Rw, th);
+    if (Math.abs(zMid) > 0.3) lifted++;
+    onSheet += dustDensity(seed, Rw * Math.cos(th), zMid, Rw * Math.sin(th));
+    offSheet += dustDensity(seed, Rw * Math.cos(th), 0, Rw * Math.sin(th));
+  }
+  check(lifted > 8, `outer warp must lift the midplane somewhere (${lifted}/48 azimuths > 0.3 kpc)`);
+  check(onSheet > offSheet * 1.5, `dust must ride the warped midplane: on=${onSheet.toFixed(3)} off=${offSheet.toFixed(3)}`);
+  console.log(`  molecular sheet: cmz ${cmz.toFixed(2)} ring ${ring.toFixed(2)} hole ${hole.toFixed(3)} sun ${sun.toFixed(3)}; rim on/off ${(onSheet / Math.max(1e-6, offSheet)).toFixed(1)}`);
 }
 
 function asObj(star: StellarState): GalaxyObject {

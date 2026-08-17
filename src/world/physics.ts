@@ -423,6 +423,31 @@ export const UNIVERSE = {
   /** Molecular sheet: thinner than the stars, stronger arm contrast. */
   GALAXY_ZD_GAS: 0.12,
   GALAXY_GAS_ARM_A: 0.7,
+  /**
+   * Optical gas geometry (the fog, `dustGasBase`). The sheet rides
+   * the same warped, corrugated midplane the stars use and FLARES:
+   * e-fold per GAS_FLARE_RD kpc from the solar circle, thinning
+   * inward to the ~50 pc central molecular zone. Radially the bar
+   * has swept the inner disk — a molecular RING at RING_R holds the
+   * gas mass, a HOLE (depth HOLE_A, width HOLE_R) sits inside it,
+   * and a nuclear knot (CMZ_*) survives on the axle. DUST_ZD_FLOOR
+   * is the thinnest sheet the baked volume resolves; thinner sheets
+   * scale amplitude by zdTrue/zdFloor so the column (τ) is
+   * conserved. Occupancy / SFR / H II still drink the flat catalog
+   * field (`gasBase`) — migrating them moves star ages, which is a
+   * gen-version decision, not part of this optical law.
+   */
+  GALAXY_GAS_FLARE_RD: 8,
+  GALAXY_GAS_RING_R: 4.6,
+  GALAXY_GAS_RING_W: 1.5,
+  GALAXY_GAS_RING_A: 2.2,
+  GALAXY_GAS_HOLE_R: 4.0,
+  GALAXY_GAS_HOLE_A: 0.97,
+  GALAXY_GAS_CMZ_R: 0.25,
+  GALAXY_GAS_CMZ_A: 3,
+  /** One y-voxel of the bake (7.6 kpc / DUST_VOL_NY). A thinner
+   *  sheet aliases out of the march; conserve its column instead. */
+  GALAXY_DUST_ZD_FLOOR: 0.079,
   GALAXY_DUST_N_K: 6000,
   GALAXY_DUST_MAX: 8,
   GALAXY_SFR_GAIN: 18,
@@ -587,8 +612,11 @@ export const UNIVERSE = {
    *  lane vs a clear face-on / in-plane hop. */
   GALAXY_DUST_K_DIFFUSE: 0.42,
   /** Extra opacity on sheared overdensities (rise^STREAK). Lanes
-   *  and blobs; the sheet knob is untouched. */
-  GALAXY_DUST_K_DENSE: 10,
+   *  and blobs; the sheet knob is untouched. Raised with the
+   *  molecular-ring geometry: the bar-swept hole retired the inner
+   *  exponential's dense peaks, so the ring's streaks now carry the
+   *  rare-dark-ridge law. */
+  GALAXY_DUST_K_DENSE: 24,
   /** Power on positive turbulence. Higher → rarer, darker streaks. */
   GALAXY_DUST_STREAK: 2.1,
   /** ismAt field threshold. Most of the disk is below this — flight
@@ -602,7 +630,7 @@ export const UNIVERSE = {
   /** Density volume for the ISM fog (xz × y). Catalog kpc.
    *  Resolves the ~1 kpc turbulent complexes, not 0.09 kpc cirrus. */
   GALAXY_DUST_VOL_N: 320,
-  GALAXY_DUST_VOL_NY: 64,
+  GALAXY_DUST_VOL_NY: 96,
   /** Local-layer taps: the in-bubble column is at most REGION_R
    *  (~0.02 kpc vs ~30 for the backdrop), so 3 taps sample it more
    *  densely than the backdrop's 12 — same law, cheaper march. */

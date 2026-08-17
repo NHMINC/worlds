@@ -6,7 +6,7 @@
  * a void stays mostly clear. The pancake is the thin gas disk.
  */
 import { UNIVERSE } from './physics';
-import { dustDensity } from './galaxy';
+import { dustDensity, gasScaleHeight } from './galaxy';
 
 export interface DustVolume {
   nx: number;
@@ -44,9 +44,11 @@ export function bakeDustVolume(seed: string): DustVolume {
   const vy = size[1] / ny;
   const vz = size[2] / nz;
   const [ox, oy, oz] = origin;
-  // The molecular sheet is ~0.12 kpc; warp + corrugation lift the
-  // midplane by ≲ 1 kpc. Skip the empty halo so the bake stays cheap.
-  const ySkip = UNIVERSE.GALAXY_ZD_GAS * 10 + UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE;
+  // The sheet flares to gasScaleHeight(R_MAX) at the rim; warp +
+  // corrugation lift the midplane by ≲ 1 kpc. Skip the empty halo
+  // so the bake stays cheap.
+  const ySkip =
+    gasScaleHeight(UNIVERSE.GALAXY_R_MAX) * 6 + UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE;
   for (let iz = 0; iz < nz; iz++) {
     const z = oz + (iz + 0.5) * vz;
     for (let iy = 0; iy < ny; iy++) {
