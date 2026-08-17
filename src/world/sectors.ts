@@ -941,12 +941,15 @@ function writeAllMass(
     }
     return { c, n };
   }
-  const stride = band / nKeep;
-  const offset = harvestShapeUnit(seed, cell, 1, 0) * stride;
   for (let k = 0; k < nKeep; k++) {
-    const slot = s0 + Math.min(band - 1, Math.floor(offset + k * stride));
-    if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-    if (writeMassPin(seed, cell, slot, filled, n, c)) n++;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const slot = s0 + Math.min(band - 1, Math.floor(harvestShapeUnit(seed, cell, k + 1, attempt) * band));
+      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+      if (writeMassPin(seed, cell, slot, filled, n, c)) {
+        n++;
+        break;
+      }
+    }
   }
   return { c, n };
 }
