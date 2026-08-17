@@ -52,7 +52,7 @@ export const SHINE_SAT = 1.55;
  * still reads O-blue / M-orange. The old SHINE_SAT was a backdrop
  * number; fly pins need more chroma.
  */
-export const HARVEST_SHINE_SAT = 2.7;
+export const HARVEST_SHINE_SAT = 1.85;
 /**
  * Photograph zero-point (L☉). Stays at the original late-B floor
  * so deepening SILHOUETTE_L adds fainter pins instead of
@@ -85,14 +85,13 @@ export const HARVEST_PIN_CANVAS = 7;
 export const HARVEST_PIN_CORE = 0.85;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
- * Steep enough in L that an O still outshines the floor; shallow
- * enough that a K-giant (ALL_L) clears the pin discard instead of
- * reading as a dark-filtered sky. Shallow in d so approaching
+ * Steep in L so an O outshines a K-giant; the Hubble integral is
+ * the carpet, not 300k dim yellow pins. Shallow in d so approaching
  * does not inflate a disc. Not an I_MIN floor — that painted
  * every pin at the same I (yellow fog).
  */
-export const HARVEST_SHINE_GAIN = 0.55;
-export const HARVEST_SHINE_L_P = 0.48;
+export const HARVEST_SHINE_GAIN = 0.38;
+export const HARVEST_SHINE_L_P = 0.62;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_SHINE_DIST_P = 0.22;
 /**
