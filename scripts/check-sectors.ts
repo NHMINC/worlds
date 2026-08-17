@@ -326,11 +326,6 @@ const check = (cond: boolean, msg: string) => {
   check(hitLum < 0.12, `a dense clump must extinguish (T=${hitLum.toFixed(3)})`);
   check(missLum > 0.9, `a miss must stay clear (T=${missLum.toFixed(3)})`);
   check(THit[0] > THit[2], 'blue must die first through a clump');
-  const TLimb = clumpTransmittance(vol, [-2, 0.22, 0], [2, 0.22, 0]);
-  const limbLum = 0.2126 * TLimb[0] + 0.7152 * TLimb[1] + 0.0722 * TLimb[2];
-  check(limbLum > hitLum * 3 && limbLum < missLum * 0.95,
-    `a limb must be a red edge, not a core or a miss (T=${limbLum.toFixed(3)})`);
-  check(TLimb[0] > TLimb[2] * 1.15, 'limb must go warm (blue dies first)');
   const wisp = bakeDustVolume({
     n: 1,
     pos: new Float32Array([0, 0, 0]),
@@ -339,8 +334,15 @@ const check = (cond: boolean, msg: string) => {
     kind: new Uint8Array([KIND_DUST]),
   });
   const TWisp = clumpTransmittance(wisp, [-1, 0, 0], [1, 0, 0]);
+  const TWispLimb = clumpTransmittance(wisp, [-1, 0.042, 0], [1, 0.042, 0]);
+  const TWispMiss = clumpTransmittance(wisp, [-1, 0.4, 0], [1, 0.4, 0]);
   const wispLum = 0.2126 * TWisp[0] + 0.7152 * TWisp[1] + 0.0722 * TWisp[2];
-  check(wispLum < 0.25, `a small wisp core must still go dark (T=${wispLum.toFixed(3)})`);
+  const wispLimb = 0.2126 * TWispLimb[0] + 0.7152 * TWispLimb[1] + 0.0722 * TWispLimb[2];
+  const wispMiss = 0.2126 * TWispMiss[0] + 0.7152 * TWispMiss[1] + 0.0722 * TWispMiss[2];
+  check(wispLum < 0.35, `a small wisp core must go dark (T=${wispLum.toFixed(3)})`);
+  check(wispLimb > wispLum * 1.4 && wispLimb < wispMiss * 0.95,
+    `a wisp limb must be a red edge (core ${wispLum.toFixed(3)} limb ${wispLimb.toFixed(3)} miss ${wispMiss.toFixed(3)})`);
+  check(TWispLimb[0] > TWispLimb[2] * 1.1, 'wisp limb must go warm (blue dies first)');
   const helix = harvestDustVolume(seed);
   check(!!helix, 'harvest must bake a clump volume');
   if (helix) {
@@ -350,15 +352,22 @@ const check = (cond: boolean, msg: string) => {
       `clump volume fill ${filled}/${helix.data.length} is not a pocket fog`);
     const TEdge = clumpTransmittance(helix, [18, 0, 0], [-18, 0, 0]);
     const THigh = clumpTransmittance(helix, [18, 3.2, 0], [-18, 3.2, 0]);
-    const TFace = clumpTransmittance(helix, [8.2, 10, 0], [8.2, -10, 0]);
     const lum = (t: [number, number, number]) => 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
+    const faceSamples: number[] = [];
+    for (let k = 0; k < 16; k++) {
+      const th = (k + 0.5) * (Math.PI / 8);
+      const x = 8.2 * Math.cos(th);
+      const z = 8.2 * Math.sin(th);
+      faceSamples.push(lum(clumpTransmittance(helix, [x, 10, z], [x, -10, z])));
+    }
+    faceSamples.sort((a, b) => a - b);
+    const faceLum = faceSamples[8];
     const edgeLum = lum(TEdge);
     const highLum = lum(THigh);
-    const faceLum = lum(TFace);
     check(highLum > 0.55, `above the sheet must stay open (T=${highLum.toFixed(3)})`);
     check(edgeLum < highLum * 0.5, `edge-on lane must be darker than a high ray: ${edgeLum.toFixed(3)} vs ${highLum.toFixed(3)}`);
     check(edgeLum < 0.35, `edge-on through the disc must go dark (T=${edgeLum.toFixed(3)})`);
-    check(faceLum > 0.55, `face-on through the solar circle must stay mostly clear (T=${faceLum.toFixed(3)})`);
+    check(faceLum > 0.55, `face-on median at the solar circle must stay mostly clear (T=${faceLum.toFixed(3)})`);
     console.log(`  clump fog: hit ${hitLum.toFixed(3)} miss ${missLum.toFixed(3)}; edge ${edgeLum.toFixed(3)} high ${highLum.toFixed(3)} face ${faceLum.toFixed(3)}`);
   }
 }

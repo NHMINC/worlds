@@ -78,7 +78,7 @@ export function bakeDustVolume(rows: DustRows): DustVolume {
     const peak = UNIVERSE.GALAXY_DUST_RHO0 + UNIVERSE.GALAXY_DUST_RHO1 * gain;
     // Never thinner than a voxel — a 0.05 kpc wisp would miss the
     // cell centre and vanish from the fog.
-    const Rs = Math.max(R, 0.7 * Math.max(vx, vy, vz));
+    const Rs = Math.max(R, 0.55 * Math.max(vx, vy, vz));
     if (peak <= 0) continue;
     const ix0 = Math.max(0, Math.floor((cx - Rs - ox) / vx));
     const ix1 = Math.min(nx - 1, Math.floor((cx + Rs - ox) / vx));

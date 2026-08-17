@@ -542,7 +542,7 @@ export const UNIVERSE = {
   /** Sightline extinction: optical depth per kpc of clump envelope
    *  (gain · (1 − r²/R²)). Small clouds, high K: a core goes dark,
    *  a limb reddens, a miss stays white. Dust is a filter, not a sprite. */
-  GALAXY_EXTINCT_K: 70,
+  GALAXY_EXTINCT_K: 90,
   /** Column cap. High enough that a dense clump (or a stack along
    *  the plane) can extinguish; not a “keep the core glorious” floor. */
   GALAXY_EXTINCT_MAX: 8,
