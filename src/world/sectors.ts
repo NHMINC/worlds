@@ -47,6 +47,7 @@ import {
 } from './galaxy';
 import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
 import { KIND_DUST, KIND_STAR, emissionLook, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
+import { bakeDustVolume, type DustVolume } from './dustVolume';
 
 export { KIND_STAR, KIND_HII, KIND_PN, KIND_SNR, KIND_DUST } from './skyShape';
 
@@ -673,15 +674,26 @@ function catalogCellVolume(ir: number): number {
 }
 
 let silhouetteMemo: { seed: string; cloud: StarCloud } | null = null;
+let dustVolMemo: { seed: string; vol: DustVolume } | null = null;
+
+function rememberDustVolume(seed: string, cloud: StarCloud): void {
+  dustVolMemo = { seed, vol: bakeDustVolume(cloud) };
+}
 
 /** Cached harvest, or null until the worker (or a sync mint) finishes. */
 export function silhouetteCloud(seed: string): StarCloud | null {
   return silhouetteMemo?.seed === seed ? silhouetteMemo.cloud : null;
 }
 
+/** Baked clump fog for this seed, or null until the harvest is in. */
+export function harvestDustVolume(seed: string): DustVolume | null {
+  return dustVolMemo?.seed === seed ? dustVolMemo.vol : null;
+}
+
 /** Install a harvest minted off-thread. Same cache `buildSilhouetteCloud` uses. */
 export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
   silhouetteMemo = { seed, cloud };
+  rememberDustVolume(seed, cloud);
 }
 
 /**
@@ -703,6 +715,7 @@ function gasDensityCeil(R: number, z: number): number {
  * larger than SILHOUETTE_DUST_R. Sparse cells emit nothing. Minted
  * once per seed — this IS the explorer sky. Harvest stars are
  * pickable. Dust ids are (cell, clump), never catalog stars.
+ * Those dust rows are splat into the extinction volume.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
@@ -756,6 +769,7 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
   }
   const cloud = finishCloud(c, n, t0);
   silhouetteMemo = { seed, cloud };
+  rememberDustVolume(seed, cloud);
   return cloud;
 }
 

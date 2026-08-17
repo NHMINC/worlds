@@ -482,7 +482,7 @@ export const UNIVERSE = {
    * hotter, giants, WR; SILHOUETTE_M is the IMF slot gate), the
    * youngest / brightest nebula hosts (gain ≥ SILHOUETTE_NEB_GAIN),
    * and the full dust-clump census (SILHOUETTE_DUST_R = 0; the rows
-   * are never drawn — dust reaches the eye as sightline extinction)
+   * are the extinction volume — never drawn, they are the fog)
    * — is placed in the same catalog frame. Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
@@ -498,19 +498,18 @@ export const UNIVERSE = {
    * photograph stretch. They screen-blend (they glow, they do not
    * add to a white bar).
    * DUST IS NOT VISIBLE. It is never drawn in EITHER layer — it is
-   * a filter on the light law: every star and nebula row marches
-   * the sightline from the bubble centre through the thin gas sheet
-   * × the same turbulence field (EXTINCT_K per unit column;
-   * EXTINCT_STEPS taps for the backdrop, EXTINCT_STEPS_LOCAL for
-   * the short in-bubble column) and is dimmed by exp(−τ · DUST_RGB).
-   * Blue dies first, so rift-edge stars redden before they vanish;
-   * thick columns swallow stars whole and dust manifests the way
-   * Barnard found it — irregular star-poor holes, no sprite edges.
-   * The sheet's z-scale is ZD (razor thin), so bulge rows above the
-   * plane shine over the lane. EXTINCT_MAX caps the column — from
-   * inside the plane the real core is fully blocked; the cap keeps
-   * it glorious (a toy compression, like TIME_SCALE). Dust rows in
-   * both clouds are census-only (HUD, grain-tint chemistry).
+   * a filter on the light law. Harvest dust rows are the clouds:
+   * each clump is a sphere (radius + gain from the ISM field),
+   * baked once into a density volume and marched from the bubble
+   * centre to the star (EXTINCT_K per kpc of envelope density;
+   * EXTINCT_STEPS taps). Transmittance is exp(−τ · DUST_RGB).
+   * Blue dies first, so a cloud-edge star reddens before it
+   * vanishes; a sightline through a dense clump goes dark. That
+   * is how edge-on dark parts appear — holes, not a painted lane.
+   * EXTINCT_MAX lets a thick column saturate to black (a clump
+   * is allowed to extinguish). Dust rows stay in the census
+   * (HUD, grain-tint chemistry) but they are the fog, not a
+   * decoration.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX as the pixel floor so far shells stay findable;
    * shells under DUST_MINPX skip the march (a disc).
@@ -534,21 +533,25 @@ export const UNIVERSE = {
    *  Three median halvings from 0.65: the top eighth — showpieces. */
   GALAXY_SILHOUETTE_NEB_GAIN: 0.932,
   /** Backdrop dust: envelope radius (kpc) census gate. 0 keeps every
-   *  clump (~81k rows). The old halvings existed to cut sprite
-   *  overdraw; dust is census + sightline extinction now — rows are
-   *  never drawn, so the full population is free. */
+   *  occupied clump. Those rows are the extinction volume — never
+   *  drawn, but every one is splat into the fog. */
   GALAXY_SILHOUETTE_DUST_R: 0,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
-  /** Sightline extinction: optical depth per kpc of dense column.
-   *  Dust is a filter, not an object — see the DUST note above. */
-  GALAXY_EXTINCT_K: 4,
-  /** Column cap. Honest in-plane extinction blacks out the core
-   *  (the real Milky Way's is invisible); the cap keeps it bright. */
-  GALAXY_EXTINCT_MAX: 2.5,
-  /** Sightline march taps (vertex-shader cost, once per row). */
-  GALAXY_EXTINCT_STEPS: 12,
+  /** Sightline extinction: optical depth per kpc of clump envelope
+   *  (gain · (1 − r²/R²)). A mid complex (R~0.2, gain~0.5) should
+   *  go dark; a wisp only tints. Dust is a filter, not a sprite. */
+  GALAXY_EXTINCT_K: 16,
+  /** Column cap. High enough that a dense clump (or a stack along
+   *  the plane) can extinguish; not a “keep the core glorious” floor. */
+  GALAXY_EXTINCT_MAX: 12,
+  /** Sightline march taps (vertex-shader cost, once per row).
+   *  Dense enough to hit a 0.2 kpc complex on a disk-wide path. */
+  GALAXY_EXTINCT_STEPS: 48,
+  /** Density volume for the clump fog (xz × y). Catalog kpc. */
+  GALAXY_DUST_VOL_N: 256,
+  GALAXY_DUST_VOL_NY: 48,
   /** Local-layer taps: the in-bubble column is at most REGION_R
    *  (~0.02 kpc vs ~30 for the backdrop), so 3 taps sample it more
    *  densely than the backdrop's 12 — same law, cheaper march. */
