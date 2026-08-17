@@ -535,11 +535,11 @@ export const UNIVERSE = {
    * a filter on the light law. The fog is the ISM field (thin gas
    * sheet × arms × log-normal turbulence), baked once into a density
    * volume and marched from the bubble centre to the star
-   * (EXTINCT_STEPS taps). Transmittance is exp(−τ · DUST_RGB).
-   * Blue dies first, so a ridge-edge star reddens before it
-   * vanishes. The mean sheet builds the edge-on lane; the dense
-   * tail is a rare dark region. A short in-plane hop stays mostly
-   * clear. EXTINCT_MAX lets a thick column saturate to black.
+   * (EXTINCT_STEPS taps). Look: any positive column is black
+   * (hard occluder) so the blank bands are the fog's true shape.
+   * Beer–Lambert (exp(−τ · DUST_RGB)) returns when the geometry
+   * is right. The mean sheet is the edge-on lane; the dense tail
+   * is a rare dark region.
    * Harvest does not mint dust rows. Clumps remain a catalog
    * population (dustClumpsInCell); they are not the fog.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —

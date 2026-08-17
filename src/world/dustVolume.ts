@@ -112,13 +112,12 @@ export function clumpColumnTau(
   return Math.min(tau * k * dt, cap);
 }
 
-/** RGB transmittance exp(−τ · DUST_RGB). */
+/** RGB transmittance. Dust is a hard occluder for this look. */
 export function clumpTransmittance(
   vol: DustVolume,
   from: [number, number, number],
   to: [number, number, number],
 ): [number, number, number] {
   const tau = clumpColumnTau(vol, from, to);
-  const rgb = UNIVERSE.GALAXY_DUST_RGB;
-  return [Math.exp(-tau * rgb[0]), Math.exp(-tau * rgb[1]), Math.exp(-tau * rgb[2])];
+  return tau > 0 ? [0, 0, 0] : [1, 1, 1];
 }

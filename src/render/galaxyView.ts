@@ -74,9 +74,10 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     // texture3D fails to compile and the whole harvest Points program dies.
     return texture(uDustVol, uv).r;
   }
-  // Transmittance exp(−τ · DUST_RGB) from the bubble centre to a
-  // row — blue dies first, so a cloud-edge star reddens before it
-  // vanishes. Brightness rides vVis; colour carries the chroma shift.
+  // Look: dust is a hard occluder. Any positive column from the
+  // bubble to the row is black — the blank bands are the fog's
+  // true shape. Beer–Lambert (exp(−τ · DUST_RGB)) comes back
+  // when the geometry is right.
   vec3 extinctT(vec3 from, vec3 to) {
     float dCat = length(to - from);
     float dt = dCat / ${glslFloat(steps)};
@@ -86,7 +87,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
       tau += extinctRho(from + dir * ((float(i) + 0.5) * dt));
     }
     tau = min(tau * uExtinctK * dt, uExtinctMax);
-    return exp(-tau * uDustRgb);
+    return tau > 0.0 ? vec3(0.0) : vec3(1.0);
   }
 `;
 
