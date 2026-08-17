@@ -159,8 +159,7 @@ Related laws that must stay physics, not flags:
 
 Worlds show the physics they were born with. There is no climate or sea
 slider — those were a dev inspect path. `effectivePhysics` still exists
-so a lawful override can re-run the pipeline in tests; it is not a
-player verb.
+so a lawful override can re-run the pipeline; it is not a player verb.
 
 ---
 
@@ -482,60 +481,58 @@ are overlays. See **Player layer**.
 
 ## How we change things
 
-These procedural universes are **extremely delicate**. A need to fix
-something in one area is not a licence to adjust something in another.
-Work **incrementally**: one law, one knob family, one failure mode.
-Failure to solve a problem is not a licence to damage other parts of
-the universe. Leave the rest of the bottle alone.
+We are in **prototype mode**. The job is to iterate on procedural
+ideas. Scaffolding consistency is not important. A 30-minute
+mint-and-check loop is how ideas die.
 
-1. **Reproduce with a seed**, not a one-off mesh edit. Sample `objectAt`,
-   land, walk. `scripts/check-galaxy.ts` is the
-   catalog law; smoke scripts in `scripts/smoke-*.mjs` (Playwright against
-   `localhost:5173`) exist for horizon, reflections, flood, torch, sky,
-   land, etc. Use them; add one if you invent a new failure mode.
-2. **Fix the law** in `physics.ts` / `galaxy.ts` / `stellar.ts` /
-   `scattering.ts` / the relevant shader’s shared chunk. If you must add
-   an approximation (Chapman slant, Eddington diffusion, Schlick), comment
-   *why* it is the law, not a bandage. Delete patches when the law makes
-   them redundant.
-3. **Bump `CURRENT_GEN_VERSION`** if a given seed’s generated terrain or
-   system layout would change. Player overlays stay valid because they are
-   absolute cell levels.
-4. **Bump export `formatVersion`** if the JSON shape changes; keep reading
-   older files.
-5. **Do not commit secrets.** Do not drive-by refactors. Update this file
-   when the contract changes.
-6. **Ship on `main`, then prove Pages is serving it.** The live app
-   (GitHub Pages, `https://nhminc.github.io/worlds/`) only builds from
-   `main`; that is the only way the owner can test. Always **commit,
-   push, and merge onto `main`** in the same session. Do not leave work
-   sitting on a feature-branch PR. A draft PR is an unpublished
-   universe — that is how “the music didn’t change” happened.
+**There is no test suite.** Do not write `scripts/check-*`,
+`scripts/smoke-*`, Playwright walks, invariant harnesses, or
+“prove it” harvest mints. Do not run leftovers if you find them.
+The owner looks at the live sky and says what works.
+
+If you need a number (a count, a density at R), write a throwaway
+script, read the number, **delete the script before you commit**.
+Do not leave diagnostics in the tree.
+
+These universes are still delicate. A need to fix something in one
+area is not a licence to adjust something in another. One law, one
+knob family. Leave the rest of the bottle alone.
+
+1. **Change the law** in `physics.ts` / `galaxy.ts` / `stellar.ts` /
+   `scattering.ts` / the relevant shader’s shared chunk. If you must
+   add an approximation (Chapman slant, Eddington diffusion, Schlick),
+   comment *why* it is the law, not a bandage.
+2. **Bump `CURRENT_GEN_VERSION`** if a given seed’s generated terrain
+   or system layout would change. Player overlays stay valid because
+   they are absolute cell levels.
+3. **Bump export `formatVersion`** if the JSON shape changes; keep
+   reading older files.
+4. **Do not commit secrets.** Update this file when the contract
+   changes. Do not invent a test to replace a look.
+5. **Ship on `main`.** The live app (GitHub Pages,
+   `https://nhminc.github.io/worlds/`) only builds from `main`; that
+   is the only way the owner can look. Always **commit, push, and
+   merge onto `main`** in the same session. Do not leave work sitting
+   on a feature-branch PR.
    **`origin/main` is not the live sky.** The `pages` workflow
    (`.github/workflows/pages.yml`) must go **green for that merge
-   SHA**. A red or skipped deploy means the owner is still on the
-   previous universe — that is how “doesn’t look merged” happened
-   when `tsc -b` failed after a successful push. In the same session:
-   1. `git fetch origin main` and confirm `origin/main` *is* your merge.
-   2. Watch `gh run list --branch main --workflow pages --limit 1`
-      until it finishes. The run’s `headSha` must equal
-      `origin/main`. Conclusion must be `success`.
-   3. If it fails: read the log (`gh run view <id> --log-failed`),
-      fix the build, merge that fix onto `main`, and repeat. Do not
-      tell the owner it is live while Pages is red.
-   4. Confirm the baked id: production sets `VITE_BUILD_ID` to
-      `github.sha`. Fetch the live JS and check that string is the
-      merge SHA (the service worker URL is `sw.js?v=<sha>`).
-   5. Then tell the owner to **hard-refresh once** so the PWA
-      drops the previous worker.
-   One owner, **many threads**: other agents and machines land on
-   `main` while you work. Expect commits you did not make. Before
-   merging, `git fetch origin main` and read `git log HEAD..origin/main`.
-   Merge (do not rebase away, do not force-push `main`) so those
-   commits stay in history. If the merge has conflicts, stop and
-   resolve them as incoming work, not as noise. When you merge, **name
-   the foreign commits** in the merge message and in the session
-   summary so the owner can see what else landed.
+   SHA**. The only gate is the production build (`tsc -b && vite
+   build`) — a red deploy means they are still on the previous
+   universe. Then tell the owner to **hard-refresh once** so the
+   PWA drops the previous worker, and **stop**. The next look is
+   theirs.
+   One owner, **many threads**: other agents land on `main` while
+   you work. Before merging, `git fetch origin main` and read
+   `git log HEAD..origin/main`. Merge (do not rebase away, do not
+   force-push `main`). Name foreign commits in the merge message.
+
+## Cursor Cloud specific instructions
+
+- Do not run or restore `scripts/check-*` / `scripts/smoke-*`.
+- Do not stand up Playwright, computerUse walkthroughs, or a
+  harvest mint to verify a visual change. The owner looks at Pages.
+- On-the-spot diagnostics are allowed. Delete them before commit.
+- After Pages is green, stop and wait for the owner.
 
 Code map (start here):
 
@@ -580,6 +577,5 @@ broken.
 
 If a picture looks wrong, write down which law failed (opacity vs
 backdrop, handoff radius vs tessellation, insolation frame, missing
-precip, etc.) and fix **that** — then walk a high-sea world, a hothouse, a
-night side, and an airless rock before calling it done. Do not retune
-an unrelated constant because the first fix did not land.
+precip, etc.) and fix **that**. Do not retune an unrelated constant
+because the first look did not land. Ship the fix; the owner looks.
