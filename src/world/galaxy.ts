@@ -367,15 +367,23 @@ function birthZHalf(R: number): number {
 }
 
 /**
- * In-plane Gaussian σ (kpc). The polar bin diagonal is the floor so
- * rings blur; the spheroid scale takes over in the core so ir=0 is a
- * bump, not a 50-pc cylinder around the axis.
+ * In-plane Gaussian σ (kpc). Scatter only hides the polar lattice.
+ * Tightness is occupancy: the nuclear cusp (NUC_RD) and the box already
+ * live in the density field. Using the peanut *height* as an in-plane
+ * σ washed that cusp into a kpc fog — the axle is the missing 50-pc
+ * clamp, not a licence to smear across the bulge.
+ *
+ * Disk floor = polar bin diagonal (rings blur). Core floor = nuclear
+ * disk, so 576 θ-bins at ir=0 share a blob, not a point, and not the
+ * peanut.
  */
 function inPlaneSigmaKpc(R: number): number {
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  const cell = (0.5 * dz) / Math.sqrt(3);
-  return Math.max(cell, spheroidScaleHeight(R));
+  const dR = UNIVERSE.GALAXY_R_MAX / UNIVERSE.GALAXY_NR;
+  const cell = Math.max((0.5 * dz) / Math.sqrt(3), dR * Math.sqrt(2));
+  const nuclear = UNIVERSE.GALAXY_NUC_RD * Math.exp(-R / UNIVERSE.GALAXY_NUC_RD);
+  return Math.max(cell, nuclear);
 }
 
 /** Cap the Gaussian so query slack stays finite (3σ holds ~99%). */
