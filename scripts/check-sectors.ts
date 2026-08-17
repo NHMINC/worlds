@@ -23,6 +23,7 @@ import {
   buildSilhouetteCloud,
   advanceRegionCloud,
   regionImfFloor,
+  harvestDustVolume,
   KIND_DUST,
   KIND_STAR,
   BIT_DUST,
@@ -31,6 +32,7 @@ import {
   cellFromDustId,
 } from '../src/world/sectors';
 import { emissionLook, shapeAt, KIND_HII, KIND_PN, KIND_SNR } from '../src/world/skyShape';
+import { bakeDustVolume, clumpTransmittance } from '../src/world/dustVolume';
 
 const seed = UNIVERSE.CANONICAL_SEED;
 let fail = 0;
@@ -245,7 +247,7 @@ const check = (cond: boolean, msg: string) => {
   // old 5 M☉ / 300 L☉ harvest, still nowhere near the full disk.
   check(stars > 40_000 && stars < 160_000, `silhouette stars ${stars} is not the doubled luminous tail`);
   check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
-  // Dust is census-only (never drawn; extinction is the visible law).
+  // Dust rows are the fog (never drawn; the volume is the visible law).
   // The MW gas sheet is thinner than the old sech², so the census is
   // the midplane clumps, not every z-slice of a cylinder.
   check(dust > 8_000 && dust < 150_000, `dust count ${dust} is not the full clump census`);
@@ -297,6 +299,53 @@ const check = (cond: boolean, msg: string) => {
     console.log(`  visit handshake: id ${id} kept in local ${local.n}`);
   }
   console.log(`  silhouette: ${a.n} (${stars} stars, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);
+}
+
+// --- clump fog: a cloud extinguishes; empty space does not ---
+{
+  const one: {
+    n: number;
+    pos: Float32Array;
+    size: Float32Array;
+    gain: Float32Array;
+    kind: Uint8Array;
+  } = {
+    n: 1,
+    pos: new Float32Array([0, 0, 0]),
+    size: new Float32Array([0.3]),
+    gain: new Float32Array([0.8]),
+    kind: new Uint8Array([KIND_DUST]),
+  };
+  const vol = bakeDustVolume(one);
+  const vol2 = bakeDustVolume(one);
+  check(vol.data.length === vol2.data.length && vol.data[0] === vol2.data[0], 'dust volume must be deterministic');
+  const THit = clumpTransmittance(vol, [-2, 0, 0], [2, 0, 0]);
+  const TMiss = clumpTransmittance(vol, [-2, 2, 0], [2, 2, 0]);
+  const hitLum = 0.2126 * THit[0] + 0.7152 * THit[1] + 0.0722 * THit[2];
+  const missLum = 0.2126 * TMiss[0] + 0.7152 * TMiss[1] + 0.0722 * TMiss[2];
+  check(hitLum < 0.12, `a dense clump must extinguish (T=${hitLum.toFixed(3)})`);
+  check(missLum > 0.9, `a miss must stay clear (T=${missLum.toFixed(3)})`);
+  check(THit[0] > THit[2], 'blue must die first through a clump');
+  const helix = harvestDustVolume(seed);
+  check(!!helix, 'harvest must bake a clump volume');
+  if (helix) {
+    let filled = 0;
+    for (let i = 0; i < helix.data.length; i++) if (helix.data[i] > 1e-5) filled++;
+    check(filled > 8_000 && filled < helix.data.length * 0.35,
+      `clump volume fill ${filled}/${helix.data.length} is not a sparse fog`);
+    const TEdge = clumpTransmittance(helix, [18, 0, 0], [-18, 0, 0]);
+    const THigh = clumpTransmittance(helix, [18, 3.2, 0], [-18, 3.2, 0]);
+    const TFace = clumpTransmittance(helix, [8.2, 10, 0], [8.2, -10, 0]);
+    const lum = (t: [number, number, number]) => 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
+    const edgeLum = lum(TEdge);
+    const highLum = lum(THigh);
+    const faceLum = lum(TFace);
+    check(highLum > 0.55, `above the sheet must stay open (T=${highLum.toFixed(3)})`);
+    check(edgeLum < highLum * 0.5, `edge-on lane must be darker than a high ray: ${edgeLum.toFixed(3)} vs ${highLum.toFixed(3)}`);
+    check(edgeLum < 0.35, `edge-on through the disc must go dark (T=${edgeLum.toFixed(3)})`);
+    check(faceLum > 0.08, `face-on through the solar circle must not be a black disk (T=${faceLum.toFixed(3)})`);
+    console.log(`  clump fog: hit ${hitLum.toFixed(3)} miss ${missLum.toFixed(3)}; edge ${edgeLum.toFixed(3)} high ${highLum.toFixed(3)} face ${faceLum.toFixed(3)}`);
+  }
 }
 
 // --- emission event laws: expansion, fading, hue from the clock ---

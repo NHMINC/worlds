@@ -34,6 +34,7 @@ import { classifyStar } from '../world/stellar';
 import { systemAt } from '../world/systemgen';
 import {
   silhouetteCloud,
+  harvestDustVolume,
   regionName,
   sketchMatches,
   MK_LETTER,
@@ -50,43 +51,27 @@ import { prepareUniverse } from '../world/universePrep';
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
 
 /**
- * Dust is not drawn; it is subtraction — ONE law for both layers.
- * Column density along a sightline: the thin gas sheet × the same
- * turbulence complexes the clump-occupancy law samples. The sheet's
- * z-scale is ZD (razor thin), so bulge rows above the plane shine
- * over the lane — the Sombrero geometry emerges instead of being
- * painted. `steps` is baked per shader: the backdrop marches the
- * whole disk (GALAXY_EXTINCT_STEPS); the local column is at most
- * REGION_R, so EXTINCT_STEPS_LOCAL taps sample it more densely for
- * a fraction of the cost. Requires SHAPE_GLSL (dustField) above.
+ * Dust is not drawn; it is subtraction. Density is the harvest
+ * clump population, baked into a 3D volume (each row a sphere of
+ * gain · (1 − r²/R²)). A sightline through a cloud goes dark;
+ * empty space stays clear. `steps` is baked per shader.
  */
 const extinctGlsl = (steps: number) => /* glsl */ `
   uniform float uExtinctK;
   uniform float uExtinctMax;
   uniform vec3 uDustRgb;
+  uniform sampler3D uDustVol;
+  uniform vec3 uDustOrigin;
+  uniform vec3 uDustInvSize;
   float extinctRho(vec3 p) {
-    float R = length(p.xz);
-    float theta = atan(p.z, p.x);
-    float span = ${glslFloat(UNIVERSE.GALAXY_R_MAX - UNIVERSE.GALAXY_WARP_R)};
-    float w = max(0.0, (R - ${glslFloat(UNIVERSE.GALAXY_WARP_R)}) / max(span, 1e-3));
-    float z0 = ${glslFloat(UNIVERSE.GALAXY_WARP_Z)} * w * w
-      * sin(theta - ${glslFloat(UNIVERSE.GALAXY_WARP_PHI)});
-    float ct = min(1.0, R / 3.5);
-    z0 += ${glslFloat(UNIVERSE.GALAXY_CORRUGATE)} * ct
-      * (0.55 * sin(2.0 * theta + 0.38 * R)
-       + 0.32 * sin(3.0 * theta - 0.62 * R)
-       + 0.22 * sin(theta + 0.85 * R));
-    float ez = exp(min(abs(p.y - z0) / ${glslFloat(UNIVERSE.GALAXY_ZD_GAS)}, 12.0));
-    float sech = 2.0 / (ez + 1.0 / ez);
-    float gas = exp(-R / ${glslFloat(UNIVERSE.GALAXY_RD * UNIVERSE.GALAXY_RD_GAS)}) * sech * sech;
-    // 0.3 is the rift threshold: only above-average turbulence
-    // holds enough dust to matter along a whole column.
-    return gas * max(0.0, dustField(p, ${glslFloat(UNIVERSE.GALAXY_TURB_FREQ)}) - 0.3);
+    vec3 uv = (p - uDustOrigin) * uDustInvSize;
+    if (uv.x < 0.0 || uv.y < 0.0 || uv.z < 0.0 ||
+        uv.x > 1.0 || uv.y > 1.0 || uv.z > 1.0) return 0.0;
+    return texture3D(uDustVol, uv).r;
   }
   // Transmittance exp(−τ · DUST_RGB) from the bubble centre to a
-  // row — blue dies first, so rift-edge rows redden before they
-  // vanish. Brightness must ride vVis (the star fragment
-  // renormalizes colour to peak); colour carries the chroma shift.
+  // row — blue dies first, so a cloud-edge star reddens before it
+  // vanishes. Brightness rides vVis; colour carries the chroma shift.
   vec3 extinctT(vec3 from, vec3 to) {
     float dCat = length(to - from);
     float dt = dCat / ${glslFloat(steps)};
@@ -156,7 +141,6 @@ export function overviewDistanceKpc(r: number, halfAngle: number, fill = 0.92): 
 }
 
 const SILHOUETTE_VERT = /* glsl */ `
-  ${SHAPE_GLSL}
   ${extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)}
   attribute vec3 aColor;
   attribute float aVis;
@@ -462,6 +446,7 @@ export class GalaxyView {
   private silMat: THREE.ShaderMaterial | null = null;
   private silEmisPts: THREE.Points | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
+  private silDustTex: THREE.Data3DTexture | null = null;
   /** Catalog positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
 
@@ -651,6 +636,8 @@ export class GalaxyView {
       this.silGeo = null;
       this.silMat = null;
     }
+    this.silDustTex?.dispose();
+    this.silDustTex = null;
   }
 
   private disposeArcStars(): void {
@@ -690,11 +677,39 @@ export class GalaxyView {
 
   /** Extinction knobs — the shared dust law (extinctGlsl) in both vertex shaders. */
   private extinctUniforms(): Record<string, THREE.IUniform> {
+    const tex = this.ensureDustTexture();
+    const vol = harvestDustVolume(this.seed);
+    const origin = vol?.origin ?? [-1, -1, -1];
+    const size = vol?.size ?? [2, 2, 2];
     return {
       uExtinctK: { value: UNIVERSE.GALAXY_EXTINCT_K },
       uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
       uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
+      uDustVol: { value: tex },
+      uDustOrigin: { value: new THREE.Vector3(origin[0], origin[1], origin[2]) },
+      uDustInvSize: { value: new THREE.Vector3(1 / size[0], 1 / size[1], 1 / size[2]) },
     };
+  }
+
+  /** Upload the baked clump fog. Empty 1³ if the harvest is not in yet. */
+  private ensureDustTexture(): THREE.Data3DTexture {
+    if (this.silDustTex) return this.silDustTex;
+    const vol = harvestDustVolume(this.seed);
+    const tex = vol
+      ? new THREE.Data3DTexture(vol.data, vol.nx, vol.ny, vol.nz)
+      : new THREE.Data3DTexture(new Float32Array(1), 1, 1, 1);
+    tex.format = THREE.RedFormat;
+    tex.type = THREE.FloatType;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.wrapR = THREE.ClampToEdgeWrapping;
+    tex.unpackAlignment = 1;
+    tex.colorSpace = THREE.NoColorSpace;
+    tex.needsUpdate = true;
+    this.silDustTex = tex;
+    return tex;
   }
 
   /**
@@ -776,10 +791,8 @@ export class GalaxyView {
     this.scene.add(emisPts);
     this.silEmisPts = emisPts;
     this.silEmisMat = emisMat;
-    // No dust pass: dust is not visible, it filters. The rows stay
-    // minted (census, grain-tint check, future local layer) and the
-    // per-pass kind gates cull them; the sightline extinction march
-    // in SILHOUETTE_VERT is how dust reaches the eye.
+    // No dust pass: clumps are not drawn. They are the fog — the
+    // volume uploaded above, marched in SILHOUETTE_VERT.
     this.pushMagUniforms();
   }
 
