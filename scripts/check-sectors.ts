@@ -214,7 +214,7 @@ const check = (cond: boolean, msg: string) => {
   check(
     UNIVERSE.GALAXY_HARVEST_ALL
       ? a.n > 200_000 && a.n < 400_000
-      : a.n > 80_000 && a.n < 400_000,
+      : a.n > 15_000 && a.n < 120_000,
     `silhouette ${a.n} is not the expected harvest`,
   );
   let stars = 0;

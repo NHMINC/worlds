@@ -634,6 +634,14 @@ export const UNIVERSE = {
    *  saturation push harvest pins use, so arms read blue and the
    *  bulge cream. */
   GALAXY_GLOW_SAT: 2.4,
+  /**
+   * Young light follows dense gas (Schmidt — the same ISM field
+   * the dust volume already is). CLUMP_REF is the dustDensity that
+   * saturates the nursery; CLUMP_VOID is leftover young light off
+   * the filaments. Old spheroid light is untouched.
+   */
+  GALAXY_GLOW_CLUMP_REF: 2.0,
+  GALAXY_GLOW_CLUMP_VOID: 0.22,
   /** Full-grown planetary-nebula shell radius (kpc, toy). */
   PN_R_MAX: 0.08,
   /** Full-grown supernova-remnant shell radius (kpc, toy). */

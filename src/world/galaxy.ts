@@ -185,12 +185,30 @@ export function density(p: GalPos): number {
 }
 
 /**
+ * Young-light clump from the baked ISM field. `rho` is dustDensity
+ * (the same volume the glow march already samples). Old light does
+ * not drink this — nurseries sit in dense gas; the spheroid does not.
+ */
+export function glowClump(rho: number): number {
+  const U = UNIVERSE;
+  const c = Math.max(0, Math.min(1, rho / Math.max(1e-6, U.GALAXY_GLOW_CLUMP_REF)));
+  return U.GALAXY_GLOW_CLUMP_VOID + (1 - U.GALAXY_GLOW_CLUMP_VOID) * c;
+}
+
+/**
  * Light-weighted glow at a catalog point: old spheroid + leftover
  * thin, vs young thin-disk. Number density is M dwarfs; light is
  * the giant branch (old) and hot MS (young). Youth follows gasArm
  * (Schmidt — dense gas, recent births), not galactocentric radius.
+ * Pass `seed` to modulate young light by the ISM overdensity; omit
+ * it for the smooth mass-model term the GLSL `gxGlow` mirrors.
  */
-export function glowLight(x: number, y: number, z: number): { old: number; young: number } {
+export function glowLight(
+  x: number,
+  y: number,
+  z: number,
+  seed?: string,
+): { old: number; young: number } {
   const p = cartToGal(x, y, z);
   const U = UNIVERSE;
   const z0 = midplaneZ(p.R, p.theta);
@@ -202,9 +220,11 @@ export function glowLight(x: number, y: number, z: number): { old: number; young
   const A = U.GALAXY_GAS_ARM_A;
   const g01 = (gasArm(p.R, p.theta) - (1 - A)) / Math.max(1e-4, 2 * A);
   const yFrac = U.GALAXY_GLOW_YOUNG_FLOOR + (1 - U.GALAXY_GLOW_YOUNG_FLOOR) * Math.max(0, Math.min(1, g01));
+  let young = thin * yFrac * U.GALAXY_GLOW_YOUNG;
+  if (seed) young *= glowClump(dustDensity(seed, x, y, z));
   return {
     old: sph.bulge + sph.bar + sph.halo + thick + thin * (1 - yFrac),
-    young: thin * yFrac * U.GALAXY_GLOW_YOUNG,
+    young,
   };
 }
 
@@ -215,10 +235,12 @@ const gxF = (n: number): string => {
 };
 
 /**
- * GLSL twin of glowLight + midplane. `gxGlow(p)` returns
+ * GLSL twin of glowLight (mass-model term) + midplane. `gxGlow(p)`
+ * returns
  *   x: old light (bulge / bar / thick / halo / old thin)
  *   y: young light (thin × gasArm youth × YOUNG)
- * Sampled as a field — no if (core). Dust is a separate march.
+ * The march multiplies y by glowClump(extinctRho) — same ISM
+ * volume, not a second noise. Sampled as a field — no if (core).
  */
 export const GALAXY_GLOW_GLSL = /* glsl */ `
 float gxSech2(float x) {

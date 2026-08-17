@@ -119,8 +119,9 @@ function. Every occupied slot is addressable, the way No Man’s Sky
 addresses a system: the id *is* the star, not an index into a stored
 list. The **galaxy explorer** is how you discover: the Hubble glow
 is the mass model on the GPU. Face-on, ~10⁹ stars are the integral
-(`densityParts` × light-weighted pop colour: old spheroid warm,
-young thin-disk cool — the stellar clock, not `if (R < 2)`).
+  (`densityParts` × light-weighted pop colour: old spheroid warm,
+young thin-disk cool, young light further following the ISM
+overdensity — the stellar clock, not `if (R < 2)`).
 The explorer shows the harvest: the luminous tail (exceptions
 you can aim at). `HARVEST_ALL` is a look test that turns those
 gates off and photographs the faint giant branch as pins;

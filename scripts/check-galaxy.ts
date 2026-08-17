@@ -10,6 +10,7 @@ import {
   midplaneZ, thinScaleHeight, spheroidScaleHeight, diskScaleHeight,
   slotBirthRaw, cellCenter, galToCart, dustDensity, ismAt, armPhase,
   glowLight,
+  glowClump,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar, teffToRgb } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
@@ -405,7 +406,7 @@ check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
     const x = R * Math.cos(th);
     const z = R * Math.sin(th);
     const y0 = midplaneZ(R, th);
-    const g = glowLight(x, y0, z);
+    const g = glowLight(x, y0, z, seed);
     if (inSpiralArm(R, th)) {
       armY += g.young;
       nArm++;
@@ -417,8 +418,25 @@ check(dArm > dGap * 1.05, `dust does not prefer arms: arm=${dArm} gap=${dGap}`);
   const a = armY / Math.max(1, nArm);
   const b = gapY / Math.max(1, nGap);
   check(a > b * 1.25, `young glow must follow gas arms, not a gold plate: arm=${a.toFixed(3)} gap=${b.toFixed(3)}`);
-  const core = glowLight(0.2, 0, 0);
+  const core = glowLight(0.2, 0, 0, seed);
   check(core.old > core.young, `nucleus light must be old (giant branch), old=${core.old.toFixed(3)} young=${core.young.toFixed(3)}`);
+  const Rmid = 12;
+  const thW = Math.PI / 2 + UNIVERSE.GALAXY_WARP_PHI;
+  const yW = midplaneZ(Rmid, thW);
+  const xW = Rmid * Math.cos(thW);
+  const zW = Rmid * Math.sin(thW);
+  const onGlow = glowLight(xW, yW, zW);
+  const offGlow = glowLight(xW, yW + 0.6, zW);
+  const onL = onGlow.old + onGlow.young;
+  const offL = offGlow.old + offGlow.young;
+  check(onL > offL * 3,
+    `glow must ride the warped midplane: on=${onL.toFixed(3)} off=${offL.toFixed(3)} (z0=${yW.toFixed(2)})`);
+  check(Math.abs(glowClump(0) - UNIVERSE.GALAXY_GLOW_CLUMP_VOID) < 1e-9, 'empty ISM is the young void');
+  check(glowClump(UNIVERSE.GALAXY_GLOW_CLUMP_REF) === 1, 'dense gas saturates young clump');
+  check(glowClump(UNIVERSE.GALAXY_GLOW_CLUMP_REF * 4) === 1, 'clump must not blow past 1');
+  const smoothY = glowLight(xW, yW, zW).young;
+  const clumpY = glowLight(xW, yW, zW, seed).young;
+  check(clumpY <= smoothY + 1e-12, `clump must not invent young light: ${clumpY.toFixed(3)} vs ${smoothY.toFixed(3)}`);
 }
 
 function asObj(star: StellarState): GalaxyObject {

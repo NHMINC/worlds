@@ -48,9 +48,16 @@ uniform float uGain;
 uniform vec3 uOldRgb;
 uniform vec3 uYoungRgb;
 uniform float uRad;
+uniform float uClumpRef;
+uniform float uClumpVoid;
 
 ${GALAXY_GLOW_GLSL}
 ${extinctGlow()}
+
+float glowClump(float rho) {
+  float c = clamp(rho / max(uClumpRef, 1e-6), 0.0, 1.0);
+  return uClumpVoid + (1.0 - uClumpVoid) * c;
+}
 
 bool sphHit(vec3 ro, vec3 rd, float rad, out float t0, out float t1) {
   float b = dot(ro, rd);
@@ -78,14 +85,19 @@ void main() {
   }
   float jit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
   // Face-on / tilt: the mass and the dust sheet live in a few
-  // hundred pc of height. A uniform march across the bounding
-  // sphere skips them (dt ~ 0.7 kpc vs zd_gas = 0.12). Concentrate
-  // samples on the midplane crossing. Edge-on (|rd.y| small) keeps
-  // the long in-plane march.
+  // hundred pc of the warped midplane. A uniform march across the
+  // bounding sphere skips them (dt ~ 0.7 kpc vs zd_gas = 0.12).
+  // Newton from the y=0 guess onto y = gxMidplane. Edge-on
+  // (|rd.y| small) keeps the long in-plane march.
   float ay = abs(rd.y);
   if (ay > 0.16) {
     float tHit = -ro.y / rd.y;
-    float span = 3.2 / ay;
+    for (int k = 0; k < 3; k++) {
+      vec3 q = ro + rd * tHit;
+      float z0 = gxMidplane(length(q.xz), atan(q.z, q.x));
+      tHit += (z0 - q.y) / rd.y;
+    }
+    float span = ${UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE + 3.2} / ay;
     t0 = max(t0, tHit - span);
     t1 = min(t1, tHit + span);
     if (t1 <= t0) {
@@ -101,7 +113,8 @@ void main() {
   for (int i = 0; i < STEPS; i++) {
     vec3 p = ro + rd * (t + 0.5 * dt);
     vec2 L = gxGlow(p);
-    vec3 emit = L.x * uOldRgb + L.y * uYoungRgb;
+    float rho = extinctRho(p);
+    vec3 emit = L.x * uOldRgb + L.y * glowClump(rho) * uYoungRgb;
     col += T * emit * dt * uGain;
     T *= extinctStepT(p, dt);
     t += dt;
@@ -139,6 +152,8 @@ export function makeGalaxyGlowMaterial(
       uOldRgb: { value: new THREE.Vector3(...oldRgb) },
       uYoungRgb: { value: new THREE.Vector3(...youngRgb) },
       uRad: { value: glowBoundingRadius() },
+      uClumpRef: { value: UNIVERSE.GALAXY_GLOW_CLUMP_REF },
+      uClumpVoid: { value: UNIVERSE.GALAXY_GLOW_CLUMP_VOID },
       uExtinctK: dust.uExtinctK,
       uExtinctMax: dust.uExtinctMax,
       uDustRgb: dust.uDustRgb,
