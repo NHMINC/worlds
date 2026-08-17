@@ -470,7 +470,7 @@ function dustRadiusKpc(seed: string, cell: number, k: number): number {
   const shape = shapeAt(KIND_DUST, dustId(cell, k));
   const phys = dustPhysics(seed, cell);
   const jitter = 0.7 + 0.6 * shape.seed;
-  const u = Math.pow(Math.max(0, phys.field), 0.7);
+  const u = Math.pow(Math.max(0, phys.field), 1.3);
   const r0 = UNIVERSE.GALAXY_DUST_R_MIN;
   const r1 = UNIVERSE.GALAXY_DUST_R_MAX;
   return Math.min(r1, (r0 + (r1 - r0) * u) * jitter);
