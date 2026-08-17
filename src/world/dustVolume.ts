@@ -67,10 +67,9 @@ export function bakeDustVolume(rows: DustRows): DustVolume {
   const vx = size[0] / nx;
   const vy = size[1] / ny;
   const vz = size[2] / nz;
-  // Farthest a point sits from a sample. A wisp smaller than this
-  // must still write the nearest cell — otherwise it vanishes and
-  // the pocket never exists. Large complexes keep their true R.
-  const halfDiag = 0.5 * Math.hypot(vx, vy, vz);
+  // Splat the true radius. A wisp smaller than a cell still writes
+  // the nearest sample below — do not inflate R or the 50% cut
+  // becomes a voxel-sized sheet again.
   const [ox, oy, oz] = origin;
   for (let i = 0; i < rows.n; i++) {
     if (rows.kind[i] !== KIND_DUST) continue;
@@ -80,7 +79,7 @@ export function bakeDustVolume(rows: DustRows): DustVolume {
     const R = Math.max(rows.size[i], 1e-4);
     const gain = Math.max(0, rows.gain[i]);
     const peak = UNIVERSE.GALAXY_DUST_RHO0 + UNIVERSE.GALAXY_DUST_RHO1 * gain;
-    const Rs = Math.max(R, halfDiag * 1.25);
+    const Rs = R;
     if (peak <= 0) continue;
     const ix0 = Math.max(0, Math.floor((cx - Rs - ox) / vx));
     const ix1 = Math.min(nx - 1, Math.floor((cx + Rs - ox) / vx));

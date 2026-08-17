@@ -547,10 +547,10 @@ export const UNIVERSE = {
    *  the plane) can extinguish; not a “keep the core glorious” floor. */
   GALAXY_EXTINCT_MAX: 8,
   /** Sightline march taps (vertex-shader cost, once per row).
-   *  Dense enough to hit a 0.05 kpc wisp on a disk-wide path. */
+   *  Dense enough to hit a 0.025 kpc wisp on a disk-wide path. */
   GALAXY_EXTINCT_STEPS: 64,
   /** Density volume for the clump fog (xz × y). Catalog kpc.
-   *  320 × 64: a 0.05 kpc wisp is one cell on the thin axis. */
+   *  320 × 64: a 0.025 kpc wisp is one cell on the thin axis. */
   GALAXY_DUST_VOL_N: 320,
   GALAXY_DUST_VOL_NY: 64,
   /** Local-layer taps: the in-bubble column is at most REGION_R
@@ -570,12 +570,12 @@ export const UNIVERSE = {
   SNR_R_MAX: 0.15,
   /** Strömgren scale: H II radius = HII_R_K · L^(1/3), clamped. */
   HII_R_K: 0.004,
-  /** Largest dust complex radius (kpc). Kept modest so one cloud
-   *  is a pocket, not a blanket over the disc. */
-  GALAXY_DUST_R_MAX: 0.32,
+  /** Largest dust complex radius (kpc). Half the previous pocket
+   *  so covering stays a speck, not a sheet. */
+  GALAXY_DUST_R_MAX: 0.16,
   /** Photograph wisp (kpc). Small covering fraction — most sightlines
    *  miss, so the harvest stays white except at the clouds. */
-  GALAXY_DUST_R_MIN: 0.05,
+  GALAXY_DUST_R_MIN: 0.025,
   /** Peak envelope density: RHO0 + RHO1 · gain. A wisp core must
    *  be dark (high K × this peak); the limb is the red edge. */
   GALAXY_DUST_RHO0: 0.45,
