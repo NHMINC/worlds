@@ -826,12 +826,9 @@ function mintAllCloud(seed: string, t0: number): StarCloud {
       }
     }
   }
-  // Most G-and-up slots are dead or G dwarfs that do not photograph.
-  // Draw a thicker stride so the bottle can fill with giant/hot light.
-  const f = Math.min(1, (4 * cap) / Math.max(1, occupied));
+  const f = Math.min(1, cap / Math.max(1, occupied));
   let c = allocCloud(cap + 80_000);
   let n = 0;
-  let starLeft = cap;
   for (let ir = 0; ir < nr; ir++) {
     const vol = catalogCellVolume(ir);
     const R = ((ir + 0.5) / nr) * rMax;
@@ -843,10 +840,9 @@ function mintAllCloud(seed: string, t0: number): StarCloud {
         const filled = slotsInCell(seed, cell);
         if (filled > 0) {
           const sPhoto = Math.min(filled, Math.ceil(uPhoto * filled));
-          const grown = writeAllMass(seed, cell, filled, sPhoto, f, c, n, starLeft);
+          const grown = writeAllMass(seed, cell, filled, sPhoto, f, c, n);
           c = grown.c;
           n = grown.n;
-          starLeft = grown.starLeft;
           const sLive = Math.min(filled, Math.floor(uLive * filled));
           for (let slot = sLive; slot < filled; slot++) {
             if (massSlotKept(seed, cell, filled, sPhoto, f, slot)) continue;
@@ -947,34 +943,28 @@ function writeAllMass(
   f: number,
   c: Omit<StarCloud, 'n' | 'ms'>,
   n: number,
-  starLeft: number,
-): { c: Omit<StarCloud, 'n' | 'ms'>; n: number; starLeft: number } {
+): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } {
   const band = filled - s0;
-  let nKeep = massKeepCount(seed, cell, band, f);
-  if (nKeep <= 0 || starLeft <= 0) return { c, n, starLeft };
-  nKeep = Math.min(nKeep, starLeft);
+  const nKeep = massKeepCount(seed, cell, band, f);
+  if (nKeep <= 0) return { c, n };
   if (nKeep >= band) {
-    for (let slot = s0; slot < filled && starLeft > 0; slot++) {
+    for (let slot = s0; slot < filled; slot++) {
       if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-      if (writeMassPin(seed, cell, slot, filled, n, c)) {
-        n++;
-        starLeft--;
-      }
+      if (writeMassPin(seed, cell, slot, filled, n, c)) n++;
     }
-    return { c, n, starLeft };
+    return { c, n };
   }
-  for (let k = 0; k < nKeep && starLeft > 0; k++) {
+  for (let k = 0; k < nKeep; k++) {
     for (let attempt = 0; attempt < 16; attempt++) {
       const slot = s0 + Math.min(band - 1, Math.floor(harvestShapeUnit(seed, cell, k + 1, attempt) * band));
       if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
       if (writeMassPin(seed, cell, slot, filled, n, c)) {
         n++;
-        starLeft--;
         break;
       }
     }
   }
-  return { c, n, starLeft };
+  return { c, n };
 }
 
 /** MS photosphere is a cheap birth row; only the giant window needs the clock. */

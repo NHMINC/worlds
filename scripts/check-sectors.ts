@@ -213,7 +213,7 @@ const check = (cond: boolean, msg: string) => {
   check(a.kind.length >= a.n, 'silhouette missing kind');
   check(
     UNIVERSE.GALAXY_HARVEST_ALL
-      ? a.n > 200_000 && a.n < 1_200_000
+      ? a.n > 200_000 && a.n < 400_000
       : a.n > 80_000 && a.n < 400_000,
     `silhouette ${a.n} is not the expected harvest`,
   );
