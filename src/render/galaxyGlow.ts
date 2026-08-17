@@ -98,11 +98,11 @@ void main() {
       tHit += (z0 - q.y) / rd.y;
     }
     float span = ${UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE + 3.2} / ay;
-    t0 = max(t0, tHit - span);
-    t1 = min(t1, tHit + span);
-    if (t1 <= t0) {
-      gl_FragColor = vec4(uVoid, 1.0);
-      return;
+    float w0 = max(t0, tHit - span);
+    float w1 = min(t1, tHit + span);
+    if (w1 > w0) {
+      t0 = w0;
+      t1 = w1;
     }
   }
   const int STEPS = ${UNIVERSE.GALAXY_GLOW_STEPS};
