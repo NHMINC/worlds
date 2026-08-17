@@ -221,8 +221,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`): the ISM field (thin
   gas sheet × arms × turbulence) is baked into a density volume.
-  The mean sheet is the edge-on lane; the dense tail is a rare
-  dark ridge. Clumps stay addressable in the catalog; they are
+  Look: any positive column is black (hard occluder) so the
+  blank bands are the fog's true shape. Clumps stay addressable
+  in the catalog; they are
   not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
