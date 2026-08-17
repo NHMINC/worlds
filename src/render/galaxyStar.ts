@@ -7,7 +7,6 @@
  * Dust is never drawn. r/d grow is a later close-survey law.
  */
 import * as THREE from 'three';
-import { UNIVERSE } from '../world/physics';
 import type { GalaxyObject } from '../world/galaxy';
 
 /**
