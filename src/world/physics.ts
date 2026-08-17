@@ -548,7 +548,7 @@ export const UNIVERSE = {
   GALAXY_EXTINCT_MAX: 12,
   /** Sightline march taps (vertex-shader cost, once per row).
    *  Dense enough to hit a 0.2 kpc complex on a disk-wide path. */
-  GALAXY_EXTINCT_STEPS: 48,
+  GALAXY_EXTINCT_STEPS: 64,
   /** Density volume for the clump fog (xz × y). Catalog kpc. */
   GALAXY_DUST_VOL_N: 256,
   GALAXY_DUST_VOL_NY: 48,
@@ -569,8 +569,15 @@ export const UNIVERSE = {
   SNR_R_MAX: 0.15,
   /** Strömgren scale: H II radius = HII_R_K · L^(1/3), clamped. */
   HII_R_K: 0.004,
-  /** Largest dust complex radius (kpc); wisps start near 0.05. */
+  /** Largest dust complex radius (kpc). */
   GALAXY_DUST_R_MAX: 0.8,
+  /** Photograph wisp (kpc). The old 0.05 floor was a cell-scale puff
+   *  — smaller than a volume voxel, so the march never saw a cloud. */
+  GALAXY_DUST_R_MIN: 0.22,
+  /** Peak envelope density: RHO0 + RHO1 · gain. Gain is field ×
+   *  dust-to-gas (often ~0.01); without a floor the fog is empty. */
+  GALAXY_DUST_RHO0: 0.5,
+  GALAXY_DUST_RHO1: 2.5,
   /** Raymarch steps through a nebula shell (perf knob; 1 = cheap slice). */
   DUST_MARCH_STEPS: 10,
   /** Nebula sprites smaller than this (CSS px) skip the march. */

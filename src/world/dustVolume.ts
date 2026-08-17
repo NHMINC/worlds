@@ -75,23 +75,25 @@ export function bakeDustVolume(rows: DustRows): DustVolume {
     const cz = rows.pos[i * 3 + 2];
     const R = Math.max(rows.size[i], 1e-4);
     const gain = Math.max(0, rows.gain[i]);
-    if (gain <= 0) continue;
-    const ix0 = Math.max(0, Math.floor((cx - R - ox) / vx));
-    const ix1 = Math.min(nx - 1, Math.floor((cx + R - ox) / vx));
-    const iy0 = Math.max(0, Math.floor((cy - R - oy) / vy));
-    const iy1 = Math.min(ny - 1, Math.floor((cy + R - oy) / vy));
-    const iz0 = Math.max(0, Math.floor((cz - R - oz) / vz));
-    const iz1 = Math.min(nz - 1, Math.floor((cz + R - oz) / vz));
+    const peak = UNIVERSE.GALAXY_DUST_RHO0 + UNIVERSE.GALAXY_DUST_RHO1 * gain;
+    // Never thinner than a voxel — a 0.05 kpc wisp would miss the
+    // cell centre and vanish from the fog.
+    const Rs = Math.max(R, 0.7 * Math.max(vx, vy, vz));
+    if (peak <= 0) continue;
+    const ix0 = Math.max(0, Math.floor((cx - Rs - ox) / vx));
+    const ix1 = Math.min(nx - 1, Math.floor((cx + Rs - ox) / vx));
+    const iy0 = Math.max(0, Math.floor((cy - Rs - oy) / vy));
+    const iy1 = Math.min(ny - 1, Math.floor((cy + Rs - oy) / vy));
+    const iz0 = Math.max(0, Math.floor((cz - Rs - oz) / vz));
+    const iz1 = Math.min(nz - 1, Math.floor((cz + Rs - oz) / vz));
     for (let iz = iz0; iz <= iz1; iz++) {
       const z = oz + (iz + 0.5) * vz;
-      const dz = z - cz;
       for (let iy = iy0; iy <= iy1; iy++) {
         const y = oy + (iy + 0.5) * vy;
-        const dy = y - cy;
         const row = nx * (iy + ny * iz);
         for (let ix = ix0; ix <= ix1; ix++) {
           const x = ox + (ix + 0.5) * vx;
-          const env = clumpEnvelope(x, y, z, cx, cy, cz, R, gain);
+          const env = clumpEnvelope(x, y, z, cx, cy, cz, Rs, peak);
           if (env > 0) data[row + ix] += env;
         }
       }

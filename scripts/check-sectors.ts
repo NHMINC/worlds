@@ -330,9 +330,9 @@ const check = (cond: boolean, msg: string) => {
   check(!!helix, 'harvest must bake a clump volume');
   if (helix) {
     let filled = 0;
-    for (let i = 0; i < helix.data.length; i += 17) if (helix.data[i] > 1e-5) filled++;
-    const probed = Math.ceil(helix.data.length / 17);
-    check(filled > probed * 0.002 && filled < probed * 0.6, `clump volume fill ${filled}/${probed} is not a sparse fog`);
+    for (let i = 0; i < helix.data.length; i++) if (helix.data[i] > 1e-5) filled++;
+    check(filled > 8_000 && filled < helix.data.length * 0.35,
+      `clump volume fill ${filled}/${helix.data.length} is not a sparse fog`);
     const TEdge = clumpTransmittance(helix, [18, 0, 0], [-18, 0, 0]);
     const TPole = clumpTransmittance(helix, [0, 12, 0], [0, -12, 0]);
     const edgeLum = 0.2126 * TEdge[0] + 0.7152 * TEdge[1] + 0.0722 * TEdge[2];

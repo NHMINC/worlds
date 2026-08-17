@@ -465,23 +465,24 @@ function mix3(a: [number, number, number], b: [number, number, number], t: numbe
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
-/** Envelope radius (kpc) from the ISM field. Wisps sit near 0.05. */
+/** Envelope radius (kpc) from the ISM field. Wisps sit at R_MIN. */
 function dustRadiusKpc(seed: string, cell: number, k: number): number {
   const shape = shapeAt(KIND_DUST, dustId(cell, k));
   const phys = dustPhysics(seed, cell);
   const jitter = 0.7 + 0.6 * shape.seed;
-  return Math.min(
-    UNIVERSE.GALAXY_DUST_R_MAX,
-    (0.05 + (UNIVERSE.GALAXY_DUST_R_MAX - 0.05) * Math.pow(phys.field, 1.5)) * jitter,
-  );
+  const u = Math.pow(Math.max(0, phys.field), 0.7);
+  const r0 = UNIVERSE.GALAXY_DUST_R_MIN;
+  const r1 = UNIVERSE.GALAXY_DUST_R_MAX;
+  return Math.min(r1, (r0 + (r1 - r0) * u) * jitter);
 }
 
 /**
  * One dust clump: scattered position (no lattice), sphere of
- * influence from the field — wisps ~0.05 kpc, complexes up to
+ * influence from the field — wisps at R_MIN, complexes up to
  * GALAXY_DUST_R_MAX. Grain colour is chemistry (silicate / sooty
- * carbon / ice mantles); `gain` carries the mean density the cloud
- * shader integrates — obscuration and lit rims derive from it.
+ * carbon / ice mantles); `gain` is field × dust-to-gas. The
+ * extinction volume remaps that to a peak density so a cloud
+ * can extinguish.
  */
 function writeDust(seed: string, cell: number, k: number, i: number, c: Omit<StarCloud, 'n' | 'ms'>): void {
   const cart = dustBirthCart(seed, cell, k);
