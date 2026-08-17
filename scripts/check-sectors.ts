@@ -211,12 +211,14 @@ const check = (cond: boolean, msg: string) => {
   check(a === b5, 'silhouette must be cached per seed');
   check(a.n === b5.n && a.ids[0] === b5.ids[0], 'silhouette not deterministic');
   check(a.kind.length >= a.n, 'silhouette missing kind');
-  check(a.n > 20_000 && a.n < 220_000, `silhouette ${a.n} is not a bright tail`);
+  check(a.n > 80_000 && a.n < 400_000, `silhouette ${a.n} is not the dual harvest`);
   let stars = 0;
   let nebulae = 0;
   let dust = 0;
   let dustOffLattice = 0;
   let minStarL = Infinity;
+  let bright = 0;
+  let shape = 0;
   const dustSeen = new Set<number>();
   const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
   const r = UNIVERSE.GALAXY_REGION_R;
@@ -238,22 +240,31 @@ const check = (cond: boolean, msg: string) => {
       continue;
     }
     if (a.bits[i] & BIT_NEBULA) nebulae++;
-    else stars++;
-    if (a.kind[i] === KIND_STAR && a.lum[i] < minStarL) minStarL = a.lum[i];
+    else {
+      stars++;
+      if (a.kind[i] === KIND_STAR) {
+        if (a.lum[i] >= UNIVERSE.GALAXY_SILHOUETTE_L) bright++;
+        else shape++;
+        if (a.lum[i] < minStarL) minStarL = a.lum[i];
+      }
+    }
   }
   check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
   check(inside < a.n, 'silhouette must reach past the sample ball');
-  // M ≥ 4.2 / L ≥ 210 is the late-B MS floor — about twice the
-  // old 5 M☉ / 300 L☉ harvest, still nowhere near the full disk.
-  check(stars > 40_000 && stars < 160_000, `silhouette stars ${stars} is not the doubled luminous tail`);
+  // Dual harvest: late-B tail (M ≥ 4.2 / L ≥ 210) plus a 10⁻⁴
+  // occupancy shape sample of long-lived photospheres (L ~ 1).
+  check(stars > 180_000 && stars < 320_000, `silhouette stars ${stars} is not the dual harvest`);
+  check(bright > 40_000 && bright < 160_000, `luminous tail ${bright} moved`);
+  check(shape > 80_000 && shape < 240_000, `shape sample ${shape} is not ~10⁻⁴ of occupancy`);
   check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
   // Dust rows are the fog (never drawn; the volume is the visible law).
   // The MW gas sheet is thinner than the old sech², so the census is
   // the midplane clumps, not every z-slice of a cylinder.
   check(dust > 8_000 && dust < 150_000, `dust count ${dust} is not the full clump census`);
   check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
-  check(minStarL >= UNIVERSE.GALAXY_SILHOUETTE_L, `silhouette star dim L=${minStarL}`);
-  check(stars + nebulae < 180_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
+  check(minStarL < UNIVERSE.GALAXY_SILHOUETTE_L, `shape sample missing: min L=${minStarL}`);
+  check(minStarL >= 0.3, `shape star too dim L=${minStarL}`);
+  check(stars + nebulae < 400_000, `silhouette star/nebula rows ${stars + nebulae} blew the harvest cap`);
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');
@@ -279,7 +290,7 @@ const check = (cond: boolean, msg: string) => {
   // Visit handshake: a backdrop star must be a local keeper when the ball sits on it.
   let host = -1;
   for (let i = 0; i < a.n; i++) {
-    if (a.kind[i] === KIND_STAR && a.lum[i] >= 8) {
+    if (a.kind[i] === KIND_STAR && a.lum[i] >= UNIVERSE.GALAXY_SILHOUETTE_L) {
       host = i;
       break;
     }
@@ -298,7 +309,42 @@ const check = (cond: boolean, msg: string) => {
     check(found, `backdrop star ${id} vanished when the catalog ball reached it`);
     console.log(`  visit handshake: id ${id} kept in local ${local.n}`);
   }
-  console.log(`  silhouette: ${a.n} (${stars} stars, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);
+  console.log(`  silhouette: ${a.n} (${stars} stars / ${bright} tail + ${shape} shape, ${nebulae} nebulae, ${dust} dust) in ${a.ms.toFixed(0)} ms`);
+  const ballR = 0.4;
+  const countBall = (R: number, theta: number, z: number): number => {
+    const p = galToCart({ R, theta, z });
+    let k = 0;
+    for (let i = 0; i < a.n; i++) {
+      if (a.kind[i] !== KIND_STAR) continue;
+      const d = Math.hypot(a.pos[i * 3] - p.x, a.pos[i * 3 + 1] - p.y, a.pos[i * 3 + 2] - p.z);
+      if (d < ballR) k++;
+    }
+    return k;
+  };
+  const nCore = countBall(0.2, 0, 0);
+  const nSun = countBall(UNIVERSE.R_SUN, 1.0, 0);
+  const nRim = countBall(15, 0, 0);
+  console.log(`  0.4 kpc ball: core ${nCore} · sun ${nSun} · R=15 ${nRim}`);
+  check(nCore > nSun * 8, `shape sample did not thicken the core: ${nCore} vs sun ${nSun}`);
+  check(nSun > nRim, `shape sample did not thin toward the rim: sun ${nSun} vs R=15 ${nRim}`);
+  let shapeHost = -1;
+  for (let i = 0; i < a.n; i++) {
+    if (a.kind[i] === KIND_STAR && a.lum[i] < UNIVERSE.GALAXY_SILHOUETTE_L) {
+      shapeHost = i;
+      break;
+    }
+  }
+  check(shapeHost >= 0, 'no shape-sample star for the visit handshake');
+  if (shapeHost >= 0) {
+    const id = a.ids[shapeHost];
+    const o = objectAt(seed, id);
+    check(!!o && o.id === id, `shape id ${id} is not a catalog row`);
+    const { cell, slot } = splitId(id);
+    const filled = slotsInCell(seed, cell);
+    const cart = slotBirthCart(seed, cell, slot);
+    check(Math.abs(cart.x - a.pos[shapeHost * 3]) < 1e-5 && Math.abs(cart.y - a.pos[shapeHost * 3 + 1]) < 1e-5, 'shape pose != slotBirthCart');
+    console.log(`  shape handshake: id ${id} L=${a.lum[shapeHost].toFixed(2)} objectAt ok`);
+  }
 }
 
 // --- ISM fog: thin sheet + rare ridges, not 10k spheres ---

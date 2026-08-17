@@ -1,6 +1,7 @@
 /**
- * Whole-disk luminous tail. The main thread keeps the map / dive
- * moving; this worker mints the backdrop once per seed.
+ * Whole-disk harvest (luminous tail + occupancy shape sample).
+ * The main thread keeps the map / dive moving; this worker mints
+ * the backdrop once per seed.
  */
 import { buildSilhouetteCloud } from './sectors';
 
