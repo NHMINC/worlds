@@ -96,6 +96,24 @@ export function thinScaleHeight(R: number): number {
 }
 
 /**
+ * Inner spheroid scale height (kpc). Box + peanut + nucleus — the
+ * mass model's vertical envelope near the centre. This is why a
+ * dense core becomes a bump edge-on, not a brighter line.
+ */
+export function spheroidScaleHeight(R: number): number {
+  const U = UNIVERSE;
+  const box = U.GALAXY_BOX_C * Math.exp(-0.5 * (R / U.GALAXY_BOX_A) ** 2);
+  const peanut = U.GALAXY_PEANUT_Z * Math.exp(-0.5 * (R / U.GALAXY_PEANUT_R) ** 2);
+  const nuc = U.GALAXY_NUC_ZD * Math.exp(-R / U.GALAXY_NUC_RD);
+  return Math.max(box, peanut, nuc);
+}
+
+/** Birth vertical scale: inner spheroid or flared thin sheet, whichever is taller. */
+export function diskScaleHeight(R: number): number {
+  return Math.max(thinScaleHeight(R), spheroidScaleHeight(R));
+}
+
+/**
  * Local midplane height (kpc). Outer warp (S-curve edge-on) plus
  * corrugation (the plane is not a polished sheet). Analytic — one
  * law, no seed. Inner R stays flat so the axle stays empty.
@@ -288,7 +306,7 @@ export function dustPhysics(seed: string, cell: number): DustPhysics {
 function birthZHalf(R: number): number {
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  return Math.max(dz, 2.2 * thinScaleHeight(R));
+  return Math.max(dz, 2.2 * diskScaleHeight(R));
 }
 
 /** Birth height: cell z + local midplane (warp/corrugation) + flared scatter. */

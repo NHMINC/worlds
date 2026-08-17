@@ -36,6 +36,7 @@ import {
   slotScatterKpc,
   slotBirthRaw,
   slotMsLum,
+  spheroidScaleHeight,
   type SlotBirth,
   slotMsTeff,
   imfQuantile,
@@ -608,7 +609,14 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     filledOf[i] = f;
     if (f <= 0) continue;
     const d = cellDist(cells[i], x, y, z);
-    const s0 = Math.floor(regionImfFloor(d) * f);
+    // Far cells keep the massive tail. A harvest star can sit a
+    // scale-height away from its lattice centre (the core bump);
+    // if this cell can reach the tap, include that tail so the
+    // star you are on does not vanish.
+    let s0 = Math.floor(regionImfFloor(d) * f);
+    if (d <= slotScatterKpc() + r) {
+      s0 = Math.min(s0, Math.floor(imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M) * f));
+    }
     slot0[i] = s0;
     cap += f - s0;
   }
@@ -641,12 +649,14 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
 }
 
 /**
- * Thin-disk density at arm crest. Living B stars are a thin-disk
- * clock (ageWindow floor 0.02 Gyr); other pops are already too old.
+ * Harvest skip bound at arm crest. The inner sech uses the spheroid
+ * scale so the box/peanut's z-bins are walked; living B stars remain
+ * a thin-disk clock, but the core is allowed to be a bump.
  */
 function thinDensityCeil(R: number, z: number): number {
   const U = UNIVERSE;
-  const e = Math.exp(z / U.GALAXY_ZD);
+  const zd = Math.max(U.GALAXY_ZD, spheroidScaleHeight(R));
+  const e = Math.exp(z / zd);
   const sech2z = (2 / (e + 1 / e)) ** 2;
   const blend = 1 / (1 + Math.exp((R - U.GALAXY_R_BREAK) / U.GALAXY_R_BREAK_W));
   const sig = blend * Math.exp(-R / U.GALAXY_RD_INNER) + (1 - blend) * Math.exp(-R / U.GALAXY_RD);
@@ -716,8 +726,9 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
         const mid = cellCenter(cell);
-        const thin = densityParts(mid).thin;
-        const expect = thin * vol * nK;
+        const parts = densityParts(mid);
+        const spheroid = mid.R < UNIVERSE.GALAXY_BOX_A * 2.6 ? parts.bulge + parts.bar : 0;
+        const expect = (parts.thin + spheroid) * vol * nK;
         if (expect * liveFrac >= 0.2) {
           const filled = slotsInCell(seed, cell);
           if (filled > 0) {

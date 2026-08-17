@@ -68,7 +68,9 @@ types or star types.
   (~`GALAXY_POPULATION`). A cell is a quota, not a brick: birth
   height follows a flared, warped, corrugated midplane
   (`GALAXY_FLARE_*`, `GALAXY_WARP_*`, `GALAXY_CORRUGATE`) so
-  edge-on is an irregular ribbon. We never `collectCatalog`.
+  edge-on is an irregular ribbon. Inside the box/peanut the
+  scale is that spheroid — the core is a bump, not a brighter
+  line. We never `collectCatalog`.
   The explorer asks `objectsNear` for the volume it occupies; within
   a cell the IMF is stratified so zooming in is “include more slots,”
   not “load a bigger array.”

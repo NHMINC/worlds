@@ -337,7 +337,8 @@ export const UNIVERSE = {
    * the rest (GAS_ARM_A). The thin sheet is not a brick: it flares
    * outside FLARE_R, the outer midplane warps, and corrugation
    * wrinkles the plane — edge-on is an irregular ribbon, not a
-   * ruler. Birth scatter follows that local scale height.
+   * ruler. Inside the box/peanut the birth scale follows that
+   * spheroid, so the dense core is a bump, not a brighter line.
    */
   GALAXY_RD: 2.6,
   GALAXY_R_MAX: 16,
