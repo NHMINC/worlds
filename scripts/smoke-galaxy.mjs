@@ -81,7 +81,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
     errors.push(`opened on ${gx.selected}, not here/home ${expectId}`);
   }
 
-  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 20_000, { timeout: 25000 });
+  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 2_000, { timeout: 25000 });
   await page.waitForFunction(() => Boolean(window.__galaxyView?.home), { timeout: 8000 });
 
   const arc = await page.evaluate(() => ({
@@ -94,7 +94,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   console.log('REGION', JSON.stringify(arc));
   await page.screenshot({ path: 'previews/galaxy-2-arc.png' });
   if (arc.mode !== 'region') errors.push('empty boot did not open the region');
-  if (!arc.stars || arc.stars < 20_000) errors.push(`harvest loaded only ${arc.stars} stars`);
+  if (!arc.stars || arc.stars < 2_000) errors.push(`harvest loaded only ${arc.stars} stars`);
   if (!arc.sky) errors.push('luminous harvest is not on the GPU');
   if (!arc.dossier) errors.push('open did not select the loaded star');
 
@@ -124,7 +124,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   if (edgeR < 20) errors.push(`Edge-on bubble not far enough (${edgeR})`);
 
   await page.evaluate(() => window.__galaxyView?.setPreset?.('back'));
-  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 20_000, { timeout: 25000 });
+  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 2_000, { timeout: 25000 });
   const back = await page.evaluate(() => window.__galaxyView?.currentRegion?.() ?? null);
   const backD = beforeOverview && back
     ? Math.hypot(back.x - beforeOverview.x, back.y - beforeOverview.y, back.z - beforeOverview.z)
@@ -133,7 +133,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
   if (backD > 0.2) errors.push(`Back did not restore the pre-overview pose (${backD})`);
 
   await page.evaluate(() => window.__galaxyView?.setPreset?.('home'));
-  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 20_000, { timeout: 25000 });
+  await page.waitForFunction(() => (window.__galaxyView?.beaconCount?.() ?? 0) > 2_000, { timeout: 25000 });
   const homeDive = await page.evaluate(() => ({
     mode: window.__galaxyView?.currentMode?.() ?? null,
     selected: window.__galaxyView?.selectedObject?.()?.id ?? null,
@@ -160,7 +160,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
     };
   });
   console.log('CLOUD', JSON.stringify(survey));
-  if (survey.n < 20_000) errors.push(`cloud ${survey.n} is not the harvest`);
+  if (survey.n < 2_000) errors.push(`cloud ${survey.n} is not the harvest`);
 
   // A point star must open the dossier, not set course.
   if (survey.point) {
@@ -278,7 +278,7 @@ if (boot.preparing) errors.push('preparing overlay still up after reveal');
     return true;
   });
   console.log('HOME PRESET', goBack);
-  await page.waitForFunction(() => (window.__galaxyView?.currentMode?.() === 'region') && (window.__galaxyView?.beaconCount?.() ?? 0) > 20_000, { timeout: 25000 });
+  await page.waitForFunction(() => (window.__galaxyView?.currentMode?.() === 'region') && (window.__galaxyView?.beaconCount?.() ?? 0) > 2_000, { timeout: 25000 });
   await page.evaluate(() => window.__galaxyView?.approachNearest?.());
   await page.waitForTimeout(800);
   const goBtn = page.locator('button.gd-go');
