@@ -401,8 +401,11 @@ export const UNIVERSE = {
    * spatially INTERPOLATED noise field (coherent complexes spanning
    * ~1/TURB_FREQ kpc — many catalog cells, never a per-cell coin).
    * TURB_SIGMA is that σ (clumping strength); TURB_FREQ is cycles
-   * per kpc of the largest eddies. The gas disk is flatter than the
-   * stars (RD_GAS × stellar Rd). One field, three consumers:
+   * per kpc of the largest eddies. TURB_SHEAR stretches those
+   * eddies along the spiral phase (galactic rotation) so the
+   * photograph is filaments, not round blobs. The gas disk is
+   * flatter than the stars (RD_GAS × stellar Rd). One field, three
+   * consumers:
    * dust clump occupancy (DUST_N_K clumps per unit field × volume,
    * at most DUST_MAX per cell), the star-formation age law
    * (SFR_GAIN — Schmidt–Kennicutt-lite: dense gas births young
@@ -414,6 +417,8 @@ export const UNIVERSE = {
    */
   GALAXY_TURB_SIGMA: 1.35,
   GALAXY_TURB_FREQ: 0.85,
+  /** Along-arm / across-arm eddy aspect. 1 = round blobs. */
+  GALAXY_TURB_SHEAR: 4.2,
   GALAXY_RD_GAS: 1.6,
   /** Molecular sheet: thinner than the stars, stronger arm contrast. */
   GALAXY_ZD_GAS: 0.12,
@@ -575,14 +580,17 @@ export const UNIVERSE = {
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
   /** March multiplier on the baked field — how hard dust filters
-   *  starlight. The sheet / ridge shape is K_DIFFUSE / K_DENSE;
-   *  this is the photograph compensation, not a thicker pancake. */
+   *  starlight. Sheet vs streaks are K_DIFFUSE / K_DENSE; this is
+   *  the photograph gain, not a thicker pancake. */
   GALAXY_EXTINCT_K: 1.25,
   /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on
    *  lane vs a clear face-on / in-plane hop. */
   GALAXY_DUST_K_DIFFUSE: 0.42,
-  /** Extra opacity on the turbulent tail above DENSE_CUT. Rare ridges. */
-  GALAXY_DUST_K_DENSE: 18,
+  /** Extra opacity on sheared overdensities (rise^STREAK). Lanes
+   *  and blobs; the sheet knob is untouched. */
+  GALAXY_DUST_K_DENSE: 10,
+  /** Power on positive turbulence. Higher → rarer, darker streaks. */
+  GALAXY_DUST_STREAK: 2.1,
   /** ismAt field threshold. Most of the disk is below this — flight
    *  stays light; a hit is a significant dark region. */
   GALAXY_DUST_DENSE_CUT: 0.22,

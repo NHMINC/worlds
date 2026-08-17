@@ -227,12 +227,27 @@ function gasBase(p: GalPos): number {
   );
 }
 
-/** Same two-octave interpolated turbulence `ismNorm` drinks. In ~[-1, 1]. */
+/**
+ * Two-octave interpolated turbulence in ~[-1, 1]. Sampled in a
+ * spiral-sheared frame so eddies are filaments (along-arm long,
+ * across-arm short), not round blobs. Phase is embedded on a
+ * circle so θ = 0 and θ = 2π agree — no polar seam.
+ */
 function ismTurbulence(seed: string, x: number, y: number, z: number): number {
   const f = UNIVERSE.GALAXY_TURB_FREQ;
+  const S = UNIVERSE.GALAXY_TURB_SHEAR;
+  const R = Math.max(0.15, Math.hypot(x, z));
+  const a = armPhase(R, Math.atan2(z, x));
+  // Along-arm = radius (changes slowly as you ride the spiral).
+  // Across-arm = spiral phase on a circle (no θ-seam). Shear
+  // widens that circle so filaments are narrow compared to
+  // their length.
+  const along = (R * f) / S;
+  const vert = y * f;
+  const w = f * S;
   return (
-    (ismNoise(seed, x * f, y * f, z * f) +
-      0.5 * ismNoise(seed, x * f * 2.3 + 31.7, y * f * 2.3, z * f * 2.3)) /
+    (ismNoise(seed, along, vert, w * Math.cos(a)) +
+      0.5 * ismNoise(seed, along * 2.3 + 31.7, vert * 2.3, w * Math.sin(a) * 2.3)) /
     1.5
   );
 }
@@ -264,15 +279,18 @@ function dustToGasAtR(R: number): number {
 }
 
 /**
- * Extinction coefficient (per kpc) at a catalog point. Diffuse sheet
- * plus a rare dense tail. Occupancy / clump IDs do not use this.
+ * Extinction coefficient (per kpc) at a catalog point. The mean
+ * sheet is the thin gas disk (pancake from geometry, not a painted
+ * lane). Positive sheared turbulence raises sparse streaks and
+ * blobs on that sheet — the photograph. Occupancy / clump IDs
+ * still drink `ismAt.field`; they do not use this.
  */
 export function dustDensity(seed: string, x: number, y: number, z: number): number {
-  const { base, field } = ismAt(seed, x, y, z);
-  if (base <= 0 && field <= 0) return 0;
+  const { base, turb } = ismAt(seed, x, y, z);
+  if (base <= 0) return 0;
   const d2g = dustToGasAtR(Math.hypot(x, z));
-  const dense = Math.max(0, field - UNIVERSE.GALAXY_DUST_DENSE_CUT);
-  return d2g * (UNIVERSE.GALAXY_DUST_K_DIFFUSE * base + UNIVERSE.GALAXY_DUST_K_DENSE * dense);
+  const lane = Math.pow(Math.max(0, turb), UNIVERSE.GALAXY_DUST_STREAK);
+  return d2g * base * (UNIVERSE.GALAXY_DUST_K_DIFFUSE + UNIVERSE.GALAXY_DUST_K_DENSE * lane);
 }
 
 /** Pull z to the midplane when the cell overlaps the gas sheet. */
