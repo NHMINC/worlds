@@ -47,7 +47,6 @@ import {
   type StarCloud,
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
-import { makeGalaxyGlowMaterial, makeGalaxyGlowMesh } from './galaxyGlow';
 import { prepareUniverse } from '../world/universePrep';
 
 /** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
@@ -477,8 +476,6 @@ export class GalaxyView {
   private silEmisPts: THREE.Points | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
   private silDustTex: THREE.Data3DTexture | null = null;
-  private silGlow: THREE.Mesh | null = null;
-  private silGlowMat: THREE.ShaderMaterial | null = null;
   /** Catalog positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
 
@@ -649,18 +646,11 @@ export class GalaxyView {
     this.cloud = cloud;
     this.sectorPop = cloud.n;
     this.lastEnterMs = cloud.ms;
-    if (!this.silPts && !this.silGlow) this.buildSilhouetteStars();
+    if (!this.silPts) this.buildSilhouetteStars();
     else this.pushMagUniforms();
   }
 
   private disposeSilhouette(): void {
-    if (this.silGlow) {
-      this.scene.remove(this.silGlow);
-      this.silGlow.geometry.dispose();
-      this.silGlowMat?.dispose();
-      this.silGlow = null;
-      this.silGlowMat = null;
-    }
     if (this.silEmisPts) {
       this.scene.remove(this.silEmisPts);
       this.silEmisMat?.dispose();
@@ -803,43 +793,38 @@ export class GalaxyView {
 
   private buildSilhouetteStars(): void {
     const cloud = silhouetteCloud(this.seed);
-    if (!cloud) return;
+    if (!cloud || cloud.n <= 0) return;
     this.disposeSilhouette();
-    if (cloud.n > 0) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
-      geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
-      const vis = cloud.gain.slice();
-      const visAttr = new THREE.BufferAttribute(vis, 1);
-      visAttr.setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute('aVis', visAttr);
-      this.starVis = visAttr;
-      geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
-      geo.setAttribute('aKind', new THREE.BufferAttribute(cloud.kind, 1));
-      geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
-      geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
-      geo.setDrawRange(0, cloud.n);
-      const mat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 0);
-      const pts = new THREE.Points(geo, mat);
-      pts.frustumCulled = false;
-      pts.renderOrder = -2;
-      this.scene.add(pts);
-      this.silPts = pts;
-      this.silGeo = geo;
-      this.silMat = mat;
-      const emisMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 1);
-      const emisPts = new THREE.Points(geo, emisMat);
-      emisPts.frustumCulled = false;
-      emisPts.renderOrder = -1;
-      this.scene.add(emisPts);
-      this.silEmisPts = emisPts;
-      this.silEmisMat = emisMat;
-    }
-    const glowMat = makeGalaxyGlowMaterial(this.extinctUniforms());
-    const glow = makeGalaxyGlowMesh(glowMat);
-    this.scene.add(glow);
-    this.silGlow = glow;
-    this.silGlowMat = glowMat;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
+    const vis = cloud.gain.slice();
+    const visAttr = new THREE.BufferAttribute(vis, 1);
+    visAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aVis', visAttr);
+    this.starVis = visAttr;
+    geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
+    geo.setAttribute('aKind', new THREE.BufferAttribute(cloud.kind, 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
+    geo.setDrawRange(0, cloud.n);
+    const mat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 0);
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    pts.renderOrder = -2;
+    this.scene.add(pts);
+    this.silPts = pts;
+    this.silGeo = geo;
+    this.silMat = mat;
+    const emisMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 1);
+    const emisPts = new THREE.Points(geo, emisMat);
+    emisPts.frustumCulled = false;
+    emisPts.renderOrder = -1;
+    this.scene.add(emisPts);
+    this.silEmisPts = emisPts;
+    this.silEmisMat = emisMat;
+    // No dust pass: clumps are not drawn. They are the fog — the
+    // volume uploaded above, marched in SILHOUETTE_VERT.
     this.pushMagUniforms();
   }
 
@@ -860,7 +845,6 @@ export class GalaxyView {
       mat.uniforms.uCenter.value.set(cx, cy, cz);
       mat.uniforms.uScale.value = 1;
     }
-    this.silGlowMat?.uniforms.uCenter.value.set(cx, cy, cz);
   }
 
 

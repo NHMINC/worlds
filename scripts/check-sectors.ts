@@ -214,7 +214,7 @@ const check = (cond: boolean, msg: string) => {
   check(
     UNIVERSE.GALAXY_HARVEST_ALL
       ? a.n > 200_000 && a.n < 400_000
-      : a.n > 15_000 && a.n < 120_000,
+      : a.n > 80_000 && a.n < 400_000,
     `silhouette ${a.n} is not the expected harvest`,
   );
   let stars = 0;
@@ -261,13 +261,15 @@ const check = (cond: boolean, msg: string) => {
     check(nebulae > 200 && nebulae < 8_000, `all-sky nebulae ${nebulae} is not the old showpiece set`);
     check(minStarL >= UNIVERSE.GALAXY_HARVEST_ALL_L * 0.5, `photograph must be giant/hot light, min L=${minStarL}`);
   } else {
-    // Luminous tail only: the Hubble integral is the mass-model carpet.
-    check(stars > 1_000 && stars < 80_000, `luminous tail ${stars} is not the exception harvest`);
-    check(bright > 800 && bright < 80_000, `bright pins ${bright} moved`);
-    check(shape === 0, `shape sample must be the integral, got ${shape}`);
+    // Dual harvest: late-B tail (M ≥ 4.2 / L ≥ 210) plus a 10⁻⁴
+    // occupancy shape sample of long-lived photospheres (L ~ 1).
+    check(stars > 180_000 && stars < 320_000, `silhouette stars ${stars} is not the dual harvest`);
+    check(bright > 40_000 && bright < 160_000, `luminous tail ${bright} moved`);
+    check(shape > 80_000 && shape < 240_000, `shape sample ${shape} is not ~10⁻⁴ of occupancy`);
     check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
-    check(minStarL >= UNIVERSE.GALAXY_SILHOUETTE_L * 0.5, `pins must earn light, min L=${minStarL}`);
-    check(stars + nebulae < 120_000, `silhouette star/nebula rows ${stars + nebulae} blew the harvest cap`);
+    check(minStarL < UNIVERSE.GALAXY_SILHOUETTE_L, `shape sample missing: min L=${minStarL}`);
+    check(minStarL >= 0.3, `shape star too dim L=${minStarL}`);
+    check(stars + nebulae < 400_000, `silhouette star/nebula rows ${stars + nebulae} blew the harvest cap`);
   }
   // Dust rows are the fog (never drawn; the volume is the visible law).
   // The MW gas sheet is thinner than the old sech², so the census is
@@ -334,29 +336,25 @@ const check = (cond: boolean, msg: string) => {
   const nSun = countBall(UNIVERSE.R_SUN, 1.0, 0);
   const nRim = countBall(15, 0, 0);
   console.log(`  0.4 kpc ball: core ${nCore} · sun ${nSun} · R=15 ${nRim}`);
-  if (UNIVERSE.GALAXY_HARVEST_SHAPE_F > 0) {
-    check(nCore > nSun * 8, `shape sample did not thicken the core: ${nCore} vs sun ${nSun}`);
-    check(nSun > nRim, `shape sample did not thin toward the rim: sun ${nSun} vs R=15 ${nRim}`);
-    let shapeHost = -1;
-    for (let i = 0; i < a.n; i++) {
-      if (a.kind[i] === KIND_STAR && a.lum[i] < UNIVERSE.GALAXY_SILHOUETTE_L) {
-        shapeHost = i;
-        break;
-      }
+  check(nCore > nSun * 8, `shape sample did not thicken the core: ${nCore} vs sun ${nSun}`);
+  check(nSun > nRim, `shape sample did not thin toward the rim: sun ${nSun} vs R=15 ${nRim}`);
+  let shapeHost = -1;
+  for (let i = 0; i < a.n; i++) {
+    if (a.kind[i] === KIND_STAR && a.lum[i] < UNIVERSE.GALAXY_SILHOUETTE_L) {
+      shapeHost = i;
+      break;
     }
-    check(shapeHost >= 0, 'no shape-sample star for the visit handshake');
-    if (shapeHost >= 0) {
-      const id = a.ids[shapeHost];
-      const o = objectAt(seed, id);
-      check(!!o && o.id === id, `shape id ${id} is not a catalog row`);
-      const { cell, slot } = splitId(id);
-      const filled = slotsInCell(seed, cell);
-      const cart = slotBirthCart(seed, cell, slot);
-      check(Math.abs(cart.x - a.pos[shapeHost * 3]) < 1e-5 && Math.abs(cart.y - a.pos[shapeHost * 3 + 1]) < 1e-5, 'shape pose != slotBirthCart');
-      console.log(`  shape handshake: id ${id} L=${a.lum[shapeHost].toFixed(2)} objectAt ok`);
-    }
-  } else {
-    check(nCore >= 0 && nSun >= 0, `core/sun pin counts ${nCore}/${nSun}`);
+  }
+  check(shapeHost >= 0, 'no shape-sample star for the visit handshake');
+  if (shapeHost >= 0) {
+    const id = a.ids[shapeHost];
+    const o = objectAt(seed, id);
+    check(!!o && o.id === id, `shape id ${id} is not a catalog row`);
+    const { cell, slot } = splitId(id);
+    const filled = slotsInCell(seed, cell);
+    const cart = slotBirthCart(seed, cell, slot);
+    check(Math.abs(cart.x - a.pos[shapeHost * 3]) < 1e-5 && Math.abs(cart.y - a.pos[shapeHost * 3 + 1]) < 1e-5, 'shape pose != slotBirthCart');
+    console.log(`  shape handshake: id ${id} L=${a.lum[shapeHost].toFixed(2)} objectAt ok`);
   }
 }
 
