@@ -574,9 +574,10 @@ export const UNIVERSE = {
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
-  /** March multiplier. The volume already carries K_DIFFUSE / K_DENSE
-   *  (opacity per kpc). Leave at 1 — do not re-scale the field. */
-  GALAXY_EXTINCT_K: 1,
+  /** March multiplier on the baked field — how hard dust filters
+   *  starlight. The sheet / ridge shape is K_DIFFUSE / K_DENSE;
+   *  this is the photograph compensation, not a thicker pancake. */
+  GALAXY_EXTINCT_K: 1.25,
   /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on
    *  lane vs a clear face-on / in-plane hop. */
   GALAXY_DUST_K_DIFFUSE: 0.42,

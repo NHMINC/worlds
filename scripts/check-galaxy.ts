@@ -381,6 +381,13 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
       `photograph must not floor I (I_MIN=${UNIVERSE.GALAXY_HARVEST_ALL_I_MIN})`);
     check(UNIVERSE.GALAXY_HARVEST_ALL_L === 16,
       `photograph floor must be the faint K-giant (L=${UNIVERSE.GALAXY_HARVEST_ALL_L})`);
+    const floorI = harvestShine(UNIVERSE.GALAXY_HARVEST_ALL_L, 40);
+    check(floorI > 0.06,
+      `K-giant at face-on distance must clear the pin discard, I=${floorI.toFixed(3)}`);
+    check(UNIVERSE.GALAXY_DUST_K_DIFFUSE === 0.42,
+      `edge-on sheet must stay the field (K_DIFFUSE=${UNIVERSE.GALAXY_DUST_K_DIFFUSE})`);
+    check(UNIVERSE.GALAXY_EXTINCT_K > 1 && UNIVERSE.GALAXY_EXTINCT_K <= 1.4,
+      `dust light-filter is EXTINCT_K, not a thicker pancake (K=${UNIVERSE.GALAXY_EXTINCT_K})`);
   } else {
     check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 1e-4,
       `shape sample must stay 1e-4 of occupancy (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);
