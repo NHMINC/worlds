@@ -223,7 +223,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   is sightline extinction** (`extinctGlsl`): the ISM field (thin
   gas sheet × arms × turbulence) is baked into a density volume.
   The mean sheet is the edge-on lane; the dense tail is a rare
-  dark ridge. Harvest clumps are the census, not the fog. A
+  dark ridge. Clumps stay addressable in the catalog; they are
+  not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills

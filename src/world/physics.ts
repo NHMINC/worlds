@@ -488,9 +488,9 @@ export const UNIVERSE = {
    * photospheres (HARVEST_SHAPE_*), so the sky follows the mass
    * model (core / bar / disk) and not only the young massive
    * clock. Plus the youngest / brightest nebula hosts (gain ≥
-   * SILHOUETTE_NEB_GAIN), and the full dust-clump census
-   * (SILHOUETTE_DUST_R = 0; the rows are the extinction volume —
-   * never drawn, they are the fog) — in the same catalog frame.
+   * SILHOUETTE_NEB_GAIN). Dust is not a harvest row — clumps stay
+   * addressable in the catalog (dustId / dustPhysics); the fog is
+   * the ISM field. Same catalog frame.
    * Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
@@ -514,8 +514,8 @@ export const UNIVERSE = {
    * vanishes. The mean sheet builds the edge-on lane; the dense
    * tail is a rare dark region. A short in-plane hop stays mostly
    * clear. EXTINCT_MAX lets a thick column saturate to black.
-   * Harvest dust rows stay in the census (HUD, grain-tint chemistry)
-   * — they are not the fog.
+   * Harvest does not mint dust rows. Clumps remain a catalog
+   * population (dustClumpsInCell); they are not the fog.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX as the pixel floor so far shells stay findable;
    * shells under DUST_MINPX skip the march (a disc).
@@ -539,9 +539,9 @@ export const UNIVERSE = {
    *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
    *  Three median halvings from 0.65: the top eighth — showpieces. */
   GALAXY_SILHOUETTE_NEB_GAIN: 0.932,
-  /** Backdrop dust: envelope radius (kpc) census gate. 0 keeps every
-   *  occupied clump. Those rows are the census — never drawn, never
-   *  splat. The fog is the ISM field. */
+  /** Unused harvest gate: dust rows are no longer minted. Kept so
+   *  older comments that name the knob still resolve. The fog is
+   *  the ISM field; clumps stay addressable via dustId. */
   GALAXY_SILHOUETTE_DUST_R: 0,
   /**
    * Occupancy shape sample. The luminous tail is a late-B photograph;
