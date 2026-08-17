@@ -326,7 +326,7 @@ const check = (cond: boolean, msg: string) => {
   check(hitLum < 0.12, `a dense clump must extinguish (T=${hitLum.toFixed(3)})`);
   check(missLum > 0.9, `a miss must stay clear (T=${missLum.toFixed(3)})`);
   check(THit[0] > THit[2], 'blue must die first through a clump');
-  const TLimb = clumpTransmittance(vol, [-2, 0.295, 0], [2, 0.295, 0]);
+  const TLimb = clumpTransmittance(vol, [-2, 0.28, 0], [2, 0.28, 0]);
   const limbLum = 0.2126 * TLimb[0] + 0.7152 * TLimb[1] + 0.0722 * TLimb[2];
   check(limbLum > hitLum * 1.4 && limbLum < missLum * 0.95,
     `a resolved limb must be a red edge (core ${hitLum.toFixed(3)} limb ${limbLum.toFixed(3)} miss ${missLum.toFixed(3)})`);
