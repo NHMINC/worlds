@@ -8,7 +8,7 @@ import {
   objectAt, objectsNear, homeStar, density, inSpiralArm, chemistry,
   catalogSize, slotsInCell, cellCount, sampleDust, packId,
   midplaneZ, thinScaleHeight, spheroidScaleHeight, diskScaleHeight,
-  slotBirthRaw, cellCenter,
+  slotBirthRaw, cellCenter, galToCart,
 } from '../src/world/galaxy';
 import { imfMass, msLifetime, evolve, classifyStar, teffToRgb } from '../src/world/stellar';
 import { systemAt } from '../src/world/systemgen';
@@ -139,8 +139,8 @@ check(gapMean > 0.02, `inter-arm emptied (ribbons, not a disc): ${gapMean.toFixe
   check(axleSlots / Math.max(1, axleCells) < 0.4, `axle through the core: ${axleSlots} slots in ${axleCells} high-|z| inner cells`);
 }
 
-// Axle (positions): ir=0 births must fill the spheroid, not sit on a
-// 50-pc cylinder. The old R ≥ 0.05 clamp printed that needle.
+// Axle (positions): ir=0 births fill the nuclear disk, not a 50-pc
+// cylinder and not the peanut. Tightness is the density cusp.
 {
   const nth = UNIVERSE.GALAXY_NTH;
   const nz = UNIVERSE.GALAXY_NZ;
@@ -148,7 +148,10 @@ check(gapMean > 0.02, `inter-arm emptied (ribbons, not a disc): ${gapMean.toFixe
   let n = 0;
   let pinned = 0;
   let sumR = 0;
-  let nearAxis = 0;
+  let sumX = 0;
+  let sumZ = 0;
+  let sumX2 = 0;
+  let sumZ2 = 0;
   for (let it = 0; it < nth; it += 9) {
     const cell = 0 * nth * nz + it * nz + iz;
     const filled = slotsInCell(seed, cell);
@@ -156,17 +159,26 @@ check(gapMean > 0.02, `inter-arm emptied (ribbons, not a disc): ${gapMean.toFixe
     const take = Math.min(3, filled);
     for (let s = 0; s < take; s++) {
       const slot = Math.floor(((s + 0.5) * filled) / take);
-      const R = slotBirthRaw(seed, cell, slot, filled).pos.R;
+      const b = slotBirthRaw(seed, cell, slot, filled);
+      const c = galToCart(b.pos);
       n++;
-      sumR += R;
-      if (Math.abs(R - 0.05) < 1e-9) pinned++;
-      if (R < 0.08) nearAxis++;
+      sumR += b.pos.R;
+      sumX += c.x;
+      sumZ += c.z;
+      sumX2 += c.x * c.x;
+      sumZ2 += c.z * c.z;
+      if (Math.abs(b.pos.R - 0.05) < 1e-9) pinned++;
     }
   }
   const meanR = sumR / Math.max(1, n);
+  const stdX = Math.sqrt(Math.max(0, sumX2 / n - (sumX / n) ** 2));
+  const stdZ = Math.sqrt(Math.max(0, sumZ2 / n - (sumZ / n) ** 2));
+  const axis = Math.max(stdX, stdZ) / Math.max(1e-6, Math.min(stdX, stdZ));
   check(pinned === 0, `inner births pinned to the 0.05 kpc axle: ${pinned}/${n}`);
-  check(meanR > 0.35, `inner births must fill the spheroid, not a needle: mean R=${meanR.toFixed(3)} (${n} samples)`);
-  check(nearAxis / Math.max(1, n) < 0.08, `too many ir=0 births on the axis: ${nearAxis}/${n}`);
+  check(meanR > 0.10 && meanR < 0.40,
+    `ir=0 births must sit in the nuclear disk, not a needle or the peanut: mean R=${meanR.toFixed(3)} (${n} samples)`);
+  check(stdX > 0.08 && stdZ > 0.08, `ir=0 births collapsed to a line: σx=${stdX.toFixed(3)} σz=${stdZ.toFixed(3)}`);
+  check(axis < 1.8, `ir=0 births prefer one axis: σx=${stdX.toFixed(3)} σz=${stdZ.toFixed(3)}`);
 }
 
 // Vertical law: the sheet is not a brick. Outer zd flares; the
