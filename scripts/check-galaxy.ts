@@ -333,8 +333,8 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(UNIVERSE.GALAXY_SILHOUETTE_M < 5 && UNIVERSE.GALAXY_SILHOUETTE_L < 300,
     `harvest floor must be deeper than 5 Msun / 300 Lsun (M=${UNIVERSE.GALAXY_SILHOUETTE_M} L=${UNIVERSE.GALAXY_SILHOUETTE_L})`);
   if (UNIVERSE.GALAXY_HARVEST_ALL) {
-    check(UNIVERSE.GALAXY_HARVEST_ALL_CAP >= 1_000_000,
-      `all-sky look test needs a real bottle (cap=${UNIVERSE.GALAXY_HARVEST_ALL_CAP})`);
+    check(UNIVERSE.GALAXY_HARVEST_ALL_CAP === 1_000_000,
+      `all-sky bottle must be one million (cap=${UNIVERSE.GALAXY_HARVEST_ALL_CAP})`);
   } else {
     check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 1e-4,
       `shape sample must stay 1e-4 of occupancy (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);

@@ -551,16 +551,15 @@ export const UNIVERSE = {
   GALAXY_HARVEST_SHAPE_M: 1.0,
   /**
    * Look test: turn the luminosity harvester off. Every occupied
-   * slot is eligible (full IMF, remnants, every nebula — no M / L
-   * / gain gate). 1.6×10⁹ vertices will not fit in the bottle;
-   * ALL_CAP is how many faint-IMF pins we can actually mint.
-   * Those pins are a uniform stride through each cell so the sky
-   * is the mass model, not a late-B photograph. The massive-end
-   * clock walk stays complete (every living B / nebula / young
-   * remnant). Flip false to restore the dual harvest.
+   * slot is eligible (full IMF — no M / L / gain gate). 1.6×10⁹
+   * vertices will not fit; ALL_CAP is the bottle. Those pins are
+   * a uniform stride through each cell's occupancy so the million
+   * is the mass model, not a late-B photograph plus leftovers.
+   * Nebulae stay a complete clock pass (they are not this budget).
+   * Flip false to restore the dual harvest.
    */
   GALAXY_HARVEST_ALL: true,
-  GALAXY_HARVEST_ALL_CAP: 2_000_000,
+  GALAXY_HARVEST_ALL_CAP: 1_000_000,
   /** Floor shine so a minted M dwarf still paints (the 0.008
    *  discard would hide the test). 0 keeps the photograph law. */
   GALAXY_HARVEST_ALL_I_MIN: 0.02,

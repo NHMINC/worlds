@@ -213,7 +213,7 @@ const check = (cond: boolean, msg: string) => {
   check(a.kind.length >= a.n, 'silhouette missing kind');
   check(
     UNIVERSE.GALAXY_HARVEST_ALL
-      ? a.n > 1_000_000 && a.n < 4_000_000
+      ? a.n > 800_000 && a.n < 1_200_000
       : a.n > 80_000 && a.n < 400_000,
     `silhouette ${a.n} is not the expected harvest`,
   );
@@ -257,7 +257,7 @@ const check = (cond: boolean, msg: string) => {
   check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
   check(inside < a.n, 'silhouette must reach past the sample ball');
   if (UNIVERSE.GALAXY_HARVEST_ALL) {
-    check(stars > 1_000_000 && stars < 3_500_000, `all-sky stars ${stars} is not the uncapped look test`);
+    check(stars > 800_000 && stars < 1_100_000, `all-sky stars ${stars} is not the million-mass bottle`);
     check(nebulae > 20 && nebulae < 80_000, `all-sky nebulae ${nebulae} vanished`);
     check(minStarL < 0.1, `all-sky must include faint IMF pins, min L=${minStarL}`);
   } else {

@@ -726,9 +726,9 @@ function gasDensityCeil(R: number, z: number): number {
 /**
  * Whole-disk harvest. Default: luminous tail + occupancy shape
  * sample. HARVEST_ALL disables those gates — every occupied slot
- * is eligible; the bottle holds ALL_CAP faint-IMF pins (a uniform
- * stride) plus a complete massive-end clock walk (every nebula /
- * living B / young remnant). Dust rows are the census; the
+ * is eligible; the bottle holds ALL_CAP pins as a uniform stride
+ * through occupancy (the mass model). Nebulae are a complete
+ * clock pass, not that budget. Dust rows are the census; the
  * extinction volume is the ISM field.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
@@ -803,9 +803,10 @@ function mintHarvestCloud(seed: string, t0: number): StarCloud {
 }
 
 /**
- * Harvester off. Every faint-IMF slot is equally eligible; we
- * keep a uniform stride so the bottle's ALL_CAP pins follow the
- * mass model. The massive-end clock is complete — no L / gain cut.
+ * Harvester off. The bottle's ALL_CAP pins are a uniform stride
+ * through occupancy — the mass model, every mass equally. The
+ * massive-end luminous walk is not added on top. Nebulae are a
+ * complete clock pass so H II / PN / SNR do not vanish.
  */
 function mintAllCloud(seed: string, t0: number): StarCloud {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } =
@@ -813,18 +814,17 @@ function mintAllCloud(seed: string, t0: number): StarCloud {
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const uLive = imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M);
   const cap = UNIVERSE.GALAXY_HARVEST_ALL_CAP;
-  let faint = 0;
+  let occupied = 0;
   for (let ir = 0; ir < nr; ir++) {
     for (let iz = 0; iz < nz; iz++) {
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
-        const filled = slotsInCell(seed, cell);
-        if (filled > 0) faint += Math.floor(uLive * filled);
+        occupied += slotsInCell(seed, cell);
       }
     }
   }
-  const f = Math.min(1, cap / Math.max(1, faint));
-  let c = allocCloud(cap + 280_000);
+  const f = Math.min(1, cap / Math.max(1, occupied));
+  let c = allocCloud(cap + 80_000);
   let n = 0;
   for (let ir = 0; ir < nr; ir++) {
     const vol = catalogCellVolume(ir);
@@ -836,15 +836,18 @@ function mintAllCloud(seed: string, t0: number): StarCloud {
         const cell = ir * nth * nz + it * nz + iz;
         const filled = slotsInCell(seed, cell);
         if (filled > 0) {
-          const sLive = Math.min(filled, Math.floor(uLive * filled));
-          const grown = writeAllFaint(seed, cell, filled, sLive, f, c, n);
+          const grown = writeAllMass(seed, cell, filled, f, c, n);
           c = grown.c;
           n = grown.n;
+          const sLive = Math.min(filled, Math.floor(uLive * filled));
           for (let slot = sLive; slot < filled; slot++) {
+            if (massSlotKept(seed, cell, filled, f, slot)) continue;
             const birth = slotBirthRaw(seed, cell, slot, filled);
             if (!maybeClockRow(birth)) continue;
+            const ev = sketchEvolve(birth);
+            if (ev.nebula === 'none') continue;
             if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-            writeFromBirth(cell, slot, n++, c, birth, isSlotAlive(birth.massZams, birth.ageGyr));
+            writeEvolved(cell, slot, n++, c, birth, ev);
           }
         }
         if (dustCeil >= 0.05) {
@@ -861,31 +864,46 @@ function mintAllCloud(seed: string, t0: number): StarCloud {
   return finishCloud(c, n, t0);
 }
 
-/** Uniform stride through [0, sLive). f = 1 keeps every faint slot. */
-function writeAllFaint(
+function massKeepCount(seed: string, cell: number, filled: number, f: number): number {
+  if (filled <= 0 || f <= 0) return 0;
+  const expect = filled * f;
+  return Math.floor(expect) + (harvestShapeUnit(seed, cell, 0, 0) < expect - Math.floor(expect) ? 1 : 0);
+}
+
+function massSlotKept(seed: string, cell: number, filled: number, f: number, slot: number): boolean {
+  const nKeep = massKeepCount(seed, cell, filled, f);
+  if (nKeep <= 0) return false;
+  if (nKeep >= filled) return true;
+  const stride = filled / nKeep;
+  const offset = harvestShapeUnit(seed, cell, 1, 0) * stride;
+  for (let k = 0; k < nKeep; k++) {
+    if (Math.min(filled - 1, Math.floor(offset + k * stride)) === slot) return true;
+  }
+  return false;
+}
+
+/** Uniform stride through every occupied slot. f = 1 keeps the cell. */
+function writeAllMass(
   seed: string,
   cell: number,
   filled: number,
-  sLive: number,
   f: number,
   c: Omit<StarCloud, 'n' | 'ms'>,
   n: number,
 ): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } {
-  if (sLive <= 0 || f <= 0) return { c, n };
-  const expect = sLive * f;
-  const nKeep = Math.floor(expect) + (harvestShapeUnit(seed, cell, 0, 0) < expect - Math.floor(expect) ? 1 : 0);
+  const nKeep = massKeepCount(seed, cell, filled, f);
   if (nKeep <= 0) return { c, n };
-  if (nKeep >= sLive) {
-    for (let slot = 0; slot < sLive; slot++) {
+  if (nKeep >= filled) {
+    for (let slot = 0; slot < filled; slot++) {
       if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
       writeBirth(seed, cell, slot, filled, n++, c);
     }
     return { c, n };
   }
-  const stride = sLive / nKeep;
+  const stride = filled / nKeep;
   const offset = harvestShapeUnit(seed, cell, 1, 0) * stride;
   for (let k = 0; k < nKeep; k++) {
-    const slot = Math.min(sLive - 1, Math.floor(offset + k * stride));
+    const slot = Math.min(filled - 1, Math.floor(offset + k * stride));
     if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
     writeBirth(seed, cell, slot, filled, n++, c);
   }
