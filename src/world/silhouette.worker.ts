@@ -1,5 +1,5 @@
 /**
- * Whole-disk harvest (or HARVEST_ALL look test).
+ * Whole-disk harvest (the magnitude-limited survey).
  * The main thread keeps the map / dive moving; this worker mints
  * the backdrop once per seed.
  */

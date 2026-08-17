@@ -17,7 +17,6 @@
  * stored; the map is mathematics.
  */
 import { UNIVERSE } from './physics';
-import { mulberry32, xmur3 } from './rng';
 import {
   cellCenter,
   cellsOverlappingAnnulus,
@@ -503,20 +502,6 @@ function keepSilhouettePhase(ev: ReturnType<typeof evolve>, id: number): boolean
   return isLuminousPhase(ev.phase, ev.mk, ev.luminosity) && ev.luminosity >= UNIVERSE.GALAXY_SILHOUETTE_L;
 }
 
-/** Living photosphere — not a remnant, not a nebula. Shape sample only. */
-function keepShapePhotosphere(ev: ReturnType<typeof evolve>): boolean {
-  if (ev.nebula !== 'none') return false;
-  if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
-    return false;
-  }
-  return ev.luminosity >= 0.3;
-}
-
-/** Deterministic [0,1) for the occupancy shape sample. Not a player seed. */
-function harvestShapeUnit(seed: string, cell: number, lane: number, attempt: number): number {
-  return mulberry32(xmur3(`galaxy:${seed}:harvestShape:${cell}:${lane}:${attempt}`)())();
-}
-
 /**
  * One point per occupied slot in an arc tile. Kept for the saucer
  * tessellation checks — play uses `buildRegionCloud`.
@@ -578,8 +563,7 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     // Far cells keep the massive tail. A harvest star can sit a
     // scale-height away from its lattice centre (the core bump);
     // if this cell can reach the tap, include that tail so the
-    // star you are on does not vanish. Shape-sample pins are
-    // addressable via objectAt; they are not this neighbourhood.
+    // star you are on does not vanish.
     let s0 = Math.floor(regionImfFloor(d) * f);
     if (d <= slotScatterKpc() + r) {
       s0 = Math.min(s0, Math.floor(imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M) * f));
@@ -653,18 +637,18 @@ export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
 }
 
 /**
- * Whole-disk harvest. Default: luminous tail + occupancy shape
- * sample. HARVEST_ALL disables those gates — every occupied slot
- * is eligible; the bottle holds ALL_CAP pins as a uniform stride
- * through occupancy (the mass model). Nebulae are a complete
- * clock pass, not that budget. Dust is not a harvest row — the
- * extinction volume is the ISM field. Clumps stay addressable
+ * Whole-disk harvest: one magnitude-limited survey. Every living
+ * star above SILHOUETTE_L (present-day light; SILHOUETTE_M is the
+ * IMF slot gate that makes the walk cheap) plus the showpiece
+ * nebulae. No shape sample, no mass stride — the count is an
+ * outcome of the floor, not a cap. Dust is not a harvest row —
+ * the extinction volume is the ISM field. Clumps stay addressable
  * via dustId / dustPhysics; they are not minted into the sky.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
   const t0 = performance.now();
-  const cloud = UNIVERSE.GALAXY_HARVEST_ALL ? mintAllCloud(seed, t0) : mintHarvestCloud(seed, t0);
+  const cloud = mintHarvestCloud(seed, t0);
   silhouetteMemo = { seed, cloud };
   rememberDustVolume(seed);
   return cloud;
@@ -676,9 +660,7 @@ function mintHarvestCloud(seed: string, t0: number): StarCloud {
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const mLo = UNIVERSE.GALAXY_SILHOUETTE_M;
   const uLive = imfQuantile(mLo);
-  const uPhoto = imfQuantile(UNIVERSE.GALAXY_HARVEST_SHAPE_M);
   const liveFrac = Math.max(1e-6, 1 - uLive);
-  const shapeF = UNIVERSE.GALAXY_HARVEST_SHAPE_F;
   let c = allocCloud(280_000);
   let n = 0;
   for (let ir = 0; ir < nr; ir++) {
@@ -687,261 +669,29 @@ function mintHarvestCloud(seed: string, t0: number): StarCloud {
     for (let iz = 0; iz < nz; iz++) {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
       const ceil = thinDensityCeil(R, z) * vol * nK;
-      if (ceil * liveFrac < 0.2 && ceil * shapeF * nth < 0.15) continue;
+      if (ceil * liveFrac < 0.2) continue;
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
         const mid = cellCenter(cell);
         const parts = densityParts(mid);
         const spheroid = mid.R < UNIVERSE.GALAXY_BOX_A * 2.6 ? parts.bulge + parts.bar : 0;
         const expect = (parts.thin + spheroid) * vol * nK;
-        const wantTail = expect * liveFrac >= 0.2;
-        const wantShape = ceil * shapeF >= 1e-8;
-        if (wantTail || wantShape) {
-          const filled = slotsInCell(seed, cell);
-          if (filled > 0) {
-            if (wantTail) {
-              const sLive = Math.floor(uLive * filled);
-              for (let slot = sLive; slot < filled; slot++) {
-                const birth = slotBirthRaw(seed, cell, slot, filled);
-                if (!maybeClockRow(birth)) continue;
-                const ev = sketchEvolve(birth);
-                if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
-                if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-                writeEvolved(cell, slot, n++, c, birth, ev);
-              }
-            }
-            if (wantShape) {
-              const grown = writeShapeSample(seed, cell, filled, uPhoto, uLive, c, n);
-              c = grown.c;
-              n = grown.n;
-            }
-          }
+        if (expect * liveFrac < 0.2) continue;
+        const filled = slotsInCell(seed, cell);
+        if (filled <= 0) continue;
+        const sLive = Math.floor(uLive * filled);
+        for (let slot = sLive; slot < filled; slot++) {
+          const birth = slotBirthRaw(seed, cell, slot, filled);
+          if (!maybeClockRow(birth)) continue;
+          const ev = sketchEvolve(birth);
+          if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
+          if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+          writeEvolved(cell, slot, n++, c, birth, ev);
         }
       }
     }
   }
   return finishCloud(c, n, t0);
-}
-
-/**
- * Harvester off for count. The bottle's ALL_CAP pins are a
- * uniform stride through the photograph band (SHAPE_M and up)
- * — mass among stars that emit. I is still L. Nebulae stay
- * the old showpiece gate (H II + NEB_GAIN), not every shell.
- */
-function mintAllCloud(seed: string, t0: number): StarCloud {
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz } = UNIVERSE;
-  const uLive = imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M);
-  const uPhoto = imfQuantile(UNIVERSE.GALAXY_HARVEST_SHAPE_M);
-  const cap = UNIVERSE.GALAXY_HARVEST_ALL_CAP;
-  let occupied = 0;
-  for (let ir = 0; ir < nr; ir++) {
-    for (let iz = 0; iz < nz; iz++) {
-      for (let it = 0; it < nth; it++) {
-        const cell = ir * nth * nz + it * nz + iz;
-        const filled = slotsInCell(seed, cell);
-        if (filled > 0) occupied += Math.max(0, filled - Math.ceil(uPhoto * filled));
-      }
-    }
-  }
-  const f = Math.min(1, cap / Math.max(1, occupied));
-  let c = allocCloud(cap + 80_000);
-  let n = 0;
-  for (let ir = 0; ir < nr; ir++) {
-    for (let iz = 0; iz < nz; iz++) {
-      for (let it = 0; it < nth; it++) {
-        const cell = ir * nth * nz + it * nz + iz;
-        const filled = slotsInCell(seed, cell);
-        if (filled > 0) {
-          const sPhoto = Math.min(filled, Math.ceil(uPhoto * filled));
-          const grown = writeAllMass(seed, cell, filled, sPhoto, f, c, n);
-          c = grown.c;
-          n = grown.n;
-          const sLive = Math.min(filled, Math.floor(uLive * filled));
-          for (let slot = sLive; slot < filled; slot++) {
-            if (massSlotKept(seed, cell, filled, sPhoto, f, slot)) continue;
-            const birth = slotBirthRaw(seed, cell, slot, filled);
-            if (!maybeClockRow(birth)) continue;
-            const ev = sketchEvolve(birth);
-            if (ev.nebula === 'none') continue;
-            if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
-            if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-            writeEvolved(cell, slot, n++, c, birth, ev);
-          }
-        }
-      }
-    }
-  }
-  return finishCloud(c, n, t0);
-}
-
-function massKeepCount(seed: string, cell: number, band: number, f: number): number {
-  if (band <= 0 || f <= 0) return 0;
-  const expect = band * f;
-  return Math.floor(expect) + (harvestShapeUnit(seed, cell, 0, 0) < expect - Math.floor(expect) ? 1 : 0);
-}
-
-function massSlotKept(seed: string, cell: number, filled: number, s0: number, f: number, slot: number): boolean {
-  const band = filled - s0;
-  const nKeep = massKeepCount(seed, cell, band, f);
-  if (nKeep <= 0 || slot < s0) return false;
-  if (nKeep >= band) return true;
-  const stride = band / nKeep;
-  const offset = harvestShapeUnit(seed, cell, 1, 0) * stride;
-  for (let k = 0; k < nKeep; k++) {
-    if (s0 + Math.min(band - 1, Math.floor(offset + k * stride)) === slot) return true;
-  }
-  return false;
-}
-
-function isPhotographPhase(phase: string): boolean {
-  return (
-    phase === 'giant' ||
-    phase === 'subgiant' ||
-    phase === 'supergiant' ||
-    phase === 'carbon_star' ||
-    phase === 'wolf_rayet'
-  );
-}
-
-/** Photograph pin: giant-branch / hot-MS light, or a showpiece nebula. */
-function writeMassPin(
-  seed: string,
-  cell: number,
-  slot: number,
-  filled: number,
-  i: number,
-  c: Omit<StarCloud, 'n' | 'ms'>,
-): boolean {
-  const b = slotBirthRaw(seed, cell, slot, filled);
-  const photoL = UNIVERSE.GALAXY_HARVEST_ALL_L;
-  if (maybeClockRow(b)) {
-    const ev = sketchEvolve(b);
-    if (ev.nebula !== 'none') {
-      if (!keepSilhouettePhase(ev, packId(cell, slot))) return false;
-      writeEvolved(cell, slot, i, c, b, ev);
-      return true;
-    }
-    if (
-      ev.phase === 'white_dwarf' ||
-      ev.phase === 'neutron_star' ||
-      ev.phase === 'pulsar' ||
-      ev.phase === 'black_hole'
-    ) {
-      return false;
-    }
-    if (!isPhotographPhase(ev.phase) && ev.luminosity < photoL) return false;
-    writeEvolved(cell, slot, i, c, b, ev);
-    return true;
-  }
-  if (!isSlotAlive(b.massZams, b.ageGyr)) return false;
-  if (slotMsLum(b.massZams) < photoL) return false;
-  writeFromBirth(cell, slot, i, c, b, true);
-  return true;
-}
-
-/** Uniform stride through [s0, filled). f = 1 keeps the band. */
-function writeAllMass(
-  seed: string,
-  cell: number,
-  filled: number,
-  s0: number,
-  f: number,
-  c: Omit<StarCloud, 'n' | 'ms'>,
-  n: number,
-): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } {
-  const band = filled - s0;
-  const nKeep = massKeepCount(seed, cell, band, f);
-  if (nKeep <= 0) return { c, n };
-  if (nKeep >= band) {
-    for (let slot = s0; slot < filled; slot++) {
-      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-      if (writeMassPin(seed, cell, slot, filled, n, c)) n++;
-    }
-    return { c, n };
-  }
-  for (let k = 0; k < nKeep; k++) {
-    for (let attempt = 0; attempt < 16; attempt++) {
-      const slot = s0 + Math.min(band - 1, Math.floor(harvestShapeUnit(seed, cell, k + 1, attempt) * band));
-      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-      if (writeMassPin(seed, cell, slot, filled, n, c)) {
-        n++;
-        break;
-      }
-    }
-  }
-  return { c, n };
-}
-
-/** MS photosphere is a cheap birth row; only the giant window needs the clock. */
-function tryShapeSlot(
-  seed: string,
-  cell: number,
-  slot: number,
-  filled: number,
-  c: Omit<StarCloud, 'n' | 'ms'>,
-  n: number,
-): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } | null {
-  const birth = slotBirthRaw(seed, cell, slot, filled);
-  if (birth.massZams < UNIVERSE.GALAXY_HARVEST_SHAPE_M) return null;
-  const tMs = msLifetime(birth.massZams);
-  if (birth.ageGyr < tMs) {
-    if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-    writeFromBirth(cell, slot, n++, c, birth, true);
-    return { c, n };
-  }
-  const deadFor = birth.ageGyr - tMs - giantWindow(birth.massZams);
-  if (deadFor > 0) return null;
-  const ev = sketchEvolve(birth);
-  if (!keepShapePhotosphere(ev)) return null;
-  if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-  writeEvolved(cell, slot, n++, c, birth, ev);
-  return { c, n };
-}
-
-/**
- * One living photosphere per occupancy × SHAPE_F, picked in the
- * long-lived band [SHAPE_M, SILHOUETTE_M). Uniform in that band so
- * the sample is the mass model, not a second luminous walk. Dead
- * 2–4 M☉ slots retry; the longest-lived slot (low-mass end) is
- * the fallback. Remnants and nebulae stay on the tight tail gate.
- */
-function writeShapeSample(
-  seed: string,
-  cell: number,
-  filled: number,
-  uPhoto: number,
-  uLive: number,
-  c: Omit<StarCloud, 'n' | 'ms'>,
-  n: number,
-): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } {
-  const expect = filled * UNIVERSE.GALAXY_HARVEST_SHAPE_F;
-  if (expect <= 0) return { c, n };
-  const s0 = Math.min(filled, Math.ceil(uPhoto * filled));
-  const s1 = Math.min(filled, Math.floor(uLive * filled));
-  const band = s1 - s0;
-  if (band <= 0) return { c, n };
-  const nFloor = Math.floor(expect);
-  const frac = expect - nFloor;
-  const nKeep = nFloor + (harvestShapeUnit(seed, cell, 0, 0) < frac ? 1 : 0);
-  for (let k = 0; k < nKeep; k++) {
-    let wrote = false;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const slot = s0 + Math.floor(harvestShapeUnit(seed, cell, k + 1, attempt) * band);
-      const grown = tryShapeSlot(seed, cell, slot, filled, c, n);
-      if (!grown) continue;
-      c = grown.c;
-      n = grown.n;
-      wrote = true;
-      break;
-    }
-    if (wrote) continue;
-    const grown = tryShapeSlot(seed, cell, s0, filled, c, n);
-    if (!grown) continue;
-    c = grown.c;
-    n = grown.n;
-  }
-  return { c, n };
 }
 
 function cellDist(cell: number, x: number, y: number, z: number): number {
