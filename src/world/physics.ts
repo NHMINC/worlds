@@ -540,18 +540,19 @@ export const UNIVERSE = {
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
   /** Sightline extinction: optical depth per kpc of clump envelope
-   *  (gain · (1 − r²/R²)). A mid complex (R~0.2, gain~0.5) should
-   *  go dark; a wisp only tints. Dust is a filter, not a sprite. */
-  GALAXY_EXTINCT_K: 14,
+   *  (gain · (1 − r²/R²)). Small clouds, high K: a core goes dark,
+   *  a limb reddens, a miss stays white. Dust is a filter, not a sprite. */
+  GALAXY_EXTINCT_K: 90,
   /** Column cap. High enough that a dense clump (or a stack along
    *  the plane) can extinguish; not a “keep the core glorious” floor. */
   GALAXY_EXTINCT_MAX: 8,
   /** Sightline march taps (vertex-shader cost, once per row).
-   *  Dense enough to hit a 0.2 kpc complex on a disk-wide path. */
+   *  Dense enough to hit a 0.05 kpc wisp on a disk-wide path. */
   GALAXY_EXTINCT_STEPS: 64,
-  /** Density volume for the clump fog (xz × y). Catalog kpc. */
-  GALAXY_DUST_VOL_N: 256,
-  GALAXY_DUST_VOL_NY: 48,
+  /** Density volume for the clump fog (xz × y). Catalog kpc.
+   *  320 × 64: a 0.05 kpc wisp is one cell on the thin axis. */
+  GALAXY_DUST_VOL_N: 320,
+  GALAXY_DUST_VOL_NY: 64,
   /** Local-layer taps: the in-bubble column is at most REGION_R
    *  (~0.02 kpc vs ~30 for the backdrop), so 3 taps sample it more
    *  densely than the backdrop's 12 — same law, cheaper march. */
@@ -569,16 +570,16 @@ export const UNIVERSE = {
   SNR_R_MAX: 0.15,
   /** Strömgren scale: H II radius = HII_R_K · L^(1/3), clamped. */
   HII_R_K: 0.004,
-  /** Largest dust complex radius (kpc). */
-  GALAXY_DUST_R_MAX: 0.8,
-  /** Photograph wisp (kpc). The old 0.05 floor was a cell-scale puff
-   *  — smaller than a volume voxel, so the march never saw a cloud. */
-  GALAXY_DUST_R_MIN: 0.11,
-  /** Peak envelope density: RHO0 + RHO1 · gain. Gain is field ×
-   *  dust-to-gas (often ~0.01); without a floor the fog is empty.
-   *  Low enough that one wisp tints and a stack (edge-on) goes dark. */
-  GALAXY_DUST_RHO0: 0.1,
-  GALAXY_DUST_RHO1: 1.6,
+  /** Largest dust complex radius (kpc). Kept modest so one cloud
+   *  is a pocket, not a blanket over the disc. */
+  GALAXY_DUST_R_MAX: 0.32,
+  /** Photograph wisp (kpc). Small covering fraction — most sightlines
+   *  miss, so the harvest stays white except at the clouds. */
+  GALAXY_DUST_R_MIN: 0.05,
+  /** Peak envelope density: RHO0 + RHO1 · gain. A wisp core must
+   *  be dark (high K × this peak); the limb is the red edge. */
+  GALAXY_DUST_RHO0: 0.45,
+  GALAXY_DUST_RHO1: 2.0,
   /** Raymarch steps through a nebula shell (perf knob; 1 = cheap slice). */
   DUST_MARCH_STEPS: 10,
   /** Nebula sprites smaller than this (CSS px) skip the march. */
