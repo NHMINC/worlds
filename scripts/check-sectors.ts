@@ -329,12 +329,12 @@ const check = (cond: boolean, msg: string) => {
   const wisp = bakeDustVolume({
     n: 1,
     pos: new Float32Array([0, 0, 0]),
-    size: new Float32Array([0.05]),
+    size: new Float32Array([0.08]),
     gain: new Float32Array([0.02]),
     kind: new Uint8Array([KIND_DUST]),
   });
   const TWisp = clumpTransmittance(wisp, [-1, 0, 0], [1, 0, 0]);
-  const TWispLimb = clumpTransmittance(wisp, [-1, 0.042, 0], [1, 0.042, 0]);
+  const TWispLimb = clumpTransmittance(wisp, [-1, 0.068, 0], [1, 0.068, 0]);
   const TWispMiss = clumpTransmittance(wisp, [-1, 0.4, 0], [1, 0.4, 0]);
   const wispLum = 0.2126 * TWisp[0] + 0.7152 * TWisp[1] + 0.0722 * TWisp[2];
   const wispLimb = 0.2126 * TWispLimb[0] + 0.7152 * TWispLimb[1] + 0.0722 * TWispLimb[2];
