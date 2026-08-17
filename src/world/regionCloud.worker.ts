@@ -1,6 +1,7 @@
 /**
  * Border monitor for the magnification sphere. The main thread
- * keeps flying (uniforms only); this worker slides membership.
+ * keeps flying (uniforms only); this worker slides membership
+ * (enterers first, then leavers).
  */
 import { advanceRegionCloud } from './sectors';
 import type { StarCloud } from './sectors';
