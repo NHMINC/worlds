@@ -334,11 +334,17 @@ const check = (cond: boolean, msg: string) => {
     check(filled > 8_000 && filled < helix.data.length * 0.35,
       `clump volume fill ${filled}/${helix.data.length} is not a sparse fog`);
     const TEdge = clumpTransmittance(helix, [18, 0, 0], [-18, 0, 0]);
-    const TPole = clumpTransmittance(helix, [0, 12, 0], [0, -12, 0]);
-    const edgeLum = 0.2126 * TEdge[0] + 0.7152 * TEdge[1] + 0.0722 * TEdge[2];
-    const poleLum = 0.2126 * TPole[0] + 0.7152 * TPole[1] + 0.0722 * TPole[2];
-    check(edgeLum < poleLum * 0.45, `edge-on through the disc must be darker than pole-on: ${edgeLum.toFixed(3)} vs ${poleLum.toFixed(3)}`);
-    console.log(`  clump fog: hit ${hitLum.toFixed(3)} miss ${missLum.toFixed(3)}; helix edge ${edgeLum.toFixed(3)} pole ${poleLum.toFixed(3)}`);
+    const THigh = clumpTransmittance(helix, [18, 3.2, 0], [-18, 3.2, 0]);
+    const TFace = clumpTransmittance(helix, [8.2, 10, 0], [8.2, -10, 0]);
+    const lum = (t: [number, number, number]) => 0.2126 * t[0] + 0.7152 * t[1] + 0.0722 * t[2];
+    const edgeLum = lum(TEdge);
+    const highLum = lum(THigh);
+    const faceLum = lum(TFace);
+    check(highLum > 0.55, `above the sheet must stay open (T=${highLum.toFixed(3)})`);
+    check(edgeLum < highLum * 0.5, `edge-on lane must be darker than a high ray: ${edgeLum.toFixed(3)} vs ${highLum.toFixed(3)}`);
+    check(edgeLum < 0.35, `edge-on through the disc must go dark (T=${edgeLum.toFixed(3)})`);
+    check(faceLum > 0.08, `face-on through the solar circle must not be a black disk (T=${faceLum.toFixed(3)})`);
+    console.log(`  clump fog: hit ${hitLum.toFixed(3)} miss ${missLum.toFixed(3)}; edge ${edgeLum.toFixed(3)} high ${highLum.toFixed(3)} face ${faceLum.toFixed(3)}`);
   }
 }
 

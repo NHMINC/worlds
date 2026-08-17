@@ -542,10 +542,10 @@ export const UNIVERSE = {
   /** Sightline extinction: optical depth per kpc of clump envelope
    *  (gain · (1 − r²/R²)). A mid complex (R~0.2, gain~0.5) should
    *  go dark; a wisp only tints. Dust is a filter, not a sprite. */
-  GALAXY_EXTINCT_K: 16,
+  GALAXY_EXTINCT_K: 14,
   /** Column cap. High enough that a dense clump (or a stack along
    *  the plane) can extinguish; not a “keep the core glorious” floor. */
-  GALAXY_EXTINCT_MAX: 12,
+  GALAXY_EXTINCT_MAX: 8,
   /** Sightline march taps (vertex-shader cost, once per row).
    *  Dense enough to hit a 0.2 kpc complex on a disk-wide path. */
   GALAXY_EXTINCT_STEPS: 64,
@@ -573,11 +573,12 @@ export const UNIVERSE = {
   GALAXY_DUST_R_MAX: 0.8,
   /** Photograph wisp (kpc). The old 0.05 floor was a cell-scale puff
    *  — smaller than a volume voxel, so the march never saw a cloud. */
-  GALAXY_DUST_R_MIN: 0.22,
+  GALAXY_DUST_R_MIN: 0.11,
   /** Peak envelope density: RHO0 + RHO1 · gain. Gain is field ×
-   *  dust-to-gas (often ~0.01); without a floor the fog is empty. */
-  GALAXY_DUST_RHO0: 0.5,
-  GALAXY_DUST_RHO1: 2.5,
+   *  dust-to-gas (often ~0.01); without a floor the fog is empty.
+   *  Low enough that one wisp tints and a stack (edge-on) goes dark. */
+  GALAXY_DUST_RHO0: 0.1,
+  GALAXY_DUST_RHO1: 1.6,
   /** Raymarch steps through a nebula shell (perf knob; 1 = cheap slice). */
   DUST_MARCH_STEPS: 10,
   /** Nebula sprites smaller than this (CSS px) skip the march. */
