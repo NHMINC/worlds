@@ -176,6 +176,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uSuperGain;
   uniform float uSuperP;
   uniform float uPinCanvas;
+  uniform float uIMin;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -232,7 +233,7 @@ const SILHOUETTE_VERT = /* glsl */ `
       float extra = superX > 1.0
         ? uSuperGain * (pow(superX, uSuperP) - 1.0)
         : 0.0;
-      float shine = (base + extra) * distF;
+      float shine = max((base + extra) * distF, uIMin);
       float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
       float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
       float css = max(1.0, 1.0 + 2.0 * rCss);
@@ -689,6 +690,7 @@ export class GalaxyView {
       uSuperGain: { value: HARVEST_SUPER_GAIN },
       uSuperP: { value: HARVEST_SUPER_P },
       uPinCanvas: { value: HARVEST_PIN_CANVAS },
+      uIMin: { value: UNIVERSE.GALAXY_HARVEST_ALL ? UNIVERSE.GALAXY_HARVEST_ALL_I_MIN : 0 },
       uPinCore: { value: HARVEST_PIN_CORE },
       uFluxEps: { value: POINT_FLUX_EPS },
     };

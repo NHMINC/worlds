@@ -1,5 +1,5 @@
 /**
- * Whole-disk harvest (luminous tail + occupancy shape sample).
+ * Whole-disk harvest (or HARVEST_ALL look test).
  * The main thread keeps the map / dive moving; this worker mints
  * the backdrop once per seed.
  */

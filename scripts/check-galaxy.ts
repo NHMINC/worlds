@@ -332,10 +332,15 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(HARVEST_L_REF === 300, `harvest shine zero-point must stay 300 Lsun, got ${HARVEST_L_REF}`);
   check(UNIVERSE.GALAXY_SILHOUETTE_M < 5 && UNIVERSE.GALAXY_SILHOUETTE_L < 300,
     `harvest floor must be deeper than 5 Msun / 300 Lsun (M=${UNIVERSE.GALAXY_SILHOUETTE_M} L=${UNIVERSE.GALAXY_SILHOUETTE_L})`);
-  check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 1e-4,
-    `shape sample must stay 1e-4 of occupancy (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);
-  check(UNIVERSE.GALAXY_HARVEST_SHAPE_M === 1,
-    `shape band must start at 1 Msun (M=${UNIVERSE.GALAXY_HARVEST_SHAPE_M})`);
+  if (UNIVERSE.GALAXY_HARVEST_ALL) {
+    check(UNIVERSE.GALAXY_HARVEST_ALL_CAP >= 1_000_000,
+      `all-sky look test needs a real bottle (cap=${UNIVERSE.GALAXY_HARVEST_ALL_CAP})`);
+  } else {
+    check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 1e-4,
+      `shape sample must stay 1e-4 of occupancy (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);
+    check(UNIVERSE.GALAXY_HARVEST_SHAPE_M === 1,
+      `shape band must start at 1 Msun (M=${UNIVERSE.GALAXY_HARVEST_SHAPE_M})`);
+  }
   check(harvestStarPx(1) === HARVEST_PIN_CANVAS && harvestStarPx(3) === HARVEST_PIN_CANVAS,
     `harvest floor is the ${HARVEST_PIN_CANVAS}px Gaussian canvas, got ${harvestStarPx(1)} / ${harvestStarPx(3)}`);
   check(harvestPinWeight(0, 0) === 1, `floor core must be 1, got ${harvestPinWeight(0, 0)}`);

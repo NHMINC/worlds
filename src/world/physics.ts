@@ -445,16 +445,13 @@ export const UNIVERSE = {
   GALAXY_POPULATION: 1_000_000_000,
 
   /**
-   * The explorer sky is the harvest: the luminous tail
-   * (SILHOUETTE_*) plus a sparse occupancy shape sample
-   * (HARVEST_SHAPE_*). You steer by those stars, nebulae, and
-   * dust (dust is extinction). “Here” is a focus in front of the
-   * camera; other samples can highlight as points of interest.
-   * The faint 95% around a camp — every neighbour, not the
-   * 10⁻⁴ shape pin — is a later survey. GALAXY_REGION_* is that
-   * future neighbourhood law, not the explorer. Face-on / Edge-on
-   * slide the viewpoint far enough that the disk fits the screen.
-   * View is 1:1 catalog kpc.
+   * The explorer sky is the harvest (SILHOUETTE_* + HARVEST_SHAPE_*),
+   * unless HARVEST_ALL is on — a look test that disables the
+   * luminosity gates and shows every star the bottle can hold.
+   * Dust is extinction. “Here” is a focus in front of the camera.
+   * GALAXY_REGION_* is the future neighbourhood law, not the
+   * explorer. Face-on / Edge-on slide the viewpoint far enough
+   * that the disk fits the screen. View is 1:1 catalog kpc.
    */
   GALAXY_SECTORS: 120,
   GALAXY_SECTOR_RINGS: 40,
@@ -552,6 +549,21 @@ export const UNIVERSE = {
    */
   GALAXY_HARVEST_SHAPE_F: 1e-4,
   GALAXY_HARVEST_SHAPE_M: 1.0,
+  /**
+   * Look test: turn the luminosity harvester off. Every occupied
+   * slot is eligible (full IMF, remnants, every nebula — no M / L
+   * / gain gate). 1.6×10⁹ vertices will not fit in the bottle;
+   * ALL_CAP is how many faint-IMF pins we can actually mint.
+   * Those pins are a uniform stride through each cell so the sky
+   * is the mass model, not a late-B photograph. The massive-end
+   * clock walk stays complete (every living B / nebula / young
+   * remnant). Flip false to restore the dual harvest.
+   */
+  GALAXY_HARVEST_ALL: true,
+  GALAXY_HARVEST_ALL_CAP: 2_000_000,
+  /** Floor shine so a minted M dwarf still paints (the 0.008
+   *  discard would hide the test). 0 keeps the photograph law. */
+  GALAXY_HARVEST_ALL_I_MIN: 0.02,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
