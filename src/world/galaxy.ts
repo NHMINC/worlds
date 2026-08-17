@@ -6,8 +6,9 @@
  * density × volume × GALAXY_N_K.
  *
  * Birth positions scatter around the cell so the polar lattice never
- * prints as rings. Vertical scatter follows the local flared scale
- * height, not a 0.4 kpc brick. Within a cell the IMF is stratified:
+ * prints as rings or an axle: an in-plane Gaussian (wider in the
+ * core) plus vertical scatter on the local flared scale height, not
+ * a 0.4 kpc brick. Within a cell the IMF is stratified:
  * slot 0 is the low-mass end, slot n−1 is the high-mass end.
  *
  * Arms are a midplane overdensity only. The bar / boxy bulge / X-peanut
@@ -365,6 +366,35 @@ function birthZHalf(R: number): number {
   return Math.max(dz, 2.2 * diskScaleHeight(R));
 }
 
+/**
+ * In-plane Gaussian σ (kpc). The polar bin diagonal is the floor so
+ * rings blur; the spheroid scale takes over in the core so ir=0 is a
+ * bump, not a 50-pc cylinder around the axis.
+ */
+function inPlaneSigmaKpc(R: number): number {
+  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
+  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
+  const cell = (0.5 * dz) / Math.sqrt(3);
+  return Math.max(cell, spheroidScaleHeight(R));
+}
+
+/** Cap the Gaussian so query slack stays finite (3σ holds ~99%). */
+const IN_PLANE_SIGMA_CAP = 3;
+
+/**
+ * Cartesian in-plane offset from the cell centre. Same two rng draws
+ * the old R/θ box used — later draws (pop, age) do not move.
+ */
+function inPlaneBirth(mid: GalPos, uR: number, uTh: number): { R: number; theta: number } {
+  const sigma = inPlaneSigmaKpc(mid.R);
+  const mag = sigma * Math.min(IN_PLANE_SIGMA_CAP, Math.sqrt(-2 * Math.log(Math.max(1e-12, uR))));
+  const ang = TAU * uTh;
+  const x = mid.R * Math.cos(mid.theta) + mag * Math.cos(ang);
+  const z = mid.R * Math.sin(mid.theta) + mag * Math.sin(ang);
+  const R = Math.hypot(x, z);
+  return { R, theta: R > 1e-8 ? Math.atan2(z, x) : mid.theta };
+}
+
 /** Birth height: cell z + local midplane (warp/corrugation) + flared scatter. */
 function birthZ(midZ: number, R: number, theta: number, u: number): number {
   return midZ + midplaneZ(R, theta) + (u - 0.5) * birthZHalf(R);
@@ -374,10 +404,7 @@ function birthZ(midZ: number, R: number, theta: number, u: number): number {
 export function dustBirthCart(seed: string, cell: number, k: number): { x: number; y: number; z: number } {
   const rng = rngFor(seed, 'dustPos', cell, k);
   const mid = cellCenter(cell);
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
-  const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
+  const { R, theta } = inPlaneBirth(mid, rng(), rng());
   const z = birthZ(mid.z, R, theta, rng());
   return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
 }
@@ -456,7 +483,8 @@ export function slotScatterKpc(): number {
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
   const zReach = UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE + birthZHalf(UNIVERSE.GALAXY_R_MAX) * 0.5;
-  return Math.max(0.5 * dz * Math.sqrt(3), zReach);
+  const plane = IN_PLANE_SIGMA_CAP * inPlaneSigmaKpc(0);
+  return Math.max(0.5 * dz * Math.sqrt(3), zReach, plane);
 }
 
 /**
@@ -645,10 +673,7 @@ export interface SlotBirth {
 export function slotBirthCart(seed: string, cell: number, slot: number): { x: number; y: number; z: number } {
   const rng = rngFor(seed, cell, slot);
   const mid = cellCenter(cell);
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
-  const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
+  const { R, theta } = inPlaneBirth(mid, rng(), rng());
   const z = birthZ(mid.z, R, theta, rng());
   return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
 }
@@ -659,13 +684,13 @@ export function slotBirthRaw(seed: string, cell: number, slot: number, filled: n
   const { GALAXY_NZ: nz } = UNIVERSE;
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / nz;
-  // The cell is a quota, not a brick. In-plane scatter still uses the
-  // bin diagonal so the polar lattice never prints as rings. Vertical
-  // scatter follows the local flared scale height so edge-on is a
-  // fuzzy ribbon, not 18 stacked sheets. Occupancy still carries the
-  // density law; a star's id (cell, slot) never moves.
-  const R = Math.max(0.05, mid.R + (rng() - 0.5) * dz);
-  const theta = mid.theta + ((rng() - 0.5) * dz) / Math.max(0.4, mid.R);
+  // The cell is a quota, not a brick. In-plane scatter is a Gaussian
+  // around the centre — wider in the core — so the polar lattice
+  // never prints as rings or an axle. Vertical scatter follows the
+  // local flared scale height so edge-on is a fuzzy ribbon, not 18
+  // stacked sheets. Occupancy still carries the density law; a
+  // star's id (cell, slot) never moves.
+  const { R, theta } = inPlaneBirth(mid, rng(), rng());
   const uZ = rng();
   const pos: GalPos = {
     R,

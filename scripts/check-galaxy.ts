@@ -139,6 +139,36 @@ check(gapMean > 0.02, `inter-arm emptied (ribbons, not a disc): ${gapMean.toFixe
   check(axleSlots / Math.max(1, axleCells) < 0.4, `axle through the core: ${axleSlots} slots in ${axleCells} high-|z| inner cells`);
 }
 
+// Axle (positions): ir=0 births must fill the spheroid, not sit on a
+// 50-pc cylinder. The old R ≥ 0.05 clamp printed that needle.
+{
+  const nth = UNIVERSE.GALAXY_NTH;
+  const nz = UNIVERSE.GALAXY_NZ;
+  const iz = Math.floor(nz / 2);
+  let n = 0;
+  let pinned = 0;
+  let sumR = 0;
+  let nearAxis = 0;
+  for (let it = 0; it < nth; it += 9) {
+    const cell = 0 * nth * nz + it * nz + iz;
+    const filled = slotsInCell(seed, cell);
+    if (filled <= 0) continue;
+    const take = Math.min(3, filled);
+    for (let s = 0; s < take; s++) {
+      const slot = Math.floor(((s + 0.5) * filled) / take);
+      const R = slotBirthRaw(seed, cell, slot, filled).pos.R;
+      n++;
+      sumR += R;
+      if (Math.abs(R - 0.05) < 1e-9) pinned++;
+      if (R < 0.08) nearAxis++;
+    }
+  }
+  const meanR = sumR / Math.max(1, n);
+  check(pinned === 0, `inner births pinned to the 0.05 kpc axle: ${pinned}/${n}`);
+  check(meanR > 0.35, `inner births must fill the spheroid, not a needle: mean R=${meanR.toFixed(3)} (${n} samples)`);
+  check(nearAxis / Math.max(1, n) < 0.08, `too many ir=0 births on the axis: ${nearAxis}/${n}`);
+}
+
 // Vertical law: the sheet is not a brick. Outer zd flares; the
 // midplane warps and corrugates so edge-on is an irregular ribbon.
 {
