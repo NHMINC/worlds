@@ -550,9 +550,9 @@ export const UNIVERSE = {
    *  Dense enough to hit a 0.05 kpc wisp on a disk-wide path. */
   GALAXY_EXTINCT_STEPS: 64,
   /** Density volume for the clump fog (xz × y). Catalog kpc.
-   *  320 keeps a 0.05 kpc wisp at about one voxel. */
+   *  320 × 64: a 0.05 kpc wisp is one cell on the thin axis. */
   GALAXY_DUST_VOL_N: 320,
-  GALAXY_DUST_VOL_NY: 48,
+  GALAXY_DUST_VOL_NY: 64,
   /** Local-layer taps: the in-bubble column is at most REGION_R
    *  (~0.02 kpc vs ~30 for the backdrop), so 3 taps sample it more
    *  densely than the backdrop's 12 — same law, cheaper march. */
