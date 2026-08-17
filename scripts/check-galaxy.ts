@@ -18,11 +18,13 @@ import {
   aimLocks,
   harvestChroma,
   harvestGlowPx,
+  harvestPinCell,
   harvestPsf,
   harvestShine,
   harvestStarPx,
   harvestSuperExtra,
   HARVEST_L_REF,
+  HARVEST_PIN_CANVAS,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_DIST_REF,
   HARVEST_SHINE_GAIN,
@@ -329,14 +331,27 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   check(HARVEST_L_REF === 300, `harvest shine zero-point must stay 300 Lsun, got ${HARVEST_L_REF}`);
   check(UNIVERSE.GALAXY_SILHOUETTE_M < 5 && UNIVERSE.GALAXY_SILHOUETTE_L < 300,
     `harvest floor must be deeper than 5 Msun / 300 Lsun (M=${UNIVERSE.GALAXY_SILHOUETTE_M} L=${UNIVERSE.GALAXY_SILHOUETTE_L})`);
-  check(harvestStarPx(1) === 1, `harvest star must be one CSS pixel, got ${harvestStarPx(1)}`);
-  check(harvestStarPx(3) === 3, `harvest pin must track device pixels, got ${harvestStarPx(3)}`);
+  check(harvestStarPx(1) === HARVEST_PIN_CANVAS && harvestStarPx(3) === HARVEST_PIN_CANVAS,
+    `harvest floor is the ${HARVEST_PIN_CANVAS}px diamond canvas, got ${harvestStarPx(1)} / ${harvestStarPx(3)}`);
+  let pinCells = 0;
+  for (let y = 0; y < HARVEST_PIN_CANVAS; y++) {
+    for (let x = 0; x < HARVEST_PIN_CANVAS; x++) {
+      if (harvestPinCell(x, y)) pinCells++;
+    }
+  }
+  check(pinCells === 6, `floor pin must be a 6-pixel diamond, got ${pinCells}`);
+  check(harvestPinCell(1, 0) && harvestPinCell(1, 2), 'diamond must have one cell above and below');
+  check(harvestPinCell(0, 1) && harvestPinCell(1, 1) && harvestPinCell(2, 1) && harvestPinCell(3, 1),
+    'diamond middle must be four cells wide');
+  check(!harvestPinCell(0, 0) && !harvestPinCell(2, 0) && !harvestPinCell(3, 3),
+    'diamond must discard the 4×4 corners and the empty row');
   const pin = harvestGlowPx(HARVEST_L_REF, 1);
   const midL = harvestGlowPx(1000, 1);
   const hotL = harvestGlowPx(8000, 1);
   const giant = harvestGlowPx(1e6, 1);
-  check(pin <= 3.6, `harvest-floor sprite is wing room, not a disc, got ${pin.toFixed(2)}px`);
-  check(hotL > midL && midL > pin, `glow room must rank L: ${pin.toFixed(1)} / ${midL.toFixed(1)} / ${hotL.toFixed(1)}`);
+  check(pin === HARVEST_PIN_CANVAS && midL === HARVEST_PIN_CANVAS,
+    `floor and mid-L sit on the diamond canvas, got ${pin.toFixed(2)} / ${midL.toFixed(2)}`);
+  check(hotL > pin, `glow room must grow once wings need more than the stamp: ${pin.toFixed(1)} / ${hotL.toFixed(1)}`);
   check(giant > hotL * 1.4, `hypergiant must outgrow an O (no bright-end cap): ${giant.toFixed(1)} vs ${hotL.toFixed(1)}`);
   const shineFloor = harvestShine(HARVEST_L_REF, 8);
   const shineO = harvestShine(8000, 8);

@@ -1,10 +1,12 @@
 /**
  * The explorer sky is the luminous harvest. A star is a point:
- * one CSS-pixel core wearing Teff colour, plus the eye's PSF.
- * Magnitude lifts the wings of that PSF (a Gaussian core and a
- * Lorentzian tail, the same glare shape as the in-system sun).
- * The sprite is only room for those wings — it is not a disc.
- * Dust is never drawn. r/d grow is a later close-survey law.
+ * a 6-pixel diamond floor (coverage so a 1-device-pixel hop still
+ * overlaps) wearing Teff colour, plus the eye's PSF once the
+ * wings need more room than that stamp. Magnitude lifts the wings
+ * of that PSF (a Gaussian core and a Lorentzian tail, the same
+ * glare shape as the in-system sun). The sprite is only room for
+ * those wings — it is not a disc. Dust is never drawn. r/d grow
+ * is a later close-survey law.
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
@@ -12,7 +14,7 @@ import type { GalaxyObject } from '../world/galaxy';
 /**
  * Toy close-survey paint radius (catalog kpc). Real R☉ is metres
  * against kiloparsecs — unusable. Harvest GPU size is
- * harvestStarPx — always one CSS pixel. These knobs stay for a
+ * harvestStarPx — the 4×4 diamond canvas. These knobs stay for a
  * later faint-survey disc; they must not be wired to the harvest.
  */
 export const GLOW_K = 0.0024;
@@ -46,7 +48,7 @@ export const SHINE_DIST_P = 0.45;
 /** Photograph saturation: how far teff RGB is pushed off white. */
 export const SHINE_SAT = 1.55;
 /**
- * Harvest photograph: push Teff further off grey so a 1px pin
+ * Harvest photograph: push Teff further off grey so a floor pin
  * still reads O-blue / M-orange. The old SHINE_SAT was a backdrop
  * number; fly pins need more chroma.
  */
@@ -68,6 +70,19 @@ export const HARVEST_PSF_TAIL = 0.22;
 export const HARVEST_PSF_A = 0.07;
 export const HARVEST_PSF_B = 3.2;
 export const HARVEST_PSF_THRESH = 0.018;
+/**
+ * Floor-pin canvas (device px). A 1px GL_POINTS sprite hops to
+ * the neighbour pixel as uCenter slides. The stamp is a 6-pixel
+ * diamond on this 4×4 canvas so a one-pixel hop still overlaps
+ * in ±x and ±y:
+ *   . # . .
+ *   # # # #
+ *   . # . .
+ *   . . . .
+ * Bright rows whose PSF wings need more room keep the Gaussian.
+ * Not a filled disc — six fragments, then discard.
+ */
+export const HARVEST_PIN_CANVAS = 4;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
  * Steep in L so an O outshines the harvest floor. Shallow in d
@@ -98,9 +113,17 @@ export function glowRadiusKpc(L: number, dim = false): number {
   return Math.max(dim ? GLOW_DIM : PHOTO_MIN, Math.min(PHOTO_MAX, r));
 }
 
-/** Harvest paint size (device px): one CSS pixel, at every distance. */
-export function harvestStarPx(pixelRatio = 1): number {
-  return Math.max(1, pixelRatio);
+/** True for the six diamond cells. Same mask the harvest fragment uses. */
+export function harvestPinCell(x: number, y: number): boolean {
+  if (x < 0 || y < 0 || x >= HARVEST_PIN_CANVAS || y >= HARVEST_PIN_CANVAS) {
+    return false;
+  }
+  return (y === 0 && x === 1) || y === 1 || (y === 2 && x === 1);
+}
+
+/** Harvest floor paint size (device px): the diamond canvas. */
+export function harvestStarPx(_pixelRatio = 1): number {
+  return HARVEST_PIN_CANVAS;
 }
 
 /** PSF intensity at a CSS-pixel radius. Same formula the harvest fragment uses. */
@@ -116,11 +139,11 @@ export function harvestPsfRadiusCss(I: number): number {
   return Math.sqrt(Math.max(0, num / HARVEST_PSF_B));
 }
 
-/** Sprite size (device px): room for visible wings. Not a filled disc. */
+/** Sprite size (device px): diamond floor, or room for visible wings. */
 export function harvestGlowPx(L: number, pixelRatio = 1): number {
   const I = harvestShine(L, HARVEST_SHINE_DIST_REF);
   const css = Math.max(1, 1 + 2 * harvestPsfRadiusCss(I));
-  return Math.max(harvestStarPx(pixelRatio), css * pixelRatio);
+  return Math.max(HARVEST_PIN_CANVAS, css * pixelRatio);
 }
 
 /** Leftover luminosity above SUPER_L. Zero for every other harvest star. */
