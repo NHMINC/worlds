@@ -67,7 +67,9 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     vec3 uv = (p - uDustOrigin) * uDustInvSize;
     if (uv.x < 0.0 || uv.y < 0.0 || uv.z < 0.0 ||
         uv.x > 1.0 || uv.y > 1.0 || uv.z > 1.0) return 0.0;
-    return texture3D(uDustVol, uv).r;
+    // WebGL2 / GLSL3: Three rewrites texture2D → texture, not texture3D.
+    // texture3D fails to compile and the whole harvest Points program dies.
+    return texture(uDustVol, uv).r;
   }
   // Transmittance exp(−τ · DUST_RGB) from the bubble centre to a
   // row — blue dies first, so a cloud-edge star reddens before it
