@@ -389,11 +389,12 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const crossS = (2 * UNIVERSE.GALAXY_R_MAX) / UNIVERSE.GALAXY_WARP;
   check(Math.abs(crossS - UNIVERSE.GALAXY_WARP_CROSS_S) < 0.05, `warp crosses in ${crossS.toFixed(1)} s, not ${UNIVERSE.GALAXY_WARP_CROSS_S}`);
   // Dust is a filter: blue must die first or a rift edge goes cold
-  // instead of warm, and the column cap must leave the core visible.
+  // instead of warm. The cap must be high enough that a clump stack
+  // can extinguish — the old <5 floor kept the core “glorious.”
   const [dR, dG, dB] = UNIVERSE.GALAXY_DUST_RGB;
   check(dB > dG && dG > dR, `DUST_RGB ${dR},${dG},${dB} does not kill blue first`);
-  check(UNIVERSE.GALAXY_EXTINCT_MAX < 5, 'uncapped extinction blacks out the core from in-plane views');
-  check(UNIVERSE.GALAXY_EXTINCT_MAX > 1, 'a sub-1 cap cannot carve visible rifts');
+  check(UNIVERSE.GALAXY_EXTINCT_MAX >= 6, `clump columns must be allowed to go dark, cap=${UNIVERSE.GALAXY_EXTINCT_MAX}`);
+  check(UNIVERSE.GALAXY_EXTINCT_MAX <= 16, `cap ${UNIVERSE.GALAXY_EXTINCT_MAX} is a saturate, not a free integral`);
   // One law, both layers: the local march must sample the short
   // in-bubble column at least as densely as the backdrop samples
   // the disk, or a star would brighten by crossing the boundary.
