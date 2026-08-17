@@ -47,8 +47,6 @@ npm install
 npm run dev        # dev server
 npm run build      # production build (includes PWA service worker)
 npm run icons      # regenerate PNG app icons from scripts/gen-icons.mjs
-npm run worlds     # render sample worlds to previews/*.png for generator tuning
-npx tsx scripts/check-geodesic.ts   # sanity-check the geodesic grid math
 ```
 
 The preview renderer still draws flat equirectangular maps — that projection

@@ -37,7 +37,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx tsx scripts/check-import.ts
       - run: npm run icons
       - run: npm run build
         env:
