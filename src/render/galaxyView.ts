@@ -198,7 +198,7 @@ const SILHOUETTE_VERT = /* glsl */ `
     vStamp = 0.0;
     // Cull wrong-kind sprites for the pass here — a fragment discard
     // still rasterizes the whole quad, tripling core overdraw. Dust
-    // rows (kind > 3.5) are census-only and never pass either gate.
+    // is not harvested (kind > 3.5 never passes either gate).
     // No membership ball: the harvest is the whole sky.
     if ((uPass < 0.5 && aKind > 0.5) ||
         (uPass > 0.5 && (aKind < 0.5 || aKind > 3.5))) {
@@ -823,7 +823,7 @@ export class GalaxyView {
     this.scene.add(emisPts);
     this.silEmisPts = emisPts;
     this.silEmisMat = emisMat;
-    // No dust pass: clumps are not drawn. They are the fog — the
+    // No dust pass: clumps are not harvest rows. Fog is the
     // volume uploaded above, marched in SILHOUETTE_VERT.
     this.pushMagUniforms();
   }

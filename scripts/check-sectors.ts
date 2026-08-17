@@ -3,7 +3,7 @@
  * equalise mass far better than uniform spacing, samples must be
  * deterministic real addresses, and interest picks must reprint. */
 import { UNIVERSE } from '../src/world/physics';
-import { cellCount, cellCenter, dustPhysics, galToCart, ismAt, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
+import { cellCount, cellCenter, dustClumpsInCell, dustPhysics, galToCart, ismAt, ismNorm, objectAt, splitId, slotBirthCart, slotBirthRaw, slotsInCell } from '../src/world/galaxy';
 import { saucerHeight } from '../src/render/galaxySectors';
 import {
   catalogRingMasses,
@@ -28,6 +28,7 @@ import {
   KIND_STAR,
   BIT_DUST,
   BIT_NEBULA,
+  dustId,
   isDustId,
   cellFromDustId,
 } from '../src/world/sectors';
@@ -204,7 +205,7 @@ const check = (cond: boolean, msg: string) => {
   console.log(`  slide ${slid.ms.toFixed(1)} ms vs remint ${fresh.ms.toFixed(0)} ms`);
 }
 
-// --- luminous backdrop: clock + dust, real ids, not a dwarf cloud ---
+// --- luminous backdrop: clock + nebulae, real ids, not a dwarf cloud ---
 {
   const a = buildSilhouetteCloud(seed);
   const b5 = buildSilhouetteCloud(seed);
@@ -220,11 +221,9 @@ const check = (cond: boolean, msg: string) => {
   let stars = 0;
   let nebulae = 0;
   let dust = 0;
-  let dustOffLattice = 0;
   let minStarL = Infinity;
   let bright = 0;
   let shape = 0;
-  const dustSeen = new Set<number>();
   const homeC = galToCart({ R: UNIVERSE.R_SUN, theta: 1.0, z: 0 });
   const r = UNIVERSE.GALAXY_REGION_R;
   let inside = 0;
@@ -233,15 +232,6 @@ const check = (cond: boolean, msg: string) => {
     if (d < r) inside++;
     if (a.kind[i] === KIND_DUST || (a.bits[i] & BIT_DUST) !== 0) {
       dust++;
-      const id = a.ids[i];
-      check(isDustId(id), `dust row ${id} is not an ISM id`);
-      check(!dustSeen.has(id), `dust id ${id} duplicated`);
-      dustSeen.add(id);
-      check(!objectAt(seed, id), `dust id ${id} claims to be a living star`);
-      // A population scatters; a lattice pins to cell centres.
-      const mid = galToCart(cellCenter(cellFromDustId(id)));
-      const off = Math.hypot(a.pos[i * 3] - mid.x, a.pos[i * 3 + 1] - mid.y, a.pos[i * 3 + 2] - mid.z);
-      if (off > 0.02) dustOffLattice++;
       continue;
     }
     if (a.bits[i] & BIT_NEBULA) nebulae++;
@@ -271,11 +261,8 @@ const check = (cond: boolean, msg: string) => {
     check(minStarL >= 0.3, `shape star too dim L=${minStarL}`);
     check(stars + nebulae < 400_000, `silhouette star/nebula rows ${stars + nebulae} blew the harvest cap`);
   }
-  // Dust rows are the fog (never drawn; the volume is the visible law).
-  // The MW gas sheet is thinner than the old sech², so the census is
-  // the midplane clumps, not every z-slice of a cylinder.
-  check(dust > 8_000 && dust < 150_000, `dust count ${dust} is not the full clump census`);
-  check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
+  // Dust is sightline extinction, not a harvest row.
+  check(dust === 0, `harvest minted ${dust} dust rows — clumps are catalog, not sky`);
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');
@@ -486,20 +473,31 @@ const check = (cond: boolean, msg: string) => {
   const iceIn = meanIce(3);
   const iceOut = meanIce(13);
   check(iceOut > iceIn + 0.05, `ice must grow with cold radius: inner ${iceIn.toFixed(2)} vs outer ${iceOut.toFixed(2)}`);
-  // Grain colours vary across the disk — no single painted brown.
-  const cloud = buildSilhouetteCloud(seed);
-  const tints = new Set<string>();
-  for (let i = 0; i < cloud.n; i++) {
-    if (cloud.kind[i] !== KIND_DUST) continue;
-    tints.add(
-      `${Math.round(cloud.col[i * 3] * 24)}:${Math.round(cloud.col[i * 3 + 1] * 24)}:${Math.round(cloud.col[i * 3 + 2] * 24)}`,
-    );
-    if (tints.size > 40) break;
+  // Grain chemistry varies across the disk — no single painted brown.
+  // Harvest no longer mints dust rows; the catalog is the source.
+  const carbons = new Set<string>();
+  const ices = new Set<string>();
+  let addressed = 0;
+  for (let ir = 2; ir < nr; ir += 3) {
+    for (let it = 0; it < nth; it += 11) {
+      const cell = ir * nth * nz + it * nz + izMid;
+      const ph = dustPhysics(seed, cell);
+      carbons.add((Math.round(ph.carbonFrac * 12) / 12).toFixed(2));
+      ices.add((Math.round(ph.iceFrac * 12) / 12).toFixed(2));
+      const clumps = dustClumpsInCell(seed, cell);
+      if (clumps > 0 && addressed === 0) {
+        const id = dustId(cell, 0);
+        check(isDustId(id), `dustId ${id} is not an ISM address`);
+        check(cellFromDustId(id) === cell, `dustId ${id} does not decode to cell ${cell}`);
+        check(!objectAt(seed, id), `dust id ${id} claims to be a living star`);
+        addressed++;
+      }
+    }
   }
-  // The full clump census spans the whole disk, so silicate / soot /
-  // ice chemistry should show a broad spread of grain tints again.
-  check(tints.size >= 8, `dust wears ${tints.size} tints — composition is not reaching the grains`);
-  console.log(`  dust chemistry: ice ${iceIn.toFixed(2)} -> ${iceOut.toFixed(2)} with radius; ${tints.size}+ grain tints`);
+  check(addressed > 0, 'no occupied dust clump to address');
+  check(carbons.size >= 4, `carbonFrac only ${carbons.size} bins — composition is not reaching the grains`);
+  check(ices.size >= 4, `iceFrac only ${ices.size} bins — ice chemistry collapsed`);
+  console.log(`  dust chemistry: ice ${iceIn.toFixed(2)} -> ${iceOut.toFixed(2)} with radius; ${carbons.size} C bins, ${ices.size} ice bins`);
 }
 
 // --- nursery law: dense gas births young stars (causal, not painted) ---
