@@ -257,10 +257,9 @@ const check = (cond: boolean, msg: string) => {
   check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
   check(inside < a.n, 'silhouette must reach past the sample ball');
   if (UNIVERSE.GALAXY_HARVEST_ALL) {
-    check(stars > 800_000 && stars < 1_100_000, `all-sky stars ${stars} is not the million-mass bottle`);
+    check(stars > 200_000 && stars < 1_200_000, `all-sky stars ${stars} is not the giant/hot photograph`);
     check(nebulae > 200 && nebulae < 8_000, `all-sky nebulae ${nebulae} is not the old showpiece set`);
-    check(minStarL < UNIVERSE.GALAXY_SILHOUETTE_L, `photograph band missing, min L=${minStarL}`);
-    check(minStarL >= 0.3, `photograph must not be M-dwarf oatmeal, min L=${minStarL}`);
+    check(minStarL >= UNIVERSE.GALAXY_HARVEST_ALL_L * 0.5, `photograph must be giant/hot light, min L=${minStarL}`);
   } else {
     // Dual harvest: late-B tail (M ≥ 4.2 / L ≥ 210) plus a 10⁻⁴
     // occupancy shape sample of long-lived photospheres (L ~ 1).

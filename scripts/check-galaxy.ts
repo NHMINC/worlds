@@ -337,6 +337,8 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
       `all-sky bottle must be one million (cap=${UNIVERSE.GALAXY_HARVEST_ALL_CAP})`);
     check(UNIVERSE.GALAXY_HARVEST_ALL_I_MIN === 0,
       `photograph must not floor I (I_MIN=${UNIVERSE.GALAXY_HARVEST_ALL_I_MIN})`);
+    check(UNIVERSE.GALAXY_HARVEST_ALL_L === 16,
+      `photograph floor must be the faint K-giant (L=${UNIVERSE.GALAXY_HARVEST_ALL_L})`);
   } else {
     check(UNIVERSE.GALAXY_HARVEST_SHAPE_F === 1e-4,
       `shape sample must stay 1e-4 of occupancy (f=${UNIVERSE.GALAXY_HARVEST_SHAPE_F})`);

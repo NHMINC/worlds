@@ -122,9 +122,8 @@ is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
 The explorer shows the harvest: the luminous tail plus a
 10⁻⁴ occupancy shape sample so the sky follows the mass
 model, not only young massive stars. `HARVEST_ALL` is a
-look test that turns those gates off: one million pins
-strided through the photograph band (G and up — mass among
-stars that emit; I is still L, not a median floor), nebulae
+look test that turns those gates off: up to one million pins
+of photograph light (giant branch + hot MS; I from L), nebulae
 on the old showpiece gate. A later survey will
 resolve the faint neighbours of a camp. Set course loads a
 picked harvest star (or the here / POI focus). We **store
