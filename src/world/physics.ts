@@ -553,16 +553,18 @@ export const UNIVERSE = {
    * Look test: turn the luminosity harvester off. Every occupied
    * slot is eligible (full IMF — no M / L / gain gate). 1.6×10⁹
    * vertices will not fit; ALL_CAP is the bottle. Those pins are
-   * a uniform stride through each cell's occupancy so the million
-   * is the mass model, not a late-B photograph plus leftovers.
-   * Nebulae stay the old showpiece gate (H II + NEB_GAIN ≈ 2k),
-   * not every faded shell. Flip false to restore the dual harvest.
+   * a uniform stride through the photograph band (SHAPE_M and up)
+   * so the million follows mass among stars that actually emit.
+   * A Hubble plate is luminosity-weighted — not M-dwarf oatmeal,
+   * and not a floor that paints every pin at the median I.
+   * Nebulae stay the old showpiece gate (H II + NEB_GAIN ≈ 2k).
+   * Flip false to restore the dual harvest.
    */
   GALAXY_HARVEST_ALL: true,
   GALAXY_HARVEST_ALL_CAP: 1_000_000,
-  /** Floor shine so a minted M dwarf still paints (the 0.008
-   *  discard would hide the test). 0 keeps the photograph law. */
-  GALAXY_HARVEST_ALL_I_MIN: 0.02,
+  /** 0 = photograph law (I from L). A floor here turns the IMF
+   *  into a yellow fog: every M dwarf paints at the same I. */
+  GALAXY_HARVEST_ALL_I_MIN: 0,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
