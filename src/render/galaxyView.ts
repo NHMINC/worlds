@@ -139,6 +139,22 @@ function regionCamFar(): number {
   return UNIVERSE.GALAXY_R_MAX * 8;
 }
 
+/**
+ * Half-angle (rad) that should hold the disk radius. Edge-on is a
+ * horizontal needle — use the width. Face-on is a circle — use the
+ * shorter axis so it fits.
+ */
+export function overviewHalfAngle(fovDeg: number, aspect: number, kind: 'face' | 'edge'): number {
+  const vHalf = ((fovDeg * Math.PI) / 180) * 0.5;
+  const hHalf = Math.atan(Math.tan(vHalf) * Math.max(1e-4, aspect));
+  return kind === 'edge' ? hHalf : Math.min(vHalf, hHalf);
+}
+
+/** Sit this far (kpc) so radius `r` fills `fill` of that half-angle. */
+export function overviewDistanceKpc(r: number, halfAngle: number, fill = 0.92): number {
+  return r / Math.max(1e-4, Math.tan(Math.max(1e-4, halfAngle) * fill));
+}
+
 const SILHOUETTE_VERT = /* glsl */ `
   ${SHAPE_GLSL}
   ${extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)}
@@ -915,29 +931,28 @@ export class GalaxyView {
   }
 
   /**
-   * Sit far enough that the disk diameter fits ~70% of the vertical
-   * FOV. Catalog kpc — view is 1:1.
+   * Sit so the disk diameter fills the screen. Edge-on uses the
+   * width (a needle); face-on uses the shorter axis (a circle).
    */
-  private overviewDistance(): number {
-    const r = UNIVERSE.GALAXY_R_MAX;
-    const half = ((this.camera.fov * Math.PI) / 180) * 0.35;
-    return r / Math.max(1e-4, Math.tan(half));
+  private overviewDistance(kind: 'face' | 'edge'): number {
+    return overviewDistanceKpc(
+      UNIVERSE.GALAXY_R_MAX,
+      overviewHalfAngle(this.camera.fov, this.camera.aspect, kind),
+    );
   }
 
   private goOverview(kind: 'face' | 'edge'): void {
     this.rememberBack();
     this.overview = true;
-    const d = this.overviewDistance();
+    const d = this.overviewDistance(kind);
     if (kind === 'face') {
       this.enterRegion(0, d, 0, null);
       this.aimAt(0, -1, 0);
     } else {
-      // A few degrees above the plane so the dust sheet does not eat the disk.
-      const elev = 0.14;
-      const c = Math.cos(elev);
-      const s = Math.sin(elev);
-      this.enterRegion(d * c, d * s, 0, null);
-      this.aimAt(-c, -s, 0);
+      // In the plane. A lift put the camera above the dust sheet,
+      // so the lane became a floor and the top stayed puffy.
+      this.enterRegion(d, 0, 0, null);
+      this.aimAt(-1, 0, 0);
     }
     this.applyCam();
     this.updateSight(true);
