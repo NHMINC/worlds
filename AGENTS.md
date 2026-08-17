@@ -219,12 +219,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
-  is sightline extinction** (`extinctGlsl`): the ISM field (thin
-  gas sheet × arms × turbulence) is baked into a density volume.
-  Look: any positive column is black (hard occluder) so the
-  blank bands are the fog's true shape. Clumps stay addressable
-  in the catalog; they are
-  not harvest rows. A
+  is sightline extinction** (`extinctGlsl`): a catalog of deaths.
+  Each smear is an explosion that never ends, sheared into a
+  trailing arc by differential rotation. Older death, longer
+  swirl. Small, messy, off the midplane. Edge-on the stack is a
+  mottled strip, not a painted lane. Look: any positive column
+  is black (hard occluder). Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills

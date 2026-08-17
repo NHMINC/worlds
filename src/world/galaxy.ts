@@ -272,70 +272,87 @@ export function ismAt(
   return { base, field, turb };
 }
 
-/** Dust-to-gas from the mean thin-disk [Fe/H] at this radius. */
-function dustToGasAtR(R: number): number {
-  const { feh } = chemistry('thin', R, 0.5, 0.5);
-  return Math.min(1.6, Math.pow(10, 0.5 * feh));
+/**
+ * Flat-curve shear (rad / Gyr). V_CIRC is kpc/Gyr (220 km/s ≈ 225).
+ * Ω = V / R. Ejecta at a different R winds away from the death
+ * site at Ω(R) − Ω(R_death).
+ */
+export function omegaShear(R: number): number {
+  return UNIVERSE.GALAXY_DUST_V_CIRC / Math.max(0.2, R);
+}
+
+/** One death: a small explosion that shear drags into an arc. */
+export interface DustSmear {
+  x: number;
+  y: number;
+  z: number;
+  R: number;
+  ageGyr: number;
+  rExp: number;
+  rays: number;
+  loft: number;
+  seed: number;
 }
 
 /**
- * Optical gas-sheet scale height (kpc). Real gas flares: e-fold per
- * GAS_FLARE_RD outward of the solar circle, thinning inward toward
- * the ~50 pc central molecular zone. `dustGasBase` conserves the
- * column through the ZD_FLOOR the baked volume can resolve.
+ * Visible dust events. Each is a catalog death (a real slot that
+ * has left the main sequence in the last SMEAR_GYR). Count is a
+ * photograph budget (EVENT_K), not every funeral — too many and
+ * the sky is a wall. Occupancy / SFR / H II still drink `ismAt`.
  */
-export function gasScaleHeight(R: number): number {
-  return UNIVERSE.GALAXY_ZD_GAS * Math.exp((R - UNIVERSE.R_SUN) / UNIVERSE.GALAXY_GAS_FLARE_RD);
-}
-
-/**
- * Radial molecular profile: exponential envelope × (bar-swept
- * hole × molecular ring) + nuclear knot. The bar moves gas, it
- * does not destroy it — the ring and the CMZ are where it went.
- */
-export function molecularRadial(R: number): number {
-  const U = UNIVERSE;
-  const envelope = Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS));
-  const hole = 1 - U.GALAXY_GAS_HOLE_A * Math.exp(-((R / U.GALAXY_GAS_HOLE_R) ** 2));
-  const ring = 1 + U.GALAXY_GAS_RING_A * Math.exp(-0.5 * ((R - U.GALAXY_GAS_RING_R) / U.GALAXY_GAS_RING_W) ** 2);
-  const cmz = U.GALAXY_GAS_CMZ_A * Math.exp(-((R / U.GALAXY_GAS_CMZ_R) ** 2));
-  return envelope * hole * ring + cmz;
-}
-
-/**
- * The OPTICAL gas sheet (fog only). It rides the same warped,
- * corrugated midplane as the stars — gas warps more than stars in
- * real disks, so a flat fog under a warped star ribbon was
- * backwards — flares outward, and carries the molecular ring.
- * Amplitude scales by zdTrue/zd so a sheet thinner than the bake's
- * ZD_FLOOR keeps its column (τ conserved). `gasBase` (occupancy,
- * SFR age law, H II) stays on the flat catalog sheet: moving those
- * moves star ages and addresses — a gen-version decision, not a
- * fog tweak.
- */
-function dustGasBase(p: GalPos): number {
-  const zRel = p.z - midplaneZ(p.R, p.theta);
-  const zdTrue = gasScaleHeight(p.R);
-  const zd = Math.max(zdTrue, UNIVERSE.GALAXY_DUST_ZD_FLOOR);
-  return molecularRadial(p.R) * (zdTrue / zd) * sech2(zRel / zd) * gasArm(p.R, p.theta);
-}
-
-/**
- * Extinction coefficient (per kpc) at a catalog point. The mean
- * sheet is the warped, flared, ringed molecular disk (pancake from
- * geometry, not a painted lane). Positive sheared turbulence raises
- * sparse streaks and blobs on that sheet — the photograph.
- * Occupancy / clump IDs still drink `ismAt.field`; they do not use
- * this.
- */
-export function dustDensity(seed: string, x: number, y: number, z: number): number {
-  const p = cartToGal(x, y, z);
-  const base = dustGasBase(p);
-  if (base <= 1e-5) return 0;
-  const turb = ismTurbulence(seed, x, y, z);
-  const d2g = dustToGasAtR(p.R);
-  const lane = Math.pow(Math.max(0, turb), UNIVERSE.GALAXY_DUST_STREAK);
-  return d2g * base * (UNIVERSE.GALAXY_DUST_K_DIFFUSE + UNIVERSE.GALAXY_DUST_K_DENSE * lane);
+export function collectDustSmears(seed: string): DustSmear[] {
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
+  const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
+  const mLo = UNIVERSE.GALAXY_DUST_M;
+  const uDust = imfQuantile(mLo);
+  const eventK = UNIVERSE.GALAXY_DUST_EVENT_K;
+  const smearGyr = UNIVERSE.GALAXY_DUST_SMEAR_GYR;
+  const out: DustSmear[] = [];
+  for (let ir = 0; ir < nr; ir++) {
+    const R0 = (ir / nr) * rMax;
+    const R1 = ((ir + 1) / nr) * rMax;
+    const dz = (2 * zExtent) / nz;
+    const vol = 0.5 * (R1 * R1 - R0 * R0) * (TAU / nth) * dz;
+    for (let iz = 0; iz < nz; iz++) {
+      for (let it = 0; it < nth; it++) {
+        const cell = ir * nth * nz + it * nz + iz;
+        const mid = cellCenter(cell);
+        const expect = density(mid) * vol * eventK;
+        if (expect < 0.08) continue;
+        const nFloor = Math.floor(expect);
+        const nTry = nFloor + (u01(seed, 'dustN', cell) < expect - nFloor ? 1 : 0);
+        if (nTry <= 0) continue;
+        const filled = slotsInCell(seed, cell);
+        if (filled <= 0) continue;
+        const s0 = Math.min(filled - 1, Math.floor(uDust * filled));
+        const band = Math.max(1, filled - s0);
+        for (let k = 0; k < nTry; k++) {
+          let kept: DustSmear | null = null;
+          for (let attempt = 0; attempt < 8 && !kept; attempt++) {
+            const slot = s0 + Math.floor(u01(seed, 'dustSlot', cell, k, attempt) * band);
+            const b = slotBirthRaw(seed, cell, slot, filled);
+            if (b.massZams < mLo) continue;
+            const deadFor = b.ageGyr - msLifetime(b.massZams);
+            if (deadFor <= 0 || deadFor > smearGyr) continue;
+            const cart = galToCart(b.pos);
+            kept = {
+              x: cart.x,
+              y: cart.y,
+              z: cart.z,
+              R: b.pos.R,
+              ageGyr: deadFor,
+              rExp: UNIVERSE.GALAXY_DUST_EXP_R * (0.55 + 0.9 * u01(seed, 'dustR', cell, k)),
+              rays: UNIVERSE.GALAXY_DUST_RAYS,
+              loft: UNIVERSE.GALAXY_DUST_LOFT * (0.35 + 1.3 * u01(seed, 'dustLoft', cell, k)),
+              seed: xmur3(`galaxy:${seed}:dustRay:${cell}:${k}`)(),
+            };
+          }
+          if (kept) out.push(kept);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /** Pull z to the midplane when the cell overlaps the gas sheet. */

@@ -424,30 +424,22 @@ export const UNIVERSE = {
   GALAXY_ZD_GAS: 0.12,
   GALAXY_GAS_ARM_A: 0.7,
   /**
-   * Optical gas geometry (the fog, `dustGasBase`). The sheet rides
-   * the same warped, corrugated midplane the stars use and FLARES:
-   * e-fold per GAS_FLARE_RD kpc from the solar circle, thinning
-   * inward to the ~50 pc central molecular zone. Radially the bar
-   * has swept the inner disk — a molecular RING at RING_R holds the
-   * gas mass, a HOLE (depth HOLE_A, width HOLE_R) sits inside it,
-   * and a nuclear knot (CMZ_*) survives on the axle. DUST_ZD_FLOOR
-   * is the thinnest sheet the baked volume resolves; thinner sheets
-   * scale amplitude by zdTrue/zdFloor so the column (τ) is
-   * conserved. Occupancy / SFR / H II still drink the flat catalog
-   * field (`gasBase`) — migrating them moves star ages, which is a
-   * gen-version decision, not part of this optical law.
+   * Optical dust: death smears, not a gas pancake. EVENT_K is the
+   * photograph budget (occupancy × this / N_K ≈ count). M is the
+   * IMF floor for a dusty death (AGB + SN). SMEAR_GYR is how long
+   * a smear stays distinct before it has mixed away. EXP_R is the
+   * explosion reach (kpc) — small. RAYS are filaments, not a ball.
+   * LOFT (rad) lets some ejecta leave the disc. V_CIRC is kpc/Gyr
+   * (220 km/s ≈ 225) for Ω = V/R. Occupancy / SFR / H II still
+   * drink the flat catalog field (`gasBase`).
    */
-  GALAXY_GAS_FLARE_RD: 8,
-  GALAXY_GAS_RING_R: 4.6,
-  GALAXY_GAS_RING_W: 1.5,
-  GALAXY_GAS_RING_A: 2.2,
-  GALAXY_GAS_HOLE_R: 4.0,
-  GALAXY_GAS_HOLE_A: 0.97,
-  GALAXY_GAS_CMZ_R: 0.25,
-  GALAXY_GAS_CMZ_A: 3,
-  /** One y-voxel of the bake (7.6 kpc / DUST_VOL_NY). A thinner
-   *  sheet aliases out of the march; conserve its column instead. */
-  GALAXY_DUST_ZD_FLOOR: 0.079,
+  GALAXY_DUST_EVENT_K: 280,
+  GALAXY_DUST_M: 1.3,
+  GALAXY_DUST_SMEAR_GYR: 0.55,
+  GALAXY_DUST_EXP_R: 0.18,
+  GALAXY_DUST_RAYS: 5,
+  GALAXY_DUST_LOFT: 0.95,
+  GALAXY_DUST_V_CIRC: 225,
   GALAXY_DUST_N_K: 6000,
   GALAXY_DUST_MAX: 8,
   GALAXY_SFR_GAIN: 18,
@@ -514,9 +506,8 @@ export const UNIVERSE = {
    * (the bulge's dead clock) simply do not shine above the
    * floor — the core is dark except its nebula hosts. Plus the
    * youngest / brightest nebula hosts (gain ≥
-   * SILHOUETTE_NEB_GAIN). Dust is not a harvest row — clumps stay
-   * addressable in the catalog (dustId / dustPhysics); the fog is
-   * the ISM field. Same catalog frame.
+   * SILHOUETTE_NEB_GAIN). Dust is not a harvest row. The fog is
+   * a catalog of deaths. Same catalog frame.
    * Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
@@ -532,16 +523,16 @@ export const UNIVERSE = {
    * photograph stretch. They screen-blend (they glow, they do not
    * add to a white bar).
    * DUST IS NOT VISIBLE. It is never drawn in EITHER layer — it is
-   * a filter on the light law. The fog is the ISM field (thin gas
-   * sheet × arms × log-normal turbulence), baked once into a density
-   * volume and marched from the bubble centre to the star
-   * (EXTINCT_STEPS taps). Look: any positive column is black
-   * (hard occluder) so the blank bands are the fog's true shape.
-   * Beer–Lambert (exp(−τ · DUST_RGB)) returns when the geometry
-   * is right. The mean sheet is the edge-on lane; the dense tail
-   * is a rare dark region.
-   * Harvest does not mint dust rows. Clumps remain a catalog
-   * population (dustClumpsInCell); they are not the fog.
+   * a filter on the light law. The fog is a catalog of deaths:
+   * each smear is an explosion that never ends, sheared into a
+   * trailing arc by Ω(R) − Ω(R_death). Older death, longer swirl.
+   * Small — one event is a thin filament, not a blackout. Messy —
+   * off the midplane, over the core, out of the disc. Edge-on the
+   * stack is a mottled strip, not a painted lane. Baked once and
+   * marched from the bubble centre (EXTINCT_STEPS taps). Look:
+   * any positive column is black (hard occluder). Beer–Lambert
+   * returns when the geometry is right.
+   * Harvest does not mint dust rows.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX as the pixel floor so far shells stay findable;
    * shells under DUST_MINPX skip the march (a disc).

@@ -1,12 +1,12 @@
 /**
- * Dust is the ISM field, not a census of balls. The explorer never
- * draws dust — it bakes dustDensity(seed, x, y, z) into a volume
- * and marches the sightline. Sheared turbulence prints streaks and
- * blobs; a star behind a filament goes dark. A short hop through
- * a void stays mostly clear. The pancake is the thin gas disk.
+ * Dust is a catalog of deaths. Each smear is an explosion that
+ * never ends, dragged into an arc by differential rotation. The
+ * explorer never draws dust — it bakes those arcs into a volume
+ * and marches the sightline. A star behind a filament goes dark.
  */
 import { UNIVERSE } from './physics';
-import { dustDensity, gasScaleHeight } from './galaxy';
+import { collectDustSmears, omegaShear } from './galaxy';
+import { mulberry32 } from './rng';
 
 export interface DustVolume {
   nx: number;
@@ -33,7 +33,15 @@ export function dustVolumeBounds(): {
   };
 }
 
-/** Sample the ISM dust field into a 3D density volume. Empty space stays 0. */
+function splat(data: Float32Array, nx: number, ny: number, nz: number, fx: number, fy: number, fz: number): void {
+  const ix = Math.round(fx);
+  const iy = Math.round(fy);
+  const iz = Math.round(fz);
+  if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return;
+  data[ix + nx * (iy + ny * iz)] = 1;
+}
+
+/** Sample death-smears into a 3D density volume. Empty space stays 0. */
 export function bakeDustVolume(seed: string): DustVolume {
   const nx = UNIVERSE.GALAXY_DUST_VOL_N;
   const ny = UNIVERSE.GALAXY_DUST_VOL_NY;
@@ -43,22 +51,33 @@ export function bakeDustVolume(seed: string): DustVolume {
   const vx = size[0] / nx;
   const vy = size[1] / ny;
   const vz = size[2] / nz;
-  const [ox, oy, oz] = origin;
-  // The sheet flares to gasScaleHeight(R_MAX) at the rim; warp +
-  // corrugation lift the midplane by ≲ 1 kpc. Skip the empty halo
-  // so the bake stays cheap.
-  const ySkip =
-    gasScaleHeight(UNIVERSE.GALAXY_R_MAX) * 6 + UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE;
-  for (let iz = 0; iz < nz; iz++) {
-    const z = oz + (iz + 0.5) * vz;
-    for (let iy = 0; iy < ny; iy++) {
-      const y = oy + (iy + 0.5) * vy;
-      if (Math.abs(y) > ySkip) continue;
-      const row = nx * (iy + ny * iz);
-      for (let ix = 0; ix < nx; ix++) {
-        const x = ox + (ix + 0.5) * vx;
-        const rho = dustDensity(seed, x, y, z);
-        if (rho > 0) data[row + ix] = rho;
+  const step = Math.min(vx, vy, vz) * 0.7;
+  const smears = collectDustSmears(seed);
+  for (let e = 0; e < smears.length; e++) {
+    const ev = smears[e];
+    const rng = mulberry32(ev.seed);
+    const omegaE = omegaShear(ev.R);
+    for (let r = 0; r < ev.rays; r++) {
+      const az = rng() * Math.PI * 2;
+      const alt = (rng() - 0.5) * ev.loft;
+      const ca = Math.cos(alt);
+      const dx = ca * Math.cos(az);
+      const dy = Math.sin(alt);
+      const dz = ca * Math.sin(az);
+      const len = ev.rExp * (0.4 + 0.6 * rng());
+      for (let s = 0; s <= len; s += step) {
+        const px = ev.x + dx * s;
+        const py = ev.y + dy * s;
+        const pz = ev.z + dz * s;
+        const R = Math.hypot(px, pz);
+        const th = R > 1e-8 ? Math.atan2(pz, px) : 0;
+        const th2 = th + (omegaShear(R) - omegaE) * ev.ageGyr;
+        const x2 = R * Math.cos(th2);
+        const z2 = R * Math.sin(th2);
+        const fx = ((x2 - origin[0]) / size[0]) * nx - 0.5;
+        const fy = ((py - origin[1]) / size[1]) * ny - 0.5;
+        const fz = ((z2 - origin[2]) / size[2]) * nz - 0.5;
+        splat(data, nx, ny, nz, fx, fy, fz);
       }
     }
   }
