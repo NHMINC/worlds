@@ -200,11 +200,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   set course; only the splash is once-per-load. An empty save
   opens the same way on a discovered living host. The camera
   sits at the viewpoint centre. Gestures **slide** through
-  catalog space (1:1, no `VIEW_R` stretch). Harvest stars are
-  **point sources**: a 1px Teff core plus the eye’s PSF
-  (Gaussian core + Lorentzian tail — the same glare shape as
-  the in-system sun). Magnitude lifts the wings with no
-  bright-end cap; it does not stamp a larger disc. Above
+  catalog space (1:1, no `VIEW_R` stretch).   Harvest stars are
+  **point sources**: a 6-pixel diamond floor (4-wide bar, one
+  above, one below — so a 1-device-pixel hop still overlaps)
+  plus the eye’s PSF once the wings need more room than that
+  stamp (Gaussian core + Lorentzian tail — the same glare
+  shape as the in-system sun). Magnitude lifts the wings with
+  no bright-end cap; it does not stamp a larger disc. Above
   `HARVEST_SUPER_L` leftover luminosity adds extra I — super-suns
   only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a

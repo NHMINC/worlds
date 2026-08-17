@@ -511,8 +511,9 @@ export const UNIVERSE = {
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX as the pixel floor so far shells stay findable;
    * shells under DUST_MINPX skip the march (a disc).
-   * Stars are one CSS pixel of photosphere colour — a point of
-   * light, no disc, no bloom sprite. Intensity is L^P · (D/d)^q
+   * Stars are a 6-pixel diamond of photosphere colour (coverage
+   * so a 1-device-pixel hop still overlaps) — a point of light,
+   * no disc, no bloom sprite. Intensity is L^P · (D/d)^q
    * then I/(1+I) so hue survives. STAR_PX is unused for stars
    * (kept so older comments that name the knob still resolve).
    * SUPER_GAIN is leftover exposure. Optical approximations,
@@ -523,7 +524,7 @@ export const UNIVERSE = {
    *  luminosity, not a magnitude bin. 210 L☉ is the MS light of the
    *  4.2 M☉ late-B floor (L ≈ 1.4 M^3.5) — one step down the IMF
    *  from the old 5 M☉ / 300 L☉ cut, about twice the harvest.
-   *  Stars are the cheap citizens (one pixel, vertex-only cost);
+   *  Stars are the cheap citizens (six fragments, vertex-only cost);
    *  the count knob that matters for the GPU is envelopes, not this. */
   GALAXY_SILHOUETTE_L: 210,
   /** Backdrop nebulae: emissionLook surface-brightness gain. Young

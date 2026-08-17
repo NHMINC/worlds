@@ -14,6 +14,7 @@ import {
   aimLocks,
   harvestGlowPx,
   HARVEST_L_REF,
+  HARVEST_PIN_CANVAS,
   HARVEST_PSF_A,
   HARVEST_PSF_B,
   HARVEST_PSF_CORE,
@@ -173,6 +174,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uSuperL;
   uniform float uSuperGain;
   uniform float uSuperP;
+  uniform float uPinCanvas;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -181,6 +183,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
+  varying float vStamp;
 
   void main() {
     vColor = aColor;
@@ -190,6 +193,7 @@ const SILHOUETTE_VERT = /* glsl */ `
     vRadiusView = 0.0;
     vCenterCat = vec3(0.0);
     vPx = 0.0;
+    vStamp = 0.0;
     // Cull wrong-kind sprites for the pass here — a fragment discard
     // still rasterizes the whole quad, tripling core overdraw. Dust
     // rows (kind > 3.5) are census-only and never pass either gate.
@@ -231,7 +235,16 @@ const SILHOUETTE_VERT = /* glsl */ `
       float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
       float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
       float css = max(1.0, 1.0 + 2.0 * rCss);
-      gl_PointSize = max(uPixel, css * uPixel);
+      float wingPx = css * uPixel;
+      // Floor pin: 6-pixel diamond on a 4×4 canvas so a 1-device-pixel
+      // hop still overlaps. Wings that already need more room keep
+      // the Gaussian. Same mask as harvestPinCell.
+      if (wingPx <= uPinCanvas) {
+        gl_PointSize = uPinCanvas;
+        vStamp = 1.0;
+      } else {
+        gl_PointSize = max(uPixel, wingPx);
+      }
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
       vVis = shine;
@@ -270,11 +283,24 @@ const STAR_FRAG = /* glsl */ `
   varying float vRadiusView;
   varying vec3 vCenterCat;
   varying float vPx;
+  varying float vStamp;
   void main() {
     if (uPass < 0.5 && vKind > 0.5) discard;
     if (uPass > 0.5 && (vKind < 0.5 || vKind > 3.5)) discard;
     vec2 p = gl_PointCoord * 2.0 - 1.0;
     if (vKind < 0.5) {
+      // Same 6-pixel diamond as harvestPinCell. Coverage, not a disc.
+      if (vStamp > 0.5) {
+        vec2 q = floor(gl_PointCoord * 4.0);
+        bool on = (q.y == 0.0 && q.x == 1.0) ||
+          (q.y == 1.0 && q.x >= 0.0 && q.x <= 3.0) ||
+          (q.y == 2.0 && q.x == 1.0);
+        if (!on) discard;
+        float I = max(vVis, 0.0);
+        if (I < 0.008) discard;
+        gl_FragColor = vec4(vColor * I, 1.0);
+        return;
+      }
       float edge = length(p);
       if (edge > 1.0) discard;
       float I = max(vVis, 0.0);
@@ -662,6 +688,7 @@ export class GalaxyView {
       uSuperL: { value: HARVEST_SUPER_L },
       uSuperGain: { value: HARVEST_SUPER_GAIN },
       uSuperP: { value: HARVEST_SUPER_P },
+      uPinCanvas: { value: HARVEST_PIN_CANVAS },
       uFluxEps: { value: POINT_FLUX_EPS },
     };
   }
