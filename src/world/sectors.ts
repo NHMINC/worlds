@@ -625,12 +625,12 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     const d = cellDist(cells[i], x, y, z);
     // Far cells keep the massive tail. A harvest star can sit a
     // scale-height away from its lattice centre (the core bump);
-    // if this cell can reach the tap, include the harvest band
-    // (shape sample + luminous tail) so the star you are on
-    // does not vanish.
+    // if this cell can reach the tap, include that tail so the
+    // star you are on does not vanish. Shape-sample pins are
+    // addressable via objectAt; they are not this neighbourhood.
     let s0 = Math.floor(regionImfFloor(d) * f);
     if (d <= slotScatterKpc() + r) {
-      s0 = Math.min(s0, Math.floor(imfQuantile(UNIVERSE.GALAXY_HARVEST_SHAPE_M) * f));
+      s0 = Math.min(s0, Math.floor(imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M) * f));
     }
     slot0[i] = s0;
     cap += f - s0;
@@ -813,6 +813,7 @@ function tryShapeSlot(
   n: number,
 ): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } | null {
   const birth = slotBirthRaw(seed, cell, slot, filled);
+  if (birth.massZams < UNIVERSE.GALAXY_HARVEST_SHAPE_M) return null;
   const tMs = msLifetime(birth.massZams);
   if (birth.ageGyr < tMs) {
     if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
@@ -846,7 +847,7 @@ function writeShapeSample(
 ): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } {
   const expect = filled * UNIVERSE.GALAXY_HARVEST_SHAPE_F;
   if (expect <= 0) return { c, n };
-  const s0 = Math.min(filled, Math.floor(uPhoto * filled));
+  const s0 = Math.min(filled, Math.ceil(uPhoto * filled));
   const s1 = Math.min(filled, Math.floor(uLive * filled));
   const band = s1 - s0;
   if (band <= 0) return { c, n };

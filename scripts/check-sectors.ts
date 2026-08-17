@@ -339,16 +339,11 @@ const check = (cond: boolean, msg: string) => {
     const id = a.ids[shapeHost];
     const o = objectAt(seed, id);
     check(!!o && o.id === id, `shape id ${id} is not a catalog row`);
-    const local = buildRegionCloud(seed, a.pos[shapeHost * 3], a.pos[shapeHost * 3 + 1], a.pos[shapeHost * 3 + 2], r);
-    let found = false;
-    for (let i = 0; i < local.n; i++) {
-      if (local.ids[i] === id) {
-        found = true;
-        break;
-      }
-    }
-    check(found, `shape star ${id} vanished when the catalog ball reached it`);
-    console.log(`  shape handshake: id ${id} L=${a.lum[shapeHost].toFixed(2)} kept in local ${local.n}`);
+    const { cell, slot } = splitId(id);
+    const filled = slotsInCell(seed, cell);
+    const cart = slotBirthCart(seed, cell, slot);
+    check(Math.abs(cart.x - a.pos[shapeHost * 3]) < 1e-5 && Math.abs(cart.y - a.pos[shapeHost * 3 + 1]) < 1e-5, 'shape pose != slotBirthCart');
+    console.log(`  shape handshake: id ${id} L=${a.lum[shapeHost].toFixed(2)} objectAt ok`);
   }
 }
 
