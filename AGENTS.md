@@ -510,25 +510,26 @@ knob family. Leave the rest of the bottle alone.
    reading older files.
 4. **Do not commit secrets.** Update this file when the contract
    changes. Do not invent a test to replace a look.
-5. **Ship on `main`.** The live app (GitHub Pages,
-   `https://nhminc.github.io/worlds/`) only builds from `main`; that
-   is the only way the owner can look. Always **commit, push, and
-   merge onto `main`** in the same session. Do not leave work sitting
-   on a feature-branch PR.
+5. **Ship on `main`.** This is a solo project. Work on `main`.
+   **Commit and `git push origin main`.** No feature branches, no
+   pull requests, no merge step. The live app (GitHub Pages,
+   `https://nhminc.github.io/worlds/`) only builds from `main`;
+   that is the only way the owner can look.
    **`origin/main` is not the live sky.** The `pages` workflow
-   (`.github/workflows/pages.yml`) must go **green for that merge
+   (`.github/workflows/pages.yml`) must go **green for that push
    SHA**. The only gate is the production build (`tsc -b && vite
    build`) — a red deploy means they are still on the previous
    universe. Then tell the owner to **hard-refresh once** so the
    PWA drops the previous worker, and **stop**. The next look is
    theirs.
-   One owner, **many threads**: other agents land on `main` while
-   you work. Before merging, `git fetch origin main` and read
-   `git log HEAD..origin/main`. Merge (do not rebase away, do not
-   force-push `main`). Name foreign commits in the merge message.
+   Other agents may land on `main` while you work. `git fetch
+   origin main` before you push; if the remote moved, pull (do
+   not rebase away, do not force-push `main`).
 
 ## Cursor Cloud specific instructions
 
+- Work on `main`. Commit and push `origin main`. Do not open a
+  PR. Do not create a `cursor/*` branch for the owner.
 - Do not run or restore `scripts/check-*` / `scripts/smoke-*`.
 - Do not stand up Playwright, computerUse walkthroughs, or a
   harvest mint to verify a visual change. The owner looks at Pages.
