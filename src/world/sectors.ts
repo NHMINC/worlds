@@ -888,7 +888,17 @@ function massSlotKept(seed: string, cell: number, filled: number, s0: number, f:
   return false;
 }
 
-/** Photograph pin: living photosphere or a showpiece nebula. Not oatmeal. */
+function isPhotographPhase(phase: string): boolean {
+  return (
+    phase === 'giant' ||
+    phase === 'subgiant' ||
+    phase === 'supergiant' ||
+    phase === 'carbon_star' ||
+    phase === 'wolf_rayet'
+  );
+}
+
+/** Photograph pin: giant-branch / hot-MS light, or a showpiece nebula. */
 function writeMassPin(
   seed: string,
   cell: number,
@@ -898,6 +908,7 @@ function writeMassPin(
   c: Omit<StarCloud, 'n' | 'ms'>,
 ): boolean {
   const b = slotBirthRaw(seed, cell, slot, filled);
+  const photoL = UNIVERSE.GALAXY_HARVEST_ALL_L;
   if (maybeClockRow(b)) {
     const ev = sketchEvolve(b);
     if (ev.nebula !== 'none') {
@@ -913,10 +924,12 @@ function writeMassPin(
     ) {
       return false;
     }
+    if (!isPhotographPhase(ev.phase) && ev.luminosity < photoL) return false;
     writeEvolved(cell, slot, i, c, b, ev);
     return true;
   }
   if (!isSlotAlive(b.massZams, b.ageGyr)) return false;
+  if (slotMsLum(b.massZams) < photoL) return false;
   writeFromBirth(cell, slot, i, c, b, true);
   return true;
 }
@@ -942,7 +955,7 @@ function writeAllMass(
     return { c, n };
   }
   for (let k = 0; k < nKeep; k++) {
-    for (let attempt = 0; attempt < 12; attempt++) {
+    for (let attempt = 0; attempt < 16; attempt++) {
       const slot = s0 + Math.min(band - 1, Math.floor(harvestShapeUnit(seed, cell, k + 1, attempt) * band));
       if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
       if (writeMassPin(seed, cell, slot, filled, n, c)) {

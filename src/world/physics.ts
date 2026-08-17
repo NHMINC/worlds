@@ -555,9 +555,12 @@ export const UNIVERSE = {
    * vertices will not fit; ALL_CAP is the bottle. Those pins are
    * a uniform stride through the photograph band (SHAPE_M and up)
    * so the million follows mass among stars that actually emit.
-   * A Hubble plate is luminosity-weighted — not M-dwarf oatmeal,
-   * and not a floor that paints every pin at the median I.
-   * Nebulae stay the old showpiece gate (H II + NEB_GAIN ≈ 2k).
+   * A Hubble plate is luminosity-weighted: old light is the giant
+   * branch (yellow-white bulge), young light is hot MS. Not M-dwarf
+   * oatmeal, and not a floor that paints every pin at the same I.
+   * ALL_L is the faint K-giant / ~2 M☉ MS floor — G dwarfs (L~1)
+   * do not earn a pin; they do not make a bulge plate. Nebulae
+   * stay the old showpiece gate (H II + NEB_GAIN ≈ 2k).
    * Flip false to restore the dual harvest.
    */
   GALAXY_HARVEST_ALL: true,
@@ -565,6 +568,9 @@ export const UNIVERSE = {
   /** 0 = photograph law (I from L). A floor here turns the IMF
    *  into a yellow fog: every M dwarf paints at the same I. */
   GALAXY_HARVEST_ALL_I_MIN: 0,
+  /** Faint end of the low-mass giant (L = 40×0.4). Below this,
+   *  a pin does not photograph. */
+  GALAXY_HARVEST_ALL_L: 16,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
