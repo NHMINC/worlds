@@ -544,6 +544,7 @@ Code map (start here):
 | Gas giants | `src/render/gasGiant.ts` |
 | Persistence, export/import | `src/store/` |
 | Generative progressive house (score + kit) | `src/audio/` |
+| Live site (Pages from `main`) | `.github/workflows/pages.yml` → `https://nhminc.github.io/worlds/` |
 
 ---
 
