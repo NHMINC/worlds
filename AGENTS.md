@@ -189,9 +189,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `src/render/star.ts`.
 - **The explorer is the luminous harvest, not a magnifier ball.**
   App boot mints the bright catalog once (`prepareUniverse` /
-  `buildSilhouetteCloud`) — living stars above `SILHOUETTE_L`,
-  nebulae, and dust as sightline extinction. You steer by those
-  upper-magnitude objects. The faint 95% (adjacent dull stars
+  `buildSilhouetteCloud`) — living stars above `SILHOUETTE_L`
+  (late-B MS floor and hotter), nebulae, and dust as sightline
+  extinction. You steer by those
+  upper-magnitude objects. The faint 95% (adjacent dull stars)
   around a camp) is a later survey, not this sky. “Here” (the
   loaded star, else `homeStar`) is a **focus highlight** parked
   in front of the camera; visited samples can mark other points

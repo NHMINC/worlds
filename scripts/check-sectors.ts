@@ -241,9 +241,9 @@ const check = (cond: boolean, msg: string) => {
   }
   check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
   check(inside < a.n, 'silhouette must reach past the sample ball');
-  // L ≥ 300 keeps ~79k of the ~83k stars the M=5 floor clocks — most
-  // of the luminous tail, still nowhere near the full disk.
-  check(stars > 18_000 && stars < 110_000, `silhouette stars ${stars} is not the luminous tail`);
+  // M ≥ 4.2 / L ≥ 210 is the late-B MS floor — about twice the
+  // old 5 M☉ / 300 L☉ harvest, still nowhere near the full disk.
+  check(stars > 40_000 && stars < 160_000, `silhouette stars ${stars} is not the doubled luminous tail`);
   check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
   // Dust is census-only (never drawn; extinction is the visible law).
   // The MW gas sheet is thinner than the old sech², so the census is
@@ -251,7 +251,7 @@ const check = (cond: boolean, msg: string) => {
   check(dust > 8_000 && dust < 150_000, `dust count ${dust} is not the full clump census`);
   check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
   check(minStarL >= UNIVERSE.GALAXY_SILHOUETTE_L, `silhouette star dim L=${minStarL}`);
-  check(stars + nebulae < 110_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
+  check(stars + nebulae < 180_000, `silhouette star/nebula rows ${stars + nebulae} still a dwarf cloud`);
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');

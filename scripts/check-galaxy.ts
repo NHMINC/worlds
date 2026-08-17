@@ -326,6 +326,9 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const near = shineDisplay(20, 80);
   const far = shineDisplay(20, 240);
   check(near > far * 1.25, `same L at 80 kpc (${near.toFixed(2)}) must beat 240 kpc (${far.toFixed(2)})`);
+  check(HARVEST_L_REF === 300, `harvest shine zero-point must stay 300 Lsun, got ${HARVEST_L_REF}`);
+  check(UNIVERSE.GALAXY_SILHOUETTE_M < 5 && UNIVERSE.GALAXY_SILHOUETTE_L < 300,
+    `harvest floor must be deeper than 5 Msun / 300 Lsun (M=${UNIVERSE.GALAXY_SILHOUETTE_M} L=${UNIVERSE.GALAXY_SILHOUETTE_L})`);
   check(harvestStarPx(1) === 1, `harvest star must be one CSS pixel, got ${harvestStarPx(1)}`);
   check(harvestStarPx(3) === 3, `harvest pin must track device pixels, got ${harvestStarPx(3)}`);
   const pin = harvestGlowPx(HARVEST_L_REF, 1);
