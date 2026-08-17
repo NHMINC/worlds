@@ -408,9 +408,9 @@ export const UNIVERSE = {
    * (SFR_GAIN — Schmidt–Kennicutt-lite: dense gas births young
    * stars, i.e. nurseries), and the H II condition (CLOUD_HII —
    * a young massive star lights its natal cloud). Dust reddens:
-   * extinction per unit optical depth is DUST_RGB (R, G, B) — blue
-   * dies first, so a sightline through dust goes warm before it
-   * goes dark.
+   * extinction per unit optical depth is DUST_RGB (R, G, B) — a
+   * mild Cardelli-ish R_V≈3.1 curve (A_R : A_V : A_B). Blue still
+   * dies first, but a long edge-on column goes dark, not rust.
    */
   GALAXY_TURB_SIGMA: 1.35,
   GALAXY_TURB_FREQ: 0.85,
@@ -422,7 +422,7 @@ export const UNIVERSE = {
   GALAXY_DUST_MAX: 8,
   GALAXY_SFR_GAIN: 18,
   GALAXY_CLOUD_HII: 0.1,
-  GALAXY_DUST_RGB: [0.55, 1.0, 1.65] as [number, number, number],
+  GALAXY_DUST_RGB: [0.75, 1.0, 1.32] as [number, number, number],
 
   /** Solar circle (kpc) — home-star search and the thin-disk yardstick. */
   R_SUN: 8.2,
