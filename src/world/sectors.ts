@@ -804,22 +804,25 @@ function mintHarvestCloud(seed: string, t0: number): StarCloud {
 }
 
 /**
- * Harvester off for stars. The bottle's ALL_CAP pins are a
- * uniform stride through occupancy — the mass model. Nebulae
- * stay the old showpiece gate (H II + NEB_GAIN), not every shell.
+ * Harvester off for count. The bottle's ALL_CAP pins are a
+ * uniform stride through the photograph band (SHAPE_M and up)
+ * — mass among stars that emit. I is still L. Nebulae stay
+ * the old showpiece gate (H II + NEB_GAIN), not every shell.
  */
 function mintAllCloud(seed: string, t0: number): StarCloud {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } =
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const uLive = imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M);
+  const uPhoto = imfQuantile(UNIVERSE.GALAXY_HARVEST_SHAPE_M);
   const cap = UNIVERSE.GALAXY_HARVEST_ALL_CAP;
   let occupied = 0;
   for (let ir = 0; ir < nr; ir++) {
     for (let iz = 0; iz < nz; iz++) {
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
-        occupied += slotsInCell(seed, cell);
+        const filled = slotsInCell(seed, cell);
+        if (filled > 0) occupied += Math.max(0, filled - Math.ceil(uPhoto * filled));
       }
     }
   }
@@ -836,12 +839,13 @@ function mintAllCloud(seed: string, t0: number): StarCloud {
         const cell = ir * nth * nz + it * nz + iz;
         const filled = slotsInCell(seed, cell);
         if (filled > 0) {
-          const grown = writeAllMass(seed, cell, filled, f, c, n);
+          const sPhoto = Math.min(filled, Math.ceil(uPhoto * filled));
+          const grown = writeAllMass(seed, cell, filled, sPhoto, f, c, n);
           c = grown.c;
           n = grown.n;
           const sLive = Math.min(filled, Math.floor(uLive * filled));
           for (let slot = sLive; slot < filled; slot++) {
-            if (massSlotKept(seed, cell, filled, f, slot)) continue;
+            if (massSlotKept(seed, cell, filled, sPhoto, f, slot)) continue;
             const birth = slotBirthRaw(seed, cell, slot, filled);
             if (!maybeClockRow(birth)) continue;
             const ev = sketchEvolve(birth);
@@ -865,25 +869,26 @@ function mintAllCloud(seed: string, t0: number): StarCloud {
   return finishCloud(c, n, t0);
 }
 
-function massKeepCount(seed: string, cell: number, filled: number, f: number): number {
-  if (filled <= 0 || f <= 0) return 0;
-  const expect = filled * f;
+function massKeepCount(seed: string, cell: number, band: number, f: number): number {
+  if (band <= 0 || f <= 0) return 0;
+  const expect = band * f;
   return Math.floor(expect) + (harvestShapeUnit(seed, cell, 0, 0) < expect - Math.floor(expect) ? 1 : 0);
 }
 
-function massSlotKept(seed: string, cell: number, filled: number, f: number, slot: number): boolean {
-  const nKeep = massKeepCount(seed, cell, filled, f);
-  if (nKeep <= 0) return false;
-  if (nKeep >= filled) return true;
-  const stride = filled / nKeep;
+function massSlotKept(seed: string, cell: number, filled: number, s0: number, f: number, slot: number): boolean {
+  const band = filled - s0;
+  const nKeep = massKeepCount(seed, cell, band, f);
+  if (nKeep <= 0 || slot < s0) return false;
+  if (nKeep >= band) return true;
+  const stride = band / nKeep;
   const offset = harvestShapeUnit(seed, cell, 1, 0) * stride;
   for (let k = 0; k < nKeep; k++) {
-    if (Math.min(filled - 1, Math.floor(offset + k * stride)) === slot) return true;
+    if (s0 + Math.min(band - 1, Math.floor(offset + k * stride)) === slot) return true;
   }
   return false;
 }
 
-/** Mass pin: faded shells stay a star/remnant, not an envelope. */
+/** Photograph pin: living photosphere or a showpiece nebula. Not oatmeal. */
 function writeMassPin(
   seed: string,
   cell: number,
@@ -891,44 +896,57 @@ function writeMassPin(
   filled: number,
   i: number,
   c: Omit<StarCloud, 'n' | 'ms'>,
-): void {
+): boolean {
   const b = slotBirthRaw(seed, cell, slot, filled);
   if (maybeClockRow(b)) {
     const ev = sketchEvolve(b);
-    if (ev.nebula !== 'none' && !keepSilhouettePhase(ev, packId(cell, slot))) {
-      writeFromBirth(cell, slot, i, c, b, isSlotAlive(b.massZams, b.ageGyr), true);
-      return;
+    if (ev.nebula !== 'none') {
+      if (!keepSilhouettePhase(ev, packId(cell, slot))) return false;
+      writeEvolved(cell, slot, i, c, b, ev);
+      return true;
+    }
+    if (
+      ev.phase === 'white_dwarf' ||
+      ev.phase === 'neutron_star' ||
+      ev.phase === 'pulsar' ||
+      ev.phase === 'black_hole'
+    ) {
+      return false;
     }
     writeEvolved(cell, slot, i, c, b, ev);
-    return;
+    return true;
   }
-  writeFromBirth(cell, slot, i, c, b, isSlotAlive(b.massZams, b.ageGyr));
+  if (!isSlotAlive(b.massZams, b.ageGyr)) return false;
+  writeFromBirth(cell, slot, i, c, b, true);
+  return true;
 }
 
-/** Uniform stride through every occupied slot. f = 1 keeps the cell. */
+/** Uniform stride through [s0, filled). f = 1 keeps the band. */
 function writeAllMass(
   seed: string,
   cell: number,
   filled: number,
+  s0: number,
   f: number,
   c: Omit<StarCloud, 'n' | 'ms'>,
   n: number,
 ): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } {
-  const nKeep = massKeepCount(seed, cell, filled, f);
+  const band = filled - s0;
+  const nKeep = massKeepCount(seed, cell, band, f);
   if (nKeep <= 0) return { c, n };
-  if (nKeep >= filled) {
-    for (let slot = 0; slot < filled; slot++) {
+  if (nKeep >= band) {
+    for (let slot = s0; slot < filled; slot++) {
       if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-      writeMassPin(seed, cell, slot, filled, n++, c);
+      if (writeMassPin(seed, cell, slot, filled, n, c)) n++;
     }
     return { c, n };
   }
-  const stride = filled / nKeep;
+  const stride = band / nKeep;
   const offset = harvestShapeUnit(seed, cell, 1, 0) * stride;
   for (let k = 0; k < nKeep; k++) {
-    const slot = Math.min(filled - 1, Math.floor(offset + k * stride));
+    const slot = s0 + Math.min(band - 1, Math.floor(offset + k * stride));
     if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-    writeMassPin(seed, cell, slot, filled, n++, c);
+    if (writeMassPin(seed, cell, slot, filled, n, c)) n++;
   }
   return { c, n };
 }

@@ -259,7 +259,8 @@ const check = (cond: boolean, msg: string) => {
   if (UNIVERSE.GALAXY_HARVEST_ALL) {
     check(stars > 800_000 && stars < 1_100_000, `all-sky stars ${stars} is not the million-mass bottle`);
     check(nebulae > 200 && nebulae < 8_000, `all-sky nebulae ${nebulae} is not the old showpiece set`);
-    check(minStarL < 0.1, `all-sky must include faint IMF pins, min L=${minStarL}`);
+    check(minStarL < UNIVERSE.GALAXY_SILHOUETTE_L, `photograph band missing, min L=${minStarL}`);
+    check(minStarL >= 0.3, `photograph must not be M-dwarf oatmeal, min L=${minStarL}`);
   } else {
     // Dual harvest: late-B tail (M ≥ 4.2 / L ≥ 210) plus a 10⁻⁴
     // occupancy shape sample of long-lived photospheres (L ~ 1).
