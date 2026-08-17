@@ -211,7 +211,12 @@ const check = (cond: boolean, msg: string) => {
   check(a === b5, 'silhouette must be cached per seed');
   check(a.n === b5.n && a.ids[0] === b5.ids[0], 'silhouette not deterministic');
   check(a.kind.length >= a.n, 'silhouette missing kind');
-  check(a.n > 80_000 && a.n < 400_000, `silhouette ${a.n} is not the dual harvest`);
+  check(
+    UNIVERSE.GALAXY_HARVEST_ALL
+      ? a.n > 1_000_000 && a.n < 4_000_000
+      : a.n > 80_000 && a.n < 400_000,
+    `silhouette ${a.n} is not the expected harvest`,
+  );
   let stars = 0;
   let nebulae = 0;
   let dust = 0;
@@ -251,20 +256,26 @@ const check = (cond: boolean, msg: string) => {
   }
   check(inside < a.n * 0.15, `silhouette dumps ${inside}/${a.n} into the home sample ball`);
   check(inside < a.n, 'silhouette must reach past the sample ball');
-  // Dual harvest: late-B tail (M ≥ 4.2 / L ≥ 210) plus a 10⁻⁴
-  // occupancy shape sample of long-lived photospheres (L ~ 1).
-  check(stars > 180_000 && stars < 320_000, `silhouette stars ${stars} is not the dual harvest`);
-  check(bright > 40_000 && bright < 160_000, `luminous tail ${bright} moved`);
-  check(shape > 80_000 && shape < 240_000, `shape sample ${shape} is not ~10⁻⁴ of occupancy`);
-  check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
+  if (UNIVERSE.GALAXY_HARVEST_ALL) {
+    check(stars > 1_000_000 && stars < 3_500_000, `all-sky stars ${stars} is not the uncapped look test`);
+    check(nebulae > 20 && nebulae < 80_000, `all-sky nebulae ${nebulae} vanished`);
+    check(minStarL < 0.1, `all-sky must include faint IMF pins, min L=${minStarL}`);
+  } else {
+    // Dual harvest: late-B tail (M ≥ 4.2 / L ≥ 210) plus a 10⁻⁴
+    // occupancy shape sample of long-lived photospheres (L ~ 1).
+    check(stars > 180_000 && stars < 320_000, `silhouette stars ${stars} is not the dual harvest`);
+    check(bright > 40_000 && bright < 160_000, `luminous tail ${bright} moved`);
+    check(shape > 80_000 && shape < 240_000, `shape sample ${shape} is not ~10⁻⁴ of occupancy`);
+    check(nebulae > 20 && nebulae < 50_000, `silhouette nebulae ${nebulae} is not the prominent set`);
+    check(minStarL < UNIVERSE.GALAXY_SILHOUETTE_L, `shape sample missing: min L=${minStarL}`);
+    check(minStarL >= 0.3, `shape star too dim L=${minStarL}`);
+    check(stars + nebulae < 400_000, `silhouette star/nebula rows ${stars + nebulae} blew the harvest cap`);
+  }
   // Dust rows are the fog (never drawn; the volume is the visible law).
   // The MW gas sheet is thinner than the old sech², so the census is
   // the midplane clumps, not every z-slice of a cylinder.
   check(dust > 8_000 && dust < 150_000, `dust count ${dust} is not the full clump census`);
   check(dustOffLattice > dust * 0.9, `dust pinned to the lattice: only ${dustOffLattice}/${dust} scattered`);
-  check(minStarL < UNIVERSE.GALAXY_SILHOUETTE_L, `shape sample missing: min L=${minStarL}`);
-  check(minStarL >= 0.3, `shape star too dim L=${minStarL}`);
-  check(stars + nebulae < 400_000, `silhouette star/nebula rows ${stars + nebulae} blew the harvest cap`);
   const s0 = shapeAt(KIND_HII, 99);
   const s1 = shapeAt(KIND_HII, 99);
   check(s0.radiusKpc === s1.radiusKpc && s0.seed === s1.seed, 'shapeAt not deterministic');

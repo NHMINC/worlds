@@ -724,18 +724,23 @@ function gasDensityCeil(R: number, z: number): number {
 }
 
 /**
- * Whole-disk harvest: luminous tail + occupancy shape sample.
- * Living stars above SILHOUETTE_L, a 10⁻⁴ living-photosphere
- * sample of the mass model (HARVEST_SHAPE_*), young/bright nebula
- * hosts, and dust envelopes larger than SILHOUETTE_DUST_R. Sparse
- * cells emit nothing. Minted once per seed — this IS the explorer
- * sky. Harvest stars are pickable. Dust ids are (cell, clump),
- * never catalog stars. Dust rows are the census; the extinction
- * volume is the ISM field.
+ * Whole-disk harvest. Default: luminous tail + occupancy shape
+ * sample. HARVEST_ALL disables those gates — every occupied slot
+ * is eligible; the bottle holds ALL_CAP faint-IMF pins (a uniform
+ * stride) plus a complete massive-end clock walk (every nebula /
+ * living B / young remnant). Dust rows are the census; the
+ * extinction volume is the ISM field.
  */
 export function buildSilhouetteCloud(seed: string): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
   const t0 = performance.now();
+  const cloud = UNIVERSE.GALAXY_HARVEST_ALL ? mintAllCloud(seed, t0) : mintHarvestCloud(seed, t0);
+  silhouetteMemo = { seed, cloud };
+  rememberDustVolume(seed);
+  return cloud;
+}
+
+function mintHarvestCloud(seed: string, t0: number): StarCloud {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
@@ -753,9 +758,6 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
       const ceil = thinDensityCeil(R, z) * vol * nK;
       const dustCeil = gasDensityCeil(R, z) * vol * UNIVERSE.GALAXY_DUST_N_K;
-      // Walk the ring if the tail, the dust, or the shape sample
-      // could emit. Shape is occupancy × f — do not drop a mass
-      // ring just because its massive stars are already dead.
       if (ceil * liveFrac < 0.2 && dustCeil < 0.05 && ceil * shapeF * nth < 0.15) continue;
       for (let it = 0; it < nth; it++) {
         const cell = ir * nth * nz + it * nz + iz;
@@ -797,10 +799,97 @@ export function buildSilhouetteCloud(seed: string): StarCloud {
       }
     }
   }
-  const cloud = finishCloud(c, n, t0);
-  silhouetteMemo = { seed, cloud };
-  rememberDustVolume(seed);
-  return cloud;
+  return finishCloud(c, n, t0);
+}
+
+/**
+ * Harvester off. Every faint-IMF slot is equally eligible; we
+ * keep a uniform stride so the bottle's ALL_CAP pins follow the
+ * mass model. The massive-end clock is complete — no L / gain cut.
+ */
+function mintAllCloud(seed: string, t0: number): StarCloud {
+  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } =
+    UNIVERSE;
+  const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
+  const uLive = imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M);
+  const cap = UNIVERSE.GALAXY_HARVEST_ALL_CAP;
+  let faint = 0;
+  for (let ir = 0; ir < nr; ir++) {
+    for (let iz = 0; iz < nz; iz++) {
+      for (let it = 0; it < nth; it++) {
+        const cell = ir * nth * nz + it * nz + iz;
+        const filled = slotsInCell(seed, cell);
+        if (filled > 0) faint += Math.floor(uLive * filled);
+      }
+    }
+  }
+  const f = Math.min(1, cap / Math.max(1, faint));
+  let c = allocCloud(cap + 280_000);
+  let n = 0;
+  for (let ir = 0; ir < nr; ir++) {
+    const vol = catalogCellVolume(ir);
+    const R = ((ir + 0.5) / nr) * rMax;
+    for (let iz = 0; iz < nz; iz++) {
+      const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
+      const dustCeil = gasDensityCeil(R, z) * vol * UNIVERSE.GALAXY_DUST_N_K;
+      for (let it = 0; it < nth; it++) {
+        const cell = ir * nth * nz + it * nz + iz;
+        const filled = slotsInCell(seed, cell);
+        if (filled > 0) {
+          const sLive = Math.min(filled, Math.floor(uLive * filled));
+          const grown = writeAllFaint(seed, cell, filled, sLive, f, c, n);
+          c = grown.c;
+          n = grown.n;
+          for (let slot = sLive; slot < filled; slot++) {
+            const birth = slotBirthRaw(seed, cell, slot, filled);
+            if (!maybeClockRow(birth)) continue;
+            if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+            writeFromBirth(cell, slot, n++, c, birth, isSlotAlive(birth.massZams, birth.ageGyr));
+          }
+        }
+        if (dustCeil >= 0.05) {
+          const clumps = dustClumpsInCell(seed, cell);
+          for (let k = 0; k < clumps; k++) {
+            if (dustRadiusKpc(seed, cell, k) < UNIVERSE.GALAXY_SILHOUETTE_DUST_R) continue;
+            if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+            writeDust(seed, cell, k, n++, c);
+          }
+        }
+      }
+    }
+  }
+  return finishCloud(c, n, t0);
+}
+
+/** Uniform stride through [0, sLive). f = 1 keeps every faint slot. */
+function writeAllFaint(
+  seed: string,
+  cell: number,
+  filled: number,
+  sLive: number,
+  f: number,
+  c: Omit<StarCloud, 'n' | 'ms'>,
+  n: number,
+): { c: Omit<StarCloud, 'n' | 'ms'>; n: number } {
+  if (sLive <= 0 || f <= 0) return { c, n };
+  const expect = sLive * f;
+  const nKeep = Math.floor(expect) + (harvestShapeUnit(seed, cell, 0, 0) < expect - Math.floor(expect) ? 1 : 0);
+  if (nKeep <= 0) return { c, n };
+  if (nKeep >= sLive) {
+    for (let slot = 0; slot < sLive; slot++) {
+      if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+      writeBirth(seed, cell, slot, filled, n++, c);
+    }
+    return { c, n };
+  }
+  const stride = sLive / nKeep;
+  const offset = harvestShapeUnit(seed, cell, 1, 0) * stride;
+  for (let k = 0; k < nKeep; k++) {
+    const slot = Math.min(sLive - 1, Math.floor(offset + k * stride));
+    if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
+    writeBirth(seed, cell, slot, filled, n++, c);
+  }
+  return { c, n };
 }
 
 /** MS photosphere is a cheap birth row; only the giant window needs the clock. */

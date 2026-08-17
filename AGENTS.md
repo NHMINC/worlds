@@ -121,7 +121,9 @@ list. The **galaxy explorer** is how you discover: the Hubble glow
 is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
 The explorer shows the harvest: the luminous tail plus a
 10⁻⁴ occupancy shape sample so the sky follows the mass
-model, not only young massive stars. A later survey will
+model, not only young massive stars. `HARVEST_ALL` is a
+look test that turns those gates off (every star the bottle
+can hold). A later survey will
 resolve the faint neighbours of a camp. Set course loads a
 picked harvest star (or the here / POI focus). We **store
 visits only** (overlays, camera, labels). We do
