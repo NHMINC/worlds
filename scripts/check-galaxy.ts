@@ -32,6 +32,7 @@ import {
   starKind,
   visualRadiusKpc,
 } from '../src/render/galaxyStar';
+import { overviewDistanceKpc, overviewHalfAngle } from '../src/render/galaxyView';
 import type { GalaxyObject } from '../src/world/galaxy';
 import type { StellarState } from '../src/world/stellar';
 
@@ -338,6 +339,14 @@ check(starKind(asObj(freshWd)) === 6, `planetary nebula should draw as a shell, 
   const shineO = harvestShine(8000, 8);
   check(shineO > shineFloor * 2.5, `O shine ${shineO.toFixed(2)} must beat floor ${shineFloor.toFixed(2)}`);
   check(harvestShine(400, 2) > harvestShine(400, 12) * 1.15, 'same L must dim with distance');
+  const wide = overviewHalfAngle(50, 16 / 9, 'edge');
+  const short = overviewHalfAngle(50, 16 / 9, 'face');
+  check(wide > short, 'edge-on must frame to the width on a wide screen');
+  const dEdge = overviewDistanceKpc(UNIVERSE.GALAXY_R_MAX, wide);
+  const dOld = UNIVERSE.GALAXY_R_MAX / Math.tan(((50 * Math.PI) / 180) * 0.35);
+  check(dEdge < dOld * 0.7, `edge-on must sit closer than the old vertical frame: ${dEdge.toFixed(1)} vs ${dOld.toFixed(1)}`);
+  check(overviewDistanceKpc(UNIVERSE.GALAXY_R_MAX, short) > dEdge,
+    'face-on sits farther than edge-on on a wide screen');
   const coreShine = (L: number, d: number) =>
     HARVEST_SHINE_GAIN *
     Math.pow(Math.max(L, 1e-4) / HARVEST_L_REF, HARVEST_SHINE_L_P) *

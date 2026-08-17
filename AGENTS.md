@@ -210,10 +210,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`). A harvest star is visitable
   when you pick it; here / POIs are always pickable.
-  **Face-on / Edge-on** slide the bubble far enough that the whole
-  disk fits the screen (pole-on, or a few degrees above the plane)
-  and look back at the origin. **Home** parks on the loaded star
-  and pins that pose as the Back bookmark. **Back** restores the
+  **Face-on / Edge-on** slide the bubble so the disk diameter fills
+  the screen (pole-on, or in the plane). Edge-on sits in the midplane
+  — a lift turns the dust lane into a floor — and looks back at the
+  origin. **Home** parks on the loaded star and pins that pose as
+  the Back bookmark. **Back** restores the
   pose from before Face-on or Edge-on (or Home, if Home was tapped).
   Switching Face-on ↔ Edge-on does not overwrite the bookmark.
   The old saucer chart is retired.
