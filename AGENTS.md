@@ -628,6 +628,7 @@ Code map (start here):
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
 | Galaxy explorer (stars + nebulae + dust + cosmic shell) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy look experiments (not the contract) | `docs/galaxy-look.md` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Packed harvest cache (IDB, not the export) | `src/store/harvestCache.ts` |
