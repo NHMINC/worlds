@@ -144,7 +144,10 @@ Canonical play is `objectAt` → `systemAt(galaxySeed, starId)` — a pure
 function. Every occupied slot is addressable, the way No Man’s Sky
 addresses a system: the id *is* the star, not an index into a stored
 list. The **galaxy explorer** is how you discover: the Hubble glow
-is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
+is the mass model on the GPU. Face-on, ~10⁹ stars are the integral
+  (a Hubble-glow march of `densityParts` without stellar arms —
+  old bulge/bar/thick as K light, young thin as late-B; dust extincts
+  the column). The harvest pins sit on that glow.
 The explorer shows the harvest: one magnitude-limited survey —
 every living star above `SILHOUETTE_M` and `SILHOUETTE_L`
 (~10⁵ stars; the count is those floors' outcome, not a cap)
@@ -233,11 +236,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - **The explorer is the harvest, not a magnifier ball.**
   **Cosmic engineer** (explorer bottom bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
-  harvest survey, starlight, nebulae). Each option states what the setting
+  Hubble glow, harvest survey, starlight, nebulae). Each option states what the setting
   does. Remint / rebake knobs are amber. Live photograph
   knobs already sit on the GPU (void colour is a hue
   wheel plus intensity, smudge brightness and count,
   background-star brightness and count, extinction, shine,
+  Hubble glow gain / old / core / young / ionized / dust,
   nebula glow) — a slide is the next frame. Rebuild knobs (survey
   floors, nebula catalog, ribbon-geometry laws): the slider is a
   draft until **Rebuild** writes `UNIVERSE` and remints /
@@ -627,7 +631,8 @@ Code map (start here):
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
-| Galaxy explorer (stars + nebulae + dust + cosmic shell) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (stars + nebulae + dust + glow + cosmic shell) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Hubble glow (unresolved mass-model integral) | `src/render/galaxyGlow.ts` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Packed harvest cache (IDB, not the export) | `src/store/harvestCache.ts` |

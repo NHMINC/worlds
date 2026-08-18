@@ -1,7 +1,8 @@
 /**
  * The galaxy explorer is three catalogs plus the decreed
- * cosmic shell: the star harvest, nebulae, dust-as-extinction,
- * and a distant void of inclined galaxies and star-like pins. The camera sits at the
+ * cosmic shell and the Hubble glow: the star harvest, nebulae,
+ * dust-as-extinction, the unresolved mass-model integral, and a
+ * distant void of inclined galaxies and star-like pins. The camera sits at the
  * viewpoint centre (1:1 catalog kpc). “Here” is a focus highlight
  * parked in front of the camera; other samples can mark points
  * of interest. The faint 95% is a later survey. Warp is a latched
@@ -61,6 +62,13 @@ import {
   mintCosmicSmudges,
   mintCosmicStars,
 } from './cosmicBg';
+import {
+  glowFrag,
+  glowOldRgb,
+  glowSfrRgb,
+  glowVert,
+  glowYoungRgb,
+} from './galaxyGlow';
 
 /** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
@@ -600,6 +608,9 @@ export class GalaxyView {
   private cosmicSmudgePts: THREE.Points | null = null;
   private cosmicSmudgeGeo: THREE.BufferGeometry | null = null;
   private cosmicSmudgeMat: THREE.ShaderMaterial | null = null;
+  private glowPts: THREE.Mesh | null = null;
+  private glowGeo: THREE.BufferGeometry | null = null;
+  private glowMat: THREE.ShaderMaterial | null = null;
   /** Star harvest positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
   /** Nebula catalog — own mesh, rebakes without reminting stars. */
@@ -786,6 +797,8 @@ export class GalaxyView {
     this.lastEnterMs = Math.max(this.cloud?.ms ?? 0, this.nebulae?.ms ?? 0, this.lastEnterMs);
     if (!this.cosmicPts) this.buildCosmic();
     else this.pushMagUniforms();
+    if (!this.glowPts) this.buildGlow();
+    else this.pushMagUniforms();
   }
 
   private disposeStars(): void {
@@ -836,6 +849,18 @@ export class GalaxyView {
       this.cosmicSmudgePts = null;
       this.cosmicSmudgeGeo = null;
       this.cosmicSmudgeMat = null;
+    }
+    this.disposeGlow();
+  }
+
+  private disposeGlow(): void {
+    if (this.glowPts) {
+      this.scene.remove(this.glowPts);
+      this.glowGeo?.dispose();
+      this.glowMat?.dispose();
+      this.glowPts = null;
+      this.glowGeo = null;
+      this.glowMat = null;
     }
   }
 
@@ -1037,7 +1062,7 @@ export class GalaxyView {
 
   private cloudMats(): THREE.ShaderMaterial[] {
     const out: THREE.ShaderMaterial[] = [];
-    for (const m of [this.silMat, this.silEmisMat, this.cosmicMat, this.cosmicStarMat, this.cosmicSmudgeMat]) {
+    for (const m of [this.silMat, this.silEmisMat, this.cosmicMat, this.cosmicStarMat, this.cosmicSmudgeMat, this.glowMat]) {
       if (m) out.push(m);
     }
     return out;
@@ -1184,6 +1209,57 @@ export class GalaxyView {
     this.cosmicStarMat = mat;
   }
 
+  /**
+   * Unresolved mass-model integral. Clip quad, same far-plane trick
+   * as the void. Screen-blends so it fills the disk without stacking
+   * to a white pancake. Dust extincts the march.
+   */
+  private buildGlow(): void {
+    if (this.glowPts) return;
+    const geo = new THREE.PlaneGeometry(2, 2);
+    const oldRgb = glowOldRgb();
+    const youngRgb = glowYoungRgb();
+    const sfrRgb = glowSfrRgb();
+    const steps = Math.max(8, Math.min(64, Math.round(UNIVERSE.GALAXY_GLOW_STEPS)));
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: glowVert(),
+        fragmentShader: glowFrag(extinctGlsl(1), steps),
+        uniforms: {
+        uCenter: { value: new THREE.Vector3() },
+        uCamRotInv: { value: new THREE.Matrix3() },
+        uInvProj: { value: new THREE.Matrix4() },
+        uGlowGain: { value: UNIVERSE.GALAXY_GLOW_GAIN },
+        uGlowOld: { value: UNIVERSE.GALAXY_GLOW_OLD },
+        uGlowYoung: { value: UNIVERSE.GALAXY_GLOW_YOUNG },
+        uGlowSfr: { value: UNIVERSE.GALAXY_GLOW_SFR },
+        uGlowCore: { value: UNIVERSE.GALAXY_GLOW_CORE },
+        uGlowCut: { value: UNIVERSE.GALAXY_GLOW_CUT },
+        uGlowSelf: { value: UNIVERSE.GALAXY_GLOW_SELF },
+        uGlowDust: { value: UNIVERSE.GALAXY_GLOW_DUST },
+        uGlowOldRgb: { value: new THREE.Vector3(...oldRgb) },
+        uGlowYoungRgb: { value: new THREE.Vector3(...youngRgb) },
+        uGlowSfrRgb: { value: new THREE.Vector3(...sfrRgb) },
+        ...this.extinctUniforms(),
+      },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneMinusDstColorFactor,
+      blendDst: THREE.OneFactor,
+      toneMapped: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    // Behind harvest pins (−2), in front of the cosmic photograph (−6).
+    mesh.renderOrder = -4;
+    this.scene.add(mesh);
+    this.glowPts = mesh;
+    this.glowGeo = geo;
+    this.glowMat = mat;
+    this.pushMagUniforms();
+  }
+
   /** Live cosmic-engineer write. One uniform, next frame. */
   setLiveUniform(name: string, value: number): void {
     if (name === 'uVoidRgb') {
@@ -1223,7 +1299,8 @@ export class GalaxyView {
       this.silEmisMat?.uniforms[name] ??
       this.cosmicMat?.uniforms[name] ??
       this.cosmicStarMat?.uniforms[name] ??
-      this.cosmicSmudgeMat?.uniforms[name];
+      this.cosmicSmudgeMat?.uniforms[name] ??
+      this.glowMat?.uniforms[name];
     return typeof u?.value === 'number' ? u.value : null;
   }
 

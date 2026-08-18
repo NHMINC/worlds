@@ -559,7 +559,12 @@ export const UNIVERSE = {
    * not a harvest row. The fog is the dense tail of the
    * molecular sheet. Same catalog frame.
    * Distant discs are toy angular
-   * sizes. Emission nebulae are self-luminous raymarched shells on
+   * sizes. The Hubble glow is the unresolved integral of the mass
+   * model (densityParts without stellar arms — extra spatial
+   * frequency aliases). Old bulge/bar/thick light is K; young thin
+   * is late-B. Dust extincts that march. A faint ionized sheet
+   * (mean molecular field × gas arms) is a second term, same pass.
+   * Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
    * so rings and filament crossings are geometry. Colour is a LINE
    * SPECTRUM placed by ionization stratification: [O III] teal near
@@ -680,6 +685,33 @@ export const UNIVERSE = {
   SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
   SILHOUETTE_SUPER_GAIN: 1.6,
+  /**
+   * Hubble glow — unresolved integral of the mass model. Live
+   * photograph: a slide is the next frame. Arms stay off the
+   * stellar term (they already live in the harvest + H II + dust).
+   * SFR is the mean molecular sheet, not occupancy turbulence.
+   */
+  /** Photograph stretch on the whole integral. 0 turns the glow off. */
+  GALAXY_GLOW_GAIN: 0.72,
+  /** Weight on old light (thick disk + halo). */
+  GALAXY_GLOW_OLD: 1.15,
+  /** Extra weight on the spheroid (box / peanut / nuc / bar). */
+  GALAXY_GLOW_CORE: 1.25,
+  /** Weight on young thin-disk light (no arm contrast). */
+  GALAXY_GLOW_YOUNG: 0.42,
+  /** Weight on the ionized sheet (mean gas × gas arms). */
+  GALAXY_GLOW_SFR: 0.18,
+  /** Density below this does not emit. Drops the halo fuzz. */
+  GALAXY_GLOW_CUT: 0.012,
+  /** Self-extinction per kpc of glowing density. The far side of
+   *  the bulge does not shine through the near side. */
+  GALAXY_GLOW_SELF: 0.22,
+  /** How hard the harvest dust extincts this integral. 1 is the
+   *  same law as the pins; 0 is a glass disk; >1 hides the glow
+   *  deeper in the lanes. */
+  GALAXY_GLOW_DUST: 1,
+  /** March taps through the disk. Compiled into the shader. */
+  GALAXY_GLOW_STEPS: 48,
   /** Emission-nebula glow gain (photograph stretch, not new energy).
    *  Shells screen-blend: dest + src·(1-dest). They glow and
    *  saturate; they do not add to a white bar. This is one cloud. */
