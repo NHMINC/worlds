@@ -172,9 +172,19 @@ export function GalaxyExplorer(props: Props) {
     setKnobDirty(Math.abs(v - rebuild.read()) > rebuild.step * 0.25);
   }
 
+  function pickSetting(id: string): void {
+    if (!id) {
+      setKnobDirty(false);
+      setEngineer('pick');
+      return;
+    }
+    openKnob(id);
+  }
+
   function cancelRebuild(): void {
+    const k = engineer && engineer !== 'pick' ? rebuildKnob(engineer) : undefined;
     setKnobDirty(false);
-    setEngineer('pick');
+    if (k) setKnobVal(k.read());
   }
 
   async function confirmRebuild(id: string): Promise<void> {
@@ -195,13 +205,15 @@ export function GalaxyExplorer(props: Props) {
     } finally {
       setRebuilding(null);
       setKnobDirty(false);
-      setEngineer('pick');
     }
   }
 
   const st = selected?.star;
   const cls = st ? classifyStar(st) : '';
   const inRegion = frame.mode === 'region';
+  const live = engineer && engineer !== 'pick' ? liveKnob(engineer) : undefined;
+  const rebuild = engineer && engineer !== 'pick' ? rebuildKnob(engineer) : undefined;
+  const spec = live ?? rebuild;
 
   return (
     <div
@@ -310,97 +322,73 @@ export function GalaxyExplorer(props: Props) {
         </aside>
       )}
 
-      <footer className="galaxy-bottom">
-        {engineer === 'pick' && (
+      <footer className={`galaxy-bottom${engineer ? ' is-eng' : ''}`}>
+        {engineer && (
           <>
-            <div className="gx-kicker">Cosmic engineer</div>
-            <div className="gx-eng-picks">
-              <span className="gx-eng-split">Live</span>
-              {LIVE_KNOBS.map((k) => (
-                <button key={k.id} type="button" className="gx-chip" onClick={() => openKnob(k.id)}>
-                  {k.label}
-                </button>
-              ))}
-              <span className="gx-eng-split">Rebuild</span>
-              {REBUILD_KNOBS.map((k) => (
-                <button
-                  key={k.id}
-                  type="button"
-                  className="gx-chip gx-eng-rebuild"
-                  onClick={() => openKnob(k.id)}
-                >
-                  {k.label}
-                </button>
-              ))}
-            </div>
-            <button type="button" className="gx-chip gx-close" onClick={() => setEngineer(null)}>
-              Close
-            </button>
-          </>
-        )}
-        {engineer && engineer !== 'pick' && liveKnob(engineer) && (
-          <>
-            <div className="gx-eng-now">
+            <div className="gx-eng-head">
               <div className="gx-kicker">Cosmic engineer</div>
-              <b>{liveKnob(engineer)!.label}</b>
-            </div>
-            <div className="gx-eng-row">
-              <input
-                type="range"
-                min={liveKnob(engineer)!.min}
-                max={liveKnob(engineer)!.max}
-                step={liveKnob(engineer)!.step}
-                value={knobVal}
-                onChange={(e) => slideKnob(engineer, Number(e.target.value))}
-              />
-              <em>{knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
-            </div>
-            <button type="button" className="gx-chip gx-close" onClick={() => setEngineer(null)}>
-              Close
-            </button>
-          </>
-        )}
-        {engineer && engineer !== 'pick' && rebuildKnob(engineer) && (
-          <>
-            <div className="gx-eng-now">
-              <div className="gx-kicker">Needs rebuild</div>
-              <b>{rebuildKnob(engineer)!.label}</b>
-            </div>
-            <div className="gx-eng-row">
-              <input
-                type="range"
-                min={rebuildKnob(engineer)!.min}
-                max={rebuildKnob(engineer)!.max}
-                step={rebuildKnob(engineer)!.step}
-                value={knobVal}
+              <select
+                className={`gx-eng-select${rebuild ? ' is-rebuild' : ''}`}
+                value={engineer === 'pick' ? '' : engineer}
                 disabled={Boolean(rebuilding)}
-                onChange={(e) => slideKnob(engineer, Number(e.target.value))}
-              />
-              <em>{knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
+                aria-label="Cosmic engineer setting"
+                onChange={(e) => pickSetting(e.target.value)}
+              >
+                <option value="">Choose a setting…</option>
+                <optgroup label="Live — next frame">
+                  {LIVE_KNOBS.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.label} — {k.hint}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="Needs rebuild">
+                  {REBUILD_KNOBS.map((k) => (
+                    <option key={k.id} value={k.id}>
+                      {k.label} — {k.hint}
+                    </option>
+                  ))}
+                </optgroup>
+              </select>
+              {rebuild && knobDirty ? (
+                <>
+                  <button
+                    type="button"
+                    className="gx-chip gx-eng-go"
+                    disabled={Boolean(rebuilding)}
+                    onClick={() => void confirmRebuild(engineer)}
+                  >
+                    Rebuild
+                  </button>
+                  <button
+                    type="button"
+                    className="gx-chip gx-close"
+                    disabled={Boolean(rebuilding)}
+                    onClick={cancelRebuild}
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="gx-chip gx-close" onClick={() => setEngineer(null)}>
+                  Close
+                </button>
+              )}
             </div>
-            {knobDirty ? (
-              <>
-                <button
-                  type="button"
-                  className="gx-chip gx-eng-go"
+            {spec && <p className="gx-eng-about">{spec.about}</p>}
+            {spec && engineer !== 'pick' && (
+              <div className="gx-eng-row">
+                <input
+                  type="range"
+                  min={spec.min}
+                  max={spec.max}
+                  step={spec.step}
+                  value={knobVal}
                   disabled={Boolean(rebuilding)}
-                  onClick={() => void confirmRebuild(engineer)}
-                >
-                  Rebuild
-                </button>
-                <button
-                  type="button"
-                  className="gx-chip gx-close"
-                  disabled={Boolean(rebuilding)}
-                  onClick={cancelRebuild}
-                >
-                  Cancel
-                </button>
-              </>
-            ) : (
-              <button type="button" className="gx-chip gx-close" onClick={() => setEngineer(null)}>
-                Close
-              </button>
+                  onChange={(e) => slideKnob(engineer, Number(e.target.value))}
+                />
+                <em>{knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
+              </div>
             )}
           </>
         )}
