@@ -284,13 +284,15 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   photocentre of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`): the dense tail of
-  `ismAt.photo` — hole × decline × a mild arm hint × many small
-  midplane clumps (`GALAXY_DUST_FREQ` / `_SHEAR` / `_SIGMA`).
-  The sheet sits on the geometric midplane (`GALAXY_DUST_MID` =
-  0); clump noise is the variation, not a corrugated snake, so
-  edge-on the clouds average to a thin slit. Occupancy / SFR /
-  H II stay on the warped molecular sheet — star ids do not
-  move. A crest is a tight Gaussian splat, not a raw voxel —
+  `ismAt.photo` — hole × decline × a mild arm hint × short
+  midplane filaments (`GALAXY_DUST_FREQ` / `_SHEAR` / `_SIGMA`)
+  laid in the disk at a wandering angle (`GALAXY_DUST_TURN`)
+  with a little lean (`GALAXY_DUST_TILT`). Round blobs read as
+  vertical ticks edge-on; dashes at mixed angles do not. The
+  sheet sits on the geometric midplane (`GALAXY_DUST_MID` = 0)
+  so they still average to a thin slit. Occupancy / SFR / H II
+  stay on the warped molecular sheet — star ids do not move.
+  A crest is a splat in that filament frame, not a raw voxel —
   hardware trilinear of a lone sample is a diamond face-on.
   Ribbon cores are a wall (lightless); only the thin rim reddens.
   Not harvest rows. A

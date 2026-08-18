@@ -276,18 +276,78 @@ function ismTurbulence(seed: string, x: number, y: number, z: number): number {
   );
 }
 
+/** How many in-plane filament angles the photograph mixes. */
+const DUST_ANGLES = 5;
+
+function dustAngleWeight(seed: string, x: number, z: number, k: number): number {
+  const t = UNIVERSE.GALAXY_DUST_TURN;
+  const env = 0.5 + 0.5 * ismNoise(seed, x * t + k * 19.7, k * 2.3, z * t - k * 13.1, true);
+  return env * env;
+}
+
 /**
- * Photograph clumps: three Cartesian octaves. Shear only flattens
- * them in the disk (not an along-arm stretch) so the bake is many
- * small clouds, not one spiral-length snake. No θ-seam — x,z.
+ * Dominant in-plane filament angle at a point (radians). Slow
+ * envelopes pick among DUST_ANGLES equally spaced directions
+ * so neighbouring samples agree and the splat matches the field.
+ */
+export function dustFilamentDir(seed: string, x: number, z: number): number {
+  let best = 0;
+  let bestW = -1;
+  for (let k = 0; k < DUST_ANGLES; k++) {
+    const w = dustAngleWeight(seed, x, z, k);
+    if (w > bestW) {
+      bestW = w;
+      best = (k * Math.PI) / DUST_ANGLES;
+    }
+  }
+  return best;
+}
+
+/**
+ * One octave in a frame that lies in the disk: along the local
+ * filament and across it. Height is the sheet (sech²), not a
+ * fast y-octave — that carved vertical ticks edge-on. Tilt
+ * mixes a little y into `along` so a side-on view is slashes.
+ */
+function dustOriented(
+  seed: string,
+  x: number,
+  y: number,
+  z: number,
+  ang: number,
+  f: number,
+  S: number,
+  salt: number,
+): number {
+  const ca = Math.cos(ang);
+  const sa = Math.sin(ang);
+  const along0 = x * ca + z * sa;
+  const across0 = -x * sa + z * ca;
+  const lean = UNIVERSE.GALAXY_DUST_TILT * ismNoise(seed, x * 0.31 + salt, 4.4, z * 0.31 - salt, true);
+  const cl = Math.cos(lean);
+  const sl = Math.sin(lean);
+  const along = (along0 * cl + y * sl) * (f / S);
+  const across = across0 * f * S;
+  return ismNoise(seed, along + salt, y * f * 0.35, across - salt * 0.37, true);
+}
+
+/**
+ * Photograph: a bank of short midplane filaments at fixed
+ * in-plane angles, each gated by a slow envelope. Round blobs
+ * read as vertical ticks edge-on; a mix of dashes does not.
  */
 function dustTurbulence(seed: string, x: number, y: number, z: number): number {
   const f = UNIVERSE.GALAXY_DUST_FREQ;
   const S = Math.max(0.2, UNIVERSE.GALAXY_DUST_SHEAR);
-  const n1 = ismNoise(seed, (x * f) / S, y * f, (z * f) / S, true);
-  const n2 = ismNoise(seed, x * f * 2.2 + 31.7, y * f * 2.2, z * f * 2.2 - 17, true);
-  const n3 = ismNoise(seed, x * f * 4.1 - 8, y * f * 4.1, z * f * 4.1 + 22, true);
-  return 0.5 * n1 + 0.32 * n2 + 0.18 * n3;
+  let acc = 0;
+  let wsum = 0;
+  for (let k = 0; k < DUST_ANGLES; k++) {
+    const w = dustAngleWeight(seed, x, z, k);
+    const ang = (k * Math.PI) / DUST_ANGLES;
+    acc += w * dustOriented(seed, x, y, z, ang, f, S, k * 47);
+    wsum += w;
+  }
+  return acc / Math.max(1e-6, wsum);
 }
 
 /**
