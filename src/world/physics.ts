@@ -674,8 +674,10 @@ export const UNIVERSE = {
    * the smudges so the lane is a silhouette; the void is vacuum.
    */
   COSMIC_R: 240,
-  /** 0 = total black, 1 = very dark blue. */
-  COSMIC_VOID: 0.42,
+  /** Rainbow hue of the void (0..1 around the wheel). 0.62 is the old blue. */
+  COSMIC_HUE: 0.62,
+  /** How hard that hue is lit. 0 = black; 1 = a readable tinted night. */
+  COSMIC_INT: 0.14,
   /** Photograph gain on the smudges. */
   COSMIC_GAIN: 0.62,
   /** Angular size of one smudge (1 ≈ the first look's cell). */

@@ -4,7 +4,18 @@ import { classifyStar } from '../world/stellar';
 import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
-import { ENGINEER_GROUPS, atDefault, knobDefault, knobsInGroup, liveKnob, rebuildKnob, type RebuildScope } from './liveKnobs';
+import { HueWheel } from './HueWheel';
+import {
+  ENGINEER_GROUPS,
+  VOID_HUE_DEF,
+  atDefault,
+  atVoidDefault,
+  knobDefault,
+  knobsInGroup,
+  liveKnob,
+  rebuildKnob,
+  type RebuildScope,
+} from './liveKnobs';
 
 const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -42,6 +53,7 @@ export function GalaxyExplorer(props: Props) {
   const [selected, setSelected] = useState<GalaxyObject | null>(null);
   const [engineer, setEngineer] = useState<null | 'pick' | string>(null);
   const [knobVal, setKnobVal] = useState(0);
+  const [hueVal, setHueVal] = useState(UNIVERSE.COSMIC_HUE);
   const [knobDirty, setKnobDirty] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [rebuilding, setRebuilding] = useState<null | RebuildScope>(null);
@@ -152,10 +164,24 @@ export function GalaxyExplorer(props: Props) {
     });
   }, []);
 
+  function applyVoid(hue: number, intensity: number): void {
+    UNIVERSE.COSMIC_HUE = hue;
+    UNIVERSE.COSMIC_INT = intensity;
+    setHueVal(hue);
+    setKnobVal(intensity);
+    setKnobDirty(false);
+    viewRef.current?.setVoidColor(hue, intensity);
+  }
+
   function openKnob(id: string): void {
     const live = liveKnob(id);
     if (live) {
-      setKnobVal(viewRef.current?.liveUniform(live.uniform) ?? live.read());
+      if (live.id === 'void') {
+        setHueVal(UNIVERSE.COSMIC_HUE);
+        setKnobVal(live.read());
+      } else {
+        setKnobVal(viewRef.current?.liveUniform(live.uniform) ?? live.read());
+      }
       setKnobDirty(false);
       setEngineer(id);
       return;
@@ -171,6 +197,10 @@ export function GalaxyExplorer(props: Props) {
     const v = Number(raw);
     const live = liveKnob(id);
     if (live) {
+      if (live.id === 'void') {
+        applyVoid(UNIVERSE.COSMIC_HUE, v);
+        return;
+      }
       setKnobVal(v);
       setKnobDirty(false);
       live.write?.(v);
@@ -210,6 +240,10 @@ export function GalaxyExplorer(props: Props) {
     if (!spec || !engineer || engineer === 'pick' || rebuilding) return;
     const v = knobDefault(spec);
     if (live) {
+      if (live.id === 'void') {
+        applyVoid(VOID_HUE_DEF, v);
+        return;
+      }
       setKnobVal(v);
       live.write?.(v);
       viewRef.current?.setLiveUniform(live.uniform, v);
@@ -256,7 +290,9 @@ export function GalaxyExplorer(props: Props) {
   const live = engineer && engineer !== 'pick' ? liveKnob(engineer) : undefined;
   const rebuild = engineer && engineer !== 'pick' ? rebuildKnob(engineer) : undefined;
   const spec = live ?? rebuild;
-  const isDefault = Boolean(spec && atDefault(spec, knobVal));
+  const isDefault = Boolean(
+    spec && (live?.id === 'void' ? atVoidDefault(hueVal, knobVal) : atDefault(spec, knobVal)),
+  );
 
   return (
     <div
@@ -430,7 +466,35 @@ export function GalaxyExplorer(props: Props) {
               )}
             </div>
             {spec && <p className="gx-eng-about">{spec.about}</p>}
-            {spec && engineer !== 'pick' && (
+            {spec && engineer !== 'pick' && live?.id === 'void' && (
+              <div className="gx-eng-void">
+                <div className="gx-hue">
+                  <HueWheel
+                    hue={hueVal}
+                    disabled={Boolean(rebuilding)}
+                    onChange={(h) => applyVoid(h, UNIVERSE.COSMIC_INT)}
+                  />
+                  <div className="gx-hue-meta">
+                    <b>Hue</b>
+                    <i>{`${Math.round(hueVal * 360)}°`}</i>
+                  </div>
+                </div>
+                <div className="gx-eng-slider">
+                  <span className="gx-eng-slider-label">Intensity</span>
+                  <input
+                    type="range"
+                    min={spec.min}
+                    max={spec.max}
+                    step={spec.step}
+                    value={knobVal}
+                    disabled={Boolean(rebuilding)}
+                    onChange={(e) => slideKnob(engineer, Number(e.target.value))}
+                  />
+                  <em>{knobVal.toFixed(2)}</em>
+                </div>
+              </div>
+            )}
+            {spec && engineer !== 'pick' && live?.id !== 'void' && (
               <div className="gx-eng-slider">
                 <input
                   type="range"

@@ -199,7 +199,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, nebulae). Each option states what the setting
   does. Remint / rebake knobs are amber. Live photograph
-  knobs already sit on the GPU (void colour, distant
+  knobs already sit on the GPU (void colour is a hue
+  wheel plus intensity, distant
   galaxies, extinction, shine, nebula glow) — a slide is
   the next frame. Rebuild knobs (survey
   floors, nebula catalog, death-smear laws): the slider is a

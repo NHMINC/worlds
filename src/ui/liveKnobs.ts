@@ -70,15 +70,15 @@ export const LIVE_KNOBS: LiveKnob[] = [
     id: 'void',
     label: 'Void colour',
     group: 'cosmic',
-    hint: 'black to very dark blue',
-    about: 'The decreed night behind everything. 0 is total black; 1 is a very dark blue. The smudges sit on this. Next frame.',
-    uniform: 'uVoid',
+    hint: 'rainbow hue, then intensity',
+    about: 'The decreed night behind everything. Pick a hue on the wheel, then how hard that tint is lit. 0 is black; 1 is a readable coloured night. The smudges sit on this. Next frame.',
+    uniform: 'uVoidRgb',
     min: 0,
     max: 1,
     step: 0.01,
-    read: () => UNIVERSE.COSMIC_VOID,
+    read: () => UNIVERSE.COSMIC_INT,
     write: (v) => {
-      UNIVERSE.COSMIC_VOID = v;
+      UNIVERSE.COSMIC_INT = v;
     },
   },
   {
@@ -482,6 +482,15 @@ export function knobsInGroup(group: EngineerGroupId): EngineerChoice[] {
 
 for (const k of LIVE_KNOBS) k.def = k.read();
 for (const k of REBUILD_KNOBS) k.def = k.read();
+
+/** Shipped void hue, captured at module load with the other defaults. */
+export const VOID_HUE_DEF = UNIVERSE.COSMIC_HUE;
+
+export function atVoidDefault(hue: number, intensity: number): boolean {
+  const voidKnob = LIVE_KNOBS.find((k) => k.id === 'void');
+  const hueOk = Math.abs(((hue - VOID_HUE_DEF + 1.5) % 1) - 0.5) <= 0.005;
+  return hueOk && Boolean(voidKnob && atDefault(voidKnob, intensity));
+}
 
 export function knobDefault(k: { def?: number; read: () => number }): number {
   return k.def ?? k.read();

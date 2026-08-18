@@ -5,10 +5,41 @@
  */
 import { xmur3 } from '../world/rng';
 
-/** Void colour: black → very dark blue. */
-export function cosmicVoidRgb(t: number): [number, number, number] {
-  const u = Math.max(0, Math.min(1, t));
-  return [0.018 * u, 0.032 * u, 0.07 * u];
+/** HSV → linear-ish RGB in 0..1. h wraps. */
+export function hsvRgb(h: number, s: number, v: number): [number, number, number] {
+  const hh = ((h % 1) + 1) % 1;
+  const ss = Math.max(0, Math.min(1, s));
+  const vv = Math.max(0, Math.min(1, v));
+  const i = Math.floor(hh * 6);
+  const f = hh * 6 - i;
+  const p = vv * (1 - ss);
+  const q = vv * (1 - f * ss);
+  const t = vv * (1 - (1 - f) * ss);
+  switch (i % 6) {
+    case 0:
+      return [vv, t, p];
+    case 1:
+      return [q, vv, p];
+    case 2:
+      return [p, vv, t];
+    case 3:
+      return [p, q, vv];
+    case 4:
+      return [t, p, vv];
+    default:
+      return [vv, p, q];
+  }
+}
+
+/** Saturation of the void tint. Hue is the engineer wheel; this stays a colour. */
+const VOID_SAT = 0.78;
+/** Value at intensity 1 — a readable tinted night, not a neon sky. */
+const VOID_V = 0.22;
+
+/** Void colour from a rainbow hue and an intensity (both 0..1). */
+export function cosmicVoidRgb(hue: number, intensity: number): [number, number, number] {
+  const i = Math.max(0, Math.min(1, intensity));
+  return hsvRgb(hue, VOID_SAT, i * VOID_V);
 }
 
 export function cosmicVert(): string {
@@ -29,7 +60,7 @@ export function cosmicFrag(extinctGlsl: string): string {
   return /* glsl */ `
   ${extinctGlsl}
   uniform vec3 uCenter;
-  uniform float uVoid;
+  uniform vec3 uVoidRgb;
   uniform float uCosmicGain;
   uniform float uCosmicOcc;
   uniform float uCosmicCluster;
@@ -112,7 +143,7 @@ export function cosmicFrag(extinctGlsl: string): string {
       }
     }
 
-    vec3 voidC = vec3(0.018, 0.032, 0.07) * uVoid;
+    vec3 voidC = uVoidRgb;
     vec3 ext = extinctT(uCenter, dir * length(vDir));
     vec3 glow = vec3(0.0);
     if (smudge > 1e-4) {

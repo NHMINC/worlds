@@ -1334,11 +1334,63 @@ body,
   color: var(--text-dim);
 }
 
+.gx-eng-void {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.gx-hue {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.gx-hue-wheel {
+  width: 96px;
+  height: 96px;
+  display: block;
+  flex-shrink: 0;
+  cursor: pointer;
+  touch-action: none;
+  border-radius: 50%;
+}
+
+.gx-hue-wheel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.gx-hue-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gx-hue-meta b {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gx-hue-meta i {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  color: var(--text-dim);
+}
+
 .gx-eng-slider {
   display: flex;
   align-items: center;
   gap: 14px;
   min-width: 0;
+}
+
+.gx-eng-slider-label {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-dim);
 }
 
 .gx-eng-slider input[type='range'] {
@@ -1394,7 +1446,8 @@ body,
     align-self: start;
   }
 
-  .gx-eng-slider {
+  .gx-eng-slider,
+  .gx-eng-void {
     grid-area: slider;
   }
 

@@ -557,7 +557,7 @@ export class GalaxyView {
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_VOID);
+    const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
     this.renderer.setClearColor(new THREE.Color(voidRgb[0], voidRgb[1], voidRgb[2]), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
 
@@ -917,21 +917,25 @@ export class GalaxyView {
     return out;
   }
 
-  private applyVoid(t: number): void {
-    const rgb = cosmicVoidRgb(t);
+  setVoidColor(hue: number, intensity: number): void {
+    const rgb = cosmicVoidRgb(hue, intensity);
     this.renderer.setClearColor(new THREE.Color(rgb[0], rgb[1], rgb[2]), 1);
+    const u = this.cosmicMat?.uniforms.uVoidRgb;
+    if (u?.value instanceof THREE.Vector3) u.value.set(rgb[0], rgb[1], rgb[2]);
+    else if (u) u.value = new THREE.Vector3(rgb[0], rgb[1], rgb[2]);
   }
 
   private buildCosmic(): void {
     if (this.cosmicPts) return;
     const geo = new THREE.SphereGeometry(1, 48, 32);
+    const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
       fragmentShader: cosmicFrag(extinctGlsl(8)),
       uniforms: {
         uCenter: { value: new THREE.Vector3() },
         uCosmicR: { value: UNIVERSE.COSMIC_R },
-        uVoid: { value: UNIVERSE.COSMIC_VOID },
+        uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
         uCosmicGain: { value: UNIVERSE.COSMIC_GAIN },
         uCosmicOcc: { value: UNIVERSE.COSMIC_OCC },
         uCosmicCluster: { value: UNIVERSE.COSMIC_CLUSTER },
@@ -957,11 +961,14 @@ export class GalaxyView {
 
   /** Live cosmic-engineer write. One uniform, next frame. */
   setLiveUniform(name: string, value: number): void {
+    if (name === 'uVoidRgb') {
+      this.setVoidColor(UNIVERSE.COSMIC_HUE, value);
+      return;
+    }
     for (const mat of this.cloudMats()) {
       const u = mat.uniforms[name];
       if (u) u.value = value;
     }
-    if (name === 'uVoid') this.applyVoid(value);
   }
 
   liveUniform(name: string): number | null {
