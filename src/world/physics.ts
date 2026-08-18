@@ -568,7 +568,7 @@ export const UNIVERSE = {
   /** March multiplier on the baked field — how hard dust filters
    *  starlight. Sheet vs streaks are K_DIFFUSE / K_DENSE; this is
    *  the photograph gain, not a thicker pancake. */
-  GALAXY_EXTINCT_K: 1.875,
+  GALAXY_EXTINCT_K: 3.75,
   /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on
    *  lane vs a clear face-on / in-plane hop. */
   GALAXY_DUST_K_DIFFUSE: 0.42,
