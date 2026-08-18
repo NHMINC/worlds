@@ -861,6 +861,38 @@ export class GalaxyView {
     return typeof u?.value === 'number' ? u.value : null;
   }
 
+  /** After a harvest remint — drop the GPU mesh and rebuild from cache. */
+  replaceSky(): void {
+    this.disposeSilhouette();
+    const cloud = silhouetteCloud(this.seed);
+    this.cloud = cloud;
+    this.sectorPop = cloud?.n ?? 0;
+    this.lastEnterMs = cloud?.ms ?? this.lastEnterMs;
+    this.censusMemo = {};
+    this.buildSilhouetteStars();
+    this.applyStarVis();
+    if (this.mode === 'region') this.updateSight(true);
+  }
+
+  /** After a dust rebake — swap the 3D texture on the existing sky. */
+  replaceDust(): void {
+    this.silDustTex?.dispose();
+    this.silDustTex = null;
+    const tex = this.ensureDustTexture();
+    const vol = harvestDustVolume(this.seed);
+    const origin = vol?.origin ?? [-1, -1, -1];
+    const size = vol?.size ?? [2, 2, 2];
+    for (const mat of this.cloudMats()) {
+      if (mat.uniforms.uDustVol) mat.uniforms.uDustVol.value = tex;
+      if (mat.uniforms.uDustOrigin) {
+        (mat.uniforms.uDustOrigin.value as THREE.Vector3).set(origin[0], origin[1], origin[2]);
+      }
+      if (mat.uniforms.uDustInvSize) {
+        (mat.uniforms.uDustInvSize.value as THREE.Vector3).set(1 / size[0], 1 / size[1], 1 / size[2]);
+      }
+    }
+  }
+
   /** Catalog positions stay on the GPU; only the bubble centre moves. */
   private pushMagUniforms(): void {
     const cx = this.arcCenter.x;

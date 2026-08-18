@@ -620,6 +620,22 @@ function rememberDustVolume(seed: string): void {
   dustVolMemo = { seed, vol: bakeDustVolume(seed) };
 }
 
+/** Drop the harvest so the next mint walks the disk under current UNIVERSE. */
+export function forgetSilhouette(): void {
+  silhouetteMemo = null;
+}
+
+/** Drop the fog so the next bake samples current death-smear laws. */
+export function forgetDustVolume(): void {
+  dustVolMemo = null;
+}
+
+/** Rebake the extinction volume without reminting stars. */
+export function rebakeDustCache(seed: string): DustVolume {
+  rememberDustVolume(seed);
+  return dustVolMemo!.vol;
+}
+
 /** Cached harvest, or null until the worker (or a sync mint) finishes. */
 export function silhouetteCloud(seed: string): StarCloud | null {
   return silhouetteMemo?.seed === seed ? silhouetteMemo.cloud : null;

@@ -3,7 +3,8 @@ import { UNIVERSE } from '../world/physics';
 import { classifyStar } from '../world/stellar';
 import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
-import { LIVE_KNOBS, liveKnob } from './liveKnobs';
+import { remintUniverse, rebakeUniverseDust } from '../world/universePrep';
+import { LIVE_KNOBS, REBUILD_KNOBS, liveKnob, rebuildKnob } from './liveKnobs';
 
 const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -41,6 +42,8 @@ export function GalaxyExplorer(props: Props) {
   const [selected, setSelected] = useState<GalaxyObject | null>(null);
   const [engineer, setEngineer] = useState<null | 'pick' | string>(null);
   const [knobVal, setKnobVal] = useState(0);
+  const [knobDirty, setKnobDirty] = useState(false);
+  const [rebuilding, setRebuilding] = useState<null | 'harvest' | 'dust'>(null);
   const [census, setCensus] = useState<Record<string, number>>({});
   const [frame, setFrame] = useState<GalaxyFrame>({
     mode: 'region',
@@ -147,19 +150,62 @@ export function GalaxyExplorer(props: Props) {
   }, [frame.mode, frame.sector, ready]);
 
   function openKnob(id: string): void {
-    const k = liveKnob(id);
-    if (!k) return;
-    setKnobVal(viewRef.current?.liveUniform(k.uniform) ?? k.read());
+    const live = liveKnob(id);
+    if (live) {
+      setKnobVal(viewRef.current?.liveUniform(live.uniform) ?? live.read());
+      setKnobDirty(false);
+      setEngineer(id);
+      return;
+    }
+    const rebuild = rebuildKnob(id);
+    if (!rebuild) return;
+    setKnobVal(rebuild.read());
+    setKnobDirty(false);
     setEngineer(id);
   }
 
   function slideKnob(id: string, raw: number): void {
-    const k = liveKnob(id);
-    if (!k) return;
     const v = Number(raw);
+    const live = liveKnob(id);
+    if (live) {
+      setKnobVal(v);
+      setKnobDirty(false);
+      live.write?.(v);
+      viewRef.current?.setLiveUniform(live.uniform, v);
+      return;
+    }
+    const rebuild = rebuildKnob(id);
+    if (!rebuild) return;
     setKnobVal(v);
-    k.write?.(v);
-    viewRef.current?.setLiveUniform(k.uniform, v);
+    setKnobDirty(Math.abs(v - rebuild.read()) > rebuild.step * 0.25);
+  }
+
+  function cancelRebuild(): void {
+    setKnobDirty(false);
+    setEngineer('pick');
+  }
+
+  async function confirmRebuild(id: string): Promise<void> {
+    const k = rebuildKnob(id);
+    const view = viewRef.current;
+    if (!k || !view || rebuilding) return;
+    k.write(knobVal);
+    setRebuilding(k.scope);
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+    try {
+      if (k.scope === 'harvest') {
+        await remintUniverse(seed);
+        view.replaceSky();
+        setCensus(view.census());
+      } else {
+        rebakeUniverseDust(seed);
+        view.replaceDust();
+      }
+    } finally {
+      setRebuilding(null);
+      setKnobDirty(false);
+      setEngineer('pick');
+    }
   }
 
   const st = selected?.star;
@@ -177,6 +223,12 @@ export function GalaxyExplorer(props: Props) {
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
         {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}
+        {rebuilding && (
+          <div className="gx-rebuild" role="status">
+            <b>{rebuilding === 'harvest' ? 'Reminting the sky…' : 'Rebaking the dust…'}</b>
+            <i>{rebuilding === 'harvest' ? 'The harvest walks the disk under the new law.' : 'Death smears are baking into the fog.'}</i>
+          </div>
+        )}
         {inRegion && <div className="gx-pip" aria-hidden />}
         {inRegion && (
           <button
@@ -287,8 +339,20 @@ export function GalaxyExplorer(props: Props) {
           <>
             <div className="gx-kicker">Cosmic engineer</div>
             <div className="gx-eng-picks">
+              <span className="gx-eng-split">Live</span>
               {LIVE_KNOBS.map((k) => (
                 <button key={k.id} type="button" className="gx-chip" onClick={() => openKnob(k.id)}>
+                  {k.label}
+                </button>
+              ))}
+              <span className="gx-eng-split">Rebuild</span>
+              {REBUILD_KNOBS.map((k) => (
+                <button
+                  key={k.id}
+                  type="button"
+                  className="gx-chip gx-eng-rebuild"
+                  onClick={() => openKnob(k.id)}
+                >
                   {k.label}
                 </button>
               ))}
@@ -318,6 +382,50 @@ export function GalaxyExplorer(props: Props) {
             <button type="button" className="gx-chip gx-close" onClick={() => setEngineer(null)}>
               Close
             </button>
+          </>
+        )}
+        {engineer && engineer !== 'pick' && rebuildKnob(engineer) && (
+          <>
+            <div className="gx-eng-now">
+              <div className="gx-kicker">Needs rebuild</div>
+              <b>{rebuildKnob(engineer)!.label}</b>
+            </div>
+            <div className="gx-eng-row">
+              <input
+                type="range"
+                min={rebuildKnob(engineer)!.min}
+                max={rebuildKnob(engineer)!.max}
+                step={rebuildKnob(engineer)!.step}
+                value={knobVal}
+                disabled={Boolean(rebuilding)}
+                onChange={(e) => slideKnob(engineer, Number(e.target.value))}
+              />
+              <em>{knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
+            </div>
+            {knobDirty ? (
+              <>
+                <button
+                  type="button"
+                  className="gx-chip gx-eng-go"
+                  disabled={Boolean(rebuilding)}
+                  onClick={() => void confirmRebuild(engineer)}
+                >
+                  Rebuild
+                </button>
+                <button
+                  type="button"
+                  className="gx-chip gx-close"
+                  disabled={Boolean(rebuilding)}
+                  onClick={cancelRebuild}
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <button type="button" className="gx-chip gx-close" onClick={() => setEngineer(null)}>
+                Close
+              </button>
+            )}
           </>
         )}
         {!engineer && (
