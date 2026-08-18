@@ -106,8 +106,10 @@ types or star types.
   inside `airExtinction` / the scattering integral. The **cosmic
   background** is the other decreed fake: we cannot mint the
   observable universe. A distant shell (`COSMIC_*`) paints a void
-  plus galaxy smudges and a photograph of distant star-like
-  pins (`COSMIC_STAR_*`). Drawn on the far plane (a clip
+  plus distant galaxies (one inclined disk each — hash
+  size, cos i, position angle, Hubble axis) and a
+  photograph of distant star-like pins (`COSMIC_STAR_*`).
+  Drawn on the far plane (a clip
   quad, not a surrounding mesh) so triangles never cross
   the camera. The warp fence keeps you off the photograph.
   Not a catalog. Not pickable. Dust filters the sightline;

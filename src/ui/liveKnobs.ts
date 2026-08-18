@@ -101,7 +101,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Smudge size',
     group: 'cosmic',
     hint: 'how large each distant galaxy is',
-    about: 'Angular size of one irregular smudge. Small keeps them as specks; large opens them into patches. Next frame.',
+    about: 'Set-wide angular scale. Each distant galaxy already has its own size, inclination, and position angle. Small keeps them as specks; large opens the disks. Next frame.',
     uniform: 'uCosmicSize',
     min: 0.08,
     max: 2.2,

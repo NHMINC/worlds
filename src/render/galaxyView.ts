@@ -1,7 +1,7 @@
 /**
  * The galaxy explorer is three catalogs plus the decreed
  * cosmic shell: the star harvest, nebulae, dust-as-extinction,
- * and a distant void of galaxy smudges and star-like pins. The camera sits at the
+ * and a distant void of inclined galaxies and star-like pins. The camera sits at the
  * viewpoint centre (1:1 catalog kpc). “Here” is a focus highlight
  * parked in front of the camera; other samples can mark points
  * of interest. The faint 95% is a later survey. Warp is a latched

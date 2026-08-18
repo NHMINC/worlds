@@ -677,8 +677,9 @@ export const UNIVERSE = {
   /**
    * Cosmic background — the decreed fake. We cannot mint the
    * observable universe in a browser. This is a distant shell
-   * around the catalog: a void colour, a photograph of galaxy
-   * smudges (each with its own shine), and a photograph of
+   * around the catalog: a void colour, a photograph of distant
+   * galaxies (inclined disks — hash size, orientation, Hubble
+   * axis; each with its own shine), and a photograph of
    * distant star-like pins (each with its own shine). Address
    * i is hash(seed, i) on a Fibonacci sky — same bottle, same
    * sky. Not pickable. Dust filters the sightline; the void
@@ -692,7 +693,7 @@ export const UNIVERSE = {
   COSMIC_INT: 0.14,
   /** Photograph gain on the smudge set. Each smudge also has its own shine. */
   COSMIC_GAIN: 0.62,
-  /** Angular size of one smudge (1 ≈ the first look's cell). */
+  /** Set-wide angular scale. Each galaxy already has its own size. */
   COSMIC_SIZE: 0.36,
   /** Power on the large-scale web. Higher → emptier voids, tighter piles. */
   COSMIC_CLUSTER: 1.85,
