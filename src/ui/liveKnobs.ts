@@ -172,6 +172,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
+    id: 'dustSheen',
+    label: 'Surface sheen',
+    group: 'dust',
+    hint: 'cloud skins reflect galactic light',
+    about: 'The Integrated Flux Nebula: grains scatter ambient starlight, so a cloud\u2019s skin glows faintly — bluer than the stars it hides, brightest silhouetted against the bulge. Cores stay lightless. This is the photograph stretch; the real thing is far below a screen. 0 turns it off. Next frame.',
+    uniform: 'uDustSheen',
+    min: 0,
+    max: 4,
+    step: 0.05,
+    read: () => UNIVERSE.GALAXY_DUST_SHEEN,
+    write: (v) => {
+      UNIVERSE.GALAXY_DUST_SHEEN = v;
+    },
+  },
+  {
     id: 'extinctK',
     label: 'Dust extinction',
     group: 'dust',

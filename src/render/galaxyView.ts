@@ -77,6 +77,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   uniform float uExtinctCut;
   uniform float uExtinctHard;
   uniform float uExtinctWall;
+  uniform float uDustSheen;
   uniform float uDustDebug;
   uniform vec3 uDustRgb;
   uniform sampler3D uDustVol;
@@ -141,6 +142,56 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     vec2 span = extinctSpan(from, dir);
     if (span.x > span.y) return vec3(1.0);
     return extinctT(from + dir * max(span.x, 0.0), from + dir * span.y);
+  }
+  // Ambient galactic starlight at a point: exponential disk of
+  // light (longer scale than the mass — light travels) plus an
+  // inverse-square bulge. The IFN illuminant, not a lamp.
+  float ambientJ(vec3 p) {
+    float R = length(p.xz);
+    float disk = exp(-R / ${glslFloat(UNIVERSE.GALAXY_LIGHT_RD)})
+      * exp(-abs(p.y) / ${glslFloat(UNIVERSE.GALAXY_LIGHT_ZD)});
+    float bulge = ${glslFloat(UNIVERSE.GALAXY_LIGHT_BULGE)} / (0.4 + dot(p, p));
+    return disk + bulge;
+  }
+  /**
+   * Void backdrop through the dust plus single-scattered galactic
+   * light (the Integrated Flux Nebula): each step adds ambient ×
+   * albedo × scattering cross-section × Henyey–Greenstein phase,
+   * seen through the τ already crossed. Rims glow — hardest when
+   * lit from behind (silhouetted against the bulge) — cores stay
+   * lightless, and the mottle is the density field itself.
+   */
+  vec3 extinctSheen(vec3 from, vec3 dir, vec3 back) {
+    vec2 span = extinctSpan(from, dir);
+    if (span.x > span.y) return back;
+    float t0 = max(span.x, 0.0);
+    float dCat = span.y - t0;
+    float dt = dCat / ${glslFloat(steps)};
+    float kdt = uExtinctK * dt;
+    float coreFill = uExtinctMax / max(kdt, 1e-4);
+    float wall = uExtinctWall;
+    float g = ${glslFloat(UNIVERSE.GALAXY_DUST_SHEEN_G)};
+    float sheenK = ${glslFloat(UNIVERSE.GALAXY_DUST_ALBEDO)} * uDustSheen * kdt;
+    float tau = 0.0;
+    vec3 glow = vec3(0.0);
+    for (int i = 0; i < ${steps}; i++) {
+      vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
+      float r = extinctRho(p);
+      if (r < 1e-4) continue;
+      float rr = r;
+      if (wall > 1e-4) {
+        float core = smoothstep(wall * 0.62, wall, r);
+        rr = mix(r, max(r, coreFill), core);
+      }
+      // Transmittance to the middle of this step (single scatter).
+      vec3 T = exp(-min((tau + 0.5 * rr) * kdt, uExtinctMax) * uDustRgb);
+      // Net flux points outward from the bright inner disk.
+      float cosT = dot(p / max(length(p), 0.3), -dir);
+      float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cosT, 1.5);
+      glow += T * (sheenK * min(r, wall > 1e-4 ? wall : 1.0)) * uDustRgb * (ambientJ(p) * ph);
+      tau += rr;
+    }
+    return back * exp(-min(tau * kdt, uExtinctMax) * uDustRgb) + glow;
   }
 `;
 
@@ -844,6 +895,7 @@ export class GalaxyView {
       uExtinctCut: { value: UNIVERSE.GALAXY_EXTINCT_CUT },
       uExtinctHard: { value: UNIVERSE.GALAXY_EXTINCT_HARD },
       uExtinctWall: { value: UNIVERSE.GALAXY_EXTINCT_WALL },
+      uDustSheen: { value: UNIVERSE.GALAXY_DUST_SHEEN },
       uDustDebug: { value: dustDebugOn() ? 1 : UNIVERSE.GALAXY_DUST_DEBUG },
       uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
       uDustVol: { value: tex },
