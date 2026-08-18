@@ -204,8 +204,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   harvest survey, starlight, nebulae). Each option states what the setting
   does. Remint / rebake knobs are amber. Live photograph
   knobs already sit on the GPU (void colour is a hue
-  wheel plus intensity, distant stars, distant
-  galaxies, extinction, shine, nebula glow) — a slide is
+  wheel plus intensity, smudge brightness, background-star
+  brightness, extinction, shine, nebula glow) — a slide is
   the next frame. Rebuild knobs (survey
   floors, nebula catalog, death-smear laws): the slider is a
   draft until **Rebuild** writes `UNIVERSE` and remints /

@@ -82,44 +82,14 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
-    id: 'cosmicStars',
-    label: 'Distant stars',
-    group: 'cosmic',
-    hint: 'how bright the far pins are',
-    about: 'Photograph gain on the outer-shell star-like pins. Thousands of point sources at infinity — brighter and dimmer, not a catalog, not pickable. Next frame.',
-    uniform: 'uStarGain',
-    min: 0,
-    max: 2.5,
-    step: 0.02,
-    read: () => UNIVERSE.COSMIC_STAR_GAIN,
-    write: (v) => {
-      UNIVERSE.COSMIC_STAR_GAIN = v;
-    },
-  },
-  {
-    id: 'cosmicStarOcc',
-    label: 'Distant-star density',
-    group: 'cosmic',
-    hint: 'how many of the far pins stay on',
-    about: 'Occupancy of the distant pin budget. The shell holds a fixed photograph of pins; this keeps more or fewer. Next frame.',
-    uniform: 'uStarOcc',
-    min: 0,
-    max: 1,
-    step: 0.01,
-    read: () => UNIVERSE.COSMIC_STAR_OCC,
-    write: (v) => {
-      UNIVERSE.COSMIC_STAR_OCC = v;
-    },
-  },
-  {
     id: 'cosmicGlow',
-    label: 'Distant galaxies',
+    label: 'Smudge brightness',
     group: 'cosmic',
-    hint: 'how bright the smudges are',
-    about: 'Photograph gain on the outer-shell galaxy smudges. Clusters, not telescope images. Not a catalog. Next frame.',
+    hint: 'how bright the galaxy smudges are',
+    about: 'Photograph gain on the galaxy smudges only. Does not touch the background stars. Clusters, not telescope images. Not a catalog. Next frame.',
     uniform: 'uCosmicGain',
     min: 0,
-    max: 2.5,
+    max: 4,
     step: 0.02,
     read: () => UNIVERSE.COSMIC_GAIN,
     write: (v) => {
@@ -169,6 +139,36 @@ export const LIVE_KNOBS: LiveKnob[] = [
     read: () => UNIVERSE.COSMIC_OCC,
     write: (v) => {
       UNIVERSE.COSMIC_OCC = v;
+    },
+  },
+  {
+    id: 'cosmicStars',
+    label: 'Background-star brightness',
+    group: 'cosmic',
+    hint: 'how bright the far pins are',
+    about: 'Photograph gain on the background star-like pins only. Does not touch the smudges. Thousands of point sources at infinity — not a catalog, not pickable. Next frame.',
+    uniform: 'uStarGain',
+    min: 0,
+    max: 4,
+    step: 0.02,
+    read: () => UNIVERSE.COSMIC_STAR_GAIN,
+    write: (v) => {
+      UNIVERSE.COSMIC_STAR_GAIN = v;
+    },
+  },
+  {
+    id: 'cosmicStarOcc',
+    label: 'Background-star density',
+    group: 'cosmic',
+    hint: 'how many of the far pins stay on',
+    about: 'Occupancy of the distant pin budget. The sky holds a fixed photograph of pins; this keeps more or fewer. Next frame.',
+    uniform: 'uStarOcc',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    read: () => UNIVERSE.COSMIC_STAR_OCC,
+    write: (v) => {
+      UNIVERSE.COSMIC_STAR_OCC = v;
     },
   },
   {
