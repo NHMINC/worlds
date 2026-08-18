@@ -664,6 +664,26 @@ export const UNIVERSE = {
   SNR_GYR: 0.06,
   PULSAR_GYR: 0.12,
   WR_TAIL: 0.12,
+
+  /**
+   * Cosmic background — the decreed fake. We cannot mint the
+   * observable universe in a browser. This is a distant shell
+   * around the catalog: a void colour plus a cheap angular field
+   * of galaxy smudges (clusters, not telescope images). Not a
+   * catalog. Not pickable. Same seed as the bottle. Dust filters
+   * the smudges so the lane is a silhouette; the void is vacuum.
+   */
+  COSMIC_R: 240,
+  /** 0 = total black, 1 = very dark blue. */
+  COSMIC_VOID: 0.42,
+  /** Photograph gain on the smudges. */
+  COSMIC_GAIN: 0.62,
+  /** Fraction of angular cells that keep a smudge, lifted on the web. */
+  COSMIC_OCC: 0.1,
+  /** Power on the large-scale web. Higher → emptier voids, tighter piles. */
+  COSMIC_CLUSTER: 1.85,
+  /** Angular cells across the sky. A law constant, not a census. */
+  COSMIC_CELLS: 20,
 };
 
 // ------------------------------------------------------------------ types

@@ -89,7 +89,11 @@ types or star types.
   so they are findable, the way `TIME_SCALE` stretches a dawn; interiors,
   plate tectonics, and **weather** are out of scope until we take them
   on as laws. Clouds are not a painted deck; aerosol opacity lives
-  inside `airExtinction` / the scattering integral.
+  inside `airExtinction` / the scattering integral. The **cosmic
+  background** is the other decreed fake: we cannot mint the
+  observable universe. A distant shell (`COSMIC_*`) paints a void
+  plus galaxy smudges. Not a catalog. Not pickable. Dust filters
+  the smudges; the void is vacuum.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
@@ -192,11 +196,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `src/render/star.ts`.
 - **The explorer is the harvest, not a magnifier ball.**
   **Cosmic engineer** (explorer bottom bar) is a dropdown of
-  laws grouped by use (galactic dust, harvest survey,
-  starlight, nebulae). Each option states what the setting
+  laws grouped by use (cosmic background, galactic dust,
+  harvest survey, starlight, nebulae). Each option states what the setting
   does. Remint / rebake knobs are amber. Live photograph
-  knobs already sit on the GPU (extinction, shine, nebula
-  glow) — a slide is the next frame. Rebuild knobs (survey
+  knobs already sit on the GPU (void colour, distant
+  galaxies, extinction, shine, nebula glow) — a slide is
+  the next frame. Rebuild knobs (survey
   floors, nebula catalog, death-smear laws): the slider is a
   draft until **Rebuild** writes `UNIVERSE` and remints /
   rebakes, or **Cancel** discards. Star remint, nebula walk,
@@ -568,7 +573,8 @@ Code map (start here):
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
-| Galaxy explorer (stars + nebulae + dust) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (stars + nebulae + dust + cosmic shell) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |

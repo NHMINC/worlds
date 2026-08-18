@@ -13,9 +13,10 @@ import {
   HARVEST_SUPER_GAIN,
 } from '../render/galaxyStar';
 
-export type EngineerGroupId = 'dust' | 'harvest' | 'starlight' | 'nebulae';
+export type EngineerGroupId = 'cosmic' | 'dust' | 'harvest' | 'starlight' | 'nebulae';
 
 export const ENGINEER_GROUPS: Array<{ id: EngineerGroupId; label: string }> = [
+  { id: 'cosmic', label: 'Cosmic background' },
   { id: 'dust', label: 'Galactic dust' },
   { id: 'harvest', label: 'Harvest survey' },
   { id: 'starlight', label: 'Starlight' },
@@ -65,6 +66,66 @@ function writeNum(key: string, v: number): void {
 }
 
 export const LIVE_KNOBS: LiveKnob[] = [
+  {
+    id: 'void',
+    label: 'Void colour',
+    group: 'cosmic',
+    hint: 'black to very dark blue',
+    about: 'The decreed night behind everything. 0 is total black; 1 is a very dark blue. The smudges sit on this. Next frame.',
+    uniform: 'uVoid',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    read: () => UNIVERSE.COSMIC_VOID,
+    write: (v) => {
+      UNIVERSE.COSMIC_VOID = v;
+    },
+  },
+  {
+    id: 'cosmicGlow',
+    label: 'Distant galaxies',
+    group: 'cosmic',
+    hint: 'how bright the smudges are',
+    about: 'Photograph gain on the outer-shell galaxy smudges. Clusters, not telescope images. Not a catalog. Next frame.',
+    uniform: 'uCosmicGain',
+    min: 0,
+    max: 2.5,
+    step: 0.02,
+    read: () => UNIVERSE.COSMIC_GAIN,
+    write: (v) => {
+      UNIVERSE.COSMIC_GAIN = v;
+    },
+  },
+  {
+    id: 'cosmicWeb',
+    label: 'Clustering',
+    group: 'cosmic',
+    hint: 'how hard smudges pile into a web',
+    about: 'Power on the large-scale web. Higher empties the voids and tightens the piles. Next frame.',
+    uniform: 'uCosmicCluster',
+    min: 0.4,
+    max: 4,
+    step: 0.05,
+    read: () => UNIVERSE.COSMIC_CLUSTER,
+    write: (v) => {
+      UNIVERSE.COSMIC_CLUSTER = v;
+    },
+  },
+  {
+    id: 'cosmicOcc',
+    label: 'Smudge density',
+    group: 'cosmic',
+    hint: 'how many cells keep a smudge',
+    about: 'Occupancy of the angular field. Higher is a busier sky; lower is a few piles. Next frame.',
+    uniform: 'uCosmicOcc',
+    min: 0,
+    max: 0.45,
+    step: 0.005,
+    read: () => UNIVERSE.COSMIC_OCC,
+    write: (v) => {
+      UNIVERSE.COSMIC_OCC = v;
+    },
+  },
   {
     id: 'extinctK',
     label: 'Dust extinction',

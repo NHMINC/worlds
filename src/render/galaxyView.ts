@@ -1,6 +1,7 @@
 /**
- * The galaxy explorer is three catalogs: the star harvest,
- * nebulae, and dust-as-extinction. The camera sits at the
+ * The galaxy explorer is three catalogs plus the decreed
+ * cosmic shell: the star harvest, nebulae, dust-as-extinction,
+ * and a distant void of galaxy smudges. The camera sits at the
  * viewpoint centre (1:1 catalog kpc). “Here” is a focus highlight
  * parked in front of the camera; other samples can mark points
  * of interest. The faint 95% is a later survey. Warp is a latched
@@ -47,6 +48,7 @@ import {
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
 import { prepareUniverse } from '../world/universePrep';
+import { cosmicFrag, cosmicSeedFloat, cosmicVert, cosmicVoidRgb } from './cosmicBg';
 
 /** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
@@ -130,7 +132,7 @@ export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
 
 /** Disk diameter with slack — Face-on sits several R_MAX out. */
 function regionCamFar(): number {
-  return UNIVERSE.GALAXY_R_MAX * 8;
+  return Math.max(UNIVERSE.GALAXY_R_MAX * 8, UNIVERSE.COSMIC_R * 1.2);
 }
 
 /**
@@ -489,6 +491,9 @@ export class GalaxyView {
   private silEmisGeo: THREE.BufferGeometry | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
   private silDustTex: THREE.Data3DTexture | null = null;
+  private cosmicPts: THREE.Mesh | null = null;
+  private cosmicGeo: THREE.BufferGeometry | null = null;
+  private cosmicMat: THREE.ShaderMaterial | null = null;
   /** Star harvest positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
   /** Nebula catalog — own mesh, rebakes without reminting stars. */
@@ -552,7 +557,8 @@ export class GalaxyView {
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    this.renderer.setClearColor(new THREE.Color('#070b14'), 1);
+    const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_VOID);
+    this.renderer.setClearColor(new THREE.Color(voidRgb[0], voidRgb[1], voidRgb[2]), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
 
     this.pickRing = this.makeRing(0xf4e4c1, 0.18);
@@ -672,6 +678,8 @@ export class GalaxyView {
     }
     this.sectorPop = this.shownCount();
     this.lastEnterMs = Math.max(this.cloud?.ms ?? 0, this.nebulae?.ms ?? 0, this.lastEnterMs);
+    if (!this.cosmicPts) this.buildCosmic();
+    else this.pushMagUniforms();
   }
 
   private disposeStars(): void {
@@ -695,6 +703,17 @@ export class GalaxyView {
       this.silEmisGeo = null;
       this.silEmisMat = null;
       this.nebVis = null;
+    }
+  }
+
+  private disposeCosmic(): void {
+    if (this.cosmicPts) {
+      this.scene.remove(this.cosmicPts);
+      this.cosmicGeo?.dispose();
+      this.cosmicMat?.dispose();
+      this.cosmicPts = null;
+      this.cosmicGeo = null;
+      this.cosmicMat = null;
     }
   }
 
@@ -761,8 +780,15 @@ export class GalaxyView {
 
   /** Upload the baked ISM fog. Empty 1³ if the harvest is not in yet. */
   private ensureDustTexture(): THREE.Data3DTexture {
-    if (this.silDustTex) return this.silDustTex;
     const vol = harvestDustVolume(this.seed);
+    if (this.silDustTex) {
+      if (vol && this.silDustTex.image.width <= 1 && vol.nx > 1) {
+        this.silDustTex.dispose();
+        this.silDustTex = null;
+      } else {
+        return this.silDustTex;
+      }
+    }
     const tex = vol
       ? new THREE.Data3DTexture(vol.data, vol.nx, vol.ny, vol.nz)
       : new THREE.Data3DTexture(new Float32Array(1), 1, 1, 1);
@@ -885,10 +911,47 @@ export class GalaxyView {
 
   private cloudMats(): THREE.ShaderMaterial[] {
     const out: THREE.ShaderMaterial[] = [];
-    for (const m of [this.silMat, this.silEmisMat]) {
+    for (const m of [this.silMat, this.silEmisMat, this.cosmicMat]) {
       if (m) out.push(m);
     }
     return out;
+  }
+
+  private applyVoid(t: number): void {
+    const rgb = cosmicVoidRgb(t);
+    this.renderer.setClearColor(new THREE.Color(rgb[0], rgb[1], rgb[2]), 1);
+  }
+
+  private buildCosmic(): void {
+    if (this.cosmicPts) return;
+    const geo = new THREE.SphereGeometry(1, 48, 32);
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: cosmicVert(),
+      fragmentShader: cosmicFrag(extinctGlsl(8)),
+      uniforms: {
+        uCenter: { value: new THREE.Vector3() },
+        uCosmicR: { value: UNIVERSE.COSMIC_R },
+        uVoid: { value: UNIVERSE.COSMIC_VOID },
+        uCosmicGain: { value: UNIVERSE.COSMIC_GAIN },
+        uCosmicOcc: { value: UNIVERSE.COSMIC_OCC },
+        uCosmicCluster: { value: UNIVERSE.COSMIC_CLUSTER },
+        uCosmicCells: { value: UNIVERSE.COSMIC_CELLS },
+        uSeed: { value: cosmicSeedFloat(this.seed) },
+        ...this.extinctUniforms(),
+      },
+      side: THREE.BackSide,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.frustumCulled = false;
+    mesh.renderOrder = -8;
+    this.scene.add(mesh);
+    this.cosmicPts = mesh;
+    this.cosmicGeo = geo;
+    this.cosmicMat = mat;
+    this.pushMagUniforms();
   }
 
   /** Live cosmic-engineer write. One uniform, next frame. */
@@ -897,10 +960,12 @@ export class GalaxyView {
       const u = mat.uniforms[name];
       if (u) u.value = value;
     }
+    if (name === 'uVoid') this.applyVoid(value);
   }
 
   liveUniform(name: string): number | null {
-    const u = this.silMat?.uniforms[name] ?? this.silEmisMat?.uniforms[name];
+    const u =
+      this.silMat?.uniforms[name] ?? this.silEmisMat?.uniforms[name] ?? this.cosmicMat?.uniforms[name];
     return typeof u?.value === 'number' ? u.value : null;
   }
 
@@ -953,8 +1018,8 @@ export class GalaxyView {
     const cy = this.arcCenter.y;
     const cz = this.arcCenter.z;
     for (const mat of this.cloudMats()) {
-      mat.uniforms.uCenter.value.set(cx, cy, cz);
-      mat.uniforms.uScale.value = 1;
+      if (mat.uniforms.uCenter) mat.uniforms.uCenter.value.set(cx, cy, cz);
+      if (mat.uniforms.uScale) mat.uniforms.uScale.value = 1;
     }
   }
 
@@ -1265,6 +1330,7 @@ export class GalaxyView {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     this.disposeArcStars();
+    this.disposeCosmic();
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
     this.hereRing.geometry.dispose();
@@ -1863,9 +1929,11 @@ export class GalaxyView {
     this.camera.updateMatrixWorld();
     this.camRot3.setFromMatrix4(this.camera.matrixWorld);
     for (const mat of this.cloudMats()) {
-      mat.uniforms.uPixel.value = px;
-      mat.uniforms.uPxPerRad.value = pxPer;
-      (mat.uniforms.uCamRotInv.value as THREE.Matrix3).copy(this.camRot3);
+      if (mat.uniforms.uPixel) mat.uniforms.uPixel.value = px;
+      if (mat.uniforms.uPxPerRad) mat.uniforms.uPxPerRad.value = pxPer;
+      if (mat.uniforms.uCamRotInv) {
+        (mat.uniforms.uCamRotInv.value as THREE.Matrix3).copy(this.camRot3);
+      }
     }
 
     const cam = this.camera.position;
