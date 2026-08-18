@@ -3,6 +3,7 @@
  * hosts for a star whose planets already include a habitable world.
  * The galaxy is not a list; this is a query. An empty save opens the
  * explorer on that star; set course writes the first visit.
+ * The walk is the host list as the mass model emitted it — no shuffle.
  */
 import { UNIVERSE } from './physics';
 import { solarCircleHosts, type GalaxyObject } from './galaxy';
@@ -13,17 +14,6 @@ export interface Discovery {
   spec: SystemSpec;
   bodyId: string;
   obj: GalaxyObject;
-}
-
-function shuffle<T>(arr: T[], rng: () => number): T[] {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    const t = a[i]!;
-    a[i] = a[j]!;
-    a[j] = t!;
-  }
-  return a;
 }
 
 function livingBody(spec: SystemSpec): string | null {
@@ -44,14 +34,11 @@ function wetBody(spec: SystemSpec): string | null {
 }
 
 /**
- * Pick a solar-circle host that already has a living world.
- * The galaxy is shared; the first campsite is the traveler's.
+ * First living solar-circle host, then first wet world, then the
+ * first host. Same seed, same campsite — no roll.
  */
-export function discoverHabitable(
-  galaxySeed = UNIVERSE.CANONICAL_SEED,
-  rng: () => number = Math.random,
-): Discovery {
-  const hosts = shuffle(solarCircleHosts(galaxySeed, 7000), rng);
+export function discoverHabitable(galaxySeed = UNIVERSE.CANONICAL_SEED): Discovery {
+  const hosts = solarCircleHosts(galaxySeed, 7000);
   const limit = Math.min(hosts.length, 400);
   for (let i = 0; i < limit; i++) {
     const obj = hosts[i]!;

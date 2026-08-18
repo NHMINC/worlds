@@ -44,10 +44,24 @@ never the system seed — so a restart is a new piece, not a replay.
 > **We set parameters and laws; we never hand-roll outcomes.**
 > **When a world looks wrong, fix the law, not the world.**
 > **If the cosmic engineer set only constants and laws, would this still happen?**
+> **RNG does not build the universe.**
 
 This is a physics engine with toy scaling, not a catalogue of planet
 types or star types.
 
+- **No RNG in universe construction.** Everyone in the canonical
+  game must stand in the same galaxy. A star, a hex, a smudge, a
+  dust filament is `f(seed, address)` — `objectAt`, `hash(seed, i, salt)`,
+  a closed-form clock. Never `Math.random`, `crypto.getRandomValues`,
+  `Date.now`, or a walking PRNG stream for the catalog, a system,
+  terrain, geology, dust, nebulae, or the cosmic photograph. Same
+  inputs, same universe, every player, every time. A `mulberry32`
+  stream through `generateSystem` / `objectAt` is leftover debt:
+  do not add draws; new laws hash the address. Allowed rolls live
+  *outside* the universe only: a listen seed for the music (never
+  the system seed), a UUID for a save row. The in-system
+  `buildStars()` shell still uses `Math.random` and must retire
+  so ground and explorer agree.
 - **Archetypes are outputs, never inputs.** There is no `if (iceball)` /
   `if (hothouse)` / `if (pulsar)` generator switch. Iceballs, O stars,
   pulsars, H II regions, and living paradises are attractor regions of
@@ -536,7 +550,8 @@ knob family. Leave the rest of the bottle alone.
 1. **Change the law** in `physics.ts` / `galaxy.ts` / `stellar.ts` /
    `scattering.ts` / the relevant shader’s shared chunk. If you must
    add an approximation (Chapman slant, Eddington diffusion, Schlick),
-   comment *why* it is the law, not a bandage.
+   comment *why* it is the law, not a bandage. Do not reach for
+   `Math.random` or a new `mulberry32` stream to build the world.
 2. **Bump `CURRENT_GEN_VERSION`** if a given seed’s generated terrain
    or system layout would change. Player overlays stay valid because
    they are absolute cell levels.

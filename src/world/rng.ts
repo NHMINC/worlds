@@ -1,3 +1,14 @@
+/**
+ * Hashing for the bottle — not a dice bag.
+ *
+ * Universe construction is `f(seed, address)`. Prefer a stateless
+ * hash (`hashHex`, `xmur3` once, `hash(seed, i, salt)`). Do not use
+ * `Math.random`, `crypto`, or a walking `mulberry32` stream for the
+ * catalog, a system, terrain, dust, or the cosmic photograph.
+ * `mulberry32` remains only for leftover generators that already
+ * drink a stream; do not add new draws. `randomSeedString` / `uuid`
+ * are player/listen labels, not the sky.
+ */
 /** Hash a string to a sequence of 32-bit seeds (xmur3). */
 export function xmur3(str: string): () => number {
   let h = 1779033703 ^ str.length;
