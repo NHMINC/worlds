@@ -153,10 +153,13 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (leave < 0.0 || enter > leave) return vec2(1.0, -1.0);
     return vec2(enter, leave);
   }
-  // Distant sky: march the dust box (thin clumps cannot hide),
-  // then a wall on the sightline is lightless — independent of
-  // tap spacing. Camera→far (same dt as a nearby star) skipped
-  // whole clouds and the void showed through.
+  // Distant sky: the photograph sits behind the sheet. March
+  // the dust box (thin clumps cannot hide). The bake already
+  // wrote only the dense tail — a hit is a wall, tap-spacing
+  // independent. Stars still use the 0.62…wall ramp (cores
+  // lightless, rim reddens). Leftover Beer–Lambert × voidRgb
+  // was still a readable night: K is photograph gain, not
+  // thickness, so a lane never reached T≈0.
   vec3 extinctLook(vec3 from, vec3 dir) {
     vec2 span = extinctSpan(from, dir);
     if (span.x > span.y) return vec3(1.0);
@@ -165,24 +168,12 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     float dCat = t1 - t0;
     if (dCat < 1e-4) return vec3(1.0);
     float dt = dCat / ${glslFloat(steps)};
-    float kdt = uExtinctK * dt;
-    float wall = uExtinctWall;
-    float coreFill = uExtinctMax / max(kdt, 1e-4);
-    float tau = 0.0;
     float peak = 0.0;
     for (int i = 0; i < ${steps}; i++) {
       vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
-      float r = extinctRhoPeak(p, dir, dt);
-      peak = max(peak, r);
-      if (wall > 1e-4) {
-        float core = smoothstep(wall * 0.62, wall, r);
-        tau += mix(r, max(r, coreFill), core);
-      } else {
-        tau += r;
-      }
+      peak = max(peak, extinctRhoPeak(p, dir, dt));
     }
-    if (wall > 1e-4 && peak >= wall * 0.62) return vec3(0.0);
-    return exp(-min(tau * kdt, uExtinctMax) * uDustRgb);
+    return peak > 1e-4 ? vec3(0.0) : vec3(1.0);
   }
 `;
 
