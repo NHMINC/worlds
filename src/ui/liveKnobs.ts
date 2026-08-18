@@ -34,6 +34,8 @@ export type LiveKnob = {
   min: number;
   max: number;
   step: number;
+  /** Shipped law, captured at module load. */
+  def?: number;
   read: () => number;
   write?: (v: number) => void;
 };
@@ -51,6 +53,8 @@ export type RebuildKnob = {
   min: number;
   max: number;
   step: number;
+  /** Shipped law, captured at module load. */
+  def?: number;
   read: () => number;
   write: (v: number) => void;
 };
@@ -342,4 +346,15 @@ export function knobsInGroup(group: EngineerGroupId): EngineerChoice[] {
     remint: true,
   }));
   return [...live, ...remint];
+}
+
+for (const k of LIVE_KNOBS) k.def = k.read();
+for (const k of REBUILD_KNOBS) k.def = k.read();
+
+export function knobDefault(k: { def?: number; read: () => number }): number {
+  return k.def ?? k.read();
+}
+
+export function atDefault(k: { def?: number; read: () => number; step: number }, value: number): boolean {
+  return Math.abs(value - knobDefault(k)) <= k.step * 0.25;
 }

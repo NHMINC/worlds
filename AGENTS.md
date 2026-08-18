@@ -199,7 +199,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   glow) — a slide is the next frame. Rebuild knobs (survey
   floors, death-smear laws): the slider is a draft until
   **Rebuild** writes `UNIVERSE` and remints / rebakes, or
-  **Cancel** discards. The HTML splash stays gone; the
+  **Cancel** discards. **Reset to default** restores the
+  shipped law for the open setting (live: next frame;
+  rebuild: a draft until Rebuild). The HTML splash stays gone; the
   explorer owns the wait. Mint and remint fill a progress
   bar from the walk itself (rings visited / rings in the
   disk, then the dust bake). The bar is a native

@@ -1332,9 +1332,14 @@ body,
 .gx-eng-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   flex: 1;
   min-width: 0;
+}
+
+.gx-eng-reset {
+  flex-shrink: 0;
 }
 
 .gx-eng-row input[type='range'] {

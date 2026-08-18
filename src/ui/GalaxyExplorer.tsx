@@ -4,7 +4,7 @@ import { classifyStar } from '../world/stellar';
 import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
 import { remintUniverse, rebakeUniverseDust, onUniverseProgress } from '../world/universePrep';
-import { ENGINEER_GROUPS, knobsInGroup, liveKnob, rebuildKnob } from './liveKnobs';
+import { ENGINEER_GROUPS, atDefault, knobDefault, knobsInGroup, liveKnob, rebuildKnob } from './liveKnobs';
 
 const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -199,6 +199,21 @@ export function GalaxyExplorer(props: Props) {
     if (k) setKnobVal(k.read());
   }
 
+  function resetToDefault(): void {
+    if (!spec || !engineer || engineer === 'pick' || rebuilding) return;
+    const v = knobDefault(spec);
+    if (live) {
+      setKnobVal(v);
+      live.write?.(v);
+      viewRef.current?.setLiveUniform(live.uniform, v);
+      return;
+    }
+    if (rebuild) {
+      setKnobVal(v);
+      setKnobDirty(Math.abs(v - rebuild.read()) > rebuild.step * 0.25);
+    }
+  }
+
   async function confirmRebuild(id: string): Promise<void> {
     const k = rebuildKnob(id);
     const view = viewRef.current;
@@ -229,6 +244,7 @@ export function GalaxyExplorer(props: Props) {
   const live = engineer && engineer !== 'pick' ? liveKnob(engineer) : undefined;
   const rebuild = engineer && engineer !== 'pick' ? rebuildKnob(engineer) : undefined;
   const spec = live ?? rebuild;
+  const isDefault = Boolean(spec && atDefault(spec, knobVal));
 
   return (
     <div
@@ -428,6 +444,16 @@ export function GalaxyExplorer(props: Props) {
                   onChange={(e) => slideKnob(engineer, Number(e.target.value))}
                 />
                 <em>{knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
+                {!isDefault && (
+                  <button
+                    type="button"
+                    className="gx-chip gx-eng-reset"
+                    disabled={Boolean(rebuilding)}
+                    onClick={resetToDefault}
+                  >
+                    Reset to default
+                  </button>
+                )}
               </div>
             )}
           </>
