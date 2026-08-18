@@ -1,8 +1,8 @@
 /**
- * Cosmic background: the decreed outer shell. One inverted sphere,
- * a void colour, a cheap angular field of galaxy smudges, and a
- * seeded field of distant star-like pins. Not a catalog. Not
- * pickable. Seeded from the bottle seed.
+ * Cosmic background: a far-plane void, a photograph of galaxy
+ * smudges, and a photograph of distant star-like pins. Each
+ * object has its own shine; engineer gains scale the set.
+ * Not a catalog. Not pickable. Seeded from the bottle seed.
  */
 import { mulberry32, xmur3 } from '../world/rng';
 
@@ -58,110 +58,13 @@ export function cosmicVert(): string {
 `;
 }
 
-export function cosmicFrag(extinctGlsl: string): string {
+export function cosmicFrag(): string {
   return /* glsl */ `
-  ${extinctGlsl}
-  uniform vec3 uCenter;
   uniform vec3 uVoidRgb;
-  uniform float uCosmicGain;
-  uniform float uCosmicOcc;
-  uniform float uCosmicCluster;
-  uniform float uCosmicCells;
-  uniform float uCosmicSize;
-  uniform float uSeed;
-  uniform mat4 uInvProj;
-  uniform mat3 uCamRotInv;
-  varying vec2 vNdc;
-
-  float hash13(vec3 p) {
-    p = fract(p * vec3(0.1031, 0.11369, 0.13787) + uSeed);
-    p += dot(p, p.yzx + 19.19);
-    return fract((p.x + p.y) * p.z);
-  }
-  vec3 hash33(vec3 p) {
-    p = fract(p * vec3(0.1031, 0.1030, 0.0973) + uSeed);
-    p += dot(p, p.yxz + 33.33);
-    return fract((p.xxy + p.yxx) * p.zyx);
-  }
-  float vnoise(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float n000 = hash13(i);
-    float n100 = hash13(i + vec3(1.0, 0.0, 0.0));
-    float n010 = hash13(i + vec3(0.0, 1.0, 0.0));
-    float n110 = hash13(i + vec3(1.0, 1.0, 0.0));
-    float n001 = hash13(i + vec3(0.0, 0.0, 1.0));
-    float n101 = hash13(i + vec3(1.0, 0.0, 1.0));
-    float n011 = hash13(i + vec3(0.0, 1.0, 1.0));
-    float n111 = hash13(i + vec3(1.0, 1.0, 1.0));
-    return mix(
-      mix(mix(n000, n100, f.x), mix(n010, n110, f.x), f.y),
-      mix(mix(n001, n101, f.x), mix(n011, n111, f.x), f.y),
-      f.z
-    );
-  }
-
   void main() {
-    vec4 viewH = uInvProj * vec4(vNdc, 1.0, 1.0);
-    vec3 viewDir = normalize(viewH.xyz / max(abs(viewH.w), 1e-6));
-    vec3 dir = normalize(uCamRotInv * viewDir);
-    float web = 0.62 * vnoise(dir * 2.15 + 1.7) + 0.38 * vnoise(dir * 5.4 + 4.1);
-    web = pow(clamp(web, 0.0, 1.0), max(uCosmicCluster, 0.35));
-
-    float cells = max(uCosmicCells, 4.0);
-    vec3 g = dir * cells;
-    vec3 id = floor(g);
-    float smudge = 0.0;
-    vec3 tint = vec3(0.0);
-    for (int z = -1; z <= 1; z++) {
-      for (int y = -1; y <= 1; y++) {
-        for (int x = -1; x <= 1; x++) {
-          vec3 cid = id + vec3(float(x), float(y), float(z));
-          float h = hash13(cid);
-          float keep = step(h, uCosmicOcc * mix(0.1, 1.15, web));
-          if (keep < 0.5) continue;
-          vec3 jitter = hash33(cid) - 0.5;
-          vec3 cdir = normalize(cid + 0.5 + jitter * 0.65);
-          vec3 t1 = normalize(cross(cdir, vec3(0.07, 1.0, 0.13)));
-          vec3 t2 = cross(cdir, t1);
-          vec2 q = vec2(dot(dir - cdir, t1), dot(dir - cdir, t2)) * cells;
-          float ang = h * 6.2831853;
-          float ca = cos(ang);
-          float sa = sin(ang);
-          vec2 p = vec2(ca * q.x + sa * q.y, -sa * q.x + ca * q.y);
-          float aspect = 0.42 + 0.85 * hash13(cid + 17.0);
-          p.y /= aspect;
-          float sz = max(uCosmicSize, 0.06);
-          p /= sz;
-          vec2 warp = vec2(
-            vnoise(vec3(p * 1.8, h * 5.0) + cid) - 0.5,
-            vnoise(vec3(p.yx * 1.8, h * 9.0) + cid.yzx) - 0.5
-          );
-          p += warp * (0.38 + 0.34 * hash13(cid + 5.0));
-          float lump = 0.22 + 1.15 * vnoise(vec3(p * 3.1, h * 13.0) + cid.zxy);
-          lump *= 0.45 + 0.7 * vnoise(vec3(p.yx * 5.4, h * 21.0) + cid);
-          float blob = exp(-dot(p, p) * 11.5) * max(0.0, lump) * (0.4 + 0.6 * h);
-          smudge += blob;
-          float cool = hash13(cid + 31.0);
-          tint += blob * mix(vec3(0.86, 0.78, 0.64), vec3(0.52, 0.62, 0.8), cool);
-        }
-      }
-    }
-
-    vec3 voidC = uVoidRgb;
-    vec3 ext = extinctLook(uCenter, dir);
-    vec3 glow = vec3(0.0);
-    if (smudge > 1e-4) {
-      glow = (tint / smudge) * (smudge / (1.0 + 1.8 * smudge)) * uCosmicGain * ext;
-    }
-    gl_FragColor = vec4(voidC + glow, 1.0);
+    gl_FragColor = vec4(uVoidRgb, 1.0);
   }
 `;
-}
-
-export function cosmicSeedFloat(seed: string): number {
-  return xmur3(`cosmic:${seed}`)() / 4294967296;
 }
 
 /** Device-px stamp. Same hop-soft Gaussian idea as the harvest floor. */
@@ -174,11 +77,32 @@ export type CosmicStars = {
   pos: Float32Array;
   col: Float32Array;
   shine: Float32Array;
-  keep: Float32Array;
 };
 
+export type CosmicSmudges = CosmicStars & {
+  size: Float32Array;
+  aspect: Float32Array;
+  angle: Float32Array;
+  seed: Float32Array;
+};
+
+function sphereDir(rng: () => number): [number, number, number] {
+  const theta = rng() * Math.PI * 2;
+  const z = rng() * 2 - 1;
+  const r = Math.sqrt(Math.max(0, 1 - z * z));
+  return [Math.cos(theta) * r, z, Math.sin(theta) * r];
+}
+
+/** Cheap large-scale web so smudges pile instead of spraying evenly. */
+function cosmicWeb(dir: [number, number, number], cluster: number): number {
+  const a = 0.5 + 0.5 * Math.sin(dir[0] * 2.15 + dir[1] * 1.7 + dir[2] * 0.4);
+  const b = 0.5 + 0.5 * Math.sin(dir[0] * 5.4 + dir[2] * 4.1 + dir[1] * 2.2);
+  const web = Math.min(1, Math.max(0, 0.62 * a + 0.38 * b));
+  return web ** Math.max(cluster, 0.35);
+}
+
 /**
- * Photograph budget of distant pins, uniform on the shell.
+ * Photograph budget of distant pins, uniform on the sky.
  * Shine is a steep power so most are dim specks and a few sparkle.
  * Positions are unit directions — the GPU pins them to the far plane.
  */
@@ -187,16 +111,12 @@ export function mintCosmicStars(seed: string, n: number): CosmicStars {
   const pos = new Float32Array(n * 3);
   const col = new Float32Array(n * 3);
   const shine = new Float32Array(n);
-  const keep = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    const theta = rng() * Math.PI * 2;
-    const z = rng() * 2 - 1;
-    const r = Math.sqrt(Math.max(0, 1 - z * z));
-    pos[i * 3] = Math.cos(theta) * r;
-    pos[i * 3 + 1] = z;
-    pos[i * 3 + 2] = Math.sin(theta) * r;
-    keep[i] = rng();
-    shine[i] = 0.03 + 1.25 * Math.pow(rng(), 4.2);
+    const [x, y, z] = sphereDir(rng);
+    pos[i * 3] = x;
+    pos[i * 3 + 1] = y;
+    pos[i * 3 + 2] = z;
+    shine[i] = 0.012 + 2.4 * rng() ** 5.6;
     const teff = rng();
     const t = teff < 0.42 ? teff / 0.42 : (teff - 0.42) / 0.58;
     if (teff < 0.42) {
@@ -209,7 +129,60 @@ export function mintCosmicStars(seed: string, n: number): CosmicStars {
       col[i * 3 + 2] = 0.82 + 0.18 * t;
     }
   }
-  return { n, pos, col, shine, keep };
+  return { n, pos, col, shine };
+}
+
+/**
+ * Photograph budget of galaxy smudges. Clustered on a web.
+ * Each has its own shine, size, and tint — the engineer gain scales the set.
+ */
+export function mintCosmicSmudges(seed: string, n: number, cluster: number): CosmicSmudges {
+  const rng = mulberry32(xmur3(`cosmic-smudges:${seed}`)());
+  const pos = new Float32Array(n * 3);
+  const col = new Float32Array(n * 3);
+  const shine = new Float32Array(n);
+  const size = new Float32Array(n);
+  const aspect = new Float32Array(n);
+  const angle = new Float32Array(n);
+  const seedA = new Float32Array(n);
+  let i = 0;
+  let tries = 0;
+  const maxTries = n * 80;
+  while (i < n && tries < maxTries) {
+    tries += 1;
+    const dir = sphereDir(rng);
+    if (rng() > 0.1 + 0.9 * cosmicWeb(dir, cluster)) continue;
+    pos[i * 3] = dir[0];
+    pos[i * 3 + 1] = dir[1];
+    pos[i * 3 + 2] = dir[2];
+    shine[i] = 0.1 + 1.7 * rng() ** 2.3;
+    size[i] = 0.45 + 1.4 * rng();
+    aspect[i] = 0.42 + 0.85 * rng();
+    angle[i] = rng() * Math.PI * 2;
+    seedA[i] = rng();
+    const cool = rng();
+    col[i * 3] = 0.86 - 0.34 * cool;
+    col[i * 3 + 1] = 0.78 - 0.16 * cool;
+    col[i * 3 + 2] = 0.64 + 0.16 * cool;
+    i += 1;
+  }
+  while (i < n) {
+    const dir = sphereDir(rng);
+    pos[i * 3] = dir[0];
+    pos[i * 3 + 1] = dir[1];
+    pos[i * 3 + 2] = dir[2];
+    shine[i] = 0.1 + 1.7 * rng() ** 2.3;
+    size[i] = 0.45 + 1.4 * rng();
+    aspect[i] = 0.42 + 0.85 * rng();
+    angle[i] = rng() * Math.PI * 2;
+    seedA[i] = rng();
+    const cool = rng();
+    col[i * 3] = 0.86 - 0.34 * cool;
+    col[i * 3 + 1] = 0.78 - 0.16 * cool;
+    col[i * 3 + 2] = 0.64 + 0.16 * cool;
+    i += 1;
+  }
+  return { n, pos, col, shine, size, aspect, angle, seed: seedA };
 }
 
 export function cosmicStarVert(extinctGlsl: string): string {
@@ -217,24 +190,14 @@ export function cosmicStarVert(extinctGlsl: string): string {
   ${extinctGlsl}
   attribute vec3 aColor;
   attribute float aShine;
-  attribute float aKeep;
   uniform vec3 uCenter;
   uniform float uStarGain;
-  uniform float uStarOcc;
   uniform float uPinCanvas;
   varying vec3 vColor;
   varying float vI;
   varying float vPx;
 
   void main() {
-    if (aKeep >= uStarOcc) {
-      vI = 0.0;
-      vPx = 0.0;
-      vColor = vec3(0.0);
-      gl_PointSize = 0.0;
-      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-      return;
-    }
     vec3 dir = normalize(position);
     vec4 mv = modelViewMatrix * vec4(dir, 0.0);
     // Limb / behind: w ≈ 0 puts a pin on the lens and it flashes.
@@ -271,6 +234,77 @@ export function cosmicStarFrag(): string {
     float w = exp(-dot(d, d) * uPinCore);
     if (w < 0.012) discard;
     gl_FragColor = vec4(vColor * (vI * w), 1.0);
+  }
+`;
+}
+
+export function cosmicSmudgeVert(extinctGlsl: string): string {
+  return /* glsl */ `
+  ${extinctGlsl}
+  attribute vec3 aColor;
+  attribute float aShine;
+  attribute float aSize;
+  attribute float aAspect;
+  attribute float aAngle;
+  attribute float aSeed;
+  uniform vec3 uCenter;
+  uniform float uCosmicGain;
+  uniform float uCosmicSize;
+  uniform float uPxPerRad;
+  varying vec3 vColor;
+  varying float vI;
+  varying float vAspect;
+  varying float vAngle;
+  varying float vSeed;
+
+  void main() {
+    vec3 dir = normalize(position);
+    vec4 mv = modelViewMatrix * vec4(dir, 0.0);
+    if (mv.z > -0.08) {
+      vI = 0.0;
+      vColor = vec3(0.0);
+      gl_PointSize = 0.0;
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      return;
+    }
+    vec3 ext = extinctLook(uCenter, dir);
+    float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
+    vI = aShine * uCosmicGain * extLum;
+    vColor = aColor * ext / max(extLum, 1e-3);
+    vAspect = max(aAspect, 0.25);
+    vAngle = aAngle;
+    vSeed = aSeed;
+    float ang = max(aSize, 0.2) * max(uCosmicSize, 0.06) * 0.048;
+    gl_PointSize = clamp(ang * uPxPerRad, 8.0, 180.0);
+    vec4 clip = projectionMatrix * mv;
+    gl_Position = vec4(clip.xy, clip.w, clip.w);
+  }
+`;
+}
+
+export function cosmicSmudgeFrag(): string {
+  return /* glsl */ `
+  varying vec3 vColor;
+  varying float vI;
+  varying float vAspect;
+  varying float vAngle;
+  varying float vSeed;
+
+  void main() {
+    if (vI < 1e-5) discard;
+    vec2 q = gl_PointCoord * 2.0 - 1.0;
+    float ca = cos(vAngle);
+    float sa = sin(vAngle);
+    vec2 p = vec2(ca * q.x + sa * q.y, -sa * q.x + ca * q.y);
+    p.y /= vAspect;
+    p += vec2(
+      0.28 * sin(p.y * 5.2 + vSeed * 6.2831853),
+      0.28 * cos(p.x * 4.6 + vSeed * 9.1)
+    );
+    float lump = 0.45 + 0.7 * sin(p.x * 7.1 + p.y * 5.4 + vSeed * 13.0);
+    float blob = exp(-dot(p, p) * 3.4) * max(0.0, lump);
+    if (blob < 0.02) discard;
+    gl_FragColor = vec4(vColor * (vI * blob), 1.0);
   }
 `;
 }

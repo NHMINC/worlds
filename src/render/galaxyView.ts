@@ -52,11 +52,13 @@ import {
   COSMIC_STAR_PIN,
   COSMIC_STAR_PIN_CORE,
   cosmicFrag,
-  cosmicSeedFloat,
+  cosmicSmudgeFrag,
+  cosmicSmudgeVert,
   cosmicStarFrag,
   cosmicStarVert,
   cosmicVert,
   cosmicVoidRgb,
+  mintCosmicSmudges,
   mintCosmicStars,
 } from './cosmicBg';
 
@@ -524,6 +526,9 @@ export class GalaxyView {
   private cosmicStarPts: THREE.Points | null = null;
   private cosmicStarGeo: THREE.BufferGeometry | null = null;
   private cosmicStarMat: THREE.ShaderMaterial | null = null;
+  private cosmicSmudgePts: THREE.Points | null = null;
+  private cosmicSmudgeGeo: THREE.BufferGeometry | null = null;
+  private cosmicSmudgeMat: THREE.ShaderMaterial | null = null;
   /** Star harvest positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
   /** Nebula catalog — own mesh, rebakes without reminting stars. */
@@ -753,6 +758,14 @@ export class GalaxyView {
       this.cosmicStarGeo = null;
       this.cosmicStarMat = null;
     }
+    if (this.cosmicSmudgePts) {
+      this.scene.remove(this.cosmicSmudgePts);
+      this.cosmicSmudgeGeo?.dispose();
+      this.cosmicSmudgeMat?.dispose();
+      this.cosmicSmudgePts = null;
+      this.cosmicSmudgeGeo = null;
+      this.cosmicSmudgeMat = null;
+    }
   }
 
   private disposeSilhouette(): void {
@@ -949,7 +962,7 @@ export class GalaxyView {
 
   private cloudMats(): THREE.ShaderMaterial[] {
     const out: THREE.ShaderMaterial[] = [];
-    for (const m of [this.silMat, this.silEmisMat, this.cosmicMat, this.cosmicStarMat]) {
+    for (const m of [this.silMat, this.silEmisMat, this.cosmicMat, this.cosmicStarMat, this.cosmicSmudgeMat]) {
       if (m) out.push(m);
     }
     return out;
@@ -969,19 +982,9 @@ export class GalaxyView {
     const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
-      fragmentShader: cosmicFrag(extinctGlsl(8)),
+      fragmentShader: cosmicFrag(),
       uniforms: {
-        uCenter: { value: new THREE.Vector3() },
         uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
-        uCosmicGain: { value: UNIVERSE.COSMIC_GAIN },
-        uCosmicOcc: { value: UNIVERSE.COSMIC_OCC },
-        uCosmicCluster: { value: UNIVERSE.COSMIC_CLUSTER },
-        uCosmicCells: { value: UNIVERSE.COSMIC_CELLS },
-        uCosmicSize: { value: UNIVERSE.COSMIC_SIZE },
-        uSeed: { value: cosmicSeedFloat(this.seed) },
-        uInvProj: { value: new THREE.Matrix4() },
-        uCamRotInv: { value: new THREE.Matrix3() },
-        ...this.extinctUniforms(),
       },
       depthWrite: false,
       depthTest: false,
@@ -994,30 +997,38 @@ export class GalaxyView {
     this.cosmicPts = mesh;
     this.cosmicGeo = geo;
     this.cosmicMat = mat;
+    this.buildCosmicSmudges();
     this.buildCosmicStars();
     this.pushMagUniforms();
   }
 
-  private buildCosmicStars(): void {
-    if (this.cosmicStarPts) return;
-    const n = Math.max(0, Math.round(UNIVERSE.COSMIC_STAR_N));
-    if (n <= 0) return;
-    const cloud = mintCosmicStars(this.seed, n);
+  private cosmicCount(kind: 'star' | 'smudge'): number {
+    if (kind === 'star') {
+      return Math.max(0, Math.min(UNIVERSE.COSMIC_STAR_N_MAX, Math.round(UNIVERSE.COSMIC_STAR_N)));
+    }
+    return Math.max(0, Math.min(UNIVERSE.COSMIC_SMUDGE_N_MAX, Math.round(UNIVERSE.COSMIC_SMUDGE_N)));
+  }
+
+  private buildCosmicSmudges(): void {
+    if (this.cosmicSmudgePts) return;
+    const cloud = mintCosmicSmudges(this.seed, UNIVERSE.COSMIC_SMUDGE_N_MAX, UNIVERSE.COSMIC_CLUSTER);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
     geo.setAttribute('aShine', new THREE.BufferAttribute(cloud.shine, 1));
-    geo.setAttribute('aKeep', new THREE.BufferAttribute(cloud.keep, 1));
-    geo.setDrawRange(0, cloud.n);
+    geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
+    geo.setAttribute('aAspect', new THREE.BufferAttribute(cloud.aspect, 1));
+    geo.setAttribute('aAngle', new THREE.BufferAttribute(cloud.angle, 1));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.seed, 1));
+    geo.setDrawRange(0, this.cosmicCount('smudge'));
     const mat = new THREE.ShaderMaterial({
-      vertexShader: cosmicStarVert(extinctGlsl(8)),
-      fragmentShader: cosmicStarFrag(),
+      vertexShader: cosmicSmudgeVert(extinctGlsl(8)),
+      fragmentShader: cosmicSmudgeFrag(),
       uniforms: {
         uCenter: { value: new THREE.Vector3() },
-        uStarGain: { value: UNIVERSE.COSMIC_STAR_GAIN },
-        uStarOcc: { value: UNIVERSE.COSMIC_STAR_OCC },
-        uPinCanvas: { value: COSMIC_STAR_PIN },
-        uPinCore: { value: COSMIC_STAR_PIN_CORE },
+        uCosmicGain: { value: UNIVERSE.COSMIC_GAIN },
+        uCosmicSize: { value: UNIVERSE.COSMIC_SIZE },
+        uPxPerRad: { value: this.pxPerRad() },
         ...this.extinctUniforms(),
       },
       transparent: true,
@@ -1032,6 +1043,58 @@ export class GalaxyView {
     pts.frustumCulled = false;
     pts.renderOrder = -7;
     this.scene.add(pts);
+    this.cosmicSmudgePts = pts;
+    this.cosmicSmudgeGeo = geo;
+    this.cosmicSmudgeMat = mat;
+  }
+
+  private remintCosmicSmudges(): void {
+    if (!this.cosmicSmudgeGeo) {
+      this.buildCosmicSmudges();
+      return;
+    }
+    const cloud = mintCosmicSmudges(this.seed, UNIVERSE.COSMIC_SMUDGE_N_MAX, UNIVERSE.COSMIC_CLUSTER);
+    const geo = this.cosmicSmudgeGeo;
+    geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
+    geo.setAttribute('aShine', new THREE.BufferAttribute(cloud.shine, 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
+    geo.setAttribute('aAspect', new THREE.BufferAttribute(cloud.aspect, 1));
+    geo.setAttribute('aAngle', new THREE.BufferAttribute(cloud.angle, 1));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.seed, 1));
+    geo.setDrawRange(0, this.cosmicCount('smudge'));
+  }
+
+  private buildCosmicStars(): void {
+    if (this.cosmicStarPts) return;
+    const cloud = mintCosmicStars(this.seed, UNIVERSE.COSMIC_STAR_N_MAX);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
+    geo.setAttribute('aShine', new THREE.BufferAttribute(cloud.shine, 1));
+    geo.setDrawRange(0, this.cosmicCount('star'));
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: cosmicStarVert(extinctGlsl(8)),
+      fragmentShader: cosmicStarFrag(),
+      uniforms: {
+        uCenter: { value: new THREE.Vector3() },
+        uStarGain: { value: UNIVERSE.COSMIC_STAR_GAIN },
+        uPinCanvas: { value: COSMIC_STAR_PIN },
+        uPinCore: { value: COSMIC_STAR_PIN_CORE },
+        ...this.extinctUniforms(),
+      },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.AdditiveBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneFactor,
+      toneMapped: false,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    pts.renderOrder = -6;
+    this.scene.add(pts);
     this.cosmicStarPts = pts;
     this.cosmicStarGeo = geo;
     this.cosmicStarMat = mat;
@@ -1043,6 +1106,24 @@ export class GalaxyView {
       this.setVoidColor(UNIVERSE.COSMIC_HUE, value);
       return;
     }
+    if (name === 'uStarN') {
+      UNIVERSE.COSMIC_STAR_N = value;
+      this.cosmicStarGeo?.setDrawRange(0, this.cosmicCount('star'));
+      return;
+    }
+    if (name === 'uSmudgeN') {
+      UNIVERSE.COSMIC_SMUDGE_N = value;
+      this.cosmicSmudgeGeo?.setDrawRange(0, this.cosmicCount('smudge'));
+      return;
+    }
+    if (name === 'uCosmicCluster') {
+      for (const mat of this.cloudMats()) {
+        const u = mat.uniforms[name];
+        if (u) u.value = value;
+      }
+      this.remintCosmicSmudges();
+      return;
+    }
     for (const mat of this.cloudMats()) {
       const u = mat.uniforms[name];
       if (u) u.value = value;
@@ -1050,11 +1131,14 @@ export class GalaxyView {
   }
 
   liveUniform(name: string): number | null {
+    if (name === 'uStarN') return this.cosmicCount('star');
+    if (name === 'uSmudgeN') return this.cosmicCount('smudge');
     const u =
       this.silMat?.uniforms[name] ??
       this.silEmisMat?.uniforms[name] ??
       this.cosmicMat?.uniforms[name] ??
-      this.cosmicStarMat?.uniforms[name];
+      this.cosmicStarMat?.uniforms[name] ??
+      this.cosmicSmudgeMat?.uniforms[name];
     return typeof u?.value === 'number' ? u.value : null;
   }
 

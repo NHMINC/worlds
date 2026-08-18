@@ -490,7 +490,7 @@ export function GalaxyExplorer(props: Props) {
                     disabled={Boolean(rebuilding)}
                     onChange={(e) => slideKnob(engineer, Number(e.target.value))}
                   />
-                  <em>{knobVal.toFixed(2)}</em>
+                  <em>{spec.step >= 1 ? String(Math.round(knobVal)) : knobVal.toFixed(2)}</em>
                 </div>
               </div>
             )}
@@ -505,7 +505,7 @@ export function GalaxyExplorer(props: Props) {
                   disabled={Boolean(rebuilding)}
                   onChange={(e) => slideKnob(engineer, Number(e.target.value))}
                 />
-                <em>{knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
+                <em>{spec.step >= 1 ? String(Math.round(knobVal)) : knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
               </div>
             )}
             {spec && engineer !== 'pick' && (!isDefault || (rebuild && knobDirty)) && (

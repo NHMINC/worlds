@@ -677,11 +677,11 @@ export const UNIVERSE = {
   /**
    * Cosmic background — the decreed fake. We cannot mint the
    * observable universe in a browser. This is a distant shell
-   * around the catalog: a void colour, a cheap angular field
-   * of galaxy smudges (clusters, not telescope images), and a
-   * photograph of distant star-like pins. Not a catalog. Not
-   * pickable. Same seed as the bottle. Dust filters the shell
-   * so the lane is a silhouette; the void is vacuum.
+   * around the catalog: a void colour, a photograph of galaxy
+   * smudges (each with its own shine), and a photograph of
+   * distant star-like pins (each with its own shine). Not a
+   * catalog. Not pickable. Same seed as the bottle. Dust
+   * filters the sightline; the void is vacuum.
    */
   /** Decreed sky distance (kpc). The GPU draws the sky on the far plane; this is the law, not a mesh. */
   COSMIC_R: 8000,
@@ -689,22 +689,20 @@ export const UNIVERSE = {
   COSMIC_HUE: 0.62,
   /** How hard that hue is lit. 0 = black; 1 = a readable tinted night. */
   COSMIC_INT: 0.14,
-  /** Photograph gain on the smudges. */
+  /** Photograph gain on the smudge set. Each smudge also has its own shine. */
   COSMIC_GAIN: 0.62,
   /** Angular size of one smudge (1 ≈ the first look's cell). */
   COSMIC_SIZE: 0.36,
-  /** Fraction of angular cells that keep a smudge, lifted on the web. */
-  COSMIC_OCC: 0.1,
   /** Power on the large-scale web. Higher → emptier voids, tighter piles. */
   COSMIC_CLUSTER: 1.85,
-  /** Angular cells across the sky. A law constant, not a census. */
-  COSMIC_CELLS: 20,
-  /** Photograph budget of distant star-like pins on the shell. */
-  COSMIC_STAR_N: 10000,
-  /** How hard those pins are lit. */
+  /** How many smudges are drawn (0–MAX). The GPU holds the full budget. */
+  COSMIC_SMUDGE_N: 400,
+  COSMIC_SMUDGE_N_MAX: 1000,
+  /** Photograph gain on the background-star set. Each pin also has its own shine. */
   COSMIC_STAR_GAIN: 0.72,
-  /** Fraction of the budget that stays on. */
-  COSMIC_STAR_OCC: 1,
+  /** How many background pins are drawn (0–MAX). The GPU holds the full budget. */
+  COSMIC_STAR_N: 10000,
+  COSMIC_STAR_N_MAX: 100000,
 };
 
 // ------------------------------------------------------------------ types
