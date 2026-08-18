@@ -508,7 +508,7 @@ export function GalaxyExplorer(props: Props) {
                 <em>{spec.step >= 1 ? String(Math.round(knobVal)) : knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
               </div>
             )}
-            {spec && engineer !== 'pick' && (!isDefault || (rebuild && knobDirty)) && (
+            {spec && engineer !== 'pick' && (!isDefault || rebuild) && (
               <div className="gx-eng-actions">
                 {!isDefault && (
                   <button
@@ -518,6 +518,20 @@ export function GalaxyExplorer(props: Props) {
                     onClick={resetToDefault}
                   >
                     Reset to default
+                  </button>
+                )}
+                {rebuild && !knobDirty && (
+                  <button
+                    type="button"
+                    className="gx-chip gx-eng-go"
+                    disabled={Boolean(rebuilding)}
+                    onClick={() => void confirmRebuild(engineer)}
+                  >
+                    {rebuild.scope === 'harvest'
+                      ? 'Walk again'
+                      : rebuild.scope === 'nebula'
+                        ? 'Walk nebulae again'
+                        : 'Bake again'}
                   </button>
                 )}
                 {rebuild && knobDirty && (

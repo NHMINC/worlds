@@ -165,8 +165,12 @@ visits only** (overlays, camera, labels). We do
   Spokes shard across workers (every worker sees the core);
   the packed
   photograph lands in IndexedDB (`HARVEST_CACHE_VER` + seed +
-  floors) so a second load does not re-read the disk. Rebuild
-  remints and overwrites that row. The export JSON does not
+  floors) so a second load does not re-read the disk. A hard
+  refresh does not drop that row — it is not the service
+  worker. Cosmic engineer → a harvest survey law → **Walk
+  again** forgets the pack and remints (Rebuild does the same
+  after a slider draft). Uninstall is not required; clearing
+  site data would also wipe saves. The export JSON does not
   carry the photograph — a friend regenerates the same sky
   from the canonical seed. The explorer stays mounted (`is-dormant` on a
   world) so opening the map does not remint or show the splash
@@ -239,7 +243,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   nebula glow) — a slide is the next frame. Rebuild knobs (survey
   floors, nebula catalog, ribbon-geometry laws): the slider is a
   draft until **Rebuild** writes `UNIVERSE` and remints /
-  rebakes, or **Cancel** discards. Star remint, nebula walk,
+  rebakes, or **Cancel** discards. A harvest / nebula / dust
+  law with no draft still offers **Walk again** (or Walk
+  nebulae again / Bake again) so the packed IndexedDB row
+  can be flushed without uninstalling. Star remint, nebula walk,
   and dust bake are three jobs — nebula knobs rebake like
   dust and do not remint the harvest. **Reset to default**
   restores the shipped law for the open setting (live: next
