@@ -176,7 +176,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Dust extinction',
     group: 'dust',
     hint: 'overall opacity of the fog',
-    about: 'Overall density of the photograph. Beer–Lambert gain on the baked pockets. Higher and a sightline through a pocket goes darker. Does not grow the pockets — Explosion reach does that. Next frame.',
+    about: 'Beer–Lambert gain on the reddened skin — the rim that is not yet a wall. Does not grow the pockets. Next frame.',
     uniform: 'uExtinctK',
     min: 0,
     max: 16,
@@ -214,6 +214,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
     read: () => UNIVERSE.GALAXY_EXTINCT_HARD,
     write: (v) => {
       UNIVERSE.GALAXY_EXTINCT_HARD = v;
+    },
+  },
+  {
+    id: 'extinctWall',
+    label: 'Dust wall',
+    group: 'dust',
+    hint: 'cores go black; only the rim reddens',
+    about: 'Density at or above this is a wall — no starlight through the sausage. Below it is a thin reddened skin (blue dies first). 0 is the old veil: every column is fog. The “sometimes” is whether a sightline hits a pocket, not a coin flip per cloud. Next frame.',
+    uniform: 'uExtinctWall',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    read: () => UNIVERSE.GALAXY_EXTINCT_WALL,
+    write: (v) => {
+      UNIVERSE.GALAXY_EXTINCT_WALL = v;
     },
   },
   {

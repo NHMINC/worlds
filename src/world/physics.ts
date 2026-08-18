@@ -594,6 +594,9 @@ export const UNIVERSE = {
   /** Power on remaining density. 1 is linear (the bake). Higher
    *  hardens cores and thins the edges — opaque without spreading. */
   GALAXY_EXTINCT_HARD: 1,
+  /** Density at or above this is a wall. The sausage core is
+   *  lightless; only the rim still reddens. 0 is the old veil. */
+  GALAXY_EXTINCT_WALL: 0.14,
   /** Look test. 0 = dust is extinction. 1 paints the volume lime. */
   GALAXY_DUST_DEBUG: 0,
   /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on

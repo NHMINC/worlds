@@ -118,12 +118,16 @@ export function cosmicFrag(extinctChunk: string, steps: number): string {
       vec3 h = normalize(L - dir);
       float spec = pow(max(dot(nrm, h), 0.0), 22.0) * 0.4;
       float grain = foxSkin(p);
+      float wall = uExtinctWall;
+      float isWall = (wall > 1e-4 && r >= wall) ? 1.0 : 0.0;
       vec3 lit = vec3(0.42, 1.0, 0.2);
-      vec3 shade = vec3(0.02, 0.22, 0.05);
+      vec3 shade = mix(vec3(0.02, 0.22, 0.05), vec3(0.01, 0.08, 0.02), isWall);
       vec3 lime = mix(shade, lit, ndl * wrap) * grain;
       lime += rim * vec3(0.55, 1.0, 0.38) * 0.5;
       lime += spec * vec3(0.85, 1.0, 0.7);
-      float da = 1.0 - exp(-smoothstep(0.014, 0.28, r) * 2.1);
+      float da = isWall > 0.5
+        ? 0.92
+        : 1.0 - exp(-smoothstep(0.014, 0.28, r) * 2.1);
       float w = (1.0 - a) * da;
       rgb = mix(rgb, lime, w);
       a += w;

@@ -76,6 +76,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   uniform float uExtinctMax;
   uniform float uExtinctCut;
   uniform float uExtinctHard;
+  uniform float uExtinctWall;
   uniform float uDustDebug;
   uniform vec3 uDustRgb;
   uniform sampler3D uDustVol;
@@ -91,15 +92,18 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     float t = max(rho - uExtinctCut, 0.0);
     return pow(t, max(uExtinctHard, 0.15));
   }
-  // Beer–Lambert: T = exp(−τ · DUST_RGB). Cut / hard shape the
-  // pocket; K is overall opacity. Blue dies first.
+  // Skin is Beer–Lambert (blue dies first). A tap at or above
+  // the wall is a lightless core — the rest of the column is gone.
   float extinctTau(vec3 from, vec3 to) {
     float dCat = length(to - from);
     float dt = dCat / ${glslFloat(steps)};
     vec3 dir = (to - from) / max(dCat, 1e-4);
     float tau = 0.0;
+    float wall = uExtinctWall;
     for (int i = 0; i < ${steps}; i++) {
-      tau += extinctRho(from + dir * ((float(i) + 0.5) * dt));
+      float r = extinctRho(from + dir * ((float(i) + 0.5) * dt));
+      if (wall > 1e-4 && r >= wall) return uExtinctMax;
+      tau += r;
     }
     return min(tau * uExtinctK * dt, uExtinctMax);
   }
@@ -829,6 +833,7 @@ export class GalaxyView {
       uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
       uExtinctCut: { value: UNIVERSE.GALAXY_EXTINCT_CUT },
       uExtinctHard: { value: UNIVERSE.GALAXY_EXTINCT_HARD },
+      uExtinctWall: { value: UNIVERSE.GALAXY_EXTINCT_WALL },
       uDustDebug: { value: dustDebugOn() ? 1 : UNIVERSE.GALAXY_DUST_DEBUG },
       uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
       uDustVol: { value: tex },
