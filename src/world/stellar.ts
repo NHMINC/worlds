@@ -88,6 +88,18 @@ export function msLuminosity(m: number): number {
   return 3200 * m;
 }
 
+/** Invert `msLuminosity`: the ZAMS mass whose MS light is L. */
+export function msMassFromL(L: number): number {
+  const lum = Math.max(1e-8, L);
+  const l43 = msLuminosity(0.43);
+  const l2 = msLuminosity(2);
+  const l20 = msLuminosity(20);
+  if (lum < l43) return Math.pow(lum / 0.23, 1 / 2.3);
+  if (lum < l2) return Math.pow(lum, 0.25);
+  if (lum < l20) return Math.pow(lum / 1.4, 1 / 3.5);
+  return lum / 3200;
+}
+
 /** Main-sequence radius (Rsun). */
 export function msRadius(m: number): number {
   if (m < 1) return Math.pow(m, 0.8);

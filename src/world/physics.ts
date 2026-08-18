@@ -551,9 +551,12 @@ export const UNIVERSE = {
   /** Backdrop stars: present-day L / L☉. Brightness is this continuous
    *  luminosity, not a magnitude bin. 162 L☉ is the MS light of the
    *  3.89 M☉ late-B floor (L ≈ 1.4 M^3.5) — the depth at which the
-   *  survey holds ~10⁵ stars. Count is the floor's outcome, not a cap.
-   *  Stars are the cheap citizens (a small Gaussian, vertex-only cost);
-   *  the count knob that matters for the GPU is envelopes, not this. */
+   *  survey holds ~10⁵ stars. The walk mass is min(SILHOUETTE_M,
+   *  invert(L)), so lowering L opens fainter IMF slots; it is not
+   *  only a keep-filter on the 3.89 M☉ tail. Count is the floor's
+   *  outcome, not a cap. Stars are the cheap citizens (a small
+   *  Gaussian, vertex-only cost); the count knob that matters for
+   *  the GPU is envelopes, not this. */
   GALAXY_SILHOUETTE_L: 162,
   /** Nebula catalog: IMF floor (M☉) for the PN / SNR walk.
    *  H II (m ≥ 8 in a cloud) is always walked. 3.89 matches the

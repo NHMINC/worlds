@@ -211,8 +211,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   fill’s `element.style` never paints. App boot
   mints three catalogs once (`prepareUniverse`): the
   magnitude-limited star harvest (`buildSilhouetteCloud` —
-  every living star above `SILHOUETTE_L`; `SILHOUETTE_M` is
-  the IMF slot gate; ~10⁵ stars as the floor's outcome),
+  every living star above `SILHOUETTE_L`; the walk mass is
+  `min(SILHOUETTE_M, invert(L))` so lowering L opens fainter
+  IMF slots, not only a keep-filter on the 3.89 M☉ tail;
+  ~10⁵ stars as the shipped floor's outcome),
   the nebula catalog (`remintNebulaCache` — H II plus PN /
   SNR above `SILHOUETTE_NEB_GAIN`; `NEBULA_M` is that walk's
   IMF gate; host id is still `packId`), and dust as

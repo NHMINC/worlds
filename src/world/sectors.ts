@@ -42,7 +42,7 @@ import {
   type GalPos,
   type GalaxyObject,
 } from './galaxy';
-import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
+import { evolve, mkFromTeff, msLifetime, msMassFromL, teffToRgb } from './stellar';
 import { KIND_STAR, emissionLook, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
 import { bakeDustVolume, type DustVolume } from './dustVolume';
 
@@ -308,10 +308,21 @@ function giantWindow(massZams: number): number {
   return Math.min(0.8, tMs * (massZams <= 2 ? 0.15 : massZams < 8 ? 0.08 : UNIVERSE.WR_TAIL));
 }
 
+/**
+ * IMF floor for the star walk. L sets the MS-equivalent mass
+ * (the 1.4 M^3.5 invert). M can go deeper still. The walk is the
+ * deeper of the two — lowering L used to do nothing while M sat
+ * at 3.89 M☉ and every walked MS star already cleared 162 L☉.
+ */
+export function harvestWalkMass(): number {
+  const fromL = msMassFromL(UNIVERSE.GALAXY_SILHOUETTE_L);
+  return Math.min(UNIVERSE.GALAXY_SILHOUETTE_M, fromL);
+}
+
 /** Cheap clock gate: evolve only slots that can be luminous stars. */
 function maybeClockRow(b: SlotBirth): boolean {
   const m = b.massZams;
-  if (m < UNIVERSE.GALAXY_SILHOUETTE_M) return false;
+  if (m < harvestWalkMass()) return false;
   const tMs = msLifetime(m);
   if (b.ageGyr < tMs) return true;
   return b.ageGyr < tMs + giantWindow(m);
@@ -768,7 +779,7 @@ function walkSkyClouds(
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const mLo = Math.min(
-    wantStars ? UNIVERSE.GALAXY_SILHOUETTE_M : Infinity,
+    wantStars ? harvestWalkMass() : Infinity,
     wantNebulae ? nebulaWalkFloor() : Infinity,
   );
   const uLive = imfQuantile(mLo);
