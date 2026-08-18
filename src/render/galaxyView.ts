@@ -428,7 +428,7 @@ export interface GalaxyFrame {
   grown: number;
   /** Region label, e.g. "8.2 kpc · 57°". */
   sector: string | null;
-  /** Exact occupied-slot population of the open region. */
+  /** Harvest rows on the GPU (stars + nebulae shown). */
   population: number;
   /** Most-centred star in the sight, when close enough. */
   focus: GalaxyFocus | null;

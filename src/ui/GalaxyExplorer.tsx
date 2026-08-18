@@ -307,7 +307,7 @@ export function GalaxyExplorer(props: Props) {
         <div className="galaxy-brand">
           <div className="galaxy-title">Helix{frame.sector ? ` · ${frame.sector}` : ''}</div>
           <div className="galaxy-sub">
-            {`${frame.population.toLocaleString()} luminous · dust is extinction`}
+            {`${frame.population.toLocaleString()} shown · ${UNIVERSE.GALAXY_POPULATION.toLocaleString()} possible`}
           </div>
         </div>
         <div className="galaxy-presets">
