@@ -219,12 +219,20 @@ function ismNoise(seed: string, x: number, y: number, z: number): number {
   return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
 }
 
-/** Molecular sheet: thinner than the stars, stronger arm contrast, in-plane only. */
+/**
+ * Molecular sheet: bar-swept cavity × exponential decline × arm,
+ * height relative to the warped / corrugated midplane. The hole
+ * empties the axle (not a painted ring). Occupancy / SFR / H II
+ * drink this; stellar density does not.
+ */
 function gasBase(p: GalPos): number {
   const U = UNIVERSE;
-  return (
-    Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * sech2(p.z / U.GALAXY_ZD_GAS) * gasArm(p.R, p.theta)
-  );
+  const holeR = U.GALAXY_DUST_HOLE;
+  const holeP = U.GALAXY_DUST_HOLE_P;
+  const hole = holeR <= 0 ? 1 : 1 - Math.exp(-((p.R / holeR) ** holeP));
+  const radial = hole * Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS));
+  const zMid = midplaneZ(p.R, p.theta);
+  return radial * sech2((p.z - zMid) / U.GALAXY_ZD_GAS) * gasArm(p.R, p.theta);
 }
 
 /**
@@ -253,6 +261,31 @@ function ismTurbulence(seed: string, x: number, y: number, z: number): number {
 }
 
 /**
+ * Crest of hole × decline × arm (z on the midplane). The old
+ * ceil assumed the axle could reach 1+A; after the hole it
+ * cannot, so 0–1 is this peak times e^σ.
+ */
+let gasCeilMemo = { key: '', v: 0 };
+
+function gasCeil(): number {
+  const U = UNIVERSE;
+  const key = `${U.GALAXY_DUST_HOLE}|${U.GALAXY_DUST_HOLE_P}|${U.GALAXY_RD}|${U.GALAXY_RD_GAS}|${U.GALAXY_GAS_ARM_A}|${U.GALAXY_TURB_SIGMA}|${U.GALAXY_R_MAX}`;
+  if (gasCeilMemo.key === key) return gasCeilMemo.v;
+  let peak = 1e-6;
+  for (let i = 0; i <= 80; i++) {
+    const R = (i / 80) * U.GALAXY_R_MAX;
+    const hole = U.GALAXY_DUST_HOLE <= 0 ? 1 : 1 - Math.exp(-((R / U.GALAXY_DUST_HOLE) ** U.GALAXY_DUST_HOLE_P));
+    peak = Math.max(
+      peak,
+      hole * Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * (1 + U.GALAXY_GAS_ARM_A),
+    );
+  }
+  const v = peak * Math.exp(U.GALAXY_TURB_SIGMA);
+  gasCeilMemo = { key, v };
+  return v;
+}
+
+/**
  * Continuous ISM at a catalog point (disk in XZ, Y is height).
  * Same gasBase × log-normal as `ismNorm`, but no cell snap — the
  * fog samples the field, occupancy still samples the cell.
@@ -267,102 +300,15 @@ export function ismAt(
   const base = gasBase(p);
   if (base <= 1e-5) return { base: 0, field: 0, turb: 0 };
   const turb = ismTurbulence(seed, x, y, z);
-  const ceil = (1 + UNIVERSE.GALAXY_GAS_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
-  const field = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * turb)) / ceil);
+  const field = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * turb)) / gasCeil());
   return { base, field, turb };
 }
 
-/**
- * Flat-curve shear (rad / Gyr). V_CIRC is kpc/Gyr (220 km/s ≈ 225).
- * Ω = V / R. Ejecta at a different R winds away from the death
- * site at Ω(R) − Ω(R_death).
- */
-export function omegaShear(R: number): number {
-  return UNIVERSE.GALAXY_DUST_V_CIRC / Math.max(0.2, R);
-}
-
-/** One death: a small explosion that shear drags into an arc. */
-export interface DustSmear {
-  x: number;
-  y: number;
-  z: number;
-  R: number;
-  ageGyr: number;
-  rExp: number;
-  rays: number;
-  loft: number;
-  seed: number;
-}
-
-/**
- * Visible dust events. Each is a catalog death (a real slot that
- * has left the main sequence in the last SMEAR_GYR). Count is a
- * photograph budget (EVENT_K), not every funeral — too many and
- * the sky is a wall. Occupancy / SFR / H II still drink `ismAt`.
- */
-export function collectDustSmears(
-  seed: string,
-  onRing?: (done: number, total: number) => void,
-): DustSmear[] {
-  const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
-  const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
-  const mLo = UNIVERSE.GALAXY_DUST_M;
-  const uDust = imfQuantile(mLo);
-  const eventK = UNIVERSE.GALAXY_DUST_EVENT_K;
-  const smearGyr = UNIVERSE.GALAXY_DUST_SMEAR_GYR;
-  const out: DustSmear[] = [];
-  for (let ir = 0; ir < nr; ir++) {
-    const R0 = (ir / nr) * rMax;
-    const R1 = ((ir + 1) / nr) * rMax;
-    const dz = (2 * zExtent) / nz;
-    const vol = 0.5 * (R1 * R1 - R0 * R0) * (TAU / nth) * dz;
-    for (let iz = 0; iz < nz; iz++) {
-      for (let it = 0; it < nth; it++) {
-        const cell = ir * nth * nz + it * nz + iz;
-        const mid = cellCenter(cell);
-        const expect = density(mid) * vol * eventK;
-        if (expect <= 1e-8) continue;
-        const nFloor = Math.floor(expect);
-        const nTry = nFloor + (u01(seed, 'dustN', cell) < expect - nFloor ? 1 : 0);
-        if (nTry <= 0) continue;
-        const filled = slotsInCell(seed, cell);
-        if (filled <= 0) continue;
-        const s0 = Math.min(filled - 1, Math.floor(uDust * filled));
-        const band = Math.max(1, filled - s0);
-        for (let k = 0; k < nTry; k++) {
-          let kept: DustSmear | null = null;
-          for (let attempt = 0; attempt < 8 && !kept; attempt++) {
-            const slot = s0 + Math.floor(u01(seed, 'dustSlot', cell, k, attempt) * band);
-            const b = slotBirthRaw(seed, cell, slot, filled);
-            if (b.massZams < mLo) continue;
-            const deadFor = b.ageGyr - msLifetime(b.massZams);
-            if (deadFor <= 0 || deadFor > smearGyr) continue;
-            const cart = galToCart(b.pos);
-            kept = {
-              x: cart.x,
-              y: cart.y,
-              z: cart.z,
-              R: b.pos.R,
-              ageGyr: deadFor,
-              rExp: UNIVERSE.GALAXY_DUST_EXP_R * (0.55 + 0.9 * u01(seed, 'dustR', cell, k)),
-              rays: UNIVERSE.GALAXY_DUST_RAYS,
-              loft: UNIVERSE.GALAXY_DUST_LOFT * (0.35 + 1.3 * u01(seed, 'dustLoft', cell, k)),
-              seed: xmur3(`galaxy:${seed}:dustRay:${cell}:${k}`)(),
-            };
-          }
-          if (kept) out.push(kept);
-        }
-      }
-    }
-    onRing?.(ir + 1, nr);
-  }
-  return out;
-}
-
-/** Pull z to the midplane when the cell overlaps the gas sheet. */
+/** Snap occupancy to the warped midplane when the cell overlaps the sheet. */
 function sheetPos(mid: GalPos): GalPos {
   const half = (2 * UNIVERSE.GALAXY_Z_THICK * 4) / UNIVERSE.GALAXY_NZ / 2;
-  if (Math.abs(mid.z) <= half) return { R: mid.R, theta: mid.theta, z: 0 };
+  const zMid = midplaneZ(mid.R, mid.theta);
+  if (Math.abs(mid.z - zMid) <= half) return { R: mid.R, theta: mid.theta, z: zMid };
   return mid;
 }
 
@@ -389,8 +335,7 @@ export function ismNorm(seed: string, cell: number): number {
   if (base > 1e-5) {
     const c = galToCart(p);
     const s = ismTurbulence(seed, c.x, c.y, c.z);
-    const ceil = (1 + UNIVERSE.GALAXY_GAS_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
-    v = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s)) / ceil);
+    v = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s)) / gasCeil());
   }
   if (ismMemo.size > 400_000) ismMemo.clear();
   ismMemo.set(cell, v);

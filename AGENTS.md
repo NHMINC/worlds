@@ -225,7 +225,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   wheel plus intensity, smudge brightness and count,
   background-star brightness and count, extinction, shine,
   nebula glow) — a slide is the next frame. Rebuild knobs (survey
-  floors, nebula catalog, death-smear laws): the slider is a
+  floors, nebula catalog, ribbon-geometry laws): the slider is a
   draft until **Rebuild** writes `UNIVERSE` and remints /
   rebakes, or **Cancel** discards. Star remint, nebula walk,
   and dust bake are three jobs — nebula knobs rebake like
@@ -269,12 +269,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
-  is sightline extinction** (`extinctGlsl`): a catalog of deaths.
-  Each smear is an explosion that never ends, sheared into a
-  trailing arc by differential rotation. Older death, longer
-  swirl. Small, messy, off the midplane. Edge-on the stack is a
-  mottled strip, not a painted lane. Each pocket is a veil
-  (Beer–Lambert); stacked pockets go darker. Not harvest rows. A
+  is sightline extinction** (`extinctGlsl`): the dense tail of
+  the molecular sheet (`ismAt` — hole × decline × arm × sheared
+  turbulence, height relative to the warped midplane). Only the
+  filaments write the volume; the rest of the disc stays starry.
+  Ribbon cores are a wall (lightless); only the thin rim reddens.
+  Edge-on is a mottled dark stripe off the exact midplane, not a
+  ruler through z = 0. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills

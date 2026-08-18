@@ -404,8 +404,9 @@ export const UNIVERSE = {
    * per kpc of the largest eddies. TURB_SHEAR stretches those
    * eddies along the spiral phase (galactic rotation) so the
    * photograph is filaments, not round blobs. The gas disk is
-   * flatter than the stars (RD_GAS × stellar Rd). One field, three
-   * consumers:
+   * flatter than the stars (RD_GAS × stellar Rd), with a bar-swept
+   * inner hole so ribbons are not piled on the axle. One field,
+   * four consumers: the optical-dust bake (dense tail of ismAt),
    * dust clump occupancy (DUST_N_K clumps per unit field × volume,
    * at most DUST_MAX per cell), the star-formation age law
    * (SFR_GAIN — Schmidt–Kennicutt-lite: dense gas births young
@@ -424,25 +425,13 @@ export const UNIVERSE = {
   GALAXY_ZD_GAS: 0.12,
   GALAXY_GAS_ARM_A: 0.7,
   /**
-   * Optical dust: death smears, not a gas pancake. EVENT_K is the
-   * photograph budget (occupancy × this ≈ count). M is the IMF
-   * floor for a dusty death (AGB + SN). SMEAR_GYR is how long a
-   * wake stays in the photograph — the same ash shears into a
-   * thinner trail, so a wrap does not saturate the disc. EXP_R
-   * is the explosion reach (kpc). RAYS are filaments, not a ball.
-   * LOFT (rad) lets some ejecta leave the disc. V_CIRC is kpc/Gyr
-   * (220 km/s ≈ 225) for Ω = V/R. Occupancy / SFR / H II still
-   * drink the flat catalog field (`gasBase`).
+   * Optical dust is the dense tail of the molecular sheet — the
+   * same ismAt field occupancy / SFR / H II already drink. No
+   * catalog walk of dead slots. HOLE (kpc) empties the axle;
+   * HOLE_P is how sharp the cavity wall is. Star ids do not move.
    */
-  GALAXY_DUST_EVENT_K: 280,
-  GALAXY_DUST_M: 1.3,
-  GALAXY_DUST_SMEAR_GYR: 0.55,
-  GALAXY_DUST_EXP_R: 0.18,
-  GALAXY_DUST_RAYS: 5,
-  GALAXY_DUST_LOFT: 0.95,
-  GALAXY_DUST_V_CIRC: 225,
-  /** Per-voxel add of one filament. One pocket is a veil, not a wall. */
-  GALAXY_DUST_SMEAR_RHO: 0.22,
+  GALAXY_DUST_HOLE: 2.4,
+  GALAXY_DUST_HOLE_P: 2,
   GALAXY_DUST_N_K: 6000,
   GALAXY_DUST_MAX: 8,
   GALAXY_SFR_GAIN: 18,
@@ -519,8 +508,8 @@ export const UNIVERSE = {
    * floor — the core is dark except its nebula hosts. Nebulae
    * are their own catalog (NEBULA_M + SILHOUETTE_NEB_GAIN),
    * rebaked like dust, not reminted with the stars. Dust is
-   * not a harvest row. The fog is a catalog of deaths. Same
-   * catalog frame.
+   * not a harvest row. The fog is the dense tail of the
+   * molecular sheet. Same catalog frame.
    * Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
@@ -536,16 +525,15 @@ export const UNIVERSE = {
    * photograph stretch. They screen-blend (they glow, they do not
    * add to a white bar).
    * DUST IS NOT VISIBLE. It is never drawn in EITHER layer — it is
-   * a filter on the light law. The fog is a catalog of deaths:
-   * each smear is an explosion that never ends, sheared into a
-   * trailing arc by Ω(R) − Ω(R_death). Older death, longer swirl.
-   * Small — one event is a thin filament, not a blackout. Messy —
-   * off the midplane, over the core, out of the disc. Edge-on the
-   * stack is a mottled strip, not a painted lane. Baked once and
-   * marched from the bubble centre (EXTINCT_STEPS taps).
-   * Transmittance is Beer–Lambert: exp(−τ · DUST_RGB). Each
-   * pocket is a veil (SMEAR_RHO); stacked pockets go darker.
-   * Harvest does not mint dust rows.
+   * a filter on the light law. The fog is the dense tail of
+   * ismAt (hole × decline × arm × sheared turbulence, height
+   * relative to the warped midplane). Only the filaments write;
+   * the rest of the disc stays starry. Ribbon cores are a wall;
+   * only the thin rim reddens. Edge-on is a mottled stripe off
+   * z = 0, not a painted lane. Baked once and marched from the
+   * bubble centre (EXTINCT_STEPS taps). Transmittance is
+   * Beer–Lambert: exp(−τ · DUST_RGB). Harvest does not mint
+   * dust rows.
    * Envelope size is ANGULAR in both layers — radiusKpc / distance —
    * with NEBULA_PX as the pixel floor so far shells stay findable;
    * shells under DUST_MINPX skip the march (a disc).
@@ -586,16 +574,15 @@ export const UNIVERSE = {
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
   /** March multiplier on the baked field — how hard dust filters
-   *  starlight. Sheet vs streaks are K_DIFFUSE / K_DENSE; this is
-   *  the photograph gain, not a thicker pancake. */
+   *  starlight. This is the photograph gain, not a thicker sheet. */
   GALAXY_EXTINCT_K: 6,
   /** Density below this is empty. Thin haze drops; cores stay.
-   *  0 is the raw bake. Does not grow the pockets. */
+   *  0 is the raw bake. Does not grow the ribbons. */
   GALAXY_EXTINCT_CUT: 0,
   /** Power on remaining density. 1 is linear (the bake). Higher
    *  hardens cores and thins the edges — opaque without spreading. */
   GALAXY_EXTINCT_HARD: 1,
-  /** Density at or above this is a wall. The sausage core is
+  /** Density at or above this is a wall. The ribbon core is
    *  lightless; only the rim still reddens. 0 is the old veil. */
   GALAXY_EXTINCT_WALL: 0.14,
   /** Look test. 0 = dust is extinction. 1 paints the volume lime. */
@@ -603,17 +590,15 @@ export const UNIVERSE = {
   /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on
    *  lane vs a clear face-on / in-plane hop. */
   GALAXY_DUST_K_DIFFUSE: 0.42,
-  /** Extra opacity on sheared overdensities (rise^STREAK). Lanes
-   *  and blobs; the sheet knob is untouched. Raised with the
-   *  molecular-ring geometry: the bar-swept hole retired the inner
-   *  exponential's dense peaks, so the ring's streaks now carry the
-   *  rare-dark-ridge law. */
+  /** Extra opacity on sheared overdensities (rise^STREAK). */
   GALAXY_DUST_K_DENSE: 24,
-  /** Power on positive turbulence. Higher → rarer, darker streaks. */
-  GALAXY_DUST_STREAK: 2.1,
-  /** ismAt field threshold. Most of the disk is below this — flight
-   *  stays light; a hit is a significant dark region. */
-  GALAXY_DUST_DENSE_CUT: 0.22,
+  /** Power on the dense-tail excess. Higher → thinner filaments. */
+  GALAXY_DUST_STREAK: 0.85,
+  /** ismAt field threshold. Most of the disk is below this — the
+   *  photograph is a few arm lanes, not a carpet. The normalized
+   *  tail lives around 0.15–0.27; 0.12 keeps the disc starry and
+   *  still lets ribbon cores reach the wall. */
+  GALAXY_DUST_DENSE_CUT: 0.12,
   /** Column cap. High enough that a dense clump (or a stack along
    *  the plane) can extinguish; not a “keep the core glorious” floor. */
   GALAXY_EXTINCT_MAX: 8,

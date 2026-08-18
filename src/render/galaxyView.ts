@@ -135,8 +135,8 @@ const extinctGlsl = (steps: number) => /* glsl */ `
 `;
 
 /** Look test: `?dust=green` / `?fog=green` (or the live knob)
- *  paints a shaded lime skin on the death-smear filaments
- *  (ribbons / sausages) on the sky — not the catalog pins. */
+ *  paints a shaded lime skin on the ISM-field ribbons
+ *  on the sky — not the catalog pins. */
 function dustDebugOn(): boolean {
   if (typeof location === 'undefined') return false;
   return /[?&](?:dust|fog|fox)=green/.test(location.search);

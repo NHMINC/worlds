@@ -1,12 +1,11 @@
 /**
- * Dust is a catalog of deaths. Each smear is an explosion whose
- * ash is conserved along the shear wake — a long twirl is thinner,
- * not a blacker disc. The explorer never draws dust; it bakes
- * those arcs into a volume and marches the sightline.
+ * Dust is the dense tail of the molecular sheet. The explorer
+ * never draws dust; it bakes `ismAt` into a volume and marches
+ * the sightline. Most of the disc stays 0 — only the filaments
+ * write. Occupancy (`dustClumpsInCell`) is a separate census.
  */
 import { UNIVERSE } from './physics';
-import { collectDustSmears, omegaShear } from './galaxy';
-import { mulberry32 } from './rng';
+import { ismAt } from './galaxy';
 
 export interface DustVolume {
   nx: number;
@@ -33,16 +32,7 @@ export function dustVolumeBounds(): {
   };
 }
 
-function splat(data: Float32Array, nx: number, ny: number, nz: number, fx: number, fy: number, fz: number, rho: number): void {
-  const ix = Math.round(fx);
-  const iy = Math.round(fy);
-  const iz = Math.round(fz);
-  if (ix < 0 || iy < 0 || iz < 0 || ix >= nx || iy >= ny || iz >= nz) return;
-  const i = ix + nx * (iy + ny * iz);
-  data[i] = Math.min(1, data[i] + rho);
-}
-
-/** Sample death-smears into a 3D density volume. Empty space stays 0. */
+/** Sample the ISM dense tail into a 3D density volume. Empty space stays 0. */
 export function bakeDustVolume(
   seed: string,
   onProgress?: (frac: number) => void,
@@ -55,49 +45,22 @@ export function bakeDustVolume(
   const vx = size[0] / nx;
   const vy = size[1] / ny;
   const vz = size[2] / nz;
-  const step = Math.min(vx, vy, vz) * 0.7;
-  const rho0 = UNIVERSE.GALAXY_DUST_SMEAR_RHO;
-  const smears = collectDustSmears(seed, (done, total) => {
-    onProgress?.(0.9 * (total > 0 ? done / total : 1));
-  });
-  for (let e = 0; e < smears.length; e++) {
-    const ev = smears[e];
-    const rng = mulberry32(ev.seed);
-    const omegaE = omegaShear(ev.R);
-    // Same ash along the wake: a long shear is thinner, not a blacker disc.
-    const shearKpcGyr = ev.R * Math.abs(omegaShear(ev.R + ev.rExp) - omegaE);
-    const dt = step / Math.max(shearKpcGyr, 1e-3);
-    const trailN = Math.max(1, Math.min(480, Math.ceil(Math.max(ev.ageGyr, dt) / dt)));
-    const tap = rho0 / trailN;
-    for (let r = 0; r < ev.rays; r++) {
-      const az = rng() * Math.PI * 2;
-      const alt = (rng() - 0.5) * ev.loft;
-      const ca = Math.cos(alt);
-      const dx = ca * Math.cos(az);
-      const dy = Math.sin(alt);
-      const dz = ca * Math.sin(az);
-      const len = ev.rExp * (0.4 + 0.6 * rng());
-      for (let s = 0; s <= len; s += step) {
-        const px = ev.x + dx * s;
-        const py = ev.y + dy * s;
-        const pz = ev.z + dz * s;
-        const R = Math.hypot(px, pz);
-        const th = R > 1e-8 ? Math.atan2(pz, px) : 0;
-        const dOmega = omegaShear(R) - omegaE;
-        for (let i = 0; i < trailN; i++) {
-          const t = ((i + 0.5) / trailN) * ev.ageGyr;
-          const th2 = th + dOmega * t;
-          const x2 = R * Math.cos(th2);
-          const z2 = R * Math.sin(th2);
-          const fx = ((x2 - origin[0]) / size[0]) * nx - 0.5;
-          const fy = ((py - origin[1]) / size[1]) * ny - 0.5;
-          const fz = ((z2 - origin[2]) / size[2]) * nz - 0.5;
-          splat(data, nx, ny, nz, fx, fy, fz, tap);
-        }
+  const cut = UNIVERSE.GALAXY_DUST_DENSE_CUT;
+  const streak = UNIVERSE.GALAXY_DUST_STREAK;
+  for (let iy = 0; iy < ny; iy++) {
+    const y = origin[1] + (iy + 0.5) * vy;
+    for (let iz = 0; iz < nz; iz++) {
+      const z = origin[2] + (iz + 0.5) * vz;
+      for (let ix = 0; ix < nx; ix++) {
+        const x = origin[0] + (ix + 0.5) * vx;
+        const field = ismAt(seed, x, y, z).field;
+        const excess = field - cut;
+        if (excess <= 0) continue;
+        data[ix + nx * (iy + ny * iz)] = Math.min(1, excess ** streak);
       }
     }
+    onProgress?.((iy + 1) / ny);
   }
-  onProgress?.(1);
   return { nx, ny, nz, origin, size, data };
 }
 

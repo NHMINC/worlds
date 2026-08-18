@@ -674,7 +674,7 @@ export function forgetNebulae(): void {
   nebulaMemo = null;
 }
 
-/** Drop the fog so the next bake samples current death-smear laws. */
+/** Drop the fog so the next bake samples the current ISM ribbons. */
 export function forgetDustVolume(): void {
   dustVolMemo = null;
 }

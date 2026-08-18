@@ -306,7 +306,7 @@ export async function rebakeUniverseNebulae(seed = UNIVERSE.CANONICAL_SEED): Pro
   return nebulaInflight;
 }
 
-/** Rebake death-smear fog. Stars and nebulae stay; the explorer swaps the 3D texture. */
+/** Rebake ISM-ribbon fog. Stars and nebulae stay; the explorer swaps the 3D texture. */
 export function rebakeUniverseDust(seed = UNIVERSE.CANONICAL_SEED): void {
   emitProgress({ kind: 'dust', frac: 0, label: 'Baking the fog…' });
   forgetDustVolume();

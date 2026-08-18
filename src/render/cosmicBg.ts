@@ -60,7 +60,7 @@ export function cosmicVert(): string {
 `;
 }
 
-/** Look-test sky: lime skin on the death-smear filaments.
+/** Look-test sky: lime skin on the ISM-field ribbons.
  *  `steps` must match the included extinctGlsl march. */
 export function cosmicFrag(extinctChunk: string, steps: number): string {
   const n = Number.isInteger(steps) ? `${steps}.0` : `${steps}`;
