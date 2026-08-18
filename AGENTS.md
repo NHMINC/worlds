@@ -92,8 +92,9 @@ types or star types.
   inside `airExtinction` / the scattering integral. The **cosmic
   background** is the other decreed fake: we cannot mint the
   observable universe. A distant shell (`COSMIC_*`) paints a void
-  plus galaxy smudges. Not a catalog. Not pickable. Dust filters
-  the smudges; the void is vacuum.
+  plus galaxy smudges and a photograph of distant star-like
+  pins (`COSMIC_STAR_*`). Not a catalog. Not pickable. Dust
+  filters the shell; the void is vacuum.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
@@ -200,7 +201,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   harvest survey, starlight, nebulae). Each option states what the setting
   does. Remint / rebake knobs are amber. Live photograph
   knobs already sit on the GPU (void colour is a hue
-  wheel plus intensity, distant
+  wheel plus intensity, distant stars, distant
   galaxies, extinction, shine, nebula glow) — a slide is
   the next frame. Rebuild knobs (survey
   floors, nebula catalog, death-smear laws): the slider is a

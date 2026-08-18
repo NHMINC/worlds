@@ -1,9 +1,10 @@
 /**
  * Cosmic background: the decreed outer shell. One inverted sphere,
- * a void colour, and a cheap angular field of galaxy smudges.
- * Not a catalog. Not pickable. Seeded from the bottle seed.
+ * a void colour, a cheap angular field of galaxy smudges, and a
+ * seeded field of distant star-like pins. Not a catalog. Not
+ * pickable. Seeded from the bottle seed.
  */
-import { xmur3 } from '../world/rng';
+import { mulberry32, xmur3 } from '../world/rng';
 
 /** HSV → linear-ish RGB in 0..1. h wraps. */
 export function hsvRgb(h: number, s: number, v: number): [number, number, number] {
@@ -156,5 +157,105 @@ export function cosmicFrag(extinctGlsl: string): string {
 
 export function cosmicSeedFloat(seed: string): number {
   return xmur3(`cosmic:${seed}`)() / 4294967296;
+}
+
+/** Device-px stamp. Same hop-soft Gaussian idea as the harvest floor. */
+export const COSMIC_STAR_PIN = 6;
+/** Device-px⁻². Tighter than the harvest floor — these sit at infinity. */
+export const COSMIC_STAR_PIN_CORE = 1.15;
+
+export type CosmicStars = {
+  n: number;
+  pos: Float32Array;
+  col: Float32Array;
+  shine: Float32Array;
+  keep: Float32Array;
+};
+
+/**
+ * Photograph budget of distant pins, uniform on the shell.
+ * Shine is a steep power so most are dim specks and a few sparkle.
+ */
+export function mintCosmicStars(seed: string, n: number, R: number): CosmicStars {
+  const rng = mulberry32(xmur3(`cosmic-stars:${seed}`)());
+  const pos = new Float32Array(n * 3);
+  const col = new Float32Array(n * 3);
+  const shine = new Float32Array(n);
+  const keep = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const theta = rng() * Math.PI * 2;
+    const z = rng() * 2 - 1;
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    pos[i * 3] = Math.cos(theta) * r * R;
+    pos[i * 3 + 1] = z * R;
+    pos[i * 3 + 2] = Math.sin(theta) * r * R;
+    keep[i] = rng();
+    shine[i] = 0.03 + 1.25 * Math.pow(rng(), 4.2);
+    const teff = rng();
+    const t = teff < 0.42 ? teff / 0.42 : (teff - 0.42) / 0.58;
+    if (teff < 0.42) {
+      col[i * 3] = 1;
+      col[i * 3 + 1] = 0.68 + 0.25 * t;
+      col[i * 3 + 2] = 0.42 + 0.4 * t;
+    } else {
+      col[i * 3] = 1 - 0.32 * t;
+      col[i * 3 + 1] = 0.93 - 0.15 * t;
+      col[i * 3 + 2] = 0.82 + 0.18 * t;
+    }
+  }
+  return { n, pos, col, shine, keep };
+}
+
+export function cosmicStarVert(extinctGlsl: string): string {
+  return /* glsl */ `
+  ${extinctGlsl}
+  attribute vec3 aColor;
+  attribute float aShine;
+  attribute float aKeep;
+  uniform vec3 uCenter;
+  uniform float uStarGain;
+  uniform float uStarOcc;
+  uniform float uPinCanvas;
+  varying vec3 vColor;
+  varying float vI;
+  varying float vPx;
+
+  void main() {
+    if (aKeep >= uStarOcc) {
+      vI = 0.0;
+      vPx = 0.0;
+      vColor = vec3(0.0);
+      gl_PointSize = 0.0;
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      return;
+    }
+    vec3 view = position - uCenter;
+    vec4 mv = modelViewMatrix * vec4(view, 1.0);
+    vec3 ext = extinctT(uCenter, position);
+    float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
+    vI = aShine * uStarGain * extLum;
+    vColor = aColor * ext / max(extLum, 1e-3);
+    gl_PointSize = uPinCanvas;
+    vPx = uPinCanvas;
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+}
+
+export function cosmicStarFrag(): string {
+  return /* glsl */ `
+  uniform float uPinCore;
+  varying vec3 vColor;
+  varying float vI;
+  varying float vPx;
+
+  void main() {
+    if (vI < 1e-5) discard;
+    vec2 d = (gl_PointCoord - 0.5) * vPx;
+    float w = exp(-dot(d, d) * uPinCore);
+    if (w < 0.012) discard;
+    gl_FragColor = vec4(vColor * (vI * w), 1.0);
+  }
+`;
 }
 

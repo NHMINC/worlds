@@ -668,10 +668,11 @@ export const UNIVERSE = {
   /**
    * Cosmic background — the decreed fake. We cannot mint the
    * observable universe in a browser. This is a distant shell
-   * around the catalog: a void colour plus a cheap angular field
-   * of galaxy smudges (clusters, not telescope images). Not a
-   * catalog. Not pickable. Same seed as the bottle. Dust filters
-   * the smudges so the lane is a silhouette; the void is vacuum.
+   * around the catalog: a void colour, a cheap angular field
+   * of galaxy smudges (clusters, not telescope images), and a
+   * photograph of distant star-like pins. Not a catalog. Not
+   * pickable. Same seed as the bottle. Dust filters the shell
+   * so the lane is a silhouette; the void is vacuum.
    */
   COSMIC_R: 240,
   /** Rainbow hue of the void (0..1 around the wheel). 0.62 is the old blue. */
@@ -688,6 +689,12 @@ export const UNIVERSE = {
   COSMIC_CLUSTER: 1.85,
   /** Angular cells across the sky. A law constant, not a census. */
   COSMIC_CELLS: 20,
+  /** Photograph budget of distant star-like pins on the shell. */
+  COSMIC_STAR_N: 10000,
+  /** How hard those pins are lit. */
+  COSMIC_STAR_GAIN: 0.72,
+  /** Fraction of the budget that stays on. */
+  COSMIC_STAR_OCC: 1,
 };
 
 // ------------------------------------------------------------------ types

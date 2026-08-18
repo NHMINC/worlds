@@ -1,7 +1,7 @@
 /**
  * The galaxy explorer is three catalogs plus the decreed
  * cosmic shell: the star harvest, nebulae, dust-as-extinction,
- * and a distant void of galaxy smudges. The camera sits at the
+ * and a distant void of galaxy smudges and star-like pins. The camera sits at the
  * viewpoint centre (1:1 catalog kpc). “Here” is a focus highlight
  * parked in front of the camera; other samples can mark points
  * of interest. The faint 95% is a later survey. Warp is a latched
@@ -48,7 +48,17 @@ import {
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
 import { prepareUniverse } from '../world/universePrep';
-import { cosmicFrag, cosmicSeedFloat, cosmicVert, cosmicVoidRgb } from './cosmicBg';
+import {
+  COSMIC_STAR_PIN,
+  COSMIC_STAR_PIN_CORE,
+  cosmicFrag,
+  cosmicSeedFloat,
+  cosmicStarFrag,
+  cosmicStarVert,
+  cosmicVert,
+  cosmicVoidRgb,
+  mintCosmicStars,
+} from './cosmicBg';
 
 /** Bake a number into GLSL as a float literal (GLSL ES has no int→float). */
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
@@ -494,6 +504,9 @@ export class GalaxyView {
   private cosmicPts: THREE.Mesh | null = null;
   private cosmicGeo: THREE.BufferGeometry | null = null;
   private cosmicMat: THREE.ShaderMaterial | null = null;
+  private cosmicStarPts: THREE.Points | null = null;
+  private cosmicStarGeo: THREE.BufferGeometry | null = null;
+  private cosmicStarMat: THREE.ShaderMaterial | null = null;
   /** Star harvest positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
   /** Nebula catalog — own mesh, rebakes without reminting stars. */
@@ -715,6 +728,14 @@ export class GalaxyView {
       this.cosmicGeo = null;
       this.cosmicMat = null;
     }
+    if (this.cosmicStarPts) {
+      this.scene.remove(this.cosmicStarPts);
+      this.cosmicStarGeo?.dispose();
+      this.cosmicStarMat?.dispose();
+      this.cosmicStarPts = null;
+      this.cosmicStarGeo = null;
+      this.cosmicStarMat = null;
+    }
   }
 
   private disposeSilhouette(): void {
@@ -911,7 +932,7 @@ export class GalaxyView {
 
   private cloudMats(): THREE.ShaderMaterial[] {
     const out: THREE.ShaderMaterial[] = [];
-    for (const m of [this.silMat, this.silEmisMat, this.cosmicMat]) {
+    for (const m of [this.silMat, this.silEmisMat, this.cosmicMat, this.cosmicStarMat]) {
       if (m) out.push(m);
     }
     return out;
@@ -956,7 +977,47 @@ export class GalaxyView {
     this.cosmicPts = mesh;
     this.cosmicGeo = geo;
     this.cosmicMat = mat;
+    this.buildCosmicStars();
     this.pushMagUniforms();
+  }
+
+  private buildCosmicStars(): void {
+    if (this.cosmicStarPts) return;
+    const n = Math.max(0, Math.round(UNIVERSE.COSMIC_STAR_N));
+    if (n <= 0) return;
+    const cloud = mintCosmicStars(this.seed, n, UNIVERSE.COSMIC_R);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
+    geo.setAttribute('aShine', new THREE.BufferAttribute(cloud.shine, 1));
+    geo.setAttribute('aKeep', new THREE.BufferAttribute(cloud.keep, 1));
+    geo.setDrawRange(0, cloud.n);
+    const mat = new THREE.ShaderMaterial({
+      vertexShader: cosmicStarVert(extinctGlsl(8)),
+      fragmentShader: cosmicStarFrag(),
+      uniforms: {
+        uCenter: { value: new THREE.Vector3() },
+        uStarGain: { value: UNIVERSE.COSMIC_STAR_GAIN },
+        uStarOcc: { value: UNIVERSE.COSMIC_STAR_OCC },
+        uPinCanvas: { value: COSMIC_STAR_PIN },
+        uPinCore: { value: COSMIC_STAR_PIN_CORE },
+        ...this.extinctUniforms(),
+      },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.AdditiveBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneFactor,
+      toneMapped: false,
+    });
+    const pts = new THREE.Points(geo, mat);
+    pts.frustumCulled = false;
+    pts.renderOrder = -7;
+    this.scene.add(pts);
+    this.cosmicStarPts = pts;
+    this.cosmicStarGeo = geo;
+    this.cosmicStarMat = mat;
   }
 
   /** Live cosmic-engineer write. One uniform, next frame. */
@@ -973,7 +1034,10 @@ export class GalaxyView {
 
   liveUniform(name: string): number | null {
     const u =
-      this.silMat?.uniforms[name] ?? this.silEmisMat?.uniforms[name] ?? this.cosmicMat?.uniforms[name];
+      this.silMat?.uniforms[name] ??
+      this.silEmisMat?.uniforms[name] ??
+      this.cosmicMat?.uniforms[name] ??
+      this.cosmicStarMat?.uniforms[name];
     return typeof u?.value === 'number' ? u.value : null;
   }
 

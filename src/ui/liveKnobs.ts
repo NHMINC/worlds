@@ -82,6 +82,36 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
+    id: 'cosmicStars',
+    label: 'Distant stars',
+    group: 'cosmic',
+    hint: 'how bright the far pins are',
+    about: 'Photograph gain on the outer-shell star-like pins. Thousands of point sources at infinity — brighter and dimmer, not a catalog, not pickable. Next frame.',
+    uniform: 'uStarGain',
+    min: 0,
+    max: 2.5,
+    step: 0.02,
+    read: () => UNIVERSE.COSMIC_STAR_GAIN,
+    write: (v) => {
+      UNIVERSE.COSMIC_STAR_GAIN = v;
+    },
+  },
+  {
+    id: 'cosmicStarOcc',
+    label: 'Distant-star density',
+    group: 'cosmic',
+    hint: 'how many of the far pins stay on',
+    about: 'Occupancy of the distant pin budget. The shell holds a fixed photograph of pins; this keeps more or fewer. Next frame.',
+    uniform: 'uStarOcc',
+    min: 0,
+    max: 1,
+    step: 0.01,
+    read: () => UNIVERSE.COSMIC_STAR_OCC,
+    write: (v) => {
+      UNIVERSE.COSMIC_STAR_OCC = v;
+    },
+  },
+  {
     id: 'cosmicGlow',
     label: 'Distant galaxies',
     group: 'cosmic',
