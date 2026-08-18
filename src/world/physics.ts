@@ -588,6 +588,8 @@ export const UNIVERSE = {
    *  starlight. Sheet vs streaks are K_DIFFUSE / K_DENSE; this is
    *  the photograph gain, not a thicker pancake. */
   GALAXY_EXTINCT_K: 6,
+  /** Look test. 0 = dust is extinction. 1 paints the volume lime. */
+  GALAXY_DUST_DEBUG: 0,
   /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on
    *  lane vs a clear face-on / in-plane hop. */
   GALAXY_DUST_K_DIFFUSE: 0.42,

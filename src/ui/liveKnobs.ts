@@ -202,6 +202,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
+    id: 'dustDebug',
+    label: 'Paint fog green',
+    group: 'dust',
+    hint: 'look-test: show the dust sheet as lime',
+    about: 'Look test, not a colour of the universe. 0 is the real law — dust is extinction, never drawn. 1 paints the marched volume bright green so you can see the sheet. Next frame.',
+    uniform: 'uDustDebug',
+    min: 0,
+    max: 1,
+    step: 1,
+    read: () => UNIVERSE.GALAXY_DUST_DEBUG,
+    write: (v) => {
+      UNIVERSE.GALAXY_DUST_DEBUG = v >= 0.5 ? 1 : 0;
+    },
+  },
+  {
     id: 'nebula',
     label: 'Nebula glow',
     group: 'nebulae',

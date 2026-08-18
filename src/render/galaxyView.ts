@@ -823,7 +823,7 @@ export class GalaxyView {
     return {
       uExtinctK: { value: UNIVERSE.GALAXY_EXTINCT_K },
       uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
-      uDustDebug: { value: dustDebugOn() ? 1 : 0 },
+      uDustDebug: { value: dustDebugOn() ? 1 : UNIVERSE.GALAXY_DUST_DEBUG },
       uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
       uDustVol: { value: tex },
       uDustOrigin: { value: new THREE.Vector3(origin[0], origin[1], origin[2]) },
