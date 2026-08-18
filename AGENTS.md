@@ -116,12 +116,14 @@ types or star types.
   the camera. The warp fence keeps you off the photograph.
   Not a catalog. Not pickable. Dust filters the sightline.
   The distant sky marches the dust box (thin clumps cannot
-  hide). The bake is already the dense tail: any hit is a
-  wall for the void and the pins (leftover Beer–Lambert
-  still read as night — K is gain, not thickness). Empty
-  space is vacuum. The Hubble glow sits in front of that
-  night (a drawn glow pixel covers the photograph — it does
-  not add through the pins). The framebuffer clear is black — the
+  hide). The bake is already the dense tail: a clump is a
+  wall, and so is the thin disk (R < R_max, |y| < zd) — the
+  Milky Way is in front of the Hubble Deep Field, including
+  the inter-arm gaps. Leftover Beer–Lambert still read as
+  night (K is gain, not thickness). Empty space is vacuum.
+  The Hubble glow sits in front of that night (a drawn glow
+  pixel covers the photograph — it does not add through the
+  pins). The framebuffer clear is black — the
   cosmic quad paints the night.
 
 If you are about to special-case a seed, a body id, or a named planet

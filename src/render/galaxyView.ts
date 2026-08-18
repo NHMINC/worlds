@@ -153,13 +153,14 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (leave < 0.0 || enter > leave) return vec2(1.0, -1.0);
     return vec2(enter, leave);
   }
-  // Distant sky: the photograph sits behind the sheet. March
-  // the dust box (thin clumps cannot hide). The bake already
-  // wrote only the dense tail — a hit is a wall, tap-spacing
-  // independent. Stars still use the 0.62…wall ramp (cores
+  // Distant sky: the photograph sits behind the galaxy.
+  // March the dust box (thin clumps cannot hide). A clump
+  // is a wall; so is the thin disk (R < R_max, |y| < zd) —
+  // inter-arm gaps are still the Milky Way, not the Hubble
+  // Deep Field. Stars keep the 0.62…wall ramp (cores
   // lightless, rim reddens). Leftover Beer–Lambert × voidRgb
   // was still a readable night: K is photograph gain, not
-  // thickness, so a lane never reached T≈0.
+  // thickness. Additive glow could not cover the pins.
   vec3 extinctLook(vec3 from, vec3 dir) {
     vec2 span = extinctSpan(from, dir);
     if (span.x > span.y) return vec3(1.0);
@@ -169,11 +170,17 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (dCat < 1e-4) return vec3(1.0);
     float dt = dCat / ${glslFloat(steps)};
     float peak = 0.0;
+    float disk = 0.0;
+    float Rmax = ${glslFloat(UNIVERSE.GALAXY_R_MAX)};
+    float h = ${glslFloat(UNIVERSE.GALAXY_ZD * 1.15)};
+    float mid = ${glslFloat(UNIVERSE.GALAXY_DUST_MID)};
     for (int i = 0; i < ${steps}; i++) {
       vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
       peak = max(peak, extinctRhoPeak(p, dir, dt));
+      float R = length(p.xz);
+      if (R < Rmax && abs(p.y - mid) < h) disk = 1.0;
     }
-    return peak > 1e-4 ? vec3(0.0) : vec3(1.0);
+    return (peak > 1e-4 || disk > 0.5) ? vec3(0.0) : vec3(1.0);
   }
 `;
 
