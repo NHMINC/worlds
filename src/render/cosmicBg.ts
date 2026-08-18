@@ -1,7 +1,7 @@
 /**
  * Cosmic background: a far-plane void (near-black warm ash —
  * leftover unresolved starlight, not Rayleigh blue), a photograph
- * of distant galaxies with a faint ochre CGM, and distant pins. Each
+ * of distant galaxies, and distant pins. Each
  * galaxy is one inclined disk (hash size, cos i, position
  * angle, Hubble axis) — not a sprite stamp, not an archetype
  * switch. Each object has its own shine; engineer gains scale
@@ -378,9 +378,7 @@ export function cosmicSmudgeFrag(): string {
     vec2 disk = vec2(p.x, p.y / ci);
     float r = length(disk);
     float rim = 1.0 - smoothstep(mix(0.70, 0.36, soft), mix(0.88, 0.98, soft), r);
-    // Dust-scattered disk light around the galaxy — ochre CGM, not a blue glow.
-    float cgm = exp(-max(r - 0.40, 0.0) * mix(3.4, 6.2, crisp)) * mix(0.028, 0.055, soft);
-    if (rim < 1e-4 && cgm < 0.003) discard;
+    if (rim < 1e-4) discard;
 
     float bulge = exp(-dot(p, p) * mix(6.5, 24.0, mix(0.28, 1.0, crisp)) * mix(0.55, 1.0, bulgeAmt)) * bulgeAmt;
     float diskI = exp(-r * mix(2.15, 3.35, crisp)) * (1.0 - bulgeAmt * 0.38);
@@ -397,13 +395,11 @@ export function cosmicSmudgeFrag(): string {
     float haze = exp(-soft * frame * 2.15);
 
     float I = (bulge + diskI * (0.38 + 0.62 * (0.26 + arms)) + bar) * rim * dust * lump * haze;
-    if (I < 0.012 && cgm < 0.003) discard;
+    if (I < 0.012) discard;
     vec3 warm = vColor * vec3(1.1, 0.9, 0.74);
     vec3 cool = vColor * vec3(0.78, 0.86, 1.06);
-    vec3 ochre = vColor * vec3(1.05, 0.68, 0.40);
     vec3 rgb = mix(cool, warm, clamp(bulge / max(I, 1e-4), 0.0, 1.0));
-    rgb = mix(rgb, ochre, clamp(cgm / max(I + cgm, 1e-4), 0.0, 1.0));
-    gl_FragColor = vec4(rgb * (vI * (I + cgm)), 1.0);
+    gl_FragColor = vec4(rgb * (vI * I), 1.0);
   }
 `;
 }
