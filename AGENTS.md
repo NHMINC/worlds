@@ -107,8 +107,9 @@ types or star types.
   background** is the other decreed fake: we cannot mint the
   observable universe. A distant shell (`COSMIC_*`) paints a void
   plus distant galaxies (one inclined disk each — hash
-  size, cos i, position angle, Hubble axis) and a
-  photograph of distant star-like pins (`COSMIC_STAR_*`).
+  size, cos i, position angle, Hubble axis, crispness)
+  and a photograph of distant star-like pins (`COSMIC_STAR_*`,
+  a dim field plus a rare bright tail).
   Drawn on the far plane (a clip
   quad, not a surrounding mesh) so triangles never cross
   the camera. The warp fence keeps you off the photograph.

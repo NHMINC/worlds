@@ -86,6 +86,8 @@ export type CosmicSmudges = CosmicStars & {
   aspect: Float32Array;
   angle: Float32Array;
   seed: Float32Array;
+  /** 0 = distant haze, 1 = nearby and sharp. */
+  crisp: Float32Array;
 };
 
 /** Stateless 0..1 from the bottle and an address. Same inputs, same sky. */
@@ -146,7 +148,9 @@ export function mintCosmicStars(seed: string, n: number): CosmicStars {
     pos[i * 3] = dir[0];
     pos[i * 3 + 1] = dir[1];
     pos[i * 3 + 2] = dir[2];
-    shine[i] = 0.012 + 2.4 * hash01(seedU, i, 1) ** 5.6;
+    // Same hash, two powers: a dim field plus a rare nearby tail.
+    const flux = hash01(seedU, i, 1);
+    shine[i] = 0.0025 + 0.55 * flux ** 2.4 + 8.8 * flux ** 11;
     const rgb = teffRgb(hash01(seedU, i, 2));
     col[i * 3] = rgb[0];
     col[i * 3 + 1] = rgb[1];
@@ -170,13 +174,15 @@ export function mintCosmicSmudges(seed: string, n: number, cluster: number): Cos
   const aspect = new Float32Array(n);
   const angle = new Float32Array(n);
   const seedA = new Float32Array(n);
+  const crisp = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const dir = hashDir(seedU, i);
     pos[i * 3] = dir[0];
     pos[i * 3 + 1] = dir[1];
     pos[i * 3 + 2] = dir[2];
     const web = cosmicWeb(dir, cluster);
-    shine[i] = (0.12 + 1.55 * hash01(seedU, i, 1) ** 2.3) * (0.22 + 0.78 * web);
+    crisp[i] = hash01(seedU, i, 7) ** 1.25;
+    shine[i] = (0.1 + 1.85 * hash01(seedU, i, 1) ** 2.2) * (0.22 + 0.78 * web) * (0.38 + 0.97 * crisp[i]);
     size[i] = 0.2 + 2.8 * hash01(seedU, i, 2) ** 1.85;
     aspect[i] = hash01(seedU, i, 3);
     angle[i] = hash01(seedU, i, 4) * Math.PI * 2;
@@ -186,7 +192,7 @@ export function mintCosmicSmudges(seed: string, n: number, cluster: number): Cos
     col[i * 3 + 1] = 0.8 - 0.14 * cool;
     col[i * 3 + 2] = 0.66 + 0.2 * cool;
   }
-  return { n, pos, col, shine, size, aspect, angle, seed: seedA };
+  return { n, pos, col, shine, size, aspect, angle, seed: seedA, crisp };
 }
 
 export function cosmicStarVert(extinctGlsl: string): string {
@@ -197,9 +203,12 @@ export function cosmicStarVert(extinctGlsl: string): string {
   uniform vec3 uCenter;
   uniform float uStarGain;
   uniform float uPinCanvas;
+  uniform float uPinCore;
   varying vec3 vColor;
   varying float vI;
   varying float vPx;
+  varying float vCore;
+  varying float vNear;
 
   void main() {
     vec3 dir = normalize(position);
@@ -208,6 +217,8 @@ export function cosmicStarVert(extinctGlsl: string): string {
     if (mv.z > -0.08) {
       vI = 0.0;
       vPx = 0.0;
+      vCore = 0.0;
+      vNear = 0.0;
       vColor = vec3(0.0);
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -217,8 +228,12 @@ export function cosmicStarVert(extinctGlsl: string): string {
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
     vI = aShine * uStarGain * extLum;
     vColor = aColor * ext / max(extLum, 1e-3);
-    gl_PointSize = uPinCanvas;
-    vPx = uPinCanvas;
+    float n = clamp(pow(aShine / 9.5, 0.38), 0.0, 1.0);
+    vNear = n;
+    float pin = uPinCanvas * mix(0.5, 2.85, n);
+    gl_PointSize = pin;
+    vPx = pin;
+    vCore = uPinCore * mix(0.36, 2.15, n);
     vec4 clip = projectionMatrix * mv;
     gl_Position = vec4(clip.xy, clip.w, clip.w);
   }
@@ -227,16 +242,18 @@ export function cosmicStarVert(extinctGlsl: string): string {
 
 export function cosmicStarFrag(): string {
   return /* glsl */ `
-  uniform float uPinCore;
   varying vec3 vColor;
   varying float vI;
   varying float vPx;
+  varying float vCore;
+  varying float vNear;
 
   void main() {
     if (vI < 1e-5) discard;
     vec2 d = (gl_PointCoord - 0.5) * vPx;
-    float w = exp(-dot(d, d) * uPinCore);
-    if (w < 0.012) discard;
+    float rr = dot(d, d);
+    float w = exp(-rr * vCore) + vNear * 0.28 / (1.0 + rr * 0.07);
+    if (w < 0.01) discard;
     gl_FragColor = vec4(vColor * (vI * w), 1.0);
   }
 `;
@@ -251,6 +268,7 @@ export function cosmicSmudgeVert(extinctGlsl: string): string {
   attribute float aAspect;
   attribute float aAngle;
   attribute float aSeed;
+  attribute float aCrisp;
   uniform vec3 uCenter;
   uniform float uCosmicGain;
   uniform float uCosmicSize;
@@ -260,6 +278,7 @@ export function cosmicSmudgeVert(extinctGlsl: string): string {
   varying float vIncl;
   varying float vAngle;
   varying float vSeed;
+  varying float vCrisp;
 
   void main() {
     vec3 dir = normalize(position);
@@ -270,6 +289,7 @@ export function cosmicSmudgeVert(extinctGlsl: string): string {
       vIncl = 0.0;
       vAngle = 0.0;
       vSeed = 0.0;
+      vCrisp = 0.0;
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
@@ -281,6 +301,7 @@ export function cosmicSmudgeVert(extinctGlsl: string): string {
     vIncl = clamp(aAspect, 0.0, 1.0);
     vAngle = aAngle;
     vSeed = aSeed;
+    vCrisp = clamp(aCrisp, 0.0, 1.0);
     float ang = max(aSize, 0.16) * max(uCosmicSize, 0.06) * 0.062;
     gl_PointSize = clamp(ang * uPxPerRad, 14.0, 240.0);
     vec4 clip = projectionMatrix * mv;
@@ -296,6 +317,7 @@ export function cosmicSmudgeFrag(): string {
   varying float vIncl;
   varying float vAngle;
   varying float vSeed;
+  varying float vCrisp;
 
   float h11(float n) {
     return fract(sin(n) * 43758.5453);
@@ -319,27 +341,30 @@ export function cosmicSmudgeFrag(): string {
     float phase = h11(vSeed * 5.2) * 6.2831853;
     float barStr = pow(h11(vSeed * 23.3), 1.8) * mix(0.08, 0.62, 1.0 - early * 0.55);
     float lane = pow(h11(vSeed * 41.0), 1.4);
+    float crisp = clamp(vCrisp, 0.0, 1.0);
+    float soft = 1.0 - crisp;
 
     float ci = mix(0.12, 1.0, vIncl);
     vec2 disk = vec2(p.x, p.y / ci);
     float r = length(disk);
-    float rim = 1.0 - smoothstep(0.66, 0.94, r);
+    float rim = 1.0 - smoothstep(mix(0.70, 0.36, soft), mix(0.88, 0.98, soft), r);
     if (rim < 1e-4) discard;
 
-    float bulge = exp(-dot(p, p) * mix(9.0, 24.0, bulgeAmt)) * bulgeAmt;
-    float diskI = exp(-r * 3.15) * (1.0 - bulgeAmt * 0.38);
+    float bulge = exp(-dot(p, p) * mix(6.5, 24.0, mix(0.28, 1.0, crisp)) * mix(0.55, 1.0, bulgeAmt)) * bulgeAmt;
+    float diskI = exp(-r * mix(2.15, 3.35, crisp)) * (1.0 - bulgeAmt * 0.38);
     float th = atan(disk.y, disk.x);
     float warp = 0.32 * sin(th * 2.0 + vSeed * 8.1);
     float spiral = 0.5 + 0.5 * cos(armM * th - pitch * log(max(r, 0.035)) + phase + warp);
-    spiral = pow(max(spiral, 0.0), mix(1.15, 3.6, armStr));
-    float arms = armStr * spiral * exp(-r * 2.35) * smoothstep(0.14, 0.4, ci);
-    float bar = barStr * exp(-disk.x * disk.x * 15.0 - disk.y * disk.y * 78.0) * mix(0.3, 1.0, ci);
+    spiral = pow(max(spiral, 0.0), mix(0.7, 3.8, crisp * armStr));
+    float arms = armStr * spiral * exp(-r * 2.35) * smoothstep(0.14, 0.4, ci) * mix(0.18, 1.0, crisp);
+    float bar = barStr * exp(-disk.x * disk.x * 15.0 - disk.y * disk.y * 78.0) * mix(0.3, 1.0, ci) * mix(0.4, 1.0, crisp);
     float dust = 1.0 - lane * (1.0 - ci) * exp(-p.y * p.y * 88.0) * exp(-p.x * p.x * 1.7) * 0.58;
     float late = 1.0 - early;
-    float lump = 0.78 + late * 0.14 * sin(disk.x * 8.0 + vSeed * 7.0) * sin(disk.y * 6.5 + vSeed * 4.4)
-      + late * 0.08 * sin(disk.x * 17.0 - disk.y * 13.0 + vSeed * 11.0);
+    float lump = 0.78 + (0.08 + 0.22 * soft) * late * sin(disk.x * 8.0 + vSeed * 7.0) * sin(disk.y * 6.5 + vSeed * 4.4)
+      + late * mix(0.12, 0.04, crisp) * sin(disk.x * 17.0 - disk.y * 13.0 + vSeed * 11.0);
+    float haze = exp(-soft * frame * 2.15);
 
-    float I = (bulge + diskI * (0.38 + 0.62 * (0.26 + arms)) + bar) * rim * dust * lump;
+    float I = (bulge + diskI * (0.38 + 0.62 * (0.26 + arms)) + bar) * rim * dust * lump * haze;
     if (I < 0.012) discard;
     vec3 warm = vColor * vec3(1.1, 0.9, 0.74);
     vec3 cool = vColor * vec3(0.78, 0.86, 1.06);

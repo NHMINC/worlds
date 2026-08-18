@@ -1020,6 +1020,7 @@ export class GalaxyView {
     geo.setAttribute('aAspect', new THREE.BufferAttribute(cloud.aspect, 1));
     geo.setAttribute('aAngle', new THREE.BufferAttribute(cloud.angle, 1));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.seed, 1));
+    geo.setAttribute('aCrisp', new THREE.BufferAttribute(cloud.crisp, 1));
     geo.setDrawRange(0, this.cosmicCount('smudge'));
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicSmudgeVert(extinctGlsl(8)),
@@ -1062,6 +1063,7 @@ export class GalaxyView {
     geo.setAttribute('aAspect', new THREE.BufferAttribute(cloud.aspect, 1));
     geo.setAttribute('aAngle', new THREE.BufferAttribute(cloud.angle, 1));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.seed, 1));
+    geo.setAttribute('aCrisp', new THREE.BufferAttribute(cloud.crisp, 1));
     geo.setDrawRange(0, this.cosmicCount('smudge'));
   }
 

@@ -679,9 +679,9 @@ export const UNIVERSE = {
    * observable universe in a browser. This is a distant shell
    * around the catalog: a void colour, a photograph of distant
    * galaxies (inclined disks — hash size, orientation, Hubble
-   * axis; each with its own shine), and a photograph of
-   * distant star-like pins (each with its own shine). Address
-   * i is hash(seed, i) on the sphere — same bottle, same sky.
+   * axis, crispness; each with its own shine), and a photograph of
+   * distant star-like pins (a dim field plus a rare bright tail).
+   * Address i is hash(seed, i) on the sphere — same bottle, same sky.
    * A draw-range prefix must still cover 4π (a Fibonacci spiral
    * of the max budget is a polar cap). Not pickable. Dust
    * filters the sightline; the void is vacuum.
