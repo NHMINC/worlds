@@ -321,7 +321,7 @@ export function collectDustSmears(
         const cell = ir * nth * nz + it * nz + iz;
         const mid = cellCenter(cell);
         const expect = density(mid) * vol * eventK;
-        if (expect < 0.08) continue;
+        if (expect <= 1e-8) continue;
         const nFloor = Math.floor(expect);
         const nTry = nFloor + (u01(seed, 'dustN', cell) < expect - nFloor ? 1 : 0);
         if (nTry <= 0) continue;

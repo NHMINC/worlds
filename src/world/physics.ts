@@ -425,10 +425,11 @@ export const UNIVERSE = {
   GALAXY_GAS_ARM_A: 0.7,
   /**
    * Optical dust: death smears, not a gas pancake. EVENT_K is the
-   * photograph budget (occupancy × this / N_K ≈ count). M is the
-   * IMF floor for a dusty death (AGB + SN). SMEAR_GYR is how long
-   * a smear stays distinct before it has mixed away. EXP_R is the
-   * explosion reach (kpc) — small. RAYS are filaments, not a ball.
+   * photograph budget (occupancy × this ≈ count). M is the IMF
+   * floor for a dusty death (AGB + SN). SMEAR_GYR is how long a
+   * wake stays in the photograph — the same ash shears into a
+   * thinner trail, so a wrap does not saturate the disc. EXP_R
+   * is the explosion reach (kpc). RAYS are filaments, not a ball.
    * LOFT (rad) lets some ejecta leave the disc. V_CIRC is kpc/Gyr
    * (220 km/s ≈ 225) for Ω = V/R. Occupancy / SFR / H II still
    * drink the flat catalog field (`gasBase`).

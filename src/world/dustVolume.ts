@@ -1,8 +1,8 @@
 /**
- * Dust is a catalog of deaths. Each smear is an explosion that
- * never ends, dragged into an arc by differential rotation. The
- * explorer never draws dust — it bakes those arcs into a volume
- * and marches the sightline. A star behind a filament goes dark.
+ * Dust is a catalog of deaths. Each smear is an explosion whose
+ * ash is conserved along the shear wake — a long twirl is thinner,
+ * not a blacker disc. The explorer never draws dust; it bakes
+ * those arcs into a volume and marches the sightline.
  */
 import { UNIVERSE } from './physics';
 import { collectDustSmears, omegaShear } from './galaxy';
@@ -56,7 +56,7 @@ export function bakeDustVolume(
   const vy = size[1] / ny;
   const vz = size[2] / nz;
   const step = Math.min(vx, vy, vz) * 0.7;
-  const rho = UNIVERSE.GALAXY_DUST_SMEAR_RHO;
+  const rho0 = UNIVERSE.GALAXY_DUST_SMEAR_RHO;
   const smears = collectDustSmears(seed, (done, total) => {
     onProgress?.(0.9 * (total > 0 ? done / total : 1));
   });
@@ -64,6 +64,11 @@ export function bakeDustVolume(
     const ev = smears[e];
     const rng = mulberry32(ev.seed);
     const omegaE = omegaShear(ev.R);
+    // Same ash along the wake: a long shear is thinner, not a blacker disc.
+    const shearKpcGyr = ev.R * Math.abs(omegaShear(ev.R + ev.rExp) - omegaE);
+    const dt = step / Math.max(shearKpcGyr, 1e-3);
+    const trailN = Math.max(1, Math.min(480, Math.ceil(Math.max(ev.ageGyr, dt) / dt)));
+    const tap = rho0 / trailN;
     for (let r = 0; r < ev.rays; r++) {
       const az = rng() * Math.PI * 2;
       const alt = (rng() - 0.5) * ev.loft;
@@ -78,13 +83,17 @@ export function bakeDustVolume(
         const pz = ev.z + dz * s;
         const R = Math.hypot(px, pz);
         const th = R > 1e-8 ? Math.atan2(pz, px) : 0;
-        const th2 = th + (omegaShear(R) - omegaE) * ev.ageGyr;
-        const x2 = R * Math.cos(th2);
-        const z2 = R * Math.sin(th2);
-        const fx = ((x2 - origin[0]) / size[0]) * nx - 0.5;
-        const fy = ((py - origin[1]) / size[1]) * ny - 0.5;
-        const fz = ((z2 - origin[2]) / size[2]) * nz - 0.5;
-        splat(data, nx, ny, nz, fx, fy, fz, rho);
+        const dOmega = omegaShear(R) - omegaE;
+        for (let i = 0; i < trailN; i++) {
+          const t = ((i + 0.5) / trailN) * ev.ageGyr;
+          const th2 = th + dOmega * t;
+          const x2 = R * Math.cos(th2);
+          const z2 = R * Math.sin(th2);
+          const fx = ((x2 - origin[0]) / size[0]) * nx - 0.5;
+          const fy = ((py - origin[1]) / size[1]) * ny - 0.5;
+          const fz = ((z2 - origin[2]) / size[2]) * nz - 0.5;
+          splat(data, nx, ny, nz, fx, fy, fz, tap);
+        }
       }
     }
   }

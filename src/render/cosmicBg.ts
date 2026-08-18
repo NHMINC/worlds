@@ -109,7 +109,7 @@ export function cosmicFrag(extinctChunk: string, steps: number): string {
     for (int i = 0; i < ${steps}; i++) {
       vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
       float r = extinctRho(p);
-      if (r < 0.014 || a > 0.97) continue;
+      if (r < 0.008 || a > 0.97) continue;
       vec3 nrm = -normalize(foxGrad(p) + vec3(1e-6));
       float ndl = 0.2 + 0.8 * max(dot(nrm, L), 0.0);
       float facing = max(dot(nrm, -dir), 0.0);
@@ -120,14 +120,14 @@ export function cosmicFrag(extinctChunk: string, steps: number): string {
       float grain = foxSkin(p);
       float wall = uExtinctWall;
       float isWall = (wall > 1e-4 && r >= wall) ? 1.0 : 0.0;
-      vec3 lit = vec3(0.42, 1.0, 0.2);
-      vec3 shade = mix(vec3(0.02, 0.22, 0.05), vec3(0.01, 0.08, 0.02), isWall);
+      // Look-test is a census of the volume, not the wall's blackness.
+      // Cores read as solid lime; the rim stays a thinner skin.
+      vec3 lit = vec3(0.55, 1.0, 0.22);
+      vec3 shade = vec3(0.08, 0.48, 0.1);
       vec3 lime = mix(shade, lit, ndl * wrap) * grain;
-      lime += rim * vec3(0.55, 1.0, 0.38) * 0.5;
-      lime += spec * vec3(0.85, 1.0, 0.7);
-      float da = isWall > 0.5
-        ? 0.92
-        : 1.0 - exp(-smoothstep(0.014, 0.28, r) * 2.1);
+      lime += rim * vec3(0.6, 1.0, 0.4) * 0.55;
+      lime += spec * vec3(0.9, 1.0, 0.75);
+      float da = 1.0 - exp(-smoothstep(0.008, 0.22, r) * mix(2.6, 5.2, isWall));
       float w = (1.0 - a) * da;
       rgb = mix(rgb, lime, w);
       a += w;
