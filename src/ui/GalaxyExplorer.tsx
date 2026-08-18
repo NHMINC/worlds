@@ -266,7 +266,7 @@ export function GalaxyExplorer(props: Props) {
             {frame.warp ? 'Stop' : 'Warp'}
           </button>
         )}
-        {inRegion && frame.focus && (
+        {inRegion && !engineer && frame.focus && (
           <div className="gx-plate">
             <b>{frame.focus.name}</b>
             <em>
