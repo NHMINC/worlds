@@ -98,6 +98,23 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     tau = min(tau * uExtinctK * dt, uExtinctMax);
     return exp(-tau * uDustRgb);
   }
+  // Distant sky: march only the dust box, not a finite shell at R.
+  vec3 extinctLook(vec3 from, vec3 dir) {
+    vec3 d = dir;
+    if (abs(d.x) < 1e-8) d.x = 1e-8;
+    if (abs(d.y) < 1e-8) d.y = 1e-8;
+    if (abs(d.z) < 1e-8) d.z = 1e-8;
+    vec3 b0 = uDustOrigin;
+    vec3 b1 = uDustOrigin + 1.0 / max(uDustInvSize, vec3(1e-6));
+    vec3 tA = (b0 - from) / d;
+    vec3 tB = (b1 - from) / d;
+    vec3 tmin = min(tA, tB);
+    vec3 tmax = max(tA, tB);
+    float enter = max(max(tmin.x, tmin.y), tmin.z);
+    float leave = min(min(tmax.x, tmax.y), tmax.z);
+    if (leave < 0.0 || enter > leave) return vec3(1.0);
+    return extinctT(from + dir * max(enter, 0.0), from + dir * leave);
+  }
 `;
 
 /** Look test: `?dust=green` paints the extinction columns green. */
@@ -142,7 +159,7 @@ export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
 
 /** Disk diameter with slack — Face-on sits several R_MAX out. */
 function regionCamFar(): number {
-  return Math.max(UNIVERSE.GALAXY_R_MAX * 8, UNIVERSE.COSMIC_R * 1.2);
+  return Math.max(UNIVERSE.GALAXY_R_MAX * 8, UNIVERSE.GALAXY_WARP_LIM * 1.5);
 }
 
 /**
@@ -948,14 +965,13 @@ export class GalaxyView {
 
   private buildCosmic(): void {
     if (this.cosmicPts) return;
-    const geo = new THREE.SphereGeometry(1, 48, 32);
+    const geo = new THREE.PlaneGeometry(2, 2);
     const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
       fragmentShader: cosmicFrag(extinctGlsl(8)),
       uniforms: {
         uCenter: { value: new THREE.Vector3() },
-        uCosmicR: { value: UNIVERSE.COSMIC_R },
         uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
         uCosmicGain: { value: UNIVERSE.COSMIC_GAIN },
         uCosmicOcc: { value: UNIVERSE.COSMIC_OCC },
@@ -963,9 +979,10 @@ export class GalaxyView {
         uCosmicCells: { value: UNIVERSE.COSMIC_CELLS },
         uCosmicSize: { value: UNIVERSE.COSMIC_SIZE },
         uSeed: { value: cosmicSeedFloat(this.seed) },
+        uInvProj: { value: new THREE.Matrix4() },
+        uCamRotInv: { value: new THREE.Matrix3() },
         ...this.extinctUniforms(),
       },
-      side: THREE.BackSide,
       depthWrite: false,
       depthTest: false,
       toneMapped: false,
@@ -985,7 +1002,7 @@ export class GalaxyView {
     if (this.cosmicStarPts) return;
     const n = Math.max(0, Math.round(UNIVERSE.COSMIC_STAR_N));
     if (n <= 0) return;
-    const cloud = mintCosmicStars(this.seed, n, UNIVERSE.COSMIC_R);
+    const cloud = mintCosmicStars(this.seed, n);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
@@ -2020,6 +2037,9 @@ export class GalaxyView {
       if (mat.uniforms.uPxPerRad) mat.uniforms.uPxPerRad.value = pxPer;
       if (mat.uniforms.uCamRotInv) {
         (mat.uniforms.uCamRotInv.value as THREE.Matrix3).copy(this.camRot3);
+      }
+      if (mat.uniforms.uInvProj) {
+        (mat.uniforms.uInvProj.value as THREE.Matrix4).copy(this.camera.projectionMatrixInverse);
       }
     }
 

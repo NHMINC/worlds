@@ -93,10 +93,11 @@ types or star types.
   background** is the other decreed fake: we cannot mint the
   observable universe. A distant shell (`COSMIC_*`) paints a void
   plus galaxy smudges and a photograph of distant star-like
-  pins (`COSMIC_STAR_*`). The shell sits far past the warp
-  fence so travel never reads as approaching it. Not a
-  catalog. Not pickable. Dust filters the shell; the void
-  is vacuum.
+  pins (`COSMIC_STAR_*`). Drawn on the far plane (a clip
+  quad, not a surrounding mesh) so triangles never cross
+  the camera. The warp fence keeps you off the photograph.
+  Not a catalog. Not pickable. Dust filters the sightline;
+  the void is vacuum.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is

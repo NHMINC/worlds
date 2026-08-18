@@ -43,16 +43,17 @@ export function cosmicVoidRgb(hue: number, intensity: number): [number, number, 
   return hsvRgb(hue, VOID_SAT, i * VOID_V);
 }
 
+/**
+ * Far-plane sky. A surrounding sphere puts triangles through w = 0
+ * (the camera plane); those faces smear over the lens as you move.
+ * A clip-space quad never crosses the camera.
+ */
 export function cosmicVert(): string {
   return /* glsl */ `
-  uniform vec3 uCenter;
-  uniform float uCosmicR;
-  varying vec3 vDir;
+  varying vec2 vNdc;
   void main() {
-    vec3 cat = normalize(position) * uCosmicR;
-    vDir = cat;
-    vec3 view = cat - uCenter;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(view, 1.0);
+    vNdc = position.xy;
+    gl_Position = vec4(position.xy, 1.0, 1.0);
   }
 `;
 }
@@ -68,7 +69,9 @@ export function cosmicFrag(extinctGlsl: string): string {
   uniform float uCosmicCells;
   uniform float uCosmicSize;
   uniform float uSeed;
-  varying vec3 vDir;
+  uniform mat4 uInvProj;
+  uniform mat3 uCamRotInv;
+  varying vec2 vNdc;
 
   float hash13(vec3 p) {
     p = fract(p * vec3(0.1031, 0.11369, 0.13787) + uSeed);
@@ -100,7 +103,9 @@ export function cosmicFrag(extinctGlsl: string): string {
   }
 
   void main() {
-    vec3 dir = normalize(vDir);
+    vec4 viewH = uInvProj * vec4(vNdc, 1.0, 1.0);
+    vec3 viewDir = normalize(viewH.xyz / max(abs(viewH.w), 1e-6));
+    vec3 dir = normalize(uCamRotInv * viewDir);
     float web = 0.62 * vnoise(dir * 2.15 + 1.7) + 0.38 * vnoise(dir * 5.4 + 4.1);
     web = pow(clamp(web, 0.0, 1.0), max(uCosmicCluster, 0.35));
 
@@ -145,7 +150,7 @@ export function cosmicFrag(extinctGlsl: string): string {
     }
 
     vec3 voidC = uVoidRgb;
-    vec3 ext = extinctT(uCenter, dir * length(vDir));
+    vec3 ext = extinctLook(uCenter, dir);
     vec3 glow = vec3(0.0);
     if (smudge > 1e-4) {
       glow = (tint / smudge) * (smudge / (1.0 + 1.8 * smudge)) * uCosmicGain * ext;
@@ -175,8 +180,9 @@ export type CosmicStars = {
 /**
  * Photograph budget of distant pins, uniform on the shell.
  * Shine is a steep power so most are dim specks and a few sparkle.
+ * Positions are unit directions — the GPU pins them to the far plane.
  */
-export function mintCosmicStars(seed: string, n: number, R: number): CosmicStars {
+export function mintCosmicStars(seed: string, n: number): CosmicStars {
   const rng = mulberry32(xmur3(`cosmic-stars:${seed}`)());
   const pos = new Float32Array(n * 3);
   const col = new Float32Array(n * 3);
@@ -186,9 +192,9 @@ export function mintCosmicStars(seed: string, n: number, R: number): CosmicStars
     const theta = rng() * Math.PI * 2;
     const z = rng() * 2 - 1;
     const r = Math.sqrt(Math.max(0, 1 - z * z));
-    pos[i * 3] = Math.cos(theta) * r * R;
-    pos[i * 3 + 1] = z * R;
-    pos[i * 3 + 2] = Math.sin(theta) * r * R;
+    pos[i * 3] = Math.cos(theta) * r;
+    pos[i * 3 + 1] = z;
+    pos[i * 3 + 2] = Math.sin(theta) * r;
     keep[i] = rng();
     shine[i] = 0.03 + 1.25 * Math.pow(rng(), 4.2);
     const teff = rng();
@@ -229,15 +235,25 @@ export function cosmicStarVert(extinctGlsl: string): string {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
     }
-    vec3 view = position - uCenter;
-    vec4 mv = modelViewMatrix * vec4(view, 1.0);
-    vec3 ext = extinctT(uCenter, position);
+    vec3 dir = normalize(position);
+    vec4 mv = modelViewMatrix * vec4(dir, 0.0);
+    // Limb / behind: w ≈ 0 puts a pin on the lens and it flashes.
+    if (mv.z > -0.08) {
+      vI = 0.0;
+      vPx = 0.0;
+      vColor = vec3(0.0);
+      gl_PointSize = 0.0;
+      gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+      return;
+    }
+    vec3 ext = extinctLook(uCenter, dir);
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
     vI = aShine * uStarGain * extLum;
     vColor = aColor * ext / max(extLum, 1e-3);
     gl_PointSize = uPinCanvas;
     vPx = uPinCanvas;
-    gl_Position = projectionMatrix * mv;
+    vec4 clip = projectionMatrix * mv;
+    gl_Position = vec4(clip.xy, clip.w, clip.w);
   }
 `;
 }

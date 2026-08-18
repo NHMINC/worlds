@@ -683,7 +683,7 @@ export const UNIVERSE = {
    * pickable. Same seed as the bottle. Dust filters the shell
    * so the lane is a silhouette; the void is vacuum.
    */
-  /** Shell radius (kpc). Far enough that travel inside the warp fence never reads as approach. */
+  /** Decreed sky distance (kpc). The GPU draws the sky on the far plane; this is the law, not a mesh. */
   COSMIC_R: 8000,
   /** Rainbow hue of the void (0..1 around the wheel). 0.62 is the old blue. */
   COSMIC_HUE: 0.62,
