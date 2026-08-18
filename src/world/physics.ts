@@ -506,10 +506,11 @@ export const UNIVERSE = {
    * gate that keeps the walk cheap). The count (~10⁵) is an
    * outcome of that floor, not a cap. Old faint populations
    * (the bulge's dead clock) simply do not shine above the
-   * floor — the core is dark except its nebula hosts. Plus the
-   * youngest / brightest nebula hosts (gain ≥
-   * SILHOUETTE_NEB_GAIN). Dust is not a harvest row. The fog is
-   * a catalog of deaths. Same catalog frame.
+   * floor — the core is dark except its nebula hosts. Nebulae
+   * are their own catalog (NEBULA_M + SILHOUETTE_NEB_GAIN),
+   * rebaked like dust, not reminted with the stars. Dust is
+   * not a harvest row. The fog is a catalog of deaths. Same
+   * catalog frame.
    * Distant discs are toy angular
    * sizes. Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
@@ -554,9 +555,16 @@ export const UNIVERSE = {
    *  Stars are the cheap citizens (a small Gaussian, vertex-only cost);
    *  the count knob that matters for the GPU is envelopes, not this. */
   GALAXY_SILHOUETTE_L: 162,
-  /** Backdrop nebulae: emissionLook surface-brightness gain. Young
+  /** Nebula catalog: IMF floor (M☉) for the PN / SNR walk.
+   *  H II (m ≥ 8 in a cloud) is always walked. 3.89 matches the
+   *  survey mass floor, so the first look is the shells that
+   *  used to ride the star harvest. Lower includes more leftover
+   *  PNe; this catalog rebakes without reminting stars. */
+  GALAXY_NEBULA_M: 3.89,
+  /** Nebula catalog: emissionLook surface-brightness gain. Young
    *  events blaze (~1); faded shells ghost (~0.1). H II always kept.
-   *  Three median halvings from 0.65: the top eighth — showpieces. */
+   *  Three median halvings from 0.65: the top eighth — showpieces.
+   *  Rebake the nebula catalog; do not remint stars. */
   GALAXY_SILHOUETTE_NEB_GAIN: 0.932,
   /** Unused harvest gate: dust rows are no longer minted. Kept so
    *  older comments that name the knob still resolve. The fog is

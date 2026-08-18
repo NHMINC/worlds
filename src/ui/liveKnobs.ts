@@ -2,8 +2,8 @@
  * Cosmic-engineer knobs.
  *
  * Live: already GPU uniforms. A slide is the next frame.
- * Rebuild: harvest mint or dust bake. The slider is a draft;
- * Rebuild applies UNIVERSE and remints, Cancel discards.
+ * Rebuild: star remint, nebula walk, or dust bake. The slider
+ * is a draft; Rebuild applies UNIVERSE, Cancel discards.
  */
 import { UNIVERSE } from '../world/physics';
 import {
@@ -40,7 +40,7 @@ export type LiveKnob = {
   write?: (v: number) => void;
 };
 
-export type RebuildScope = 'harvest' | 'dust';
+export type RebuildScope = 'harvest' | 'nebula' | 'dust';
 
 export type RebuildKnob = {
   id: string;
@@ -100,7 +100,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Nebula glow',
     group: 'nebulae',
     hint: 'photograph stretch on H II, PN, SNR',
-    about: 'Emission-measure gain on harvest nebulae. They screen-blend — they glow, they do not add to a white bar. Next frame.',
+    about: 'Emission-measure gain on catalog nebulae. They screen-blend — they glow, they do not add to a white bar. Next frame.',
     uniform: 'uNebGain',
     min: 0,
     max: 4,
@@ -195,17 +195,73 @@ export const REBUILD_KNOBS: RebuildKnob[] = [
   },
   {
     id: 'silNeb',
-    label: 'Nebula harvest',
+    label: 'Nebula showpiece',
     group: 'nebulae',
     hint: 'how faded a shell can be and still show',
-    about: 'Minimum emission-gain for a nebula to join the harvest. Lower keeps faded shells; higher keeps showpieces. Needs remint.',
-    scope: 'harvest',
+    about: 'Minimum emission-gain for a PN or SNR to join the nebula catalog. Lower keeps faded shells; higher keeps showpieces. H II always stays. Needs nebula rebake — stars stay.',
+    scope: 'nebula',
     key: 'GALAXY_SILHOUETTE_NEB_GAIN',
     min: 0.05,
     max: 1,
     step: 0.005,
     read: () => UNIVERSE.GALAXY_SILHOUETTE_NEB_GAIN,
     write: (v) => writeNum('GALAXY_SILHOUETTE_NEB_GAIN', v),
+  },
+  {
+    id: 'nebM',
+    label: 'Nebula mass floor',
+    group: 'nebulae',
+    hint: 'IMF gate for the PN / SNR walk',
+    about: 'IMF mass floor (M☉) for planetary nebulae and remnants. H II (massive, in a cloud) is always walked. Lower finds more leftover shells. Needs nebula rebake — stars stay.',
+    scope: 'nebula',
+    key: 'GALAXY_NEBULA_M',
+    min: 0.8,
+    max: 12,
+    step: 0.01,
+    read: () => UNIVERSE.GALAXY_NEBULA_M,
+    write: (v) => writeNum('GALAXY_NEBULA_M', v),
+  },
+  {
+    id: 'hiiGyr',
+    label: 'H II window',
+    group: 'nebulae',
+    hint: 'how long a nursery stays lit (Gyr)',
+    about: 'Toy-stretched H II lifetime. Longer keeps more natal clouds around young O/B stars. Needs nebula rebake — stars stay.',
+    scope: 'nebula',
+    key: 'HII_GYR',
+    min: 0.002,
+    max: 0.08,
+    step: 0.001,
+    read: () => UNIVERSE.HII_GYR,
+    write: (v) => writeNum('HII_GYR', v),
+  },
+  {
+    id: 'pnGyr',
+    label: 'PN window',
+    group: 'nebulae',
+    hint: 'how long a planetary shell stays findable (Gyr)',
+    about: 'Toy-stretched planetary-nebula window after the giant dies. Longer keeps more faded PNe. Needs nebula rebake — stars stay.',
+    scope: 'nebula',
+    key: 'PN_GYR',
+    min: 0.005,
+    max: 0.2,
+    step: 0.001,
+    read: () => UNIVERSE.PN_GYR,
+    write: (v) => writeNum('PN_GYR', v),
+  },
+  {
+    id: 'snrGyr',
+    label: 'SNR window',
+    group: 'nebulae',
+    hint: 'how long a remnant stays findable (Gyr)',
+    about: 'Toy-stretched supernova-remnant window. Longer keeps more leftover lace. Needs nebula rebake — stars stay.',
+    scope: 'nebula',
+    key: 'SNR_GYR',
+    min: 0.005,
+    max: 0.25,
+    step: 0.001,
+    read: () => UNIVERSE.SNR_GYR,
+    write: (v) => writeNum('SNR_GYR', v),
   },
   {
     id: 'dustK',

@@ -308,13 +308,28 @@ function giantWindow(massZams: number): number {
   return Math.min(0.8, tMs * (massZams <= 2 ? 0.15 : massZams < 8 ? 0.08 : UNIVERSE.WR_TAIL));
 }
 
-/** Cheap clock gate: evolve only slots that can be luminous or nebular. */
+/** Cheap clock gate: evolve only slots that can be luminous stars. */
 function maybeClockRow(b: SlotBirth): boolean {
   const m = b.massZams;
+  if (m < UNIVERSE.GALAXY_SILHOUETTE_M) return false;
   const tMs = msLifetime(m);
-  if (b.ageGyr < tMs) {
-    return m >= UNIVERSE.GALAXY_SILHOUETTE_M || (m >= 8 && b.ageGyr < UNIVERSE.HII_GYR && b.inCloud);
+  if (b.ageGyr < tMs) return true;
+  return b.ageGyr < tMs + giantWindow(m);
+}
+
+/** Cheap clock gate: evolve only slots that can wear a nebula. */
+function maybeNebulaRow(b: SlotBirth): boolean {
+  const m = b.massZams;
+  const tMs = msLifetime(m);
+  // H II is O/B in a natal cloud. B starts below 8 M☉ — sit the
+  // walk with NEBULA_M so the first look matches the old harvest.
+  const mHii = Math.min(8, UNIVERSE.GALAXY_NEBULA_M);
+  if (b.inCloud && b.ageGyr < UNIVERSE.HII_GYR && m >= mHii) return true;
+  if (b.inCloud && m >= UNIVERSE.REMNANT_NS && b.ageGyr >= tMs && b.ageGyr < tMs + UNIVERSE.HII_GYR) {
+    return true;
   }
+  if (m < UNIVERSE.GALAXY_NEBULA_M) return false;
+  if (b.ageGyr < tMs) return false;
   const deadFor = b.ageGyr - tMs - giantWindow(m);
   return deadFor < Math.max(UNIVERSE.PN_GYR, UNIVERSE.SNR_GYR) + 1e-9;
 }
@@ -381,9 +396,10 @@ function writeEvolved(
   c: Omit<StarCloud, 'n' | 'ms'>,
   b: SlotBirth,
   ev: ReturnType<typeof evolve>,
+  forceStar = false,
 ): void {
   const cart = galToCart(b.pos);
-  const kind = kindFromNebula(ev.nebula);
+  const kind = forceStar ? KIND_STAR : kindFromNebula(ev.nebula);
   const shape = shapeAt(kind, packId(cell, slot));
   // The event law: expansion, fading, and hue from the clock row.
   const look =
@@ -490,16 +506,17 @@ function nebulaGain(ev: ReturnType<typeof evolve>, id: number): number {
   }).gain;
 }
 
-function keepSilhouettePhase(ev: ReturnType<typeof evolve>, id: number): boolean {
-  if (ev.nebula !== 'none') {
-    // H II regions are the showpiece nurseries — keep every one.
-    if (ev.nebula === 'hii') return true;
-    return nebulaGain(ev, id) >= UNIVERSE.GALAXY_SILHOUETTE_NEB_GAIN;
-  }
+function keepSilhouettePhase(ev: ReturnType<typeof evolve>): boolean {
   if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
     return false;
   }
   return isLuminousPhase(ev.phase, ev.mk, ev.luminosity) && ev.luminosity >= UNIVERSE.GALAXY_SILHOUETTE_L;
+}
+
+function keepNebulaPhase(ev: ReturnType<typeof evolve>, id: number): boolean {
+  if (ev.nebula === 'none') return false;
+  if (ev.nebula === 'hii') return true;
+  return nebulaGain(ev, id) >= UNIVERSE.GALAXY_SILHOUETTE_NEB_GAIN;
 }
 
 /**
@@ -546,8 +563,8 @@ export function regionImfFloor(d: number): number {
  * complete. Farther cells keep only their massive tail — the same
  * zoom law as the catalog — so a multi-kpc volume has gaps you can
  * fly instead of a glowing marble. Cheap birth for dwarfs; the
- * clock sketch runs on luminous / nebula hosts so the Nebulae
- * filter and the backdrop handshake share one sky.
+ * clock sketch runs on luminous hosts. Nebulae are their own
+ * whole-disk catalog, not this local ball.
  */
 export function buildRegionCloud(seed: string, x: number, y: number, z: number, r = UNIVERSE.GALAXY_REGION_R): StarCloud {
   const t0 = performance.now();
@@ -614,15 +631,21 @@ function catalogCellVolume(ir: number): number {
 }
 
 let silhouetteMemo: { seed: string; cloud: StarCloud } | null = null;
+let nebulaMemo: { seed: string; cloud: StarCloud } | null = null;
 let dustVolMemo: { seed: string; vol: DustVolume } | null = null;
 
 function rememberDustVolume(seed: string, onDust?: (frac: number) => void): void {
   dustVolMemo = { seed, vol: bakeDustVolume(seed, onDust) };
 }
 
-/** Drop the harvest so the next mint walks the disk under current UNIVERSE. */
+/** Drop the star harvest so the next mint walks the disk under current UNIVERSE. */
 export function forgetSilhouette(): void {
   silhouetteMemo = null;
+}
+
+/** Drop the nebula catalog so the next walk samples current shell laws. */
+export function forgetNebulae(): void {
+  nebulaMemo = null;
 }
 
 /** Drop the fog so the next bake samples current death-smear laws. */
@@ -630,40 +653,43 @@ export function forgetDustVolume(): void {
   dustVolMemo = null;
 }
 
-/** Rebake the extinction volume without reminting stars. */
+/** Rebake the extinction volume without reminting stars or nebulae. */
 export function rebakeDustCache(seed: string, onDust?: (frac: number) => void): DustVolume {
   rememberDustVolume(seed, onDust);
   return dustVolMemo!.vol;
 }
 
-/** Cached harvest, or null until the worker (or a sync mint) finishes. */
+/** Cached star harvest, or null until the worker (or a sync mint) finishes. */
 export function silhouetteCloud(seed: string): StarCloud | null {
   return silhouetteMemo?.seed === seed ? silhouetteMemo.cloud : null;
 }
 
-/** Baked ISM fog for this seed, or null until the harvest is in. */
+/** Cached nebula catalog, or null until the first walk finishes. */
+export function nebulaCloud(seed: string): StarCloud | null {
+  return nebulaMemo?.seed === seed ? nebulaMemo.cloud : null;
+}
+
+/** Baked ISM fog for this seed, or null until the first bake. */
 export function harvestDustVolume(seed: string): DustVolume | null {
   return dustVolMemo?.seed === seed ? dustVolMemo.vol : null;
 }
 
-/** Install a harvest minted off-thread. Same cache `buildSilhouetteCloud` uses. */
-export function installSilhouetteCloud(
-  seed: string,
-  cloud: StarCloud,
-  onDust?: (frac: number) => void,
-): void {
+/** Install a star harvest minted off-thread. Same cache `buildSilhouetteCloud` uses. */
+export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
   silhouetteMemo = { seed, cloud };
-  rememberDustVolume(seed, onDust);
+}
+
+/** Install a nebula catalog walked on the main thread. */
+export function installNebulaCloud(seed: string, cloud: StarCloud): void {
+  nebulaMemo = { seed, cloud };
 }
 
 /**
- * Whole-disk harvest: one magnitude-limited survey. Every living
- * star above SILHOUETTE_L (present-day light; SILHOUETTE_M is the
- * IMF slot gate that makes the walk cheap) plus the showpiece
- * nebulae. No shape sample, no mass stride — the count is an
- * outcome of the floor, not a cap. Dust is not a harvest row —
- * the extinction volume is the ISM field. Clumps stay addressable
- * via dustId / dustPhysics; they are not minted into the sky.
+ * Whole-disk star harvest: one magnitude-limited survey. Every
+ * living star above SILHOUETTE_L (present-day light; SILHOUETTE_M
+ * is the IMF slot gate that makes the walk cheap). No shape sample,
+ * no mass stride — the count is an outcome of the floor, not a cap.
+ * Nebulae and dust are their own catalogs.
  */
 export function buildSilhouetteCloud(
   seed: string,
@@ -673,7 +699,6 @@ export function buildSilhouetteCloud(
   const t0 = performance.now();
   const cloud = mintHarvestCloud(seed, t0, onRing);
   silhouetteMemo = { seed, cloud };
-  rememberDustVolume(seed);
   return cloud;
 }
 
@@ -685,19 +710,73 @@ export function mintSilhouetteCloud(
   return mintHarvestCloud(seed, performance.now(), onRing);
 }
 
+/**
+ * One disk walk, two catalogs. First boot uses this so stars and
+ * nebulae do not each pay the slot-birth cost.
+ */
+export function mintSkyClouds(
+  seed: string,
+  onRing?: (done: number, total: number) => void,
+): { stars: StarCloud; nebulae: StarCloud } {
+  return walkSkyClouds(seed, performance.now(), onRing, true, true);
+}
+
 function mintHarvestCloud(
   seed: string,
   t0: number,
   onRing?: (done: number, total: number) => void,
 ): StarCloud {
+  return walkSkyClouds(seed, t0, onRing, true, false).stars;
+}
+
+/**
+ * Whole-disk nebula catalog. Host id is packId — set course still
+ * hits the star. Walks only nebula-capable slots (young H II, or
+ * the PN / SNR death window above NEBULA_M). Rebake when those
+ * knobs change; do not remint the star harvest.
+ */
+export function mintNebulaCloud(
+  seed: string,
+  onRing?: (done: number, total: number) => void,
+): StarCloud {
+  return walkSkyClouds(seed, performance.now(), onRing, false, true).nebulae;
+}
+
+/** Forget and walk the nebula catalog under current UNIVERSE. */
+export function remintNebulaCache(
+  seed: string,
+  onRing?: (done: number, total: number) => void,
+): StarCloud {
+  nebulaMemo = null;
+  const cloud = mintNebulaCloud(seed, onRing);
+  nebulaMemo = { seed, cloud };
+  return cloud;
+}
+
+function nebulaWalkFloor(): number {
+  return Math.min(UNIVERSE.GALAXY_NEBULA_M, 8);
+}
+
+function walkSkyClouds(
+  seed: string,
+  t0: number,
+  onRing: ((done: number, total: number) => void) | undefined,
+  wantStars: boolean,
+  wantNebulae: boolean,
+): { stars: StarCloud; nebulae: StarCloud } {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
-  const mLo = UNIVERSE.GALAXY_SILHOUETTE_M;
+  const mLo = Math.min(
+    wantStars ? UNIVERSE.GALAXY_SILHOUETTE_M : Infinity,
+    wantNebulae ? nebulaWalkFloor() : Infinity,
+  );
   const uLive = imfQuantile(mLo);
   const liveFrac = Math.max(1e-6, 1 - uLive);
-  let c = allocCloud(280_000);
-  let n = 0;
+  let stars = allocCloud(wantStars ? 280_000 : 1);
+  let nebulae = allocCloud(wantNebulae ? 16_384 : 1);
+  let ns = 0;
+  let nn = 0;
   for (let ir = 0; ir < nr; ir++) {
     const vol = catalogCellVolume(ir);
     const R = ((ir + 0.5) / nr) * rMax;
@@ -717,17 +796,27 @@ function mintHarvestCloud(
         const sLive = Math.floor(uLive * filled);
         for (let slot = sLive; slot < filled; slot++) {
           const birth = slotBirthRaw(seed, cell, slot, filled);
-          if (!maybeClockRow(birth)) continue;
+          const clock = wantStars && maybeClockRow(birth);
+          const neb = wantNebulae && maybeNebulaRow(birth);
+          if (!clock && !neb) continue;
           const ev = sketchEvolve(birth);
-          if (!keepSilhouettePhase(ev, packId(cell, slot))) continue;
-          if (n >= c.ids.length) c = ensureCloudCap(c, n, n + 16_384);
-          writeEvolved(cell, slot, n++, c, birth, ev);
+          if (clock && keepSilhouettePhase(ev)) {
+            if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
+            writeEvolved(cell, slot, ns++, stars, birth, ev, true);
+          }
+          if (neb && keepNebulaPhase(ev, packId(cell, slot))) {
+            if (nn >= nebulae.ids.length) nebulae = ensureCloudCap(nebulae, nn, nn + 4_096);
+            writeEvolved(cell, slot, nn++, nebulae, birth, ev);
+          }
         }
       }
     }
     onRing?.(ir + 1, nr);
   }
-  return finishCloud(c, n, t0);
+  return {
+    stars: finishCloud(stars, ns, t0),
+    nebulae: finishCloud(nebulae, nn, t0),
+  };
 }
 
 function cellDist(cell: number, x: number, y: number, z: number): number {

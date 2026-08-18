@@ -3,8 +3,8 @@ import { UNIVERSE } from '../world/physics';
 import { classifyStar } from '../world/stellar';
 import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
-import { remintUniverse, rebakeUniverseDust, onUniverseProgress } from '../world/universePrep';
-import { ENGINEER_GROUPS, atDefault, knobDefault, knobsInGroup, liveKnob, rebuildKnob } from './liveKnobs';
+import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
+import { ENGINEER_GROUPS, atDefault, knobDefault, knobsInGroup, liveKnob, rebuildKnob, type RebuildScope } from './liveKnobs';
 
 const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -44,7 +44,7 @@ export function GalaxyExplorer(props: Props) {
   const [knobVal, setKnobVal] = useState(0);
   const [knobDirty, setKnobDirty] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [rebuilding, setRebuilding] = useState<null | 'harvest' | 'dust'>(null);
+  const [rebuilding, setRebuilding] = useState<null | RebuildScope>(null);
   const [rebuildFrac, setRebuildFrac] = useState(0);
   const [rebuildLabel, setRebuildLabel] = useState('');
   const [frame, setFrame] = useState<GalaxyFrame>({
@@ -86,6 +86,7 @@ export function GalaxyExplorer(props: Props) {
               prev.pickable !== f.pickable ||
               prev.resolved !== f.resolved ||
               prev.grown !== f.grown ||
+              prev.population !== f.population ||
               prev.sector !== f.sector ||
               prev.warp !== f.warp ||
               prev.backdrop !== f.backdrop ||
@@ -226,7 +227,9 @@ export function GalaxyExplorer(props: Props) {
     if (!k || !view || rebuilding) return;
     k.write(knobVal);
     setRebuildFrac(0);
-    setRebuildLabel(k.scope === 'harvest' ? 'Walking the disk…' : 'Baking the fog…');
+    setRebuildLabel(
+      k.scope === 'harvest' ? 'Walking the disk…' : k.scope === 'nebula' ? 'Collecting nebulae…' : 'Baking the fog…',
+    );
     setMenuOpen(false);
     setRebuilding(k.scope);
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
@@ -234,6 +237,9 @@ export function GalaxyExplorer(props: Props) {
       if (k.scope === 'harvest') {
         await remintUniverse(seed);
         view.replaceSky();
+      } else if (k.scope === 'nebula') {
+        await rebakeUniverseNebulae(seed);
+        view.replaceNebulae();
       } else {
         rebakeUniverseDust(seed);
         view.replaceDust();
@@ -263,7 +269,14 @@ export function GalaxyExplorer(props: Props) {
         {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}
         {rebuilding && (
           <div className="gx-rebuild" role="status">
-            <b>{rebuildLabel || (rebuilding === 'harvest' ? 'Walking the disk…' : 'Baking the fog…')}</b>
+            <b>
+              {rebuildLabel ||
+                (rebuilding === 'harvest'
+                  ? 'Walking the disk…'
+                  : rebuilding === 'nebula'
+                    ? 'Collecting nebulae…'
+                    : 'Baking the fog…')}
+            </b>
             <progress max={100} value={Math.round(rebuildFrac * 100)} />
             <em>{Math.round(rebuildFrac * 100)}%</em>
           </div>

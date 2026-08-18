@@ -197,22 +197,26 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   does. Remint / rebake knobs are amber. Live photograph
   knobs already sit on the GPU (extinction, shine, nebula
   glow) — a slide is the next frame. Rebuild knobs (survey
-  floors, death-smear laws): the slider is a draft until
-  **Rebuild** writes `UNIVERSE` and remints / rebakes, or
-  **Cancel** discards. **Reset to default** restores the
-  shipped law for the open setting (live: next frame;
-  rebuild: a draft until Rebuild). The HTML splash stays gone; the
-  explorer owns the wait. Mint and remint fill a progress
-  bar from the walk itself (rings visited / rings in the
-  disk, then the dust bake). The bar is a native
+  floors, nebula catalog, death-smear laws): the slider is a
+  draft until **Rebuild** writes `UNIVERSE` and remints /
+  rebakes, or **Cancel** discards. Star remint, nebula walk,
+  and dust bake are three jobs — nebula knobs rebake like
+  dust and do not remint the harvest. **Reset to default**
+  restores the shipped law for the open setting (live: next
+  frame; rebuild: a draft until Rebuild). The HTML splash
+  stays gone; the explorer owns the wait. Mint and remint
+  fill a progress bar from the walk itself (star rings,
+  then nebulae, then the dust bake). The bar is a native
   `<progress>` — Pages CSP is `style-src 'self'`, so a
   fill’s `element.style` never paints. App boot
-  mints the catalog once (`prepareUniverse` /
-  `buildSilhouetteCloud`) — one magnitude-limited survey:
-  every living star above `SILHOUETTE_L` (late-B MS floor and
-  hotter, giants, WR; `SILHOUETTE_M` is the IMF slot gate that
-  keeps the walk cheap), ~10⁵ stars as the floor's outcome,
-  plus nebulae, and dust as sightline extinction. Old faint
+  mints three catalogs once (`prepareUniverse`): the
+  magnitude-limited star harvest (`buildSilhouetteCloud` —
+  every living star above `SILHOUETTE_L`; `SILHOUETTE_M` is
+  the IMF slot gate; ~10⁵ stars as the floor's outcome),
+  the nebula catalog (`remintNebulaCache` — H II plus PN /
+  SNR above `SILHOUETTE_NEB_GAIN`; `NEBULA_M` is that walk's
+  IMF gate; host id is still `packId`), and dust as
+  sightline extinction. Old faint
   populations do not clear the floor, so the core is dark
   except its nebula hosts — that is the survey's honest light,
   not a bug. You steer by those objects. The faint bulk
@@ -562,7 +566,7 @@ Code map (start here):
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula / dust shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
-| Galaxy explorer (harvest) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (stars + nebulae + dust) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |

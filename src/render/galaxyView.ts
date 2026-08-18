@@ -1,5 +1,5 @@
 /**
- * The galaxy explorer is the luminous harvest: bright stars,
+ * The galaxy explorer is three catalogs: the star harvest,
  * nebulae, and dust-as-extinction. The camera sits at the
  * viewpoint centre (1:1 catalog kpc). “Here” is a focus highlight
  * parked in front of the camera; other samples can mark points
@@ -36,12 +36,12 @@ import { classifyStar } from '../world/stellar';
 import { systemAt } from '../world/systemgen';
 import {
   silhouetteCloud,
+  nebulaCloud,
   harvestDustVolume,
   regionName,
   sketchMatches,
   BIT_REMNANT,
   BIT_DUST,
-  BIT_NEBULA,
   KIND_DUST,
   type StarCloud,
 } from '../world/sectors';
@@ -428,7 +428,7 @@ export interface GalaxyFrame {
   grown: number;
   /** Region label, e.g. "8.2 kpc · 57°". */
   sector: string | null;
-  /** Harvest rows on the GPU (stars + nebulae shown). */
+  /** GPU rows shown (star harvest + nebula catalog). */
   population: number;
   /** Most-centred star in the sight, when close enough. */
   focus: GalaxyFocus | null;
@@ -481,14 +481,18 @@ export class GalaxyView {
   private briefMemo = new Map<number, { name: string; planets: number; moons: number; life: boolean }>();
 
   private starVis: THREE.BufferAttribute | null = null;
+  private nebVis: THREE.BufferAttribute | null = null;
   private silPts: THREE.Points | null = null;
   private silGeo: THREE.BufferGeometry | null = null;
   private silMat: THREE.ShaderMaterial | null = null;
   private silEmisPts: THREE.Points | null = null;
+  private silEmisGeo: THREE.BufferGeometry | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
   private silDustTex: THREE.Data3DTexture | null = null;
-  /** Catalog positions (the vertex shader subtracts uCenter). */
+  /** Star harvest positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
+  /** Nebula catalog — own mesh, rebakes without reminting stars. */
+  private nebulae: StarCloud | null = null;
 
   private camRot3 = new THREE.Matrix3();
 
@@ -648,24 +652,29 @@ export class GalaxyView {
     this.updateSight(true);
   }
 
-  /** Attach the luminous harvest if the cache is warm. */
-  private bindSky(): void {
-    const cloud = silhouetteCloud(this.seed);
-    if (!cloud) return;
-    this.cloud = cloud;
-    this.sectorPop = cloud.n;
-    this.lastEnterMs = cloud.ms;
-    if (!this.silPts) this.buildSilhouetteStars();
-    else this.pushMagUniforms();
+  private shownCount(): number {
+    return (this.cloud?.n ?? 0) + (this.nebulae?.n ?? 0);
   }
 
-  private disposeSilhouette(): void {
-    if (this.silEmisPts) {
-      this.scene.remove(this.silEmisPts);
-      this.silEmisMat?.dispose();
-      this.silEmisPts = null;
-      this.silEmisMat = null;
+  /** Attach stars / nebulae / dust if those caches are warm. */
+  private bindSky(): void {
+    const stars = silhouetteCloud(this.seed);
+    const neb = nebulaCloud(this.seed);
+    if (stars) {
+      this.cloud = stars;
+      if (!this.silPts) this.buildSilhouetteStars();
+      else this.pushMagUniforms();
     }
+    if (neb) {
+      this.nebulae = neb;
+      if (!this.silEmisPts) this.buildNebulae();
+      else this.pushMagUniforms();
+    }
+    this.sectorPop = this.shownCount();
+    this.lastEnterMs = Math.max(this.cloud?.ms ?? 0, this.nebulae?.ms ?? 0, this.lastEnterMs);
+  }
+
+  private disposeStars(): void {
     if (this.silPts) {
       this.scene.remove(this.silPts);
       this.silGeo?.dispose();
@@ -673,7 +682,25 @@ export class GalaxyView {
       this.silPts = null;
       this.silGeo = null;
       this.silMat = null;
+      this.starVis = null;
     }
+  }
+
+  private disposeNebulae(): void {
+    if (this.silEmisPts) {
+      this.scene.remove(this.silEmisPts);
+      this.silEmisGeo?.dispose();
+      this.silEmisMat?.dispose();
+      this.silEmisPts = null;
+      this.silEmisGeo = null;
+      this.silEmisMat = null;
+      this.nebVis = null;
+    }
+  }
+
+  private disposeSilhouette(): void {
+    this.disposeStars();
+    this.disposeNebulae();
     this.silDustTex?.dispose();
     this.silDustTex = null;
   }
@@ -803,7 +830,7 @@ export class GalaxyView {
   private buildSilhouetteStars(): void {
     const cloud = silhouetteCloud(this.seed);
     if (!cloud || cloud.n <= 0) return;
-    this.disposeSilhouette();
+    this.disposeStars();
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
@@ -825,15 +852,34 @@ export class GalaxyView {
     this.silPts = pts;
     this.silGeo = geo;
     this.silMat = mat;
+    this.pushMagUniforms();
+  }
+
+  private buildNebulae(): void {
+    const cloud = nebulaCloud(this.seed);
+    if (!cloud || cloud.n <= 0) return;
+    this.disposeNebulae();
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
+    geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
+    const vis = cloud.gain.slice();
+    const visAttr = new THREE.BufferAttribute(vis, 1);
+    visAttr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aVis', visAttr);
+    this.nebVis = visAttr;
+    geo.setAttribute('aLum', new THREE.BufferAttribute(cloud.lum, 1));
+    geo.setAttribute('aKind', new THREE.BufferAttribute(cloud.kind, 1));
+    geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
+    geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
+    geo.setDrawRange(0, cloud.n);
     const emisMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 1);
     const emisPts = new THREE.Points(geo, emisMat);
     emisPts.frustumCulled = false;
     emisPts.renderOrder = -1;
     this.scene.add(emisPts);
     this.silEmisPts = emisPts;
+    this.silEmisGeo = geo;
     this.silEmisMat = emisMat;
-    // No dust pass: clumps are not harvest rows. Fog is the
-    // volume uploaded above, marched in SILHOUETTE_VERT.
     this.pushMagUniforms();
   }
 
@@ -858,15 +904,27 @@ export class GalaxyView {
     return typeof u?.value === 'number' ? u.value : null;
   }
 
-  /** After a harvest remint — drop the GPU mesh and rebuild from cache. */
+  /** After a star remint — drop the star mesh only. Nebulae and fog stay. */
   replaceSky(): void {
-    this.disposeSilhouette();
+    this.disposeStars();
     const cloud = silhouetteCloud(this.seed);
     this.cloud = cloud;
-    this.sectorPop = cloud?.n ?? 0;
+    this.sectorPop = this.shownCount();
     this.lastEnterMs = cloud?.ms ?? this.lastEnterMs;
     this.buildSilhouetteStars();
     this.applyStarVis();
+    if (this.mode === 'region') this.updateSight(true);
+  }
+
+  /** After a nebula rebake — drop the nebula mesh only. Stars and fog stay. */
+  replaceNebulae(): void {
+    this.disposeNebulae();
+    const neb = nebulaCloud(this.seed);
+    this.nebulae = neb;
+    this.sectorPop = this.shownCount();
+    this.lastEnterMs = neb?.ms ?? this.lastEnterMs;
+    this.buildNebulae();
+    this.applyNebVis();
     if (this.mode === 'region') this.updateSight(true);
   }
 
@@ -906,6 +964,7 @@ export class GalaxyView {
   setFilter(f: GalaxyFilter): void {
     this.filter = f;
     this.applyStarVis();
+    this.applyNebVis();
     if (this.mode === 'region') this.updateSight(true);
   }
 
@@ -937,7 +996,8 @@ export class GalaxyView {
   }
 
   beaconCount(): number {
-    return this.cloud?.n ?? this.objects.length;
+    const n = this.shownCount();
+    return n > 0 ? n : this.objects.length;
   }
 
   /** The arc's loaded survey — every row is a tappable catalog id. */
@@ -1315,17 +1375,12 @@ export class GalaxyView {
     this.placeHighlights();
   }
 
-  /** Harvest is minted once at app boot; attach the mesh if the cache is warm. */
+  /** Harvest is minted once at app boot; wait for stars + nebulae + dust. */
   private attachSilhouette(): void {
-    const go = (): void => {
+    void prepareUniverse(this.seed).then(() => {
       if (this.disposed) return;
       this.bindSky();
-    };
-    if (silhouetteCloud(this.seed)) {
-      go();
-      return;
-    }
-    void prepareUniverse(this.seed).then(go);
+    });
   }
 
   /** Here and the current pick sit in camera space as focus rings. */
@@ -1417,8 +1472,6 @@ export class GalaxyView {
   private pickCloud(cx: number, cy: number): GalaxyObject | null {
     const poi = this.pickPoi(cx, cy);
     if (poi) return poi;
-    const cloud = this.cloud;
-    if (!cloud) return null;
     this.camera.updateMatrixWorld();
     const e = this.camera.matrixWorldInverse.elements;
     const p = this.camera.projectionMatrix.elements;
@@ -1426,42 +1479,45 @@ export class GalaxyView {
     const ox = this.arcCenter.x;
     const oy = this.arcCenter.y;
     const oz = this.arcCenter.z;
-    const cat = cloud.pos;
-    const bits = cloud.bits;
-    const ids = cloud.ids;
-    const lum = cloud.lum;
     const pxPer = this.pxPerRad() / Math.max(1, this.renderer.getPixelRatio());
-    let bestI = -1;
+    let bestId = -1;
     let bestD = Infinity;
-    for (let i = 0; i < cloud.n; i++) {
-      if ((bits[i] & BIT_DUST) !== 0) continue;
-      if (!sketchMatches(bits[i], this.filter)) continue;
-      const i3 = i * 3;
-      const x = cat[i3] - ox;
-      const y = cat[i3 + 1] - oy;
-      const z = cat[i3 + 2] - oz;
-      const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
-      const my = e[1] * x + e[5] * y + e[9] * z + e[13];
-      const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
-      const mw = e[3] * x + e[7] * y + e[11] * z + e[15];
-      const cw = p[3] * mx + p[7] * my + p[11] * mz + p[15] * mw;
-      if (cw <= 1e-6) continue;
-      const nx = (p[0] * mx + p[4] * my + p[8] * mz + p[12] * mw) / cw;
-      const ny = (p[1] * mx + p[5] * my + p[9] * mz + p[13] * mw) / cw;
-      if (nx < -1.15 || nx > 1.15 || ny < -1.15 || ny > 1.15) continue;
-      const sx = rect.left + (nx * 0.5 + 0.5) * rect.width;
-      const sy = rect.top + (-ny * 0.5 + 0.5) * rect.height;
-      const d = Math.hypot(sx - cx, sy - cy);
-      const viewD = Math.max(1e-4, Math.hypot(mx, my, mz));
-      const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
-      const hitR = Math.max(22, 0.55 * 2 * glowRadiusKpc(lum[i], dim) * pxPer / viewD);
-      if (d <= hitR && d < bestD) {
-        bestD = d;
-        bestI = i;
+    for (const cloud of [this.cloud, this.nebulae]) {
+      if (!cloud) continue;
+      const cat = cloud.pos;
+      const bits = cloud.bits;
+      const ids = cloud.ids;
+      const lum = cloud.lum;
+      for (let i = 0; i < cloud.n; i++) {
+        if ((bits[i] & BIT_DUST) !== 0) continue;
+        if (!sketchMatches(bits[i], this.filter)) continue;
+        const i3 = i * 3;
+        const x = cat[i3] - ox;
+        const y = cat[i3 + 1] - oy;
+        const z = cat[i3 + 2] - oz;
+        const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
+        const my = e[1] * x + e[5] * y + e[9] * z + e[13];
+        const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
+        const mw = e[3] * x + e[7] * y + e[11] * z + e[15];
+        const cw = p[3] * mx + p[7] * my + p[11] * mz + p[15] * mw;
+        if (cw <= 1e-6) continue;
+        const nx = (p[0] * mx + p[4] * my + p[8] * mz + p[12] * mw) / cw;
+        const ny = (p[1] * mx + p[5] * my + p[9] * mz + p[13] * mw) / cw;
+        if (nx < -1.15 || nx > 1.15 || ny < -1.15 || ny > 1.15) continue;
+        const sx = rect.left + (nx * 0.5 + 0.5) * rect.width;
+        const sy = rect.top + (-ny * 0.5 + 0.5) * rect.height;
+        const d = Math.hypot(sx - cx, sy - cy);
+        const viewD = Math.max(1e-4, Math.hypot(mx, my, mz));
+        const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
+        const hitR = Math.max(22, 0.55 * 2 * glowRadiusKpc(lum[i], dim) * pxPer / viewD);
+        if (d <= hitR && d < bestD) {
+          bestD = d;
+          bestId = ids[i];
+        }
       }
     }
-    if (bestI < 0) return null;
-    return objectAt(this.seed, ids[bestI]);
+    if (bestId < 0) return null;
+    return objectAt(this.seed, bestId);
   }
 
   // ------------------------------------------------------------- input
@@ -1650,8 +1706,7 @@ export class GalaxyView {
       this.grownCount = 0;
       return;
     }
-    const cloud = this.cloud;
-    if (!cloud) {
+    if (!this.cloud && !this.nebulae) {
       this.focusObj = null;
       this.focusHud = null;
       this.grownCount = 0;
@@ -1668,51 +1723,54 @@ export class GalaxyView {
     const ox = this.arcCenter.x;
     const oy = this.arcCenter.y;
     const oz = this.arcCenter.z;
-    const cat = cloud.pos;
-    const lum = cloud.lum;
-    const bits = cloud.bits;
-    const ids = cloud.ids;
     let grown = 0;
-    let bestI = -1;
+    let bestId = -1;
     let bestOff = 1;
     let bestDist = 0;
     let bestDim = false;
-    for (let i = 0; i < cloud.n; i++) {
-      if ((bits[i] & BIT_DUST) !== 0) continue;
-      if (!sketchMatches(bits[i], this.filter)) continue;
-      const i3 = i * 3;
-      const dx = cat[i3] - ox - cx;
-      const dy = cat[i3 + 1] - oy - cy;
-      const dz = cat[i3 + 2] - oz - cz;
-      const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 < 1e-12) continue;
-      const dist = Math.sqrt(d2);
-      const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
-      if (!aimLocks(lum[i], dist, dim)) continue;
-      grown++;
-      const inv = 1 / dist;
-      const dot = dx * inv * lx + dy * inv * ly + dz * inv * lz;
-      if (dot < cosCone) continue;
-      const off = 1 - dot;
-      if (off < bestOff) {
-        bestOff = off;
-        bestI = i;
-        bestDist = dist;
-        bestDim = dim;
+    for (const cloud of [this.cloud, this.nebulae]) {
+      if (!cloud) continue;
+      const cat = cloud.pos;
+      const lum = cloud.lum;
+      const bits = cloud.bits;
+      const ids = cloud.ids;
+      for (let i = 0; i < cloud.n; i++) {
+        if ((bits[i] & BIT_DUST) !== 0) continue;
+        if (!sketchMatches(bits[i], this.filter)) continue;
+        const i3 = i * 3;
+        const dx = cat[i3] - ox - cx;
+        const dy = cat[i3 + 1] - oy - cy;
+        const dz = cat[i3 + 2] - oz - cz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < 1e-12) continue;
+        const dist = Math.sqrt(d2);
+        const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
+        if (!aimLocks(lum[i], dist, dim)) continue;
+        grown++;
+        const inv = 1 / dist;
+        const dot = dx * inv * lx + dy * inv * ly + dz * inv * lz;
+        if (dot < cosCone) continue;
+        const off = 1 - dot;
+        if (off < bestOff) {
+          bestOff = off;
+          bestId = ids[i];
+          bestDist = dist;
+          bestDim = dim;
+        }
       }
     }
     this.grownCount = grown;
-    if (bestI < 0) {
+    if (bestId < 0) {
       this.focusObj = null;
       this.focusHud = null;
       return;
     }
-    if (this.focusObj?.id === ids[bestI] && this.focusHud) {
+    if (this.focusObj?.id === bestId && this.focusHud) {
       this.focusHud.dist = bestDist;
       this.focusHud.dark = bestDim;
       return;
     }
-    const hit = objectAt(this.seed, ids[bestI]);
+    const hit = objectAt(this.seed, bestId);
     if (!hit) {
       this.focusObj = null;
       this.focusHud = null;
@@ -1764,17 +1822,24 @@ export class GalaxyView {
   private applyStarVis(): void {
     if (!this.starVis || !this.cloud) return;
     const arr = this.starVis.array as Float32Array;
-    const { bits, gain, n } = this.cloud;
+    const { bits, n } = this.cloud;
     const lim = Math.min(n, arr.length);
     for (let i = 0; i < lim; i++) {
-      if ((bits[i] & BIT_DUST) !== 0 || (bits[i] & BIT_NEBULA) !== 0) {
-        arr[i] = gain[i];
-        continue;
-      }
-      // Stars: aVis is a filter. Intensity is L / d² in the shader.
       arr[i] = sketchMatches(bits[i], this.filter) ? 1 : 0.08;
     }
     this.starVis.needsUpdate = true;
+  }
+
+  /** Filter dims non-matching shells; gain stays the emission measure. */
+  private applyNebVis(): void {
+    if (!this.nebVis || !this.nebulae) return;
+    const arr = this.nebVis.array as Float32Array;
+    const { bits, gain, n } = this.nebulae;
+    const lim = Math.min(n, arr.length);
+    for (let i = 0; i < lim; i++) {
+      arr[i] = sketchMatches(bits[i], this.filter) ? gain[i] : gain[i] * 0.08;
+    }
+    this.nebVis.needsUpdate = true;
   }
 
   // --------------------------------------------------------------- frame
@@ -1820,13 +1885,13 @@ export class GalaxyView {
       phi: this.phi,
       radius: Math.hypot(this.arcCenter.x, this.arcCenter.z),
       pickable: true,
-      resolved: this.cloud?.n ?? 0,
+      resolved: this.shownCount(),
       grown: this.grownCount,
       sector: this.regionLabel,
       population: this.sectorPop,
       focus: this.focusHud,
       warp: this.thrustOn,
-      backdrop: this.silPts ? (silhouetteCloud(this.seed)?.n ?? 0) : 0,
+      backdrop: this.shownCount(),
     });
     this.raf = requestAnimationFrame(this.frame);
   };
