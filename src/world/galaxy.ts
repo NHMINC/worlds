@@ -300,7 +300,10 @@ export interface DustSmear {
  * photograph budget (EVENT_K), not every funeral — too many and
  * the sky is a wall. Occupancy / SFR / H II still drink `ismAt`.
  */
-export function collectDustSmears(seed: string): DustSmear[] {
+export function collectDustSmears(
+  seed: string,
+  onRing?: (done: number, total: number) => void,
+): DustSmear[] {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax } = UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const mLo = UNIVERSE.GALAXY_DUST_M;
@@ -351,6 +354,7 @@ export function collectDustSmears(seed: string): DustSmear[] {
         }
       }
     }
+    onRing?.(ir + 1, nr);
   }
   return out;
 }

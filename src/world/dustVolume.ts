@@ -43,7 +43,10 @@ function splat(data: Float32Array, nx: number, ny: number, nz: number, fx: numbe
 }
 
 /** Sample death-smears into a 3D density volume. Empty space stays 0. */
-export function bakeDustVolume(seed: string): DustVolume {
+export function bakeDustVolume(
+  seed: string,
+  onProgress?: (frac: number) => void,
+): DustVolume {
   const nx = UNIVERSE.GALAXY_DUST_VOL_N;
   const ny = UNIVERSE.GALAXY_DUST_VOL_NY;
   const nz = nx;
@@ -54,7 +57,9 @@ export function bakeDustVolume(seed: string): DustVolume {
   const vz = size[2] / nz;
   const step = Math.min(vx, vy, vz) * 0.7;
   const rho = UNIVERSE.GALAXY_DUST_SMEAR_RHO;
-  const smears = collectDustSmears(seed);
+  const smears = collectDustSmears(seed, (done, total) => {
+    onProgress?.(0.9 * (total > 0 ? done / total : 1));
+  });
   for (let e = 0; e < smears.length; e++) {
     const ev = smears[e];
     const rng = mulberry32(ev.seed);
@@ -83,6 +88,7 @@ export function bakeDustVolume(seed: string): DustVolume {
       }
     }
   }
+  onProgress?.(1);
   return { nx, ny, nz, origin, size, data };
 }
 

@@ -3,7 +3,8 @@
  * function of the seed; we walk it once per page load and keep it.
  * The explorer attaches the GPU mesh — it does not walk the disk.
  * Cosmic-engineer rebuilds remint or rebake under the live UNIVERSE
- * without bringing the HTML splash back.
+ * without bringing the HTML splash back. Progress is the walk:
+ * rings visited / rings in the disk, then the dust bake.
  */
 import { UNIVERSE } from './physics';
 import {
@@ -15,6 +16,13 @@ import {
   silhouetteCloud,
   type StarCloud,
 } from './sectors';
+
+export type UniverseProgress = {
+  kind: 'harvest' | 'dust';
+  /** 0..1 of the whole job (harvest then fog). */
+  frac: number;
+  label: string;
+};
 
 type ReadyMsg = {
   type: 'ready';
@@ -33,8 +41,63 @@ type ReadyMsg = {
   ms: number;
 };
 
+type ProgressMsg = {
+  type: 'progress';
+  seed: string;
+  done: number;
+  total: number;
+};
+
+type WorkerMsg = ReadyMsg | ProgressMsg;
+
+type ProgressFn = (p: UniverseProgress) => void;
+
 let inflight: Promise<StarCloud> | null = null;
 let splashHidden = false;
+const listeners = new Set<ProgressFn>();
+
+/** Subscribe to harvest / dust-bake progress. Returns an unsubscribe. */
+export function onUniverseProgress(fn: ProgressFn): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+function emitProgress(p: UniverseProgress): void {
+  for (const fn of listeners) fn(p);
+  paintSplash(p);
+}
+
+function paintSplash(p: UniverseProgress): void {
+  const boot = document.getElementById('universe-boot');
+  if (!boot) return;
+  const copy = document.getElementById('universe-boot-copy');
+  const fill = document.getElementById('universe-boot-fill');
+  const bar = document.getElementById('universe-boot-bar');
+  if (copy) copy.textContent = p.label;
+  if (fill) fill.style.width = `${Math.round(p.frac * 100)}%`;
+  if (bar) {
+    bar.setAttribute('aria-valuenow', String(Math.round(p.frac * 100)));
+  }
+}
+
+function emitHarvest(done: number, total: number): void {
+  const t = Math.max(1, total);
+  emitProgress({
+    kind: 'harvest',
+    frac: 0.9 * (done / t),
+    label: 'Walking the disk…',
+  });
+}
+
+function emitDust(frac: number): void {
+  emitProgress({
+    kind: 'dust',
+    frac: 0.9 + 0.1 * Math.max(0, Math.min(1, frac)),
+    label: 'Baking the fog…',
+  });
+}
 
 /** Remove the HTML splash once. Survives React Strict Mode remounts. */
 export function hideUniverseSplash(): void {
@@ -79,23 +142,31 @@ function mintInWorker(seed: string): Promise<StarCloud> {
       resolve(cloud);
     };
     const knobs = harvestWorkerKnobs();
+    emitHarvest(0, 1);
     try {
       const w = new Worker(new URL('./silhouette.worker.ts', import.meta.url), { type: 'module' });
-      w.onmessage = (e: MessageEvent<ReadyMsg>) => {
+      w.onmessage = (e: MessageEvent<WorkerMsg>) => {
         const m = e.data;
+        if (m.type === 'progress') {
+          if (m.seed === seed) emitHarvest(m.done, m.total);
+          return;
+        }
         if (m.type !== 'ready' || m.seed !== seed) return;
         const cloud = cloudFromMsg(m);
-        installSilhouetteCloud(seed, cloud);
+        emitDust(0);
+        installSilhouetteCloud(seed, cloud, emitDust);
         w.terminate();
         finish(cloud);
       };
       w.onerror = () => {
         w.terminate();
-        finish(buildSilhouetteCloud(seed));
+        finish(
+          buildSilhouetteCloud(seed, emitHarvest),
+        );
       };
       w.postMessage({ type: 'mint', seed, knobs });
     } catch {
-      finish(buildSilhouetteCloud(seed));
+      finish(buildSilhouetteCloud(seed, emitHarvest));
     }
   });
 }
@@ -123,7 +194,10 @@ export async function remintUniverse(seed = UNIVERSE.CANONICAL_SEED): Promise<St
 
 /** Rebake death-smear fog. Stars stay; the explorer swaps the 3D texture. */
 export function rebakeUniverseDust(seed = UNIVERSE.CANONICAL_SEED): void {
-  rebakeDustCache(seed);
+  emitProgress({ kind: 'dust', frac: 0, label: 'Baking the fog…' });
+  rebakeDustCache(seed, (frac) => {
+    emitProgress({ kind: 'dust', frac, label: 'Baking the fog…' });
+  });
 }
 
 // Start the once-per-load harvest as soon as the module is imported,

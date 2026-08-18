@@ -2,10 +2,11 @@
  * Whole-disk harvest (the magnitude-limited survey).
  * The main thread keeps the map / dive moving; this worker mints
  * the backdrop once per seed. Rebuilds post the harvest knobs —
- * this UNIVERSE copy is not the main thread's.
+ * this UNIVERSE copy is not the main thread's. Progress is rings
+ * walked, posted so the splash / explorer can fill a bar.
  */
 import { UNIVERSE } from './physics';
-import { buildSilhouetteCloud } from './sectors';
+import { mintSilhouetteCloud } from './sectors';
 
 const post = self as unknown as {
   postMessage: (data: unknown, transfer?: Transferable[]) => void;
@@ -24,7 +25,10 @@ function applyKnobs(knobs: Record<string, number> | undefined): void {
 self.onmessage = (e: MessageEvent<{ type: 'mint'; seed: string; knobs?: Record<string, number> }>): void => {
   if (e.data.type !== 'mint') return;
   applyKnobs(e.data.knobs);
-  const cloud = buildSilhouetteCloud(e.data.seed);
+  const seed = e.data.seed;
+  const cloud = mintSilhouetteCloud(seed, (done, total) => {
+    post.postMessage({ type: 'progress', seed, done, total });
+  });
   const n = cloud.n;
   const ids = cloud.ids.slice(0, n);
   const pos = cloud.pos.slice(0, n * 3);
@@ -39,7 +43,7 @@ self.onmessage = (e: MessageEvent<{ type: 'mint'; seed: string; knobs?: Record<s
   post.postMessage(
     {
       type: 'ready',
-      seed: e.data.seed,
+      seed,
       n,
       ids,
       pos,

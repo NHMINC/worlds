@@ -3,7 +3,7 @@ import { UNIVERSE } from '../world/physics';
 import { classifyStar } from '../world/stellar';
 import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
-import { remintUniverse, rebakeUniverseDust } from '../world/universePrep';
+import { remintUniverse, rebakeUniverseDust, onUniverseProgress } from '../world/universePrep';
 import { LIVE_KNOBS, REBUILD_KNOBS, liveKnob, rebuildKnob } from './liveKnobs';
 
 const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
@@ -44,6 +44,9 @@ export function GalaxyExplorer(props: Props) {
   const [knobVal, setKnobVal] = useState(0);
   const [knobDirty, setKnobDirty] = useState(false);
   const [rebuilding, setRebuilding] = useState<null | 'harvest' | 'dust'>(null);
+  const [rebuildFrac, setRebuildFrac] = useState(0);
+  const [rebuildLabel, setRebuildLabel] = useState('');
+  const rebuildFillRef = useRef<HTMLElement>(null);
   const [frame, setFrame] = useState<GalaxyFrame>({
     mode: 'region',
     theta: 0,
@@ -141,6 +144,14 @@ export function GalaxyExplorer(props: Props) {
     if (ready) viewRef.current?.setVisited(props.visitedStarIds ?? []);
   }, [props.visitedStarIds, ready]);
 
+  useEffect(() => {
+    return onUniverseProgress((p) => {
+      setRebuildFrac(p.frac);
+      setRebuildLabel(p.label);
+      if (rebuildFillRef.current) rebuildFillRef.current.style.width = `${Math.round(p.frac * 100)}%`;
+    });
+  }, []);
+
   function openKnob(id: string): void {
     const live = liveKnob(id);
     if (live) {
@@ -192,6 +203,8 @@ export function GalaxyExplorer(props: Props) {
     const view = viewRef.current;
     if (!k || !view || rebuilding) return;
     k.write(knobVal);
+    setRebuildFrac(0);
+    setRebuildLabel(k.scope === 'harvest' ? 'Walking the disk…' : 'Baking the fog…');
     setRebuilding(k.scope);
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     try {
@@ -226,8 +239,17 @@ export function GalaxyExplorer(props: Props) {
         {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}
         {rebuilding && (
           <div className="gx-rebuild" role="status">
-            <b>{rebuilding === 'harvest' ? 'Reminting the sky…' : 'Rebaking the dust…'}</b>
-            <i>{rebuilding === 'harvest' ? 'The harvest walks the disk under the new law.' : 'Death smears are baking into the fog.'}</i>
+            <b>{rebuildLabel || (rebuilding === 'harvest' ? 'Walking the disk…' : 'Baking the fog…')}</b>
+            <div
+              className="gx-rebuild-bar"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(rebuildFrac * 100)}
+            >
+              <i ref={rebuildFillRef} />
+            </div>
+            <em>{Math.round(rebuildFrac * 100)}%</em>
           </div>
         )}
         {inRegion && <div className="gx-pip" aria-hidden />}

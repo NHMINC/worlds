@@ -616,8 +616,8 @@ function catalogCellVolume(ir: number): number {
 let silhouetteMemo: { seed: string; cloud: StarCloud } | null = null;
 let dustVolMemo: { seed: string; vol: DustVolume } | null = null;
 
-function rememberDustVolume(seed: string): void {
-  dustVolMemo = { seed, vol: bakeDustVolume(seed) };
+function rememberDustVolume(seed: string, onDust?: (frac: number) => void): void {
+  dustVolMemo = { seed, vol: bakeDustVolume(seed, onDust) };
 }
 
 /** Drop the harvest so the next mint walks the disk under current UNIVERSE. */
@@ -631,8 +631,8 @@ export function forgetDustVolume(): void {
 }
 
 /** Rebake the extinction volume without reminting stars. */
-export function rebakeDustCache(seed: string): DustVolume {
-  rememberDustVolume(seed);
+export function rebakeDustCache(seed: string, onDust?: (frac: number) => void): DustVolume {
+  rememberDustVolume(seed, onDust);
   return dustVolMemo!.vol;
 }
 
@@ -647,9 +647,13 @@ export function harvestDustVolume(seed: string): DustVolume | null {
 }
 
 /** Install a harvest minted off-thread. Same cache `buildSilhouetteCloud` uses. */
-export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
+export function installSilhouetteCloud(
+  seed: string,
+  cloud: StarCloud,
+  onDust?: (frac: number) => void,
+): void {
   silhouetteMemo = { seed, cloud };
-  rememberDustVolume(seed);
+  rememberDustVolume(seed, onDust);
 }
 
 /**
@@ -661,16 +665,31 @@ export function installSilhouetteCloud(seed: string, cloud: StarCloud): void {
  * the extinction volume is the ISM field. Clumps stay addressable
  * via dustId / dustPhysics; they are not minted into the sky.
  */
-export function buildSilhouetteCloud(seed: string): StarCloud {
+export function buildSilhouetteCloud(
+  seed: string,
+  onRing?: (done: number, total: number) => void,
+): StarCloud {
   if (silhouetteMemo && silhouetteMemo.seed === seed) return silhouetteMemo.cloud;
   const t0 = performance.now();
-  const cloud = mintHarvestCloud(seed, t0);
+  const cloud = mintHarvestCloud(seed, t0, onRing);
   silhouetteMemo = { seed, cloud };
   rememberDustVolume(seed);
   return cloud;
 }
 
-function mintHarvestCloud(seed: string, t0: number): StarCloud {
+/** Harvest walk only — no cache, no dust bake. The worker uses this. */
+export function mintSilhouetteCloud(
+  seed: string,
+  onRing?: (done: number, total: number) => void,
+): StarCloud {
+  return mintHarvestCloud(seed, performance.now(), onRing);
+}
+
+function mintHarvestCloud(
+  seed: string,
+  t0: number,
+  onRing?: (done: number, total: number) => void,
+): StarCloud {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
@@ -706,6 +725,7 @@ function mintHarvestCloud(seed: string, t0: number): StarCloud {
         }
       }
     }
+    onRing?.(ir + 1, nr);
   }
   return finishCloud(c, n, t0);
 }
