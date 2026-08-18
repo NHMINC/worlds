@@ -164,13 +164,13 @@ visits only** (overlays, camera, labels). We do
   by a different IMF. Height is finished only on keepers.
   Spokes shard across workers (every worker sees the core);
   the packed
-  photograph lands in IndexedDB (`HARVEST_CACHE_VER` + seed +
-  floors) so a second load does not re-read the disk. A hard
-  refresh keeps that pack. A harvest / nebula **Rebuild**
-  forgets the matching row and walks again — the cache is
-  not a lock on the knobs. The export JSON does not
-  carry the photograph — a friend regenerates the same sky
-  from the canonical seed. The explorer stays mounted (`is-dormant` on a
+  photograph lands in IndexedDB keyed by `VITE_BUILD_ID`
+  (Pages: `github.sha`) plus seed and survey floors. Same
+  build keeps the pack. A new deploy misses, drops the old
+  row, and walks again. A harvest / nebula **Rebuild** also
+  forgets and remints — the cache is not a lock on the knobs.
+  The export JSON does not carry the photograph — a friend
+  regenerates the same sky from the canonical seed. The explorer stays mounted (`is-dormant` on a
   world) so opening the map does not remint or show the splash
   again. An empty save does not write a camp: it queries nearby
   solar-circle hosts for a living world (`discoverHabitable`) and
@@ -248,8 +248,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   frame; rebuild: a draft until Rebuild). The HTML splash
   stays gone; the explorer owns the wait. Mint and remint
   fill a progress bar from the walk itself (star rings,
-  then nebulae, then the dust bake). A cache hit skips the
-  walk and still bakes dust if needed. The bar is a native
+  then nebulae, then the dust bake). A cache hit (same
+  `VITE_BUILD_ID`) skips the walk and still bakes dust if
+  needed. A new Pages SHA misses and remints. The bar is a native
   `<progress>` — Pages CSP is `style-src 'self'`, so a
   fill’s `element.style` never paints. App boot
   mints three catalogs once (`prepareUniverse`): the

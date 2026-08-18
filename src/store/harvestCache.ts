@@ -1,10 +1,18 @@
 /**
  * Packed harvest photograph. Not the galaxy — objectAt is the galaxy.
  * This is the walk's product so a second load (or a hard-refresh)
- * does not re-read every address. Keyed by seed + survey floors.
+ * does not re-read every address. Keyed by the Pages build id
+ * (`VITE_BUILD_ID` = github.sha) plus seed + survey floors. A new
+ * deploy misses and remints; same build keeps the pack.
  */
 import { db, type HarvestCacheRecord } from './db';
-import { HARVEST_CACHE_VER, type StarCloud } from '../world/sectors';
+import type { StarCloud } from '../world/sectors';
+
+/** Same id the service worker URL drinks. Empty / missing → `dev`. */
+export function skyBuildId(): string {
+  const id = import.meta.env.VITE_BUILD_ID;
+  return typeof id === 'string' && id.length > 0 ? id : 'dev';
+}
 
 function asF64(v: ArrayLike<number> | ArrayBuffer): Float64Array {
   if (v instanceof Float64Array) return v;
@@ -34,9 +42,10 @@ export function harvestCacheKey(
   seed: string,
   knobs: Record<string, number>,
 ): string {
+  const build = skyBuildId();
   if (kind === 'stars') {
     return [
-      HARVEST_CACHE_VER,
+      build,
       seed,
       's',
       knob(knobs, 'GALAXY_SILHOUETTE_M', 0),
@@ -46,7 +55,7 @@ export function harvestCacheKey(
     ].join('|');
   }
   return [
-    HARVEST_CACHE_VER,
+    build,
     seed,
     'n',
     knob(knobs, 'GALAXY_NEBULA_M', 0),
@@ -82,8 +91,10 @@ export async function loadHarvestCache(
 ): Promise<StarCloud | null> {
   try {
     const row = await db.harvest.get(harvestCacheKey(kind, seed, knobs));
-    if (!row || row.seed !== seed || row.kind !== kind || row.n <= 0) return null;
-    return fromRecord(row);
+    if (row && row.seed === seed && row.kind === kind && row.n > 0) return fromRecord(row);
+    // New build id or new floors: drop leftover packs for this seed.
+    await forgetHarvestCache(seed);
+    return null;
   } catch {
     return null;
   }

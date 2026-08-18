@@ -784,9 +784,6 @@ export type HarvestSpan = {
   it1?: number;
 };
 
-/** Packed-harvest cache generation. Bump when the walk or pack shape changes. */
-export const HARVEST_CACHE_VER = 1;
-
 /**
  * Split the disk into `n` azimuth wedges of equal spoke count.
  * Every worker sees the core — the giant-branch cost is what

@@ -95,20 +95,27 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     float t = max(rho - uExtinctCut, 0.0);
     return pow(t, max(uExtinctHard, 0.15));
   }
-  // Skin is Beer–Lambert (blue dies first). A tap at or above
-  // the wall is a lightless core — the rest of the column is gone.
+  // Skin is Beer–Lambert (blue dies first). A hard r≥wall clip
+  // printed the Cartesian lattice as 45° diamonds. The core still
+  // goes lightless; the edge is a ramp, not a faceted isosurface.
   float extinctTau(vec3 from, vec3 to) {
     float dCat = length(to - from);
     float dt = dCat / ${glslFloat(steps)};
     vec3 dir = (to - from) / max(dCat, 1e-4);
     float tau = 0.0;
     float wall = uExtinctWall;
+    float kdt = uExtinctK * dt;
+    float coreFill = uExtinctMax / max(kdt, 1e-4);
     for (int i = 0; i < ${steps}; i++) {
       float r = extinctRho(from + dir * ((float(i) + 0.5) * dt));
-      if (wall > 1e-4 && r >= wall) return uExtinctMax;
-      tau += r;
+      if (wall > 1e-4) {
+        float core = smoothstep(wall * 0.62, wall, r);
+        tau += mix(r, max(r, coreFill), core);
+      } else {
+        tau += r;
+      }
     }
-    return min(tau * uExtinctK * dt, uExtinctMax);
+    return min(tau * kdt, uExtinctMax);
   }
   vec3 extinctT(vec3 from, vec3 to) {
     return exp(-extinctTau(from, to) * uDustRgb);

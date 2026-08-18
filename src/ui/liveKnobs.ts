@@ -221,7 +221,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Dust wall',
     group: 'dust',
     hint: 'cores go black; only the rim reddens',
-    about: 'Density at or above this is a wall — no starlight through the ribbon. Below it is a thin reddened skin (blue dies first). 0 is the old veil: every column is fog. The “sometimes” is whether a sightline hits a filament, not a coin flip per cloud. Next frame.',
+    about: 'Density at or above this is a wall — no starlight through the ribbon. The edge is a ramp (not a hard clip) so the Cartesian bake does not print 45° diamonds. Below the ramp is a thin reddened skin (blue dies first). 0 is the old veil: every column is fog. Next frame.',
     uniform: 'uExtinctWall',
     min: 0,
     max: 1,

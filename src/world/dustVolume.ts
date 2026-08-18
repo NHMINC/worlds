@@ -54,18 +54,19 @@ function splatCrest(
   iz: number,
   peak: number,
 ): void {
-  // σ_xz ≈ 0.85 vx — a crest is a small blob, not a brick.
-  // σ_y  ≈ 0.45 vy — the molecular sheet is already thin.
-  const invXz = 1 / (2 * 0.85 * 0.85);
-  const invY = 1 / (2 * 0.45 * 0.45);
+  // Two voxels out in the disk: a crest is a blob, not a brick.
+  // A 1-tap tent through the wall was the 45° diamond lane.
+  // σ_y stays tighter so edge-on is still a sheet.
+  const invXz = 1 / (2 * 1.35 * 1.35);
+  const invY = 1 / (2 * 0.55 * 0.55);
   for (let dj = -1; dj <= 1; dj++) {
     const jy = iy + dj;
     if (jy < 0 || jy >= ny) continue;
     const wy = Math.exp(-(dj * dj) * invY);
-    for (let dk = -1; dk <= 1; dk++) {
+    for (let dk = -2; dk <= 2; dk++) {
       const jz = iz + dk;
       if (jz < 0 || jz >= nz) continue;
-      for (let di = -1; di <= 1; di++) {
+      for (let di = -2; di <= 2; di++) {
         const jx = ix + di;
         if (jx < 0 || jx >= nx) continue;
         const w = wy * Math.exp(-(di * di + dk * dk) * invXz);
