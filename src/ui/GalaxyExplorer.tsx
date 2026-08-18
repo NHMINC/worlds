@@ -252,8 +252,8 @@ export function GalaxyExplorer(props: Props) {
             <em>{Math.round(rebuildFrac * 100)}%</em>
           </div>
         )}
-        {inRegion && <div className="gx-pip" aria-hidden />}
-        {inRegion && (
+        {inRegion && !engineer && <div className="gx-pip" aria-hidden />}
+        {inRegion && !engineer && (
           <button
             type="button"
             className={`gx-warp${frame.warp ? ' stop' : ''}`}
@@ -418,7 +418,10 @@ export function GalaxyExplorer(props: Props) {
           <button
             type="button"
             className="gx-chip"
-            onClick={() => setEngineer('pick')}
+            onClick={() => {
+              viewRef.current?.setWarp(false);
+              setEngineer('pick');
+            }}
           >
             Cosmic engineer
           </button>
