@@ -189,39 +189,81 @@ export function density(p: GalPos): number {
 let ismCornerSeed = '';
 const ismCornerMemo = new Map<number, number>();
 
-function ismCorner(seed: string, ix: number, iy: number, iz: number, dust = false): number {
+function ismCorner(seed: string, ix: number, iy: number, iz: number): number {
   if (seed !== ismCornerSeed) {
     ismCornerMemo.clear();
     ismCornerSeed = seed;
   }
-  const key =
-    (dust ? 0x40000000 : 0) | ((ix + 512) << 20) | ((iy + 512) << 10) | (iz + 512);
+  // Occupancy lattice coords stay within ±512 (TURB_FREQ ≪ 1 per
+  // kpc); the dust fbm does not and has its own stateless hash.
+  const key = ((ix + 512) << 20) | ((iy + 512) << 10) | (iz + 512);
   const hit = ismCornerMemo.get(key);
   if (hit !== undefined) return hit;
-  const v = 2 * u01(seed, dust ? 'dustN' : 'ism', ix, iy, iz) - 1;
+  const v = 2 * u01(seed, 'ism', ix, iy, iz) - 1;
   ismCornerMemo.set(key, v);
   return v;
 }
 
+/** Per-seed 32-bit base for the dust lattice, minted once. */
+let dustBaseSeed = '';
+let dustBase = 0;
+
+function dustHashBase(seed: string): number {
+  if (seed !== dustBaseSeed) {
+    dustBase = xmur3(`galaxy:${seed}:dustN`)();
+    dustBaseSeed = seed;
+  }
+  return dustBase;
+}
+
+/**
+ * Stateless corner hash in [-1, 1] — f(seed, ix, iy, iz) with no
+ * memo and no coordinate-range limit, so the value can never
+ * depend on evaluation order. The universe is a pure function.
+ */
+function dustCorner(base: number, ix: number, iy: number, iz: number): number {
+  let h = base | 0;
+  h = Math.imul(h ^ ix, 0x9e3779b1);
+  h = Math.imul(h ^ iy, 0x85ebca6b);
+  h = Math.imul(h ^ iz, 0xc2b2ae35);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x27d4eb2f);
+  h ^= h >>> 13;
+  return ((h >>> 0) / 4294967296) * 2 - 1;
+}
+
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
 /** Trilinearly interpolated value noise in [-1, 1] — coherent, not a per-cell coin. */
-function ismNoise(seed: string, x: number, y: number, z: number, dust = false): number {
+function ismNoise(seed: string, x: number, y: number, z: number): number {
   const ix = Math.floor(x);
   const iy = Math.floor(y);
   const iz = Math.floor(z);
   const fx = smooth(x - ix);
   const fy = smooth(y - iy);
   const fz = smooth(z - iz);
-  const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-  const c00 = lerp(ismCorner(seed, ix, iy, iz, dust), ismCorner(seed, ix + 1, iy, iz, dust), fx);
-  const c10 = lerp(ismCorner(seed, ix, iy + 1, iz, dust), ismCorner(seed, ix + 1, iy + 1, iz, dust), fx);
-  const c01 = lerp(ismCorner(seed, ix, iy, iz + 1, dust), ismCorner(seed, ix + 1, iy, iz + 1, dust), fx);
-  const c11 = lerp(
-    ismCorner(seed, ix, iy + 1, iz + 1, dust),
-    ismCorner(seed, ix + 1, iy + 1, iz + 1, dust),
-    fx,
-  );
+  const c00 = lerp(ismCorner(seed, ix, iy, iz), ismCorner(seed, ix + 1, iy, iz), fx);
+  const c10 = lerp(ismCorner(seed, ix, iy + 1, iz), ismCorner(seed, ix + 1, iy + 1, iz), fx);
+  const c01 = lerp(ismCorner(seed, ix, iy, iz + 1), ismCorner(seed, ix + 1, iy, iz + 1), fx);
+  const c11 = lerp(ismCorner(seed, ix, iy + 1, iz + 1), ismCorner(seed, ix + 1, iy + 1, iz + 1), fx);
+  return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
+}
+
+/** Same interpolation on the stateless dust lattice. */
+function dustNoise(seed: string, x: number, y: number, z: number): number {
+  const base = dustHashBase(seed);
+  const ix = Math.floor(x);
+  const iy = Math.floor(y);
+  const iz = Math.floor(z);
+  const fx = smooth(x - ix);
+  const fy = smooth(y - iy);
+  const fz = smooth(z - iz);
+  const c00 = lerp(dustCorner(base, ix, iy, iz), dustCorner(base, ix + 1, iy, iz), fx);
+  const c10 = lerp(dustCorner(base, ix, iy + 1, iz), dustCorner(base, ix + 1, iy + 1, iz), fx);
+  const c01 = lerp(dustCorner(base, ix, iy, iz + 1), dustCorner(base, ix + 1, iy, iz + 1), fx);
+  const c11 = lerp(dustCorner(base, ix, iy + 1, iz + 1), dustCorner(base, ix + 1, iy + 1, iz + 1), fx);
   return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
 }
 
@@ -284,7 +326,7 @@ function dustFbm(seed: string, x: number, y: number, z: number, salt: number): n
   let amp = 1;
   let f = 1;
   for (let o = 0; o < 4; o++) {
-    sum += amp * ismNoise(seed, x * f + salt + o * 37.3, y * f + o * 11.1, z * f - salt - o * 23.7, true);
+    sum += amp * dustNoise(seed, x * f + salt + o * 37.3, y * f + o * 11.1, z * f - salt - o * 23.7);
     norm += amp;
     amp *= g;
     f *= 2.05;
