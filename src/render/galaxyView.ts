@@ -119,10 +119,12 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   }
 `;
 
-/** Look test: `?dust=green` paints the extinction columns green. */
+/** Look test: `?dust=green` / `?fog=green` paints the extinction
+ *  volume bright green on the sky so the fog's shape is visible
+ *  even where no harvest star sits. */
 function dustDebugOn(): boolean {
   if (typeof location === 'undefined') return false;
-  return /[?&]dust=green/.test(location.search);
+  return /[?&](?:dust|fog|fox)=green/.test(location.search);
 }
 
 /** Park “here” this far ahead of the camera (catalog kpc). */
@@ -982,9 +984,13 @@ export class GalaxyView {
     const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
-      fragmentShader: cosmicFrag(),
+      fragmentShader: cosmicFrag(extinctGlsl(16)),
       uniforms: {
         uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
+        uCenter: { value: new THREE.Vector3() },
+        uCamRotInv: { value: new THREE.Matrix3() },
+        uInvProj: { value: new THREE.Matrix4() },
+        ...this.extinctUniforms(),
       },
       depthWrite: false,
       depthTest: false,

@@ -63,11 +63,28 @@ export function cosmicVert(): string {
 `;
 }
 
-export function cosmicFrag(): string {
+export function cosmicFrag(extinctGlsl: string): string {
   return /* glsl */ `
+  ${extinctGlsl}
   uniform vec3 uVoidRgb;
+  uniform vec3 uCenter;
+  uniform float uDustDebug;
+  uniform mat3 uCamRotInv;
+  uniform mat4 uInvProj;
+  varying vec2 vNdc;
   void main() {
-    gl_FragColor = vec4(uVoidRgb, 1.0);
+    if (uDustDebug < 0.5) {
+      gl_FragColor = vec4(uVoidRgb, 1.0);
+      return;
+    }
+    vec4 view = uInvProj * vec4(vNdc, 1.0, 1.0);
+    vec3 camDir = normalize(view.xyz / max(abs(view.w), 1e-6));
+    vec3 dir = normalize(uCamRotInv * camDir);
+    vec3 ext = extinctLook(uCenter, dir);
+    float T = dot(ext, vec3(0.2126, 0.7152, 0.0722));
+    float fog = 1.0 - clamp(T, 0.0, 1.0);
+    vec3 green = vec3(0.04, 1.0, 0.1);
+    gl_FragColor = vec4(mix(uVoidRgb, green, pow(max(fog, 0.0), 0.45)), 1.0);
   }
 `;
 }
@@ -229,8 +246,13 @@ export function cosmicStarVert(extinctGlsl: string): string {
     }
     vec3 ext = extinctLook(uCenter, dir);
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
-    vI = aShine * uStarGain * extLum;
-    vColor = aColor * ext / max(extLum, 1e-3);
+    if (uDustDebug > 0.5) {
+      vI = aShine * uStarGain;
+      vColor = mix(vec3(0.05, 1.0, 0.12), aColor * 0.12, extLum);
+    } else {
+      vI = aShine * uStarGain * extLum;
+      vColor = aColor * ext / max(extLum, 1e-3);
+    }
     float n = clamp(pow(aShine / 9.5, 0.38), 0.0, 1.0);
     vNear = n;
     float pin = uPinCanvas * mix(0.5, 2.85, n);
@@ -299,8 +321,13 @@ export function cosmicSmudgeVert(extinctGlsl: string): string {
     }
     vec3 ext = extinctLook(uCenter, dir);
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
-    vI = aShine * uCosmicGain * extLum;
-    vColor = aColor * ext / max(extLum, 1e-3);
+    if (uDustDebug > 0.5) {
+      vI = aShine * uCosmicGain;
+      vColor = mix(vec3(0.05, 1.0, 0.12), aColor * 0.12, extLum);
+    } else {
+      vI = aShine * uCosmicGain * extLum;
+      vColor = aColor * ext / max(extLum, 1e-3);
+    }
     vIncl = clamp(aAspect, 0.0, 1.0);
     vAngle = aAngle;
     vSeed = aSeed;
