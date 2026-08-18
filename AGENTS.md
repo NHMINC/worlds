@@ -243,8 +243,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   knobs already sit on the GPU (void colour is a hue
   wheel plus intensity, smudge brightness and count,
   background-star brightness and count, extinction, shine,
-  Hubble glow gain / old / core / young / ionized / dust,
-  nebula glow) — a slide is the next frame. Rebuild knobs (survey
+  Hubble glow gain / photograph knee / old / core / young /
+  ionized / dust, nebula glow) — a slide is the next frame. Rebuild knobs (survey
   floors, nebula catalog, ribbon-geometry laws): the slider is a
   draft until **Rebuild** writes `UNIVERSE` and remints /
   rebakes, or **Cancel** discards. Star remint, nebula walk,
@@ -284,7 +284,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   eye’s PSF once the wings need more room than that stamp
   (Gaussian core + Lorentzian tail — the same glare shape as
   the in-system sun). Magnitude lifts the wings with no
-  bright-end cap; it does not stamp a larger disc. Above
+  bright-end cap; it does not stamp a larger disc. A column
+  of pins screen-blends and drinks `GALAXY_PHOTO_KNEE`
+  (Reinhard) — N lights in a line saturate, they do not
+  become N times one light. The Hubble glow and nebulae
+  share that knee. Above
   `HARVEST_SUPER_L` leftover luminosity adds extra I — super-suns
   only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a

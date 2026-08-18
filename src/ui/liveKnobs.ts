@@ -278,6 +278,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
+    id: 'photoKnee',
+    label: 'Photograph knee',
+    group: 'glow',
+    hint: 'where a stacked column saturates',
+    about: 'Reinhard white point for the explorer photograph. A line of sight through thousands of pins or the Hubble integral approaches this — it does not become N times one light. Harvest, glow, and nebulae share it and screen-blend. Lower keeps hue in the core and the edge-on slit. Next frame.',
+    uniform: 'uPhotoKnee',
+    min: 0.15,
+    max: 2,
+    step: 0.02,
+    read: () => UNIVERSE.GALAXY_PHOTO_KNEE,
+    write: (v) => {
+      UNIVERSE.GALAXY_PHOTO_KNEE = v;
+    },
+  },
+  {
     id: 'glowOld',
     label: 'Old-pop light',
     group: 'glow',

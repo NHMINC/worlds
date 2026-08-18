@@ -73,6 +73,7 @@ export function glowFrag(extinctChunk: string, steps: number): string {
   uniform float uGlowCut;
   uniform float uGlowSelf;
   uniform float uGlowDust;
+  uniform float uPhotoKnee;
   uniform vec3 uGlowOldRgb;
   uniform vec3 uGlowYoungRgb;
   uniform vec3 uGlowSfrRgb;
@@ -211,7 +212,7 @@ export function glowFrag(extinctChunk: string, steps: number): string {
       em += src * T * dt;
     }
     vec3 c = em * uGlowGain;
-    c = c / (1.0 + c);
+    c = c / (1.0 + c / max(uPhotoKnee, 1e-4));
     float a = max(c.r, max(c.g, c.b));
     if (a < 0.004) discard;
     gl_FragColor = vec4(c, 1.0);

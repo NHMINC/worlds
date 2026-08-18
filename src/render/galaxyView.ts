@@ -351,6 +351,7 @@ const STAR_FRAG = /* glsl */ `
   uniform float uPsfA;
   uniform float uPsfB;
   uniform float uPinCore;
+  uniform float uPhotoKnee;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -372,7 +373,8 @@ const STAR_FRAG = /* glsl */ `
         float w = exp(-dot(d, d) * uPinCore);
         float I = max(vVis, 0.0) * w;
         if (I < 0.008) discard;
-        gl_FragColor = vec4(vColor * I, 1.0);
+        vec3 pin = vColor * I;
+        gl_FragColor = vec4(pin / (1.0 + pin / max(uPhotoKnee, 1e-4)), 1.0);
         return;
       }
       float edge = length(p);
@@ -391,6 +393,9 @@ const STAR_FRAG = /* glsl */ `
       // row bleaches — the way a plate overexposes a point.
       float bleach = smoothstep(1.4, 3.2, I) * core;
       vec3 c = mix(vColor, vec3(1.0), bleach) * profile;
+      // Photograph knee — one star stays in gamut. Screen blend
+      // (the material) then saturates a column; it does not sum to N.
+      c = c / (1.0 + c / max(uPhotoKnee, 1e-4));
       gl_FragColor = vec4(c, 1.0);
       return;
     }
@@ -403,9 +408,8 @@ const STAR_FRAG = /* glsl */ `
       // shells used to ignore it and stack the midplane to white.
       float a = vVis * uNebGain * 0.12 * mask;
       if (a < 0.01) discard;
-      // Premultiplied for the screen blend — dest + src·(1-dest).
-      // Stacks saturate; they do not add to a white bar.
-      gl_FragColor = vec4(vColor * a, 1.0);
+      vec3 cheap = vColor * a;
+      gl_FragColor = vec4(cheap / (1.0 + cheap / max(uPhotoKnee, 1e-4)), 1.0);
       return;
     }
     vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
@@ -458,7 +462,7 @@ const STAR_FRAG = /* glsl */ `
     line = mix(line, lineOIII, smoothstep(0.55, 0.95, e));
     // Chemistry keeps a voice: the host tint leans the line blend.
     vec3 col = mix(line, vColor, 0.25);
-    float glow = em / (1.0 + em);
+    float glow = em / (1.0 + em / max(uPhotoKnee, 1e-4));
     gl_FragColor = vec4(col * glow, 1.0);
   }
 `;
@@ -846,6 +850,7 @@ export class GalaxyView {
       uPinCanvas: { value: HARVEST_PIN_CANVAS },
       uPinCore: { value: HARVEST_PIN_CORE },
       uFluxEps: { value: POINT_FLUX_EPS },
+      uPhotoKnee: { value: UNIVERSE.GALAXY_PHOTO_KNEE },
     };
   }
 
@@ -909,10 +914,11 @@ export class GalaxyView {
   }
 
   /**
-   * Two passes per layer, one shared fragment: stars add light,
-   * emission nebulae SCREEN (dest + src·(1-dest) — they glow but
-   * cannot stack to a white bar). Dust has no pass: both vertex
-   * shaders fold sightline extinction into every row.
+   * Two passes per layer, one shared fragment. Both SCREEN
+   * (dest + src·(1-dest)): a PSF that falls to zero is still a
+   * point, and a column of pins saturates instead of adding to
+   * N times one light. Dust has no pass: both vertex shaders
+   * fold sightline extinction into every row.
    */
   private makeCloudMaterial(
     vertexShader: string,
@@ -920,7 +926,6 @@ export class GalaxyView {
     pass: number,
   ): THREE.ShaderMaterial {
     uniforms.uPass = { value: pass };
-    const nebula = pass === 1;
     return new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader: STAR_FRAG,
@@ -928,10 +933,8 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
-      // Stars add light (One, One): a PSF that falls to zero is a
-      // point, not a stamped disc. SrcAlpha + alpha=1 was the disc.
-      blendSrc: nebula ? THREE.OneMinusDstColorFactor : THREE.OneFactor,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneMinusDstColorFactor,
       blendDst: THREE.OneFactor,
       toneMapped: false,
     });
@@ -1184,6 +1187,7 @@ export class GalaxyView {
         uGlowCut: { value: UNIVERSE.GALAXY_GLOW_CUT },
         uGlowSelf: { value: UNIVERSE.GALAXY_GLOW_SELF },
         uGlowDust: { value: UNIVERSE.GALAXY_GLOW_DUST },
+        uPhotoKnee: { value: UNIVERSE.GALAXY_PHOTO_KNEE },
         uGlowOldRgb: { value: new THREE.Vector3(...oldRgb) },
         uGlowYoungRgb: { value: new THREE.Vector3(...youngRgb) },
         uGlowSfrRgb: { value: new THREE.Vector3(...sfrRgb) },
