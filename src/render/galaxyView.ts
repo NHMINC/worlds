@@ -1050,7 +1050,10 @@ export class GalaxyView {
     geo.setAttribute('aCrisp', new THREE.BufferAttribute(cloud.crisp, 1));
     geo.setDrawRange(0, this.cosmicCount('smudge'));
     const mat = new THREE.ShaderMaterial({
-      vertexShader: cosmicSmudgeVert(extinctGlsl(8)),
+      // Same tap count as every other layer: 8 taps over a ~32 kpc
+      // chord stepped clean over whole clouds — the background
+      // showed through an opaque core.
+      vertexShader: cosmicSmudgeVert(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
       fragmentShader: cosmicSmudgeFrag(),
       uniforms: {
         uCenter: { value: new THREE.Vector3() },
@@ -1103,7 +1106,7 @@ export class GalaxyView {
     geo.setAttribute('aShine', new THREE.BufferAttribute(cloud.shine, 1));
     geo.setDrawRange(0, this.cosmicCount('star'));
     const mat = new THREE.ShaderMaterial({
-      vertexShader: cosmicStarVert(extinctGlsl(8)),
+      vertexShader: cosmicStarVert(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
       fragmentShader: cosmicStarFrag(),
       uniforms: {
         uCenter: { value: new THREE.Vector3() },
