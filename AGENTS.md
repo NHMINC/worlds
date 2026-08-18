@@ -119,7 +119,9 @@ types or star types.
   hide). The bake is already the dense tail: any hit is a
   wall for the void and the pins (leftover Beer–Lambert
   still read as night — K is gain, not thickness). Empty
-  space is vacuum. The framebuffer clear is black — the
+  space is vacuum. The Hubble glow sits in front of that
+  night (coverage from the same integral — it does not add
+  through the pins). The framebuffer clear is black — the
   cosmic quad paints the night.
 
 If you are about to special-case a seed, a body id, or a named planet
@@ -309,8 +311,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   hardware trilinear of a lone sample is a diamond face-on.
   Ribbon cores are a wall for starlight (lightless); only
   the thin rim reddens. The far photograph dies on any
-  baked clump — the night is behind the sheet. Dust does
-  not emit or reflect. Not harvest rows. A
+  baked clump, and the Hubble glow covers what the clumps
+  miss — additive glow left the night sparkling through
+  the disk. Dust does not emit or reflect. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills

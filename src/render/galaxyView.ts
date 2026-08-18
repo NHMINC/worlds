@@ -1218,9 +1218,10 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.AddEquation,
       blendSrc: THREE.OneFactor,
-      blendDst: THREE.OneFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
       toneMapped: false,
     });
     const mesh = new THREE.Mesh(geo, mat);
