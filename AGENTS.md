@@ -114,10 +114,11 @@ types or star types.
   Drawn on the far plane (a clip
   quad, not a surrounding mesh) so triangles never cross
   the camera. The warp fence keeps you off the photograph.
-  Not a catalog. Not pickable. Dust filters the sightline
-  (`extinctT` — the same column as a harvest star on that
-  ray). Empty space is vacuum; a wall is lightless for the
-  void and the pins too.
+  Not a catalog. Not pickable. Dust filters the sightline.
+  The distant sky marches the dust box (thin clumps cannot
+  hide); a wall on that ray is lightless for the void and
+  the pins. Empty space is vacuum. The framebuffer clear
+  is black — the cosmic quad paints the night.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
@@ -285,10 +286,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (Gaussian core + Lorentzian tail — the same glare shape as
   the in-system sun). Magnitude lifts the wings with no
   bright-end cap; it does not stamp a larger disc. A column
-  of pins screen-blends and drinks `GALAXY_PHOTO_KNEE`
-  (Reinhard) — N lights in a line saturate, they do not
-  become N times one light. The Hubble glow and nebulae
-  share that knee. Above
+  of pins adds into an HDR photograph; `GALAXY_PHOTO_KNEE`
+  Reinhard-compresses the finished frame — N lights in a
+  line saturate at that white point, they do not become
+  N times one light. Above
   `HARVEST_SUPER_L` leftover luminosity adds extra I — super-suns
   only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a

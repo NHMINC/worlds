@@ -73,7 +73,6 @@ export function glowFrag(extinctChunk: string, steps: number): string {
   uniform float uGlowCut;
   uniform float uGlowSelf;
   uniform float uGlowDust;
-  uniform float uPhotoKnee;
   uniform vec3 uGlowOldRgb;
   uniform vec3 uGlowYoungRgb;
   uniform vec3 uGlowSfrRgb;
@@ -202,17 +201,17 @@ export function glowFrag(extinctChunk: string, steps: number): string {
       vec3 src = uGlowOldRgb * (oldW + coreW) + uGlowYoungRgb * youngW + uGlowSfrRgb * sfrW;
       float self = (oldW + coreW + youngW + sfrW) * uGlowSelf;
       T *= exp(-vec3(self * dt));
-      float r = extinctRho(p);
+      float r = extinctRhoPeak(p, dir, dt);
       float dust = r;
       if (wall > 1e-4) {
         float core = smoothstep(wall * 0.62, wall, r);
         dust = mix(r, max(r, coreFill), core);
+        if (r >= wall * 0.62) T = vec3(0.0);
       }
       T *= exp(-dust * kdt * uDustRgb * uGlowDust);
       em += src * T * dt;
     }
     vec3 c = em * uGlowGain;
-    c = c / (1.0 + c / max(uPhotoKnee, 1e-4));
     float a = max(c.r, max(c.g, c.b));
     if (a < 0.004) discard;
     gl_FragColor = vec4(c, 1.0);

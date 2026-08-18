@@ -688,12 +688,11 @@ export const UNIVERSE = {
   /** March taps through the disk. Compiled into the shader. */
   GALAXY_GLOW_STEPS: 48,
   /**
-   * Photograph knee (Reinhard white point). A long column of
-   * harvest pins or glow approaches this; it does not add to
-   * N times one light. Shared by glow, harvest, and nebulae.
-   * They also screen-blend (dest + src·(1−dest)).
+   * Photograph knee (Reinhard white point). Layers add in an
+   * HDR buffer; this is the last step. L → knee as the column
+   * grows — N lights do not become N times one light.
    */
-  GALAXY_PHOTO_KNEE: 0.7,
+  GALAXY_PHOTO_KNEE: 0.35,
   /** Emission-nebula glow gain (photograph stretch, not new energy).
    *  Shells screen-blend: dest + src·(1-dest). They glow and
    *  saturate; they do not add to a white bar. This is one cloud. */

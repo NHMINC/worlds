@@ -282,7 +282,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Photograph knee',
     group: 'glow',
     hint: 'where a stacked column saturates',
-    about: 'Reinhard white point for the explorer photograph. A line of sight through thousands of pins or the Hubble integral approaches this — it does not become N times one light. Harvest, glow, and nebulae share it and screen-blend. Lower keeps hue in the core and the edge-on slit. Next frame.',
+    about: 'Reinhard white point on the finished explorer photograph. Layers add in HDR; this knee is the last step — a column of pins plus the Hubble integral approaches this brightness, it does not become N times one light. 0.4 keeps the core gold; raise it and Face-on / Edge-on climb toward white. Next frame.',
     uniform: 'uPhotoKnee',
     min: 0.15,
     max: 2,

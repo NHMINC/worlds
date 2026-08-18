@@ -103,6 +103,15 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     float t = max(rho - uExtinctCut, 0.0);
     return pow(t, max(uExtinctHard, 0.15));
   }
+  // Peak in this step so a thin wall cannot hide between taps
+  // when the chord is long (edge-on, or camera far above).
+  float extinctRhoPeak(vec3 p, vec3 dir, float dt) {
+    float r = extinctRho(p);
+    float h = max(dt, 0.04) * 0.33;
+    r = max(r, extinctRho(p - dir * h));
+    r = max(r, extinctRho(p + dir * h));
+    return r;
+  }
   // Skin is Beer–Lambert (blue dies first). A hard r≥wall clip
   // printed the Cartesian lattice as 45° diamonds. The core still
   // goes lightless; the edge is a ramp, not a faceted isosurface.
@@ -115,7 +124,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     float kdt = uExtinctK * dt;
     float coreFill = uExtinctMax / max(kdt, 1e-4);
     for (int i = 0; i < ${steps}; i++) {
-      float r = extinctRho(from + dir * ((float(i) + 0.5) * dt));
+      float r = extinctRhoPeak(from + dir * ((float(i) + 0.5) * dt), dir, dt);
       if (wall > 1e-4) {
         float core = smoothstep(wall * 0.62, wall, r);
         tau += mix(r, max(r, coreFill), core);
@@ -144,14 +153,36 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (leave < 0.0 || enter > leave) return vec2(1.0, -1.0);
     return vec2(enter, leave);
   }
-  // Distant sky: the same column as a harvest star on this ray.
-  // Cropping the march to the dust box (enter→leave) shortens dt,
-  // so a wall is only a veil for the void while camera→star (vacuum
-  // included) makes that same cloud lightless. One tap spacing.
+  // Distant sky: march the dust box (thin clumps cannot hide),
+  // then a wall on the sightline is lightless — independent of
+  // tap spacing. Camera→far (same dt as a nearby star) skipped
+  // whole clouds and the void showed through.
   vec3 extinctLook(vec3 from, vec3 dir) {
     vec2 span = extinctSpan(from, dir);
     if (span.x > span.y) return vec3(1.0);
-    return extinctT(from, from + dir * span.y);
+    float t0 = max(span.x, 0.0);
+    float t1 = span.y;
+    float dCat = t1 - t0;
+    if (dCat < 1e-4) return vec3(1.0);
+    float dt = dCat / ${glslFloat(steps)};
+    float kdt = uExtinctK * dt;
+    float wall = uExtinctWall;
+    float coreFill = uExtinctMax / max(kdt, 1e-4);
+    float tau = 0.0;
+    float peak = 0.0;
+    for (int i = 0; i < ${steps}; i++) {
+      vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
+      float r = extinctRhoPeak(p, dir, dt);
+      peak = max(peak, r);
+      if (wall > 1e-4) {
+        float core = smoothstep(wall * 0.62, wall, r);
+        tau += mix(r, max(r, coreFill), core);
+      } else {
+        tau += r;
+      }
+    }
+    if (wall > 1e-4 && peak >= wall * 0.62) return vec3(0.0);
+    return exp(-min(tau * kdt, uExtinctMax) * uDustRgb);
   }
 `;
 
@@ -351,7 +382,6 @@ const STAR_FRAG = /* glsl */ `
   uniform float uPsfA;
   uniform float uPsfB;
   uniform float uPinCore;
-  uniform float uPhotoKnee;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -373,8 +403,7 @@ const STAR_FRAG = /* glsl */ `
         float w = exp(-dot(d, d) * uPinCore);
         float I = max(vVis, 0.0) * w;
         if (I < 0.008) discard;
-        vec3 pin = vColor * I;
-        gl_FragColor = vec4(pin / (1.0 + pin / max(uPhotoKnee, 1e-4)), 1.0);
+        gl_FragColor = vec4(vColor * I, 1.0);
         return;
       }
       float edge = length(p);
@@ -393,9 +422,6 @@ const STAR_FRAG = /* glsl */ `
       // row bleaches — the way a plate overexposes a point.
       float bleach = smoothstep(1.4, 3.2, I) * core;
       vec3 c = mix(vColor, vec3(1.0), bleach) * profile;
-      // Photograph knee — one star stays in gamut. Screen blend
-      // (the material) then saturates a column; it does not sum to N.
-      c = c / (1.0 + c / max(uPhotoKnee, 1e-4));
       gl_FragColor = vec4(c, 1.0);
       return;
     }
@@ -408,8 +434,7 @@ const STAR_FRAG = /* glsl */ `
       // shells used to ignore it and stack the midplane to white.
       float a = vVis * uNebGain * 0.12 * mask;
       if (a < 0.01) discard;
-      vec3 cheap = vColor * a;
-      gl_FragColor = vec4(cheap / (1.0 + cheap / max(uPhotoKnee, 1e-4)), 1.0);
+      gl_FragColor = vec4(vColor * a, 1.0);
       return;
     }
     vec3 fragView = vCenterView + vec3(p.x, -p.y, 0.0) * vRadiusView;
@@ -462,7 +487,7 @@ const STAR_FRAG = /* glsl */ `
     line = mix(line, lineOIII, smoothstep(0.55, 0.95, e));
     // Chemistry keeps a voice: the host tint leans the line blend.
     vec3 col = mix(line, vColor, 0.25);
-    float glow = em / (1.0 + em / max(uPhotoKnee, 1e-4));
+    float glow = em / (1.0 + em);
     gl_FragColor = vec4(col * glow, 1.0);
   }
 `;
@@ -567,6 +592,12 @@ export class GalaxyView {
   private glowPts: THREE.Mesh | null = null;
   private glowGeo: THREE.BufferGeometry | null = null;
   private glowMat: THREE.ShaderMaterial | null = null;
+  /** HDR photograph: layers add, then one Reinhard knee. */
+  private photoRt: THREE.WebGLRenderTarget | null = null;
+  private photoMat: THREE.ShaderMaterial | null = null;
+  private photoQuad: THREE.Mesh | null = null;
+  private photoScene = new THREE.Scene();
+  private photoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   /** Star harvest positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
   /** Nebula catalog — own mesh, rebakes without reminting stars. */
@@ -630,8 +661,9 @@ export class GalaxyView {
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
-    this.renderer.setClearColor(new THREE.Color(voidRgb[0], voidRgb[1], voidRgb[2]), 1);
+    // Black, not the void tint. The cosmic quad paints the night.
+    // An unfiltered clear was the void shining through dust holes.
+    this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
 
     this.pickRing = this.makeRing(0xf4e4c1, 0.18);
@@ -850,7 +882,6 @@ export class GalaxyView {
       uPinCanvas: { value: HARVEST_PIN_CANVAS },
       uPinCore: { value: HARVEST_PIN_CORE },
       uFluxEps: { value: POINT_FLUX_EPS },
-      uPhotoKnee: { value: UNIVERSE.GALAXY_PHOTO_KNEE },
     };
   }
 
@@ -914,11 +945,11 @@ export class GalaxyView {
   }
 
   /**
-   * Two passes per layer, one shared fragment. Both SCREEN
-   * (dest + src·(1-dest)): a PSF that falls to zero is still a
-   * point, and a column of pins saturates instead of adding to
-   * N times one light. Dust has no pass: both vertex shaders
-   * fold sightline extinction into every row.
+   * Two passes per layer, one shared fragment: stars add light
+   * into the HDR photograph; emission nebulae SCREEN so shells
+   * do not stack to a white bar among themselves. One Reinhard
+   * knee after the composite is the accumulation cap. Dust has
+   * no pass: both vertex shaders fold sightline extinction in.
    */
   private makeCloudMaterial(
     vertexShader: string,
@@ -926,6 +957,7 @@ export class GalaxyView {
     pass: number,
   ): THREE.ShaderMaterial {
     uniforms.uPass = { value: pass };
+    const nebula = pass === 1;
     return new THREE.ShaderMaterial({
       vertexShader,
       fragmentShader: STAR_FRAG,
@@ -933,8 +965,8 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: THREE.CustomBlending,
-      blendSrc: THREE.OneMinusDstColorFactor,
+      blending: nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
+      blendSrc: nebula ? THREE.OneMinusDstColorFactor : THREE.OneFactor,
       blendDst: THREE.OneFactor,
       toneMapped: false,
     });
@@ -1024,7 +1056,7 @@ export class GalaxyView {
 
   setVoidColor(hue: number, intensity: number): void {
     const rgb = cosmicVoidRgb(hue, intensity);
-    this.renderer.setClearColor(new THREE.Color(rgb[0], rgb[1], rgb[2]), 1);
+    this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
     const u = this.cosmicMat?.uniforms.uVoidRgb;
     if (u?.value instanceof THREE.Vector3) u.value.set(rgb[0], rgb[1], rgb[2]);
     else if (u) u.value = new THREE.Vector3(rgb[0], rgb[1], rgb[2]);
@@ -1187,7 +1219,6 @@ export class GalaxyView {
         uGlowCut: { value: UNIVERSE.GALAXY_GLOW_CUT },
         uGlowSelf: { value: UNIVERSE.GALAXY_GLOW_SELF },
         uGlowDust: { value: UNIVERSE.GALAXY_GLOW_DUST },
-        uPhotoKnee: { value: UNIVERSE.GALAXY_PHOTO_KNEE },
         uGlowOldRgb: { value: new THREE.Vector3(...oldRgb) },
         uGlowYoungRgb: { value: new THREE.Vector3(...youngRgb) },
         uGlowSfrRgb: { value: new THREE.Vector3(...sfrRgb) },
@@ -1196,8 +1227,8 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: THREE.CustomBlending,
-      blendSrc: THREE.OneMinusDstColorFactor,
+      blending: THREE.AdditiveBlending,
+      blendSrc: THREE.OneFactor,
       blendDst: THREE.OneFactor,
       toneMapped: false,
     });
@@ -1210,6 +1241,70 @@ export class GalaxyView {
     this.glowGeo = geo;
     this.glowMat = mat;
     this.pushMagUniforms();
+  }
+
+  /** HDR target + blit. Layers add here; the knee is the last step. */
+  private ensurePhoto(w: number, h: number): void {
+    const rw = Math.max(1, Math.round(w));
+    const rh = Math.max(1, Math.round(h));
+    if (rw < 8 || rh < 8) return;
+    if (this.photoRt && this.photoRt.width === rw && this.photoRt.height === rh) return;
+    this.photoRt?.dispose();
+    this.photoRt = new THREE.WebGLRenderTarget(rw, rh, {
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+    });
+    this.photoRt.texture.colorSpace = THREE.NoColorSpace;
+    if (!this.photoMat) {
+      this.photoMat = new THREE.ShaderMaterial({
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = vec4(position.xy, 0.0, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform sampler2D uPhoto;
+          uniform float uPhotoKnee;
+          varying vec2 vUv;
+          void main() {
+            vec3 c = texture2D(uPhoto, vUv).rgb;
+            float L = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
+            c *= 1.0 / (1.0 + L / max(uPhotoKnee, 1e-4));
+            gl_FragColor = vec4(c, 1.0);
+          }
+        `,
+        uniforms: {
+          uPhoto: { value: this.photoRt.texture },
+          uPhotoKnee: { value: UNIVERSE.GALAXY_PHOTO_KNEE },
+        },
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      });
+      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.photoMat);
+      quad.frustumCulled = false;
+      this.photoScene.add(quad);
+      this.photoQuad = quad;
+    } else {
+      this.photoMat.uniforms.uPhoto.value = this.photoRt.texture;
+    }
+  }
+
+  private disposePhoto(): void {
+    if (this.photoQuad) {
+      this.photoScene.remove(this.photoQuad);
+      this.photoQuad.geometry.dispose();
+      this.photoQuad = null;
+    }
+    this.photoMat?.dispose();
+    this.photoMat = null;
+    this.photoRt?.dispose();
+    this.photoRt = null;
   }
 
   /** Live cosmic-engineer write. One uniform, next frame. */
@@ -1237,6 +1332,11 @@ export class GalaxyView {
       return;
     }
     if (name === 'uDustDebug') value = value >= 0.5 ? 1 : 0;
+    if (name === 'uPhotoKnee') {
+      UNIVERSE.GALAXY_PHOTO_KNEE = value;
+      if (this.photoMat?.uniforms.uPhotoKnee) this.photoMat.uniforms.uPhotoKnee.value = value;
+      return;
+    }
     for (const mat of this.cloudMats()) {
       const u = mat.uniforms[name];
       if (u) u.value = value;
@@ -1252,7 +1352,8 @@ export class GalaxyView {
       this.cosmicMat?.uniforms[name] ??
       this.cosmicStarMat?.uniforms[name] ??
       this.cosmicSmudgeMat?.uniforms[name] ??
-      this.glowMat?.uniforms[name];
+      this.glowMat?.uniforms[name] ??
+      this.photoMat?.uniforms[name];
     return typeof u?.value === 'number' ? u.value : null;
   }
 
@@ -1590,6 +1691,8 @@ export class GalaxyView {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
+    const pr = this.renderer.getPixelRatio();
+    this.ensurePhoto(w * pr, h * pr);
   }
 
   /** Pause the loop while the explorer is hidden so the planet can run. */
@@ -1618,6 +1721,7 @@ export class GalaxyView {
     window.removeEventListener('keyup', this.onKeyUp);
     this.disposeArcStars();
     this.disposeCosmic();
+    this.disposePhoto();
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
     this.hereRing.geometry.dispose();
@@ -2251,7 +2355,19 @@ export class GalaxyView {
     this.pickRing.rotation.z = t * 0.35;
     this.hereRing.rotation.z = t * -0.22;
 
-    this.renderer.render(this.scene, this.camera);
+    const pr = this.renderer.getPixelRatio();
+    const el = this.renderer.domElement;
+    this.ensurePhoto(el.width || el.clientWidth * pr, el.height || el.clientHeight * pr);
+    if (this.photoRt) {
+      this.renderer.setRenderTarget(this.photoRt);
+      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.clear();
+      this.renderer.render(this.scene, this.camera);
+      this.renderer.setRenderTarget(null);
+      this.renderer.render(this.photoScene, this.photoCam);
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
     this.callbacks.onFrame?.({
       mode: this.mode,
       theta: this.theta,

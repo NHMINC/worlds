@@ -39,8 +39,8 @@ export const AIM_R_MAX = 0.22;
 /**
  * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
  * Steep in L so the luminous tail is not one white.
- * Display brightness is I/(1+I/knee) — hue survives.
- * A column of pins screen-blends; it does not add to N.
+ * Display brightness is the HDR sum after one Reinhard
+ * knee (`GALAXY_PHOTO_KNEE`) — a column saturates.
  */
 export const SHINE_L_GAIN = 0.14;
 export const SHINE_L_P = 0.62;
