@@ -60,9 +60,9 @@ export function cosmicVert(): string {
 `;
 }
 
-/** The sky shell: void filtered by dust plus the IFN sheen
- *  (extinctSheen), or the lime look-test skin when debug is on.
- *  `steps` must match the included extinctGlsl march. */
+/** The sky shell: void filtered by dust, or the lime
+ *  look-test skin when debug is on. `steps` must match
+ *  the included extinctGlsl march. */
 export function cosmicFrag(extinctChunk: string, steps: number): string {
   const n = Number.isInteger(steps) ? `${steps}.0` : `${steps}`;
   return /* glsl */ `
@@ -144,9 +144,8 @@ export function cosmicFrag(extinctChunk: string, steps: number): string {
       gl_FragColor = vec4(foxLook(uCenter, dir, uVoidRgb), 1.0);
       return;
     }
-    // The real sky: void filtered by the dust, plus the IFN sheen —
-    // cloud skins scatter ambient galactic light; cores silhouette.
-    gl_FragColor = vec4(extinctSheen(uCenter, dir, uVoidRgb), 1.0);
+    // The real sky: void filtered by the dust. Dust does not emit.
+    gl_FragColor = vec4(extinctLook(uCenter, dir) * uVoidRgb, 1.0);
   }
 `;
 }

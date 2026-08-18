@@ -461,28 +461,6 @@ export const UNIVERSE = {
   GALAXY_SFR_GAIN: 18,
   GALAXY_CLOUD_HII: 0.1,
   GALAXY_DUST_RGB: [0.75, 1.0, 1.32] as [number, number, number],
-  /**
-   * Dust surfaces reflect (the Integrated Flux Nebula): grains
-   * scatter ambient galactic light, so a cloud's skin facing the
-   * bright disk glows faintly while the core stays lightless.
-   * Single scatter inside the same sightline march — not a second
-   * mesh, not a painted rim. ALBEDO is the grain albedo (~0.6 at
-   * V); the scattered tint leans blue because DUST_RGB is the
-   * scattering cross-section (what transmission loses, the sheen
-   * gains). SHEEN is the photograph stretch — real IFN sits near
-   * 27 mag/arcsec², far below a screen. SHEEN_G is the
-   * Henyey–Greenstein asymmetry (forward-leaning, so rims lit
-   * from behind — silhouetted against the bulge — glow hardest).
-   * LIGHT_* is the ambient radiation field of the mass model:
-   * an exponential disk of starlight (longer scale than the mass,
-   * light travels) plus an inverse-square bulge term.
-   */
-  GALAXY_DUST_ALBEDO: 0.6,
-  GALAXY_DUST_SHEEN: 0.9,
-  GALAXY_DUST_SHEEN_G: 0.4,
-  GALAXY_LIGHT_RD: 4.2,
-  GALAXY_LIGHT_ZD: 0.55,
-  GALAXY_LIGHT_BULGE: 0.4,
 
   /** Solar circle (kpc) — home-star search and the thin-disk yardstick. */
   R_SUN: 8.2,
@@ -577,15 +555,12 @@ export const UNIVERSE = {
    * is Strömgren-ish (HII_R_K · L^⅓); NEB_EMISSION is the
    * photograph stretch. They screen-blend (they glow, they do not
    * add to a white bar).
-   * DUST EMITS NOTHING — it filters, and its skin scatters. The
-   * fog is the dense tail of ismAt.photo (hole × decline × mild
-   * arm × small midplane clumps). Many overlapping clouds, tight
-   * to z = 0 — edge-on they average to a thin slit, not one
-   * meandering snake. Ribbon cores are a wall; the thin rim
-   * reddens what shines through and reflects a faint blue-leaning
-   * sheen of ambient galactic light (DUST_ALBEDO / DUST_SHEEN —
-   * the IFN, computed in the same march, never a painted rim).
-   * Baked once and marched from the
+   * DUST EMITS NOTHING — it filters. The fog is the dense tail
+   * of ismAt.photo (hole × decline × mild arm × small midplane
+   * clumps). Many overlapping clouds, tight to z = 0 — edge-on
+   * they average to a thin slit, not one meandering snake.
+   * Ribbon cores are a wall; the thin rim reddens what shines
+   * through. Baked once and marched from the
    * bubble centre (EXTINCT_STEPS taps). Transmittance is
    * Beer–Lambert: exp(−τ · DUST_RGB). Harvest does not mint
    * dust rows.

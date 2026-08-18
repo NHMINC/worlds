@@ -301,14 +301,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   crest is a small Gaussian splat (anti-aliasing only) —
   hardware trilinear of a lone sample is a diamond face-on.
   Ribbon cores are a wall (lightless); only the thin rim reddens.
-  Dust also **reflects**: the sky shell's march single-scatters
-  ambient galactic light (`ambientJ` × grain albedo ×
-  Henyey–Greenstein, `GALAXY_DUST_ALBEDO` / `_SHEEN` /
-  `_SHEEN_G`, `GALAXY_LIGHT_*`) — the Integrated Flux Nebula.
-  Cloud skins glow faintly blue, hardest silhouetted against
-  the bulge; cores stay dark and now silhouette the void too.
-  Same volume, same march — never a painted rim.
-  Not harvest rows. A
+  Dust does not emit or reflect. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills
