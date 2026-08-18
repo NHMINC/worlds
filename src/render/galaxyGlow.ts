@@ -7,9 +7,8 @@
  * young thin → late-B. Dust extincts the march the way it extincts
  * stars. A faint ionized sheet (mean molecular field × gas arms)
  * is a second term, same pass, own gain. The integral sits in
- * front of the far photograph: coverage is 1 − exp(−L), so the
- * night and the pins do not sparkle through the disk. Additive
- * glow cannot cover; this one can.
+ * front of the far photograph: a drawn pixel covers the night
+ * (dest·(1−α), α=1). Additive glow cannot cover.
  */
 import { UNIVERSE } from '../world/physics';
 import { teffToRgb } from '../world/stellar';
@@ -217,11 +216,9 @@ export function glowFrag(extinctChunk: string, steps: number): string {
     vec3 c = em * uGlowGain;
     float L = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0);
     if (L < 0.004) discard;
-    // Unresolved disk is in front of the decreed night. Additive
-    // dest+src left the pins sparkling through every inter-clump
-    // gap; coverage is the same integral as the light.
-    float cover = 1.0 - exp(-L * 8.0);
-    gl_FragColor = vec4(c, cover);
+    // Drawn glow is in front of the decreed night. dest+src left
+    // pins in every inter-clump gap; dest*(1−α) with α=1 covers.
+    gl_FragColor = vec4(c, 1.0);
   }
 `;
 }

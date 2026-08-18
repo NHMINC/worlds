@@ -120,8 +120,8 @@ types or star types.
   wall for the void and the pins (leftover Beer–Lambert
   still read as night — K is gain, not thickness). Empty
   space is vacuum. The Hubble glow sits in front of that
-  night (coverage from the same integral — it does not add
-  through the pins). The framebuffer clear is black — the
+  night (a drawn glow pixel covers the photograph — it does
+  not add through the pins). The framebuffer clear is black — the
   cosmic quad paints the night.
 
 If you are about to special-case a seed, a body id, or a named planet
