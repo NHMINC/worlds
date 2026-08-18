@@ -145,11 +145,14 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (leave < 0.0 || enter > leave) return vec2(1.0, -1.0);
     return vec2(enter, leave);
   }
-  // Distant sky: march only the dust box, not a finite shell at R.
+  // Distant sky: the same column as a harvest star on this ray.
+  // Cropping the march to the dust box (enter→leave) shortens dt,
+  // so a wall is only a veil for the void while camera→star (vacuum
+  // included) makes that same cloud lightless. One tap spacing.
   vec3 extinctLook(vec3 from, vec3 dir) {
     vec2 span = extinctSpan(from, dir);
     if (span.x > span.y) return vec3(1.0);
-    return extinctT(from + dir * max(span.x, 0.0), from + dir * span.y);
+    return extinctT(from, from + dir * span.y);
   }
   // Ambient galactic starlight at a point: exponential disk of
   // light (longer scale than the mass — light travels) plus an
@@ -172,8 +175,10 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   vec3 extinctSheen(vec3 from, vec3 dir, vec3 back) {
     vec2 span = extinctSpan(from, dir);
     if (span.x > span.y) return back;
-    float t0 = max(span.x, 0.0);
-    float dCat = span.y - t0;
+    // Camera → far face, same taps as extinctT / harvest stars.
+    float t1 = span.y;
+    float dCat = max(t1, 0.0);
+    if (dCat < 1e-4) return back;
     float dt = dCat / ${glslFloat(steps)};
     float kdt = uExtinctK * dt;
     float coreFill = uExtinctMax / max(kdt, 1e-4);
@@ -183,7 +188,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     float tau = 0.0;
     vec3 glow = vec3(0.0);
     for (int i = 0; i < ${steps}; i++) {
-      vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
+      vec3 p = from + dir * ((float(i) + 0.5) * dt);
       float r = extinctRho(p);
       if (r < 1e-4) continue;
       float rr = r;
@@ -1127,9 +1132,6 @@ export class GalaxyView {
     geo.setAttribute('aCrisp', new THREE.BufferAttribute(cloud.crisp, 1));
     geo.setDrawRange(0, this.cosmicCount('smudge'));
     const mat = new THREE.ShaderMaterial({
-      // Same tap count as every other layer: 8 taps over a ~32 kpc
-      // chord stepped clean over whole clouds — the background
-      // showed through an opaque core.
       vertexShader: cosmicSmudgeVert(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
       fragmentShader: cosmicSmudgeFrag(),
       uniforms: {

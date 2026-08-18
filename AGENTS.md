@@ -114,8 +114,10 @@ types or star types.
   Drawn on the far plane (a clip
   quad, not a surrounding mesh) so triangles never cross
   the camera. The warp fence keeps you off the photograph.
-  Not a catalog. Not pickable. Dust filters the sightline;
-  the void is vacuum.
+  Not a catalog. Not pickable. Dust filters the sightline
+  (`extinctT` — the same column as a harvest star on that
+  ray). Empty space is vacuum; a wall is lightless for the
+  void and the pins too.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
