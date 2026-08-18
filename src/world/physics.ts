@@ -626,7 +626,9 @@ export const UNIVERSE = {
   /** Sightline march taps (vertex-shader cost, once per row). */
   GALAXY_EXTINCT_STEPS: 64,
   /** Density volume for the ISM fog (xz × y). Catalog kpc.
-   *  Resolves the ~1 kpc turbulent complexes, not 0.09 kpc cirrus. */
+   *  Resolves the ~1 kpc turbulent complexes, not 0.09 kpc cirrus.
+   *  Each crest is Gaussian-splatted so the lattice does not
+   *  print as diamonds (the tent kernel of a lone voxel). */
   GALAXY_DUST_VOL_N: 320,
   GALAXY_DUST_VOL_NY: 96,
   /** Local-layer taps: the in-bubble column is at most REGION_R

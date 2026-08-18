@@ -3,6 +3,12 @@
  * never draws dust; it bakes `ismAt` into a volume and marches
  * the sightline. Most of the disc stays 0 — only the filaments
  * write. Occupancy (`dustClumpsInCell`) is a separate census.
+ *
+ * The volume is samples of a continuous field, not bricks. A
+ * lone voxel through hardware trilinear is (1−|x|)(1−|z|) —
+ * a diamond face-on. Each crest is therefore splatted with a
+ * small Gaussian (peak-preserving) so the wall and the lime
+ * skin follow the field, not the lattice.
  */
 import { UNIVERSE } from './physics';
 import { ismAt } from './galaxy';
@@ -32,6 +38,45 @@ export function dustVolumeBounds(): {
   };
 }
 
+/**
+ * Peak-preserving Gaussian splat. Hardware trilinear of an isolated
+ * sample is a separable tent — diamonds face-on, octahedra in 3D.
+ * This kernel is round in the disk and tighter in y so the sheet
+ * stays a lane, not a stack of cubes.
+ */
+function splatCrest(
+  data: Float32Array,
+  nx: number,
+  ny: number,
+  nz: number,
+  ix: number,
+  iy: number,
+  iz: number,
+  peak: number,
+): void {
+  // σ_xz ≈ 0.85 vx — a crest is a small blob, not a brick.
+  // σ_y  ≈ 0.45 vy — the molecular sheet is already thin.
+  const invXz = 1 / (2 * 0.85 * 0.85);
+  const invY = 1 / (2 * 0.45 * 0.45);
+  for (let dj = -1; dj <= 1; dj++) {
+    const jy = iy + dj;
+    if (jy < 0 || jy >= ny) continue;
+    const wy = Math.exp(-(dj * dj) * invY);
+    for (let dk = -1; dk <= 1; dk++) {
+      const jz = iz + dk;
+      if (jz < 0 || jz >= nz) continue;
+      for (let di = -1; di <= 1; di++) {
+        const jx = ix + di;
+        if (jx < 0 || jx >= nx) continue;
+        const w = wy * Math.exp(-(di * di + dk * dk) * invXz);
+        const i = jx + nx * (jy + ny * jz);
+        const v = peak * w;
+        if (v > data[i]) data[i] = v;
+      }
+    }
+  }
+}
+
 /** Sample the ISM dense tail into a 3D density volume. Empty space stays 0. */
 export function bakeDustVolume(
   seed: string,
@@ -56,7 +101,7 @@ export function bakeDustVolume(
         const field = ismAt(seed, x, y, z).photo;
         const excess = field - cut;
         if (excess <= 0) continue;
-        data[ix + nx * (iy + ny * iz)] = Math.min(1, excess ** streak);
+        splatCrest(data, nx, ny, nz, ix, iy, iz, Math.min(1, excess ** streak));
       }
     }
     onProgress?.((iy + 1) / ny);

@@ -88,6 +88,9 @@ const extinctGlsl = (steps: number) => /* glsl */ `
         uv.x > 1.0 || uv.y > 1.0 || uv.z > 1.0) return 0.0;
     // WebGL2 / GLSL3: Three rewrites texture2D → texture, not texture3D.
     // texture3D fails to compile and the whole harvest Points program dies.
+    // Linear 3D tap. Isolated voxels used to read as diamonds
+    // (the tent kernel); the bake now splats a Gaussian so the
+    // isosurface follows the sheet, not the lattice.
     float rho = texture(uDustVol, uv).r;
     float t = max(rho - uExtinctCut, 0.0);
     return pow(t, max(uExtinctHard, 0.15));

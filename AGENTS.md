@@ -284,6 +284,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   the molecular sheet (`ismAt` — hole × decline × arm × sheared
   turbulence, height relative to the warped midplane). Only the
   filaments write the volume; the rest of the disc stays starry.
+  A crest is a Gaussian splat, not a raw voxel — hardware
+  trilinear of a lone sample is a diamond face-on.
   Ribbon cores are a wall (lightless); only the thin rim reddens.
   Edge-on is a mottled dark stripe off the exact midplane, not a
   ruler through z = 0. Not harvest rows. A
