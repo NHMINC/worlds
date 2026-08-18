@@ -689,10 +689,10 @@ export const UNIVERSE = {
    */
   /** Decreed sky distance (kpc). The GPU draws the sky on the far plane; this is the law, not a mesh. */
   COSMIC_R: 8000,
-  /** Rainbow hue of the void (0..1 around the wheel). 223° / 360. */
-  COSMIC_HUE: 223 / 360,
+  /** Rainbow hue of the void (0..1 around the wheel). 230° / 360. */
+  COSMIC_HUE: 230 / 360,
   /** How hard that hue is lit. 0 = black; 1 = a readable tinted night. */
-  COSMIC_INT: 0.5,
+  COSMIC_INT: 0.05,
   /** Photograph gain on the smudge set. Each smudge also has its own shine. */
   COSMIC_GAIN: 1,
   /** Set-wide angular scale. Each galaxy already has its own size. */
