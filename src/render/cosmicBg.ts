@@ -1,7 +1,6 @@
 /**
- * Cosmic background: a far-plane void (near-black warm ash —
- * leftover unresolved starlight, not Rayleigh blue), a photograph
- * of distant galaxies, and distant pins. Each
+ * Cosmic background: a far-plane void, a photograph of distant
+ * galaxies, and distant pins. Each
  * galaxy is one inclined disk (hash size, cos i, position
  * angle, Hubble axis) — not a sprite stamp, not an archetype
  * switch. Each object has its own shine; engineer gains scale
@@ -35,10 +34,8 @@ export function hsvRgb(h: number, s: number, v: number): [number, number, number
   }
 }
 
-/** Saturation of the void tint. The leftover is almost grey — old
- *  starlight plus redshift, not a painted blue. The wheel still
- *  leans that ash. */
-const VOID_SAT = 0.22;
+/** Saturation of the void tint. Hue is the engineer wheel; this stays a colour. */
+const VOID_SAT = 0.78;
 /** Value at intensity 1 — a readable tinted night, not a neon sky. */
 const VOID_V = 0.22;
 
