@@ -240,17 +240,15 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   fill’s `element.style` never paints. App boot
   mints three catalogs once (`prepareUniverse`): the
   magnitude-limited star harvest (`buildSilhouetteCloud` —
-  every living star above `SILHOUETTE_L`; the walk mass is
-  `min(SILHOUETTE_M, invert(L))` so lowering L opens fainter
-  IMF slots, not only a keep-filter on the 3.89 M☉ tail;
-  ~10⁵ stars as the shipped floor's outcome),
+  the hot living tail above `SILHOUETTE_L` / `SILHOUETTE_M`,
+  plus the old-clock giant branch (`SILHOUETTE_GIANT_M` …
+  that mass, keep `SILHOUETTE_GIANT_L`). Those K giants are
+  the Hubble bump: they sit where the mass is old, not a
+  painted core. Count is the floors' outcome, not a cap),
   the nebula catalog (`remintNebulaCache` — H II plus PN /
   SNR above `SILHOUETTE_NEB_GAIN`; `NEBULA_M` is that walk's
   IMF gate; host id is still `packId`), and dust as
-  sightline extinction. Old faint
-  populations do not clear the floor, so the core is dark
-  except its nebula hosts — that is the survey's honest light,
-  not a bug. You steer by those objects. The faint bulk
+  sightline extinction. You steer by those objects. The faint bulk
   (every adjacent dull star around a camp) is a later survey,
   not this sky. “Here” (the
   loaded star, else `homeStar`) is a **focus highlight** parked

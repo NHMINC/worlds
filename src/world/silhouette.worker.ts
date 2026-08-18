@@ -23,11 +23,15 @@ function applyKnobs(knobs: Record<string, number> | undefined): void {
 }
 
 function harvestGates(knobs: Record<string, number> | undefined): HarvestGates {
-  const mass = knobs?.GALAXY_SILHOUETTE_M;
-  const lum = knobs?.GALAXY_SILHOUETTE_L;
+  const num = (k: string, d: number) => {
+    const v = knobs?.[k];
+    return typeof v === 'number' && Number.isFinite(v) ? v : d;
+  };
   return {
-    massMsun: typeof mass === 'number' && Number.isFinite(mass) ? mass : UNIVERSE.GALAXY_SILHOUETTE_M,
-    lumLsun: typeof lum === 'number' && Number.isFinite(lum) ? lum : UNIVERSE.GALAXY_SILHOUETTE_L,
+    massMsun: num('GALAXY_SILHOUETTE_M', UNIVERSE.GALAXY_SILHOUETTE_M),
+    lumLsun: num('GALAXY_SILHOUETTE_L', UNIVERSE.GALAXY_SILHOUETTE_L),
+    giantMsun: num('GALAXY_SILHOUETTE_GIANT_M', UNIVERSE.GALAXY_SILHOUETTE_GIANT_M),
+    giantLsun: num('GALAXY_SILHOUETTE_GIANT_L', UNIVERSE.GALAXY_SILHOUETTE_GIANT_L),
   };
 }
 

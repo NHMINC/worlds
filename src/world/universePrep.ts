@@ -147,6 +147,8 @@ function harvestWorkerKnobs(): Record<string, number> {
   return {
     GALAXY_SILHOUETTE_L: UNIVERSE.GALAXY_SILHOUETTE_L,
     GALAXY_SILHOUETTE_M: UNIVERSE.GALAXY_SILHOUETTE_M,
+    GALAXY_SILHOUETTE_GIANT_M: UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
+    GALAXY_SILHOUETTE_GIANT_L: UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
   };
 }
 
@@ -172,6 +174,8 @@ function runCatalogWorker(
         const both = mintSkyClouds(seed, onRing, {
           massMsun: opts.knobs.GALAXY_SILHOUETTE_M ?? UNIVERSE.GALAXY_SILHOUETTE_M,
           lumLsun: opts.knobs.GALAXY_SILHOUETTE_L ?? UNIVERSE.GALAXY_SILHOUETTE_L,
+          giantMsun: opts.knobs.GALAXY_SILHOUETTE_GIANT_M ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
+          giantLsun: opts.knobs.GALAXY_SILHOUETTE_GIANT_L ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
         });
         resolve(both);
         return;
@@ -181,6 +185,8 @@ function runCatalogWorker(
           ? mintSilhouetteCloud(seed, onRing, {
               massMsun: opts.knobs.GALAXY_SILHOUETTE_M ?? UNIVERSE.GALAXY_SILHOUETTE_M,
               lumLsun: opts.knobs.GALAXY_SILHOUETTE_L ?? UNIVERSE.GALAXY_SILHOUETTE_L,
+              giantMsun: opts.knobs.GALAXY_SILHOUETTE_GIANT_M ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
+              giantLsun: opts.knobs.GALAXY_SILHOUETTE_GIANT_L ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
             })
           : null,
         nebulae: opts.nebulae ? mintNebulaCloud(seed, onRing) : null,

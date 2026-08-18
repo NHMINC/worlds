@@ -507,11 +507,13 @@ export const UNIVERSE = {
    * Distant harvest (region dive). The flyable ball does
    * not change. Outside it, the rest of the disk is one law:
    * a magnitude-limited survey — living stars above SILHOUETTE_L
-   * (late-B and hotter, giants, WR; SILHOUETTE_M is the IMF slot
-   * gate that keeps the walk cheap). The count (~10⁵) is an
-   * outcome of that floor, not a cap. Old faint populations
-   * (the bulge's dead clock) simply do not shine above the
-   * floor — the core is dark except its nebula hosts. Nebulae
+   * (late-B and hotter, WR; SILHOUETTE_M is the IMF slot
+   * gate that keeps the hot walk cheap) plus the old-clock
+   * giant branch (SILHOUETTE_GIANT_M … M, keep GIANT_L). Those
+   * K giants are the Hubble bump: they concentrate where the
+   * mass is old (bulge / bar / thick / inner thin), not a
+   * painted core. The count is an outcome of those floors,
+   * not a cap. Nebulae
    * are their own catalog (NEBULA_M + SILHOUETTE_NEB_GAIN),
    * rebaked like dust, not reminted with the stars. Dust is
    * not a harvest row. The fog is the dense tail of the
@@ -561,6 +563,16 @@ export const UNIVERSE = {
    *  the cheap citizens (a small Gaussian, vertex-only cost); the
    *  count knob that matters for the GPU is envelopes, not this. */
   GALAXY_SILHOUETTE_L: 162,
+  /**
+   * Old-clock giant branch. The hot survey never walks this IMF
+   * (M ≲ 1.3 dies as a remnant before the bulge is old). The
+   * harvester adds a second slice: slots in [GIANT_M, SILHOUETTE_M)
+   * that are on the giant/subgiant clock, kept at GIANT_L
+   * (low-mass RGB is ~16–56 L☉ — they fail the 162 L☉ hot floor).
+   * Colour is Teff. Rebuild the harvest; star ids do not move.
+   */
+  GALAXY_SILHOUETTE_GIANT_M: 0.94,
+  GALAXY_SILHOUETTE_GIANT_L: 18,
   /** Nebula catalog: IMF floor (M☉) for the PN / SNR walk.
    *  H II (m ≥ 8 in a cloud) is always walked. 3.89 matches the
    *  survey mass floor, so the first look is the shells that
