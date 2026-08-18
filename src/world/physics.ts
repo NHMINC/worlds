@@ -693,7 +693,7 @@ export const UNIVERSE = {
   /** How hard that hue is lit. 0 = black; 1 = a readable tinted night. */
   COSMIC_INT: 0.14,
   /** Photograph gain on the smudge set. Each smudge also has its own shine. */
-  COSMIC_GAIN: 0.62,
+  COSMIC_GAIN: 1,
   /** Set-wide angular scale. Each galaxy already has its own size. */
   COSMIC_SIZE: 0.36,
   /** Power on the large-scale web. Higher → emptier voids, tighter piles. */
@@ -702,7 +702,7 @@ export const UNIVERSE = {
   COSMIC_SMUDGE_N: 400,
   COSMIC_SMUDGE_N_MAX: 1000,
   /** Photograph gain on the background-star set. Each pin also has its own shine. */
-  COSMIC_STAR_GAIN: 0.72,
+  COSMIC_STAR_GAIN: 0.18,
   /** How many background pins are drawn (0–MAX). The GPU holds the full budget. */
   COSMIC_STAR_N: 10000,
   COSMIC_STAR_N_MAX: 100000,
