@@ -71,7 +71,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Void colour',
     group: 'cosmic',
     hint: 'rainbow hue, then intensity',
-    about: 'The decreed night behind everything. Pick a hue on the wheel, then how hard that tint is lit. 0 is black; 1 is a readable coloured night. The smudges sit on this. Next frame.',
+    about: 'The decreed night behind everything. Shipped law is near-black warm ash (cosmic latte, 45°, low sat) — leftover unresolved starlight, not Rayleigh blue. The wheel still leans that ash. 0 is black; 1 is a readable tinted night. Next frame.',
     uniform: 'uVoidRgb',
     min: 0,
     max: 1,
