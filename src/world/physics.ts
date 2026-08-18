@@ -588,6 +588,12 @@ export const UNIVERSE = {
    *  starlight. Sheet vs streaks are K_DIFFUSE / K_DENSE; this is
    *  the photograph gain, not a thicker pancake. */
   GALAXY_EXTINCT_K: 6,
+  /** Density below this is empty. Thin haze drops; cores stay.
+   *  0 is the raw bake. Does not grow the pockets. */
+  GALAXY_EXTINCT_CUT: 0,
+  /** Power on remaining density. 1 is linear (the bake). Higher
+   *  hardens cores and thins the edges — opaque without spreading. */
+  GALAXY_EXTINCT_HARD: 1,
   /** Look test. 0 = dust is extinction. 1 paints the volume lime. */
   GALAXY_DUST_DEBUG: 0,
   /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on

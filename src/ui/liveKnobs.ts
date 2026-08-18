@@ -175,8 +175,8 @@ export const LIVE_KNOBS: LiveKnob[] = [
     id: 'extinctK',
     label: 'Dust extinction',
     group: 'dust',
-    hint: 'how hard the fog filters starlight',
-    about: 'Beer–Lambert multiplier on the baked death-smear fog. Higher and stars behind a pocket go darker. Next frame.',
+    hint: 'overall opacity of the fog',
+    about: 'Overall density of the photograph. Beer–Lambert gain on the baked pockets. Higher and a sightline through a pocket goes darker. Does not grow the pockets — Explosion reach does that. Next frame.',
     uniform: 'uExtinctK',
     min: 0,
     max: 16,
@@ -184,6 +184,36 @@ export const LIVE_KNOBS: LiveKnob[] = [
     read: () => UNIVERSE.GALAXY_EXTINCT_K,
     write: (v) => {
       UNIVERSE.GALAXY_EXTINCT_K = v;
+    },
+  },
+  {
+    id: 'extinctCut',
+    label: 'Dust floor',
+    group: 'dust',
+    hint: 'drop thin haze; cores stay',
+    about: 'Density below this is empty. Raise it and the soft halo around a pocket vanishes — the fog keeps its shape instead of spreading. Pair with Dust extinction to keep the cores black. Next frame.',
+    uniform: 'uExtinctCut',
+    min: 0,
+    max: 0.7,
+    step: 0.01,
+    read: () => UNIVERSE.GALAXY_EXTINCT_CUT,
+    write: (v) => {
+      UNIVERSE.GALAXY_EXTINCT_CUT = v;
+    },
+  },
+  {
+    id: 'extinctHard',
+    label: 'Dust hardness',
+    group: 'dust',
+    hint: 'how sharp the pocket edges are',
+    about: 'Power on remaining density. 1 is the bake (soft falloff). Higher hardens the core and thins the edge — opaque without growing the pocket. Next frame.',
+    uniform: 'uExtinctHard',
+    min: 0.4,
+    max: 4,
+    step: 0.05,
+    read: () => UNIVERSE.GALAXY_EXTINCT_HARD,
+    write: (v) => {
+      UNIVERSE.GALAXY_EXTINCT_HARD = v;
     },
   },
   {
@@ -206,7 +236,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Paint fog green',
     group: 'dust',
     hint: 'look-test: show the dust sheet as lime',
-    about: 'Look test, not a colour of the universe. 0 is the real law — dust is extinction, never drawn. 1 paints the marched volume bright green so you can see the sheet. Next frame.',
+    about: 'Look test, not a colour of the universe. 0 is the real law — dust is extinction, never drawn. 1 paints the marched volume bright green on the sky so you can see the pockets. Next frame.',
     uniform: 'uDustDebug',
     min: 0,
     max: 1,

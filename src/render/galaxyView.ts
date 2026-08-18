@@ -74,6 +74,8 @@ const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}
 const extinctGlsl = (steps: number) => /* glsl */ `
   uniform float uExtinctK;
   uniform float uExtinctMax;
+  uniform float uExtinctCut;
+  uniform float uExtinctHard;
   uniform float uDustDebug;
   uniform vec3 uDustRgb;
   uniform sampler3D uDustVol;
@@ -85,10 +87,12 @@ const extinctGlsl = (steps: number) => /* glsl */ `
         uv.x > 1.0 || uv.y > 1.0 || uv.z > 1.0) return 0.0;
     // WebGL2 / GLSL3: Three rewrites texture2D → texture, not texture3D.
     // texture3D fails to compile and the whole harvest Points program dies.
-    return texture(uDustVol, uv).r;
+    float rho = texture(uDustVol, uv).r;
+    float t = max(rho - uExtinctCut, 0.0);
+    return pow(t, max(uExtinctHard, 0.15));
   }
-  // Beer–Lambert: T = exp(−τ · DUST_RGB). Each smear is a veil,
-  // not a wall. Blue dies first. Stacked pockets go darker.
+  // Beer–Lambert: T = exp(−τ · DUST_RGB). Cut / hard shape the
+  // pocket; K is overall opacity. Blue dies first.
   vec3 extinctT(vec3 from, vec3 to) {
     float dCat = length(to - from);
     float dt = dCat / ${glslFloat(steps)};
@@ -823,6 +827,8 @@ export class GalaxyView {
     return {
       uExtinctK: { value: UNIVERSE.GALAXY_EXTINCT_K },
       uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
+      uExtinctCut: { value: UNIVERSE.GALAXY_EXTINCT_CUT },
+      uExtinctHard: { value: UNIVERSE.GALAXY_EXTINCT_HARD },
       uDustDebug: { value: dustDebugOn() ? 1 : UNIVERSE.GALAXY_DUST_DEBUG },
       uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
       uDustVol: { value: tex },
@@ -1132,6 +1138,7 @@ export class GalaxyView {
       this.remintCosmicSmudges();
       return;
     }
+    if (name === 'uDustDebug') value = value >= 0.5 ? 1 : 0;
     for (const mat of this.cloudMats()) {
       const u = mat.uniforms[name];
       if (u) u.value = value;

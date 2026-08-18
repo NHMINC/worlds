@@ -65,7 +65,6 @@ export function cosmicFrag(extinctGlsl: string): string {
   ${extinctGlsl}
   uniform vec3 uVoidRgb;
   uniform vec3 uCenter;
-  uniform float uDustDebug;
   uniform mat3 uCamRotInv;
   uniform mat4 uInvProj;
   varying vec2 vNdc;
@@ -81,7 +80,7 @@ export function cosmicFrag(extinctGlsl: string): string {
     float T = dot(ext, vec3(0.2126, 0.7152, 0.0722));
     float fog = 1.0 - clamp(T, 0.0, 1.0);
     vec3 green = vec3(0.04, 1.0, 0.1);
-    gl_FragColor = vec4(mix(uVoidRgb, green, pow(max(fog, 0.0), 0.45)), 1.0);
+    gl_FragColor = vec4(mix(uVoidRgb, green, clamp(pow(max(fog, 0.0), 0.28) * 1.85, 0.0, 1.0)), 1.0);
   }
 `;
 }
