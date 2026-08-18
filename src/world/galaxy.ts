@@ -276,78 +276,38 @@ function ismTurbulence(seed: string, x: number, y: number, z: number): number {
   );
 }
 
-/** How many in-plane filament angles the photograph mixes. */
-const DUST_ANGLES = 5;
-
-function dustAngleWeight(seed: string, x: number, z: number, k: number): number {
-  const t = UNIVERSE.GALAXY_DUST_TURN;
-  const env = 0.5 + 0.5 * ismNoise(seed, x * t + k * 19.7, k * 2.3, z * t - k * 13.1, true);
-  return env * env;
-}
-
-/**
- * Dominant in-plane filament angle at a point (radians). Slow
- * envelopes pick among DUST_ANGLES equally spaced directions
- * so neighbouring samples agree and the splat matches the field.
- */
-export function dustFilamentDir(seed: string, x: number, z: number): number {
-  let best = 0;
-  let bestW = -1;
-  for (let k = 0; k < DUST_ANGLES; k++) {
-    const w = dustAngleWeight(seed, x, z, k);
-    if (w > bestW) {
-      bestW = w;
-      best = (k * Math.PI) / DUST_ANGLES;
-    }
+/** Fractal noise in ~[-1, 1]: four octaves of the dust lattice. */
+function dustFbm(seed: string, x: number, y: number, z: number, salt: number): number {
+  const g = UNIVERSE.GALAXY_DUST_DETAIL;
+  let sum = 0;
+  let norm = 0;
+  let amp = 1;
+  let f = 1;
+  for (let o = 0; o < 4; o++) {
+    sum += amp * ismNoise(seed, x * f + salt + o * 37.3, y * f + o * 11.1, z * f - salt - o * 23.7, true);
+    norm += amp;
+    amp *= g;
+    f *= 2.05;
   }
-  return best;
+  return sum / norm;
 }
 
 /**
- * One octave in a frame that lies in the disk: along the local
- * filament and across it. Height is the sheet (sech²), not a
- * fast y-octave — that carved vertical ticks edge-on. Tilt
- * mixes a little y into `along` so a side-on view is slashes.
- */
-function dustOriented(
-  seed: string,
-  x: number,
-  y: number,
-  z: number,
-  ang: number,
-  f: number,
-  S: number,
-  salt: number,
-): number {
-  const ca = Math.cos(ang);
-  const sa = Math.sin(ang);
-  const along0 = x * ca + z * sa;
-  const across0 = -x * sa + z * ca;
-  const lean = UNIVERSE.GALAXY_DUST_TILT * ismNoise(seed, x * 0.31 + salt, 4.4, z * 0.31 - salt, true);
-  const cl = Math.cos(lean);
-  const sl = Math.sin(lean);
-  const along = (along0 * cl + y * sl) * (f / S);
-  const across = across0 * f * S;
-  return ismNoise(seed, along + salt, y * f * 0.35, across - salt * 0.37, true);
-}
-
-/**
- * Photograph: a bank of short midplane filaments at fixed
- * in-plane angles, each gated by a slow envelope. Round blobs
- * read as vertical ticks edge-on; a mix of dashes does not.
+ * Photograph turbulence: domain-warped fractal noise. One slow
+ * noise field bends the sample frame of another, so eddies curl
+ * at every angle — fluff and chaos, no angle bank, no lattice
+ * axis. y is compressed (clouds are wider than tall inside the
+ * thin sheet) but still warps, so edge-on is churn, not ticks.
  */
 function dustTurbulence(seed: string, x: number, y: number, z: number): number {
   const f = UNIVERSE.GALAXY_DUST_FREQ;
-  const S = Math.max(0.2, UNIVERSE.GALAXY_DUST_SHEAR);
-  let acc = 0;
-  let wsum = 0;
-  for (let k = 0; k < DUST_ANGLES; k++) {
-    const w = dustAngleWeight(seed, x, z, k);
-    const ang = (k * Math.PI) / DUST_ANGLES;
-    acc += w * dustOriented(seed, x, y, z, ang, f, S, k * 47);
-    wsum += w;
-  }
-  return acc / Math.max(1e-6, wsum);
+  const A = UNIVERSE.GALAXY_DUST_SWIRL;
+  // The swirl field: lower frequency than the clumps it bends.
+  const wf = f * 0.45;
+  const wx = A * dustFbm(seed, x * wf, y * wf * 0.5, z * wf, 101);
+  const wz = A * dustFbm(seed, x * wf, y * wf * 0.5, z * wf, 211);
+  const wy = 0.35 * A * dustFbm(seed, x * wf, y * wf * 0.5, z * wf, 307);
+  return dustFbm(seed, (x + wx) * f, (y + wy) * f * 0.5, (z + wz) * f, 0);
 }
 
 /**

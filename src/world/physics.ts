@@ -415,10 +415,9 @@ export const UNIVERSE = {
    * (RD_GAS × stellar Rd), with a bar-swept inner hole. Occupancy,
    * SFR, and H II drink that field (occCeil). The optical bake is
    * a separate photograph: same hole and decline, but a geometric
-   * midplane sheet (DUST_MID, ZD_DUST) of short filaments
-   * (DUST_FREQ / DUST_SHEAR / DUST_SIGMA) laid in the disk at
-   * a slowly turning angle (DUST_TURN) with a little lean
-   * (DUST_TILT) — not vertical ticks and not one warped snake.
+   * midplane sheet (DUST_MID, ZD_DUST) of domain-warped fractal
+   * fluff (DUST_FREQ / DUST_SWIRL / DUST_DETAIL / DUST_SIGMA) —
+   * a turbulent ocean, angles everywhere, no bank and no snake.
    * Mild arm preference (DUST_ARM). Dust reddens:
    * extinction per unit optical depth is DUST_RGB (R, G, B) — a
    * mild Cardelli-ish R_V≈3.1 curve (A_R : A_V : A_B). Blue still
@@ -436,22 +435,21 @@ export const UNIVERSE = {
    * Dust photograph (ismAt.photo). Occupancy keeps ZD_GAS / GAS_ARM
    * / TURB_* on the warped sheet so star ids and ages do not move.
    * DUST_MID = 0 pins the optical sheet to z = 0 — edge-on still
-   * averages to a slit. Filaments lie in the disk: DUST_SHEAR is
-   * along/across aspect (1 = round ticks that read vertical
-   * edge-on; ~2.4 = short dashes; the occupancy 4.2 was one
-   * snake). DUST_TURN (cycles/kpc) is how fast that angle
-   * wanders. DUST_TILT (rad) leans a filament out of the plane
-   * so a side-on view is slashes, not a picket fence. DUST_ARM
-   * is a hint, not a single ridge. Star ids do not move.
+   * averages to a slit. The texture is domain-warped fBm: a slow
+   * swirl field (DUST_SWIRL, kpc of warp) bends the clump noise
+   * so eddies curl at every angle — no picked directions, no
+   * lattice axis. DUST_FREQ is cycles/kpc of the largest clumps;
+   * DUST_DETAIL is octave persistence (how much fine wisp rides
+   * the big fluff). DUST_ARM is a hint, not a single ridge.
+   * Star ids do not move.
    */
   GALAXY_DUST_MID: 0,
   GALAXY_ZD_DUST: 0.1,
   GALAXY_DUST_ARM: 0.18,
-  GALAXY_DUST_FREQ: 3.2,
-  GALAXY_DUST_SHEAR: 2.8,
+  GALAXY_DUST_FREQ: 2.6,
+  GALAXY_DUST_SWIRL: 0.85,
+  GALAXY_DUST_DETAIL: 0.55,
   GALAXY_DUST_SIGMA: 1.7,
-  GALAXY_DUST_TURN: 0.48,
-  GALAXY_DUST_TILT: 0.5,
   /**
    * Optical dust shares the bar-swept cavity (HOLE / HOLE_P) with
    * the occupancy sheet. No catalog walk of dead slots.
@@ -647,8 +645,8 @@ export const UNIVERSE = {
   GALAXY_EXTINCT_STEPS: 64,
   /** Density volume for the ISM fog (xz × y). Catalog kpc.
    *  Resolves the ~1 kpc turbulent complexes, not 0.09 kpc cirrus.
-   *  Each crest is a splat in the local filament frame so the
-   *  lattice does not print as diamonds or vertical ticks. */
+   *  Each crest is a small Gaussian splat (anti-aliasing only)
+   *  so the lattice does not print as diamonds. */
   GALAXY_DUST_VOL_N: 320,
   GALAXY_DUST_VOL_NY: 96,
   /** Local-layer taps: the in-bubble column is at most REGION_R

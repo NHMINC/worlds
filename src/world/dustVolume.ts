@@ -12,7 +12,7 @@
  * skin follow the field, not the lattice.
  */
 import { UNIVERSE } from './physics';
-import { dustFilamentDir, ismAt } from './galaxy';
+import { ismAt } from './galaxy';
 
 export interface DustVolume {
   nx: number;
@@ -40,11 +40,11 @@ export function dustVolumeBounds(): {
 }
 
 /**
- * Peak-preserving Gaussian splat in the local filament frame.
- * Hardware trilinear of an isolated sample is a separable tent —
- * diamonds face-on. The kernel follows the photograph's angle
- * (long in the disk, tight across and in y) so a crest stays a
- * laid-down dash, not a vertical tick or a lattice diamond.
+ * Peak-preserving Gaussian splat. Hardware trilinear of an
+ * isolated sample is a separable tent — diamonds face-on. The
+ * kernel is small and round in the disk (tighter in y): it only
+ * anti-aliases the lattice. Shape comes from the warped field,
+ * not from this stamp.
  */
 function splatCrest(
   data: Float32Array,
@@ -55,28 +55,20 @@ function splatCrest(
   iy: number,
   iz: number,
   peak: number,
-  ux: number,
-  uz: number,
 ): void {
-  const vx = -uz;
-  const vz = ux;
-  const invAlong = 1 / (2 * 1.15 * 1.15);
-  const invAcross = 1 / (2 * 0.55 * 0.55);
-  const invY = 1 / (2 * 0.4 * 0.4);
+  const invXz = 1 / (2 * 0.7 * 0.7);
+  const invY = 1 / (2 * 0.45 * 0.45);
   for (let dj = -1; dj <= 1; dj++) {
     const jy = iy + dj;
     if (jy < 0 || jy >= ny) continue;
     const wy = Math.exp(-(dj * dj) * invY);
-    for (let dk = -2; dk <= 2; dk++) {
+    for (let dk = -1; dk <= 1; dk++) {
       const jz = iz + dk;
       if (jz < 0 || jz >= nz) continue;
-      for (let di = -2; di <= 2; di++) {
+      for (let di = -1; di <= 1; di++) {
         const jx = ix + di;
         if (jx < 0 || jx >= nx) continue;
-        const along = di * ux + dk * uz;
-        const across = di * vx + dk * vz;
-        const w = wy * Math.exp(-(along * along) * invAlong - (across * across) * invAcross);
-        if (w < 0.04) continue;
+        const w = wy * Math.exp(-(di * di + dk * dk) * invXz);
         const i = jx + nx * (jy + ny * jz);
         const v = peak * w;
         if (v > data[i]) data[i] = v;
@@ -109,19 +101,7 @@ export function bakeDustVolume(
         const field = ismAt(seed, x, y, z).photo;
         const excess = field - cut;
         if (excess <= 0) continue;
-        const ang = dustFilamentDir(seed, x, z);
-        splatCrest(
-          data,
-          nx,
-          ny,
-          nz,
-          ix,
-          iy,
-          iz,
-          Math.min(1, excess ** streak),
-          Math.cos(ang),
-          Math.sin(ang),
-        );
+        splatCrest(data, nx, ny, nz, ix, iy, iz, Math.min(1, excess ** streak));
       }
     }
     onProgress?.((iy + 1) / ny);
