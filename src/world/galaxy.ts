@@ -6,9 +6,10 @@
  * density × volume × GALAXY_N_K.
  *
  * Birth positions scatter around the cell so the polar lattice never
- * prints as rings or an axle: an in-plane Gaussian (wider in the
- * core) plus vertical scatter on the local flared scale height, not
- * a 0.4 kpc brick. Within a cell the IMF is stratified:
+ * prints as rings or an axle: an in-plane Gaussian (nuclear-tight
+ * in the core) plus a sech² draw on the local scale height
+ * (spheroid inside the box/peanut, flared disk outside), centered
+ * on the midplane — not the catalog z-brick. Within a cell the IMF is stratified:
  * slot 0 is the low-mass end, slot n−1 is the high-mass end.
  *
  * Arms are a midplane overdensity only. The bar / boxy bulge / X-peanut
@@ -261,9 +262,17 @@ function ismTurbulence(seed: string, x: number, y: number, z: number): number {
 }
 
 /**
- * Crest of hole × decline × arm (z on the midplane). The old
- * ceil assumed the axle could reach 1+A; after the hole it
- * cannot, so 0–1 is this peak times e^σ.
+ * Occupancy / SFR / H II ceil. The axle-era (1+A)·e^σ — so the
+ * hole empties the core without rejuvenating the whole disk.
+ * Photograph ceil is `gasCeil` (post-hole crest).
+ */
+function occCeil(): number {
+  return (1 + UNIVERSE.GALAXY_GAS_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
+}
+
+/**
+ * Crest of hole × decline × arm (z on the midplane). The dust
+ * bake maps this peak × e^σ to 1 so ribbons write after the hole.
  */
 let gasCeilMemo = { key: '', v: 0 };
 
@@ -287,21 +296,26 @@ function gasCeil(): number {
 
 /**
  * Continuous ISM at a catalog point (disk in XZ, Y is height).
- * Same gasBase × log-normal as `ismNorm`, but no cell snap — the
- * fog samples the field, occupancy still samples the cell.
+ * `field` is occupancy / SFR / H II (occCeil). `photo` is the
+ * dense-tail photograph (gasCeil). Same gas, two normalizations.
  */
 export function ismAt(
   seed: string,
   x: number,
   y: number,
   z: number,
-): { base: number; field: number; turb: number } {
+): { base: number; field: number; photo: number; turb: number } {
   const p = cartToGal(x, y, z);
   const base = gasBase(p);
-  if (base <= 1e-5) return { base: 0, field: 0, turb: 0 };
+  if (base <= 1e-5) return { base: 0, field: 0, photo: 0, turb: 0 };
   const turb = ismTurbulence(seed, x, y, z);
-  const field = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * turb)) / gasCeil());
-  return { base, field, turb };
+  const raw = base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * turb);
+  return {
+    base,
+    field: Math.min(1, raw / occCeil()),
+    photo: Math.min(1, raw / gasCeil()),
+    turb,
+  };
 }
 
 /** Snap occupancy to the warped midplane when the cell overlaps the sheet. */
@@ -335,7 +349,7 @@ export function ismNorm(seed: string, cell: number): number {
   if (base > 1e-5) {
     const c = galToCart(p);
     const s = ismTurbulence(seed, c.x, c.y, c.z);
-    v = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s)) / gasCeil());
+    v = Math.min(1, (base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * s)) / occCeil());
   }
   if (ismMemo.size > 400_000) ismMemo.clear();
   ismMemo.set(cell, v);
@@ -388,13 +402,6 @@ export function dustPhysics(seed: string, cell: number): DustPhysics {
   return { field, feh, carbon, iceFrac, carbonFrac };
 }
 
-/** Vertical half-width of the birth scatter at this radius (kpc). */
-function birthZHalf(R: number): number {
-  const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  return Math.max(dz, 2.2 * diskScaleHeight(R));
-}
-
 /**
  * In-plane Gaussian σ (kpc). Scatter only hides the polar lattice.
  * Tightness is occupancy: the nuclear cusp (NUC_RD) and the box already
@@ -432,9 +439,18 @@ function inPlaneBirth(mid: GalPos, uR: number, uTh: number): { R: number; theta:
   return { R, theta: R > 1e-8 ? Math.atan2(z, x) : mid.theta };
 }
 
-/** Birth height: cell z + local midplane (warp/corrugation) + flared scatter. */
-function birthZ(midZ: number, R: number, theta: number, u: number): number {
-  return midZ + midplaneZ(R, theta) + (u - 0.5) * birthZHalf(R);
+/**
+ * Birth height. The cell is a quota, not a brick: z is drawn from
+ * the local sech² scale (spheroid in the core, flared disk outside)
+ * around the midplane. Adding the lattice z was the flat-top slab
+ * and the left/right S — warp became a tilted box, not a sheet.
+ */
+function birthZ(_midZ: number, R: number, theta: number, u: number): number {
+  const u01 = Math.min(0.999, Math.max(0.001, u));
+  const h = diskScaleHeight(R);
+  const z = UNIVERSE.GALAXY_STAR_MID * midplaneZ(R, theta) + 0.55 * h * Math.log(u01 / (1 - u01));
+  const cap = UNIVERSE.GALAXY_Z_THICK * 4;
+  return Math.max(-cap, Math.min(cap, z));
 }
 
 /** Clump position: the same scatter stars use. No lattice. */
@@ -518,10 +534,8 @@ export function packId(cell: number, slot: number): number {
 /** Half-reach of the slot scatter (kpc). A star may sit this far from its cell centre. */
 export function slotScatterKpc(): number {
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
-  const dz = (2 * zMax) / UNIVERSE.GALAXY_NZ;
-  const zReach = UNIVERSE.GALAXY_WARP_Z + UNIVERSE.GALAXY_CORRUGATE + birthZHalf(UNIVERSE.GALAXY_R_MAX) * 0.5;
   const plane = IN_PLANE_SIGMA_CAP * inPlaneSigmaKpc(0);
-  return Math.max(0.5 * dz * Math.sqrt(3), zReach, plane);
+  return Math.max(zMax, plane);
 }
 
 /**
@@ -722,10 +736,10 @@ export function slotBirthRaw(seed: string, cell: number, slot: number, filled: n
   const zMax = UNIVERSE.GALAXY_Z_THICK * 4;
   const dz = (2 * zMax) / nz;
   // The cell is a quota, not a brick. In-plane scatter is a Gaussian
-  // around the centre — wider in the core — so the polar lattice
-  // never prints as rings or an axle. Vertical scatter follows the
-  // local flared scale height so edge-on is a fuzzy ribbon, not 18
-  // stacked sheets. Occupancy still carries the density law; a
+  // around the centre — nuclear-tight in the core — so the polar
+  // lattice never prints as rings or an axle. Vertical scatter is a
+  // sech² draw on the local scale (spheroid bump, flared disk),
+  // not the z-bin. Occupancy still carries the density law; a
   // star's id (cell, slot) never moves.
   const { R, theta } = inPlaneBirth(mid, rng(), rng());
   const uZ = rng();

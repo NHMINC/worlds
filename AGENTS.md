@@ -80,11 +80,12 @@ types or star types.
   at a billion ids the same as at ten. Occupancy is
   `density × volume × GALAXY_N_K` — that *is* the population
   (~`GALAXY_POPULATION`). A cell is a quota, not a brick: birth
-  height follows a flared, warped, corrugated midplane
-  (`GALAXY_FLARE_*`, `GALAXY_WARP_*`, `GALAXY_CORRUGATE`) so
-  edge-on is an irregular ribbon. Inside the box/peanut the
-  scale is that spheroid — the core is a bump, not a brighter
-  line. We never `collectCatalog`.
+  height is a sech² draw on the local scale (flared disk;
+  spheroid inside the box/peanut), centered on the warped
+  midplane — not the catalog z-bin, so edge-on is not a clipped
+  slab. The core keeps the MW bulge/bar mass share as a rounded
+  bump, not a brighter line and not a rectangular bar. We never
+  `collectCatalog`.
   The explorer asks `objectsNear` for the volume it occupies; within
   a cell the IMF is stratified so zooming in is “include more slots,”
   not “load a bigger array.”

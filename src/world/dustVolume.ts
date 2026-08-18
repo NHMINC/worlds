@@ -53,7 +53,7 @@ export function bakeDustVolume(
       const z = origin[2] + (iz + 0.5) * vz;
       for (let ix = 0; ix < nx; ix++) {
         const x = origin[0] + (ix + 0.5) * vx;
-        const field = ismAt(seed, x, y, z).field;
+        const field = ismAt(seed, x, y, z).photo;
         const excess = field - cut;
         if (excess <= 0) continue;
         data[ix + nx * (iy + ny * iz)] = Math.min(1, excess ** streak);

@@ -336,9 +336,11 @@ export const UNIVERSE = {
    * R=1.67 z=0.65. Four-arm stellar contrast is mild; gas carries
    * the rest (GAS_ARM_A). The thin sheet is not a brick: it flares
    * outside FLARE_R, the outer midplane warps, and corrugation
-   * wrinkles the plane — edge-on is an irregular ribbon, not a
-   * ruler. Inside the box/peanut the birth scale follows that
-   * spheroid, so the dense core is a bump, not a brighter line.
+   * wrinkles the plane. Stars draw sech² heights on that sheet
+   * (spheroid scale inside the box/peanut) so edge-on is a rounded
+   * bulge plus a disk, not a clipped lattice slab. The core holds
+   * the MW bulge/bar share of the mass model; the harvest is still
+   * the luminous thin-disk clock, with that bump, not a brighter line.
    */
   GALAXY_RD: 2.6,
   GALAXY_R_MAX: 16,
@@ -354,6 +356,10 @@ export const UNIVERSE = {
   GALAXY_WARP_PHI: 0.4,
   /** Midplane corrugation amplitude (kpc). Several Fourier modes. */
   GALAXY_CORRUGATE: 0.22,
+  /** How tightly stellar birth follows that midplane. 1 is glued
+   *  (the S-slab); 0 is a flat sheet. Gas / dust keep the full
+   *  wrinkle. 0.4 leaves a hint of the MW warp. */
+  GALAXY_STAR_MID: 0.4,
   GALAXY_RD_THICK: 3.0,
   GALAXY_RD_INNER: 8.0,
   GALAXY_R_BREAK: 7.5,
