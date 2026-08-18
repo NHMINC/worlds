@@ -236,7 +236,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Paint fog green',
     group: 'dust',
     hint: 'look-test: show the dust sheet as lime',
-    about: 'Look test, not a colour of the universe. 0 is the real law — dust is extinction, never drawn. 1 paints the marched volume bright green on the sky so you can see the pockets. Next frame.',
+    about: 'Look test, not a colour of the universe. 0 is the real law — dust is extinction, never drawn. 1 paints the marched volume lime on the sky (the gaps, not the stars) so you can see the pockets. Next frame.',
     uniform: 'uDustDebug',
     min: 0,
     max: 1,

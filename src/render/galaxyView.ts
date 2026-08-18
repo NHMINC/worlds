@@ -93,7 +93,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   }
   // Beer–Lambert: T = exp(−τ · DUST_RGB). Cut / hard shape the
   // pocket; K is overall opacity. Blue dies first.
-  vec3 extinctT(vec3 from, vec3 to) {
+  float extinctTau(vec3 from, vec3 to) {
     float dCat = length(to - from);
     float dt = dCat / ${glslFloat(steps)};
     vec3 dir = (to - from) / max(dCat, 1e-4);
@@ -101,11 +101,12 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     for (int i = 0; i < ${steps}; i++) {
       tau += extinctRho(from + dir * ((float(i) + 0.5) * dt));
     }
-    tau = min(tau * uExtinctK * dt, uExtinctMax);
-    return exp(-tau * uDustRgb);
+    return min(tau * uExtinctK * dt, uExtinctMax);
   }
-  // Distant sky: march only the dust box, not a finite shell at R.
-  vec3 extinctLook(vec3 from, vec3 dir) {
+  vec3 extinctT(vec3 from, vec3 to) {
+    return exp(-extinctTau(from, to) * uDustRgb);
+  }
+  vec2 extinctSpan(vec3 from, vec3 dir) {
     vec3 d = dir;
     if (abs(d.x) < 1e-8) d.x = 1e-8;
     if (abs(d.y) < 1e-8) d.y = 1e-8;
@@ -118,14 +119,39 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     vec3 tmax = max(tA, tB);
     float enter = max(max(tmin.x, tmin.y), tmin.z);
     float leave = min(min(tmax.x, tmax.y), tmax.z);
-    if (leave < 0.0 || enter > leave) return vec3(1.0);
-    return extinctT(from + dir * max(enter, 0.0), from + dir * leave);
+    if (leave < 0.0 || enter > leave) return vec2(1.0, -1.0);
+    return vec2(enter, leave);
+  }
+  // Distant sky: march only the dust box, not a finite shell at R.
+  vec3 extinctLook(vec3 from, vec3 dir) {
+    vec2 span = extinctSpan(from, dir);
+    if (span.x > span.y) return vec3(1.0);
+    return extinctT(from + dir * max(span.x, 0.0), from + dir * span.y);
+  }
+  // Look-test: how much dust sits on this sky pixel (not a star tint).
+  float extinctLookFog(vec3 from, vec3 dir) {
+    vec2 span = extinctSpan(from, dir);
+    if (span.x > span.y) return 0.0;
+    float t0 = max(span.x, 0.0);
+    float dCat = span.y - t0;
+    float dt = dCat / ${glslFloat(steps)};
+    float tau = 0.0;
+    float peak = 0.0;
+    for (int i = 0; i < ${steps}; i++) {
+      float r = extinctRho(from + dir * (t0 + (float(i) + 0.5) * dt));
+      peak = max(peak, r);
+      tau += r;
+    }
+    tau = min(tau * uExtinctK * dt, uExtinctMax);
+    float column = 1.0 - exp(-tau);
+    float speck = smoothstep(0.0, 0.04, peak);
+    return clamp(max(column, speck * 0.65), 0.0, 1.0);
   }
 `;
 
-/** Look test: `?dust=green` / `?fog=green` paints the extinction
- *  volume bright green on the sky so the fog's shape is visible
- *  even where no harvest star sits. */
+/** Look test: `?dust=green` / `?fog=green` (or the live knob)
+ *  paints the extinction volume lime on the sky — the gaps,
+ *  not the catalog pins. */
 function dustDebugOn(): boolean {
   if (typeof location === 'undefined') return false;
   return /[?&](?:dust|fog|fox)=green/.test(location.search);
@@ -296,15 +322,8 @@ const SILHOUETTE_VERT = /* glsl */ `
     // Extinction: march the column from the bubble to this row.
     vec3 ext = extinctT(uCenter, position);
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
-    if (uDustDebug > 0.5) {
-      // Look test (?dust=green): paint the marched column on the
-      // stars. Clear rows dim; obscured rows keep vVis and go
-      // green, so the fog's true shape is the green shape.
-      vColor = mix(vec3(0.05, 1.0, 0.12), vColor * 0.12, extLum);
-    } else {
-      vVis *= extLum;
-      vColor *= ext / max(extLum, 1e-3);
-    }
+    vVis *= extLum;
+    vColor *= ext / max(extLum, 1e-3);
     gl_Position = projectionMatrix * mv;
   }
 `;
@@ -990,7 +1009,7 @@ export class GalaxyView {
     const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
-      fragmentShader: cosmicFrag(extinctGlsl(16)),
+      fragmentShader: cosmicFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
       uniforms: {
         uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
         uCenter: { value: new THREE.Vector3() },
