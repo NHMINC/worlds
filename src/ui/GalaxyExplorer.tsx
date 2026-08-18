@@ -199,6 +199,12 @@ export function GalaxyExplorer(props: Props) {
     if (k) setKnobVal(k.read());
   }
 
+  function closeEngineer(): void {
+    setKnobDirty(false);
+    setMenuOpen(false);
+    setEngineer(null);
+  }
+
   function resetToDefault(): void {
     if (!spec || !engineer || engineer === 'pick' || rebuilding) return;
     const v = knobDefault(spec);
@@ -356,9 +362,19 @@ export function GalaxyExplorer(props: Props) {
 
       <footer className={`galaxy-bottom${engineer ? ' is-eng' : ''}`}>
         {engineer && (
-          <>
-            <div className="gx-eng-head">
+          <div className="gx-eng">
+            <div className="gx-eng-top">
               <div className="gx-kicker">Cosmic engineer</div>
+              <button
+                type="button"
+                className="gx-chip gx-close"
+                disabled={Boolean(rebuilding)}
+                onClick={closeEngineer}
+              >
+                Close
+              </button>
+            </div>
+            <div className="gx-eng-pick">
               <button
                 type="button"
                 className={`gx-eng-select${rebuild ? ' is-rebuild' : ''}${menuOpen ? ' is-open' : ''}`}
@@ -377,37 +393,6 @@ export function GalaxyExplorer(props: Props) {
                   <b>Choose a setting…</b>
                 )}
               </button>
-              {rebuild && knobDirty ? (
-                <>
-                  <button
-                    type="button"
-                    className="gx-chip gx-eng-go"
-                    disabled={Boolean(rebuilding)}
-                    onClick={() => void confirmRebuild(engineer)}
-                  >
-                    Rebuild
-                  </button>
-                  <button
-                    type="button"
-                    className="gx-chip gx-close"
-                    disabled={Boolean(rebuilding)}
-                    onClick={cancelRebuild}
-                  >
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="gx-chip gx-close"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setEngineer(null);
-                  }}
-                >
-                  Close
-                </button>
-              )}
               {menuOpen && (
                 <div className="gx-eng-menu" role="listbox" aria-label="Cosmic settings">
                   {ENGINEER_GROUPS.map((g) => (
@@ -433,7 +418,7 @@ export function GalaxyExplorer(props: Props) {
             </div>
             {spec && <p className="gx-eng-about">{spec.about}</p>}
             {spec && engineer !== 'pick' && (
-              <div className="gx-eng-row">
+              <div className="gx-eng-slider">
                 <input
                   type="range"
                   min={spec.min}
@@ -444,6 +429,10 @@ export function GalaxyExplorer(props: Props) {
                   onChange={(e) => slideKnob(engineer, Number(e.target.value))}
                 />
                 <em>{knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
+              </div>
+            )}
+            {spec && engineer !== 'pick' && (!isDefault || (rebuild && knobDirty)) && (
+              <div className="gx-eng-actions">
                 {!isDefault && (
                   <button
                     type="button"
@@ -454,9 +443,29 @@ export function GalaxyExplorer(props: Props) {
                     Reset to default
                   </button>
                 )}
+                {rebuild && knobDirty && (
+                  <>
+                    <button
+                      type="button"
+                      className="gx-chip gx-eng-go"
+                      disabled={Boolean(rebuilding)}
+                      onClick={() => void confirmRebuild(engineer)}
+                    >
+                      Rebuild
+                    </button>
+                    <button
+                      type="button"
+                      className="gx-chip"
+                      disabled={Boolean(rebuilding)}
+                      onClick={cancelRebuild}
+                    >
+                      Cancel
+                    </button>
+                  </>
+                )}
               </div>
             )}
-          </>
+          </div>
         )}
         {!engineer && (
           <button
