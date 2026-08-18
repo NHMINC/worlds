@@ -191,7 +191,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
 - **The explorer is the harvest, not a magnifier ball.**
-  App boot mints the catalog once (`prepareUniverse` /
+  **Cosmic engineer** is a live look at photograph knobs that
+  already sit on the GPU (extinction, shine, nebula glow). A
+  slide is the next frame. Bake / harvest knobs are not on that
+  list. App boot mints the catalog once (`prepareUniverse` /
   `buildSilhouetteCloud`) — one magnitude-limited survey:
   every living star above `SILHOUETTE_L` (late-B MS floor and
   hotter, giants, WR; `SILHOUETTE_M` is the IMF slot gate that

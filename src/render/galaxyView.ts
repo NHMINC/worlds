@@ -848,6 +848,19 @@ export class GalaxyView {
     return out;
   }
 
+  /** Live cosmic-engineer write. One uniform, next frame. */
+  setLiveUniform(name: string, value: number): void {
+    for (const mat of this.cloudMats()) {
+      const u = mat.uniforms[name];
+      if (u) u.value = value;
+    }
+  }
+
+  liveUniform(name: string): number | null {
+    const u = this.silMat?.uniforms[name] ?? this.silEmisMat?.uniforms[name];
+    return typeof u?.value === 'number' ? u.value : null;
+  }
+
   /** Catalog positions stay on the GPU; only the bubble centre moves. */
   private pushMagUniforms(): void {
     const cx = this.arcCenter.x;

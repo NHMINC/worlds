@@ -3,6 +3,7 @@ import { UNIVERSE } from '../world/physics';
 import { classifyStar } from '../world/stellar';
 import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFilter, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
+import { LIVE_KNOBS, liveKnob } from './liveKnobs';
 
 const FILTERS: Array<{ id: GalaxyFilter; label: string }> = [
   { id: 'all', label: 'All' },
@@ -50,6 +51,8 @@ export function GalaxyExplorer(props: Props) {
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<GalaxyObject | null>(null);
   const [filter, setFilter] = useState<GalaxyFilter>('all');
+  const [engineer, setEngineer] = useState<null | 'pick' | string>(null);
+  const [knobVal, setKnobVal] = useState(0);
   const [census, setCensus] = useState<Record<string, number>>({});
   const [frame, setFrame] = useState<GalaxyFrame>({
     mode: 'region',
@@ -161,6 +164,22 @@ export function GalaxyExplorer(props: Props) {
     if (viewRef.current) setCensus(viewRef.current.census());
   }
 
+  function openKnob(id: string): void {
+    const k = liveKnob(id);
+    if (!k) return;
+    setKnobVal(viewRef.current?.liveUniform(k.uniform) ?? k.read());
+    setEngineer(id);
+  }
+
+  function slideKnob(id: string, raw: number): void {
+    const k = liveKnob(id);
+    if (!k) return;
+    const v = Number(raw);
+    setKnobVal(v);
+    k.write?.(v);
+    viewRef.current?.setLiveUniform(k.uniform, v);
+  }
+
   const st = selected?.star;
   const cls = st ? classifyStar(st) : '';
   const incDeg = (frame.phi * 180) / Math.PI;
@@ -210,6 +229,46 @@ export function GalaxyExplorer(props: Props) {
             </button>
           </div>
         )}
+        {engineer === 'pick' && (
+          <div className="gx-eng-pick">
+            <div className="gx-eng-head">
+              <div className="gx-kicker">Cosmic engineer</div>
+              <button type="button" className="gd-x" aria-label="Close" onClick={() => setEngineer(null)}>
+                ×
+              </button>
+            </div>
+            <p className="gx-eng-hint">Live photograph knobs. A slide is the next frame.</p>
+            {LIVE_KNOBS.map((k) => (
+              <button key={k.id} type="button" className="gx-eng-item" onClick={() => openKnob(k.id)}>
+                {k.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {engineer && engineer !== 'pick' && liveKnob(engineer) && (
+          <div className="gx-eng-slide">
+            <div className="gx-eng-head">
+              <div>
+                <div className="gx-kicker">Cosmic engineer</div>
+                <b>{liveKnob(engineer)!.label}</b>
+              </div>
+              <button type="button" className="gd-x" aria-label="Close" onClick={() => setEngineer(null)}>
+                ×
+              </button>
+            </div>
+            <div className="gx-eng-row">
+              <input
+                type="range"
+                min={liveKnob(engineer)!.min}
+                max={liveKnob(engineer)!.max}
+                step={liveKnob(engineer)!.step}
+                value={knobVal}
+                onChange={(e) => slideKnob(engineer, Number(e.target.value))}
+              />
+              <em>{knobVal.toFixed(knobVal >= 10 ? 1 : 2)}</em>
+            </div>
+          </div>
+        )}
       </div>
 
       <header className="galaxy-top">
@@ -225,6 +284,12 @@ export function GalaxyExplorer(props: Props) {
               {p.label}
             </button>
           ))}
+          <button
+            className={`gx-chip${engineer ? ' active' : ''}`}
+            onClick={() => setEngineer(engineer === 'pick' ? null : 'pick')}
+          >
+            Engineer
+          </button>
         </div>
         {props.canClose !== false && (
           <button className="gx-chip gx-close" onClick={props.onClose}>
