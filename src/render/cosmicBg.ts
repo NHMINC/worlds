@@ -60,14 +60,77 @@ export function cosmicVert(): string {
 `;
 }
 
-export function cosmicFrag(extinctGlsl: string): string {
+/** Look-test sky: lime skin on the death-smear filaments.
+ *  `steps` must match the included extinctGlsl march. */
+export function cosmicFrag(extinctChunk: string, steps: number): string {
+  const n = Number.isInteger(steps) ? `${steps}.0` : `${steps}`;
   return /* glsl */ `
-  ${extinctGlsl}
+  ${extinctChunk}
   uniform vec3 uVoidRgb;
   uniform vec3 uCenter;
   uniform mat3 uCamRotInv;
   uniform mat4 uInvProj;
   varying vec2 vNdc;
+
+  float foxHash(float n) {
+    return fract(sin(n) * 43758.5453);
+  }
+
+  vec3 foxGrad(vec3 p) {
+    float e = 0.12;
+    return vec3(
+      extinctRho(p + vec3(e, 0.0, 0.0)) - extinctRho(p - vec3(e, 0.0, 0.0)),
+      extinctRho(p + vec3(0.0, e, 0.0)) - extinctRho(p - vec3(0.0, e, 0.0)),
+      extinctRho(p + vec3(0.0, 0.0, e)) - extinctRho(p - vec3(0.0, 0.0, e))
+    );
+  }
+
+  // Grain follows the shear: long along θ, tight across R and y.
+  float foxSkin(vec3 p) {
+    float R = max(length(p.xz), 0.25);
+    float th = atan(p.z, p.x);
+    float along = th * R * 16.0;
+    float across = R * 38.0;
+    float vert = p.y * 52.0;
+    float a = foxHash(along + 13.7 * foxHash(across + 8.1 * foxHash(vert)));
+    float b = foxHash(along * 2.15 + across * 0.28 + vert * 1.05 + 4.2);
+    return mix(0.68, 1.14, a) * mix(0.86, 1.1, b);
+  }
+
+  vec3 foxLook(vec3 from, vec3 dir, vec3 voidC) {
+    vec2 span = extinctSpan(from, dir);
+    if (span.x > span.y) return voidC;
+    float t0 = max(span.x, 0.0);
+    float dCat = span.y - t0;
+    float dt = dCat / ${n};
+    vec3 rgb = voidC;
+    float a = 0.0;
+    vec3 L = normalize(vec3(0.32, 0.86, 0.4));
+    for (int i = 0; i < ${steps}; i++) {
+      vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
+      float r = extinctRho(p);
+      if (r < 0.014 || a > 0.97) continue;
+      vec3 nrm = -normalize(foxGrad(p) + vec3(1e-6));
+      float ndl = 0.2 + 0.8 * max(dot(nrm, L), 0.0);
+      float facing = max(dot(nrm, -dir), 0.0);
+      float wrap = 0.16 + 0.84 * facing;
+      float rim = pow(1.0 - facing, 2.4);
+      vec3 h = normalize(L - dir);
+      float spec = pow(max(dot(nrm, h), 0.0), 22.0) * 0.4;
+      float grain = foxSkin(p);
+      vec3 lit = vec3(0.42, 1.0, 0.2);
+      vec3 shade = vec3(0.02, 0.22, 0.05);
+      vec3 lime = mix(shade, lit, ndl * wrap) * grain;
+      lime += rim * vec3(0.55, 1.0, 0.38) * 0.5;
+      lime += spec * vec3(0.85, 1.0, 0.7);
+      float da = 1.0 - exp(-smoothstep(0.014, 0.28, r) * 2.1);
+      float w = (1.0 - a) * da;
+      rgb = mix(rgb, lime, w);
+      a += w;
+    }
+    return rgb;
+  }
+
   void main() {
     if (uDustDebug < 0.5) {
       gl_FragColor = vec4(uVoidRgb, 1.0);
@@ -76,9 +139,7 @@ export function cosmicFrag(extinctGlsl: string): string {
     vec4 view = uInvProj * vec4(vNdc, 1.0, 1.0);
     vec3 camDir = normalize(view.xyz / max(abs(view.w), 1e-6));
     vec3 dir = normalize(uCamRotInv * camDir);
-    float fog = extinctLookFog(uCenter, dir);
-    vec3 green = vec3(0.05, 1.0, 0.12);
-    gl_FragColor = vec4(mix(uVoidRgb, green, fog), 1.0);
+    gl_FragColor = vec4(foxLook(uCenter, dir, uVoidRgb), 1.0);
   }
 `;
 }

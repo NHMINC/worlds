@@ -128,30 +128,11 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (span.x > span.y) return vec3(1.0);
     return extinctT(from + dir * max(span.x, 0.0), from + dir * span.y);
   }
-  // Look-test: how much dust sits on this sky pixel (not a star tint).
-  float extinctLookFog(vec3 from, vec3 dir) {
-    vec2 span = extinctSpan(from, dir);
-    if (span.x > span.y) return 0.0;
-    float t0 = max(span.x, 0.0);
-    float dCat = span.y - t0;
-    float dt = dCat / ${glslFloat(steps)};
-    float tau = 0.0;
-    float peak = 0.0;
-    for (int i = 0; i < ${steps}; i++) {
-      float r = extinctRho(from + dir * (t0 + (float(i) + 0.5) * dt));
-      peak = max(peak, r);
-      tau += r;
-    }
-    tau = min(tau * uExtinctK * dt, uExtinctMax);
-    float column = 1.0 - exp(-tau);
-    float speck = smoothstep(0.0, 0.04, peak);
-    return clamp(max(column, speck * 0.65), 0.0, 1.0);
-  }
 `;
 
 /** Look test: `?dust=green` / `?fog=green` (or the live knob)
- *  paints the extinction volume lime on the sky — the gaps,
- *  not the catalog pins. */
+ *  paints a shaded lime skin on the death-smear filaments
+ *  (ribbons / sausages) on the sky — not the catalog pins. */
 function dustDebugOn(): boolean {
   if (typeof location === 'undefined') return false;
   return /[?&](?:dust|fog|fox)=green/.test(location.search);
@@ -1009,7 +990,7 @@ export class GalaxyView {
     const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
-      fragmentShader: cosmicFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
+      fragmentShader: cosmicFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS), UNIVERSE.GALAXY_EXTINCT_STEPS),
       uniforms: {
         uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
         uCenter: { value: new THREE.Vector3() },
