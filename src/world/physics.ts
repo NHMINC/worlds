@@ -681,9 +681,10 @@ export const UNIVERSE = {
    * galaxies (inclined disks — hash size, orientation, Hubble
    * axis; each with its own shine), and a photograph of
    * distant star-like pins (each with its own shine). Address
-   * i is hash(seed, i) on a Fibonacci sky — same bottle, same
-   * sky. Not pickable. Dust filters the sightline; the void
-   * is vacuum.
+   * i is hash(seed, i) on the sphere — same bottle, same sky.
+   * A draw-range prefix must still cover 4π (a Fibonacci spiral
+   * of the max budget is a polar cap). Not pickable. Dust
+   * filters the sightline; the void is vacuum.
    */
   /** Decreed sky distance (kpc). The GPU draws the sky on the far plane; this is the law, not a mesh. */
   COSMIC_R: 8000,
