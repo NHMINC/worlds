@@ -32,35 +32,12 @@
       .universe-boot[hidden] {
         display: none !important;
       }
-      .universe-boot-bar {
-        width: min(280px, 70vw);
-        height: 3px;
-        background: rgba(139, 155, 180, 0.18);
-        border-radius: 2px;
-        overflow: hidden;
-      }
-      .universe-boot-bar i {
-        display: block;
-        height: 100%;
-        width: 0;
-        background: #7fa88b;
-        border-radius: 2px;
-      }
     </style>
   </head>
   <body>
     <div id="universe-boot" class="universe-boot" role="status">
       <div id="universe-boot-copy">Preparing the universe</div>
-      <div
-        id="universe-boot-bar"
-        class="universe-boot-bar"
-        role="progressbar"
-        aria-valuemin="0"
-        aria-valuemax="100"
-        aria-valuenow="0"
-      >
-        <i id="universe-boot-fill"></i>
-      </div>
+      <progress id="universe-boot-bar" max="100" value="0"></progress>
     </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

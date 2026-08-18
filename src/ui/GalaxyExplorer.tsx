@@ -47,7 +47,6 @@ export function GalaxyExplorer(props: Props) {
   const [rebuilding, setRebuilding] = useState<null | 'harvest' | 'dust'>(null);
   const [rebuildFrac, setRebuildFrac] = useState(0);
   const [rebuildLabel, setRebuildLabel] = useState('');
-  const rebuildFillRef = useRef<HTMLElement>(null);
   const [frame, setFrame] = useState<GalaxyFrame>({
     mode: 'region',
     theta: 0,
@@ -149,7 +148,6 @@ export function GalaxyExplorer(props: Props) {
     return onUniverseProgress((p) => {
       setRebuildFrac(p.frac);
       setRebuildLabel(p.label);
-      if (rebuildFillRef.current) rebuildFillRef.current.style.width = `${Math.round(p.frac * 100)}%`;
     });
   }, []);
 
@@ -244,15 +242,7 @@ export function GalaxyExplorer(props: Props) {
         {rebuilding && (
           <div className="gx-rebuild" role="status">
             <b>{rebuildLabel || (rebuilding === 'harvest' ? 'Walking the disk…' : 'Baking the fog…')}</b>
-            <div
-              className="gx-rebuild-bar"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={Math.round(rebuildFrac * 100)}
-            >
-              <i ref={rebuildFillRef} />
-            </div>
+            <progress max={100} value={Math.round(rebuildFrac * 100)} />
             <em>{Math.round(rebuildFrac * 100)}%</em>
           </div>
         )}

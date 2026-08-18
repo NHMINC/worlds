@@ -73,13 +73,11 @@ function paintSplash(p: UniverseProgress): void {
   const boot = document.getElementById('universe-boot');
   if (!boot) return;
   const copy = document.getElementById('universe-boot-copy');
-  const fill = document.getElementById('universe-boot-fill');
   const bar = document.getElementById('universe-boot-bar');
   if (copy) copy.textContent = p.label;
-  if (fill) fill.style.width = `${Math.round(p.frac * 100)}%`;
-  if (bar) {
-    bar.setAttribute('aria-valuenow', String(Math.round(p.frac * 100)));
-  }
+  // Native <progress>.value — Pages CSP is style-src 'self', so
+  // element.style.width on a fill never paints.
+  if (bar instanceof HTMLProgressElement) bar.value = Math.round(p.frac * 100);
 }
 
 function emitHarvest(done: number, total: number): void {

@@ -202,7 +202,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   **Cancel** discards. The HTML splash stays gone; the
   explorer owns the wait. Mint and remint fill a progress
   bar from the walk itself (rings visited / rings in the
-  disk, then the dust bake). App boot
+  disk, then the dust bake). The bar is a native
+  `<progress>` — Pages CSP is `style-src 'self'`, so a
+  fill’s `element.style` never paints. App boot
   mints the catalog once (`prepareUniverse` /
   `buildSilhouetteCloud`) — one magnitude-limited survey:
   every living star above `SILHOUETTE_L` (late-B MS floor and
