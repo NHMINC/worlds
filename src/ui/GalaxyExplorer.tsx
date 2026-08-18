@@ -4,7 +4,7 @@ import { classifyStar } from '../world/stellar';
 import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
 import { remintUniverse, rebakeUniverseDust, onUniverseProgress } from '../world/universePrep';
-import { LIVE_KNOBS, REBUILD_KNOBS, liveKnob, rebuildKnob } from './liveKnobs';
+import { ENGINEER_GROUPS, knobsInGroup, liveKnob, rebuildKnob } from './liveKnobs';
 
 const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -43,6 +43,7 @@ export function GalaxyExplorer(props: Props) {
   const [engineer, setEngineer] = useState<null | 'pick' | string>(null);
   const [knobVal, setKnobVal] = useState(0);
   const [knobDirty, setKnobDirty] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [rebuilding, setRebuilding] = useState<null | 'harvest' | 'dust'>(null);
   const [rebuildFrac, setRebuildFrac] = useState(0);
   const [rebuildLabel, setRebuildLabel] = useState('');
@@ -187,9 +188,11 @@ export function GalaxyExplorer(props: Props) {
     if (!id) {
       setKnobDirty(false);
       setEngineer('pick');
+      setMenuOpen(true);
       return;
     }
     openKnob(id);
+    setMenuOpen(false);
   }
 
   function cancelRebuild(): void {
@@ -205,6 +208,7 @@ export function GalaxyExplorer(props: Props) {
     k.write(knobVal);
     setRebuildFrac(0);
     setRebuildLabel(k.scope === 'harvest' ? 'Walking the disk…' : 'Baking the fog…');
+    setMenuOpen(false);
     setRebuilding(k.scope);
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     try {
@@ -349,29 +353,24 @@ export function GalaxyExplorer(props: Props) {
           <>
             <div className="gx-eng-head">
               <div className="gx-kicker">Cosmic engineer</div>
-              <select
-                className={`gx-eng-select${rebuild ? ' is-rebuild' : ''}`}
-                value={engineer === 'pick' ? '' : engineer}
+              <button
+                type="button"
+                className={`gx-eng-select${rebuild ? ' is-rebuild' : ''}${menuOpen ? ' is-open' : ''}`}
                 disabled={Boolean(rebuilding)}
+                aria-haspopup="listbox"
+                aria-expanded={menuOpen}
                 aria-label="Cosmic engineer setting"
-                onChange={(e) => pickSetting(e.target.value)}
+                onClick={() => setMenuOpen((open) => !open)}
               >
-                <option value="">Choose a setting…</option>
-                <optgroup label="Live — next frame">
-                  {LIVE_KNOBS.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.label} — {k.hint}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="Needs rebuild">
-                  {REBUILD_KNOBS.map((k) => (
-                    <option key={k.id} value={k.id}>
-                      {k.label} — {k.hint}
-                    </option>
-                  ))}
-                </optgroup>
-              </select>
+                {spec ? (
+                  <>
+                    <b>{spec.label}</b>
+                    <i>{spec.hint}</i>
+                  </>
+                ) : (
+                  <b>Choose a setting…</b>
+                )}
+              </button>
               {rebuild && knobDirty ? (
                 <>
                   <button
@@ -392,9 +391,38 @@ export function GalaxyExplorer(props: Props) {
                   </button>
                 </>
               ) : (
-                <button type="button" className="gx-chip gx-close" onClick={() => setEngineer(null)}>
+                <button
+                  type="button"
+                  className="gx-chip gx-close"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setEngineer(null);
+                  }}
+                >
                   Close
                 </button>
+              )}
+              {menuOpen && (
+                <div className="gx-eng-menu" role="listbox" aria-label="Cosmic settings">
+                  {ENGINEER_GROUPS.map((g) => (
+                    <div key={g.id} className="gx-eng-group">
+                      <div className="gx-eng-group-label">{g.label}</div>
+                      {knobsInGroup(g.id).map((k) => (
+                        <button
+                          key={k.id}
+                          type="button"
+                          role="option"
+                          aria-selected={engineer === k.id}
+                          className={`gx-eng-item${k.remint ? ' is-rebuild' : ''}${engineer === k.id ? ' is-on' : ''}`}
+                          onClick={() => pickSetting(k.id)}
+                        >
+                          <b>{k.label}</b>
+                          <i>{k.hint}</i>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
             {spec && <p className="gx-eng-about">{spec.about}</p>}
@@ -420,6 +448,7 @@ export function GalaxyExplorer(props: Props) {
             className="gx-chip"
             onClick={() => {
               viewRef.current?.setWarp(false);
+              setMenuOpen(true);
               setEngineer('pick');
             }}
           >

@@ -192,15 +192,17 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `src/render/star.ts`.
 - **The explorer is the harvest, not a magnifier ball.**
   **Cosmic engineer** (explorer bottom bar) is a dropdown of
-  laws, each option stating what the setting does. Live
-  photograph knobs already sit on the GPU (extinction,
-  shine, nebula glow) — a slide is the next frame. Rebuild
-  knobs (survey floors, death-smear laws) are marked amber:
-  the slider is a draft until **Rebuild** writes `UNIVERSE`
-  and remints / rebakes, or **Cancel** discards. The HTML
-  splash stays gone; the explorer owns the wait. Mint and
-  remint fill a progress bar from the walk itself (rings
-  visited / rings in the disk, then the dust bake). App boot
+  laws grouped by use (galactic dust, harvest survey,
+  starlight, nebulae). Each option states what the setting
+  does. Remint / rebake knobs are amber. Live photograph
+  knobs already sit on the GPU (extinction, shine, nebula
+  glow) — a slide is the next frame. Rebuild knobs (survey
+  floors, death-smear laws): the slider is a draft until
+  **Rebuild** writes `UNIVERSE` and remints / rebakes, or
+  **Cancel** discards. The HTML splash stays gone; the
+  explorer owns the wait. Mint and remint fill a progress
+  bar from the walk itself (rings visited / rings in the
+  disk, then the dust bake). App boot
   mints the catalog once (`prepareUniverse` /
   `buildSilhouetteCloud`) — one magnitude-limited survey:
   every living star above `SILHOUETTE_L` (late-B MS floor and
