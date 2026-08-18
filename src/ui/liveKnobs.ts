@@ -97,6 +97,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
+    id: 'cosmicSize',
+    label: 'Smudge size',
+    group: 'cosmic',
+    hint: 'how large each distant galaxy is',
+    about: 'Angular size of one irregular smudge. Small keeps them as specks; large opens them into patches. Next frame.',
+    uniform: 'uCosmicSize',
+    min: 0.08,
+    max: 2.2,
+    step: 0.02,
+    read: () => UNIVERSE.COSMIC_SIZE,
+    write: (v) => {
+      UNIVERSE.COSMIC_SIZE = v;
+    },
+  },
+  {
     id: 'cosmicWeb',
     label: 'Clustering',
     group: 'cosmic',

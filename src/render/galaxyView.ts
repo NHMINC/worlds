@@ -936,6 +936,7 @@ export class GalaxyView {
         uCosmicOcc: { value: UNIVERSE.COSMIC_OCC },
         uCosmicCluster: { value: UNIVERSE.COSMIC_CLUSTER },
         uCosmicCells: { value: UNIVERSE.COSMIC_CELLS },
+        uCosmicSize: { value: UNIVERSE.COSMIC_SIZE },
         uSeed: { value: cosmicSeedFloat(this.seed) },
         ...this.extinctUniforms(),
       },

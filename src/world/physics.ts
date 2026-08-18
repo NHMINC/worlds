@@ -678,6 +678,8 @@ export const UNIVERSE = {
   COSMIC_VOID: 0.42,
   /** Photograph gain on the smudges. */
   COSMIC_GAIN: 0.62,
+  /** Angular size of one smudge (1 ≈ the first look's cell). */
+  COSMIC_SIZE: 0.36,
   /** Fraction of angular cells that keep a smudge, lifted on the web. */
   COSMIC_OCC: 0.1,
   /** Power on the large-scale web. Higher → emptier voids, tighter piles. */

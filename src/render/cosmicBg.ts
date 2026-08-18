@@ -34,6 +34,7 @@ export function cosmicFrag(extinctGlsl: string): string {
   uniform float uCosmicOcc;
   uniform float uCosmicCluster;
   uniform float uCosmicCells;
+  uniform float uCosmicSize;
   uniform float uSeed;
   varying vec3 vDir;
 
@@ -92,9 +93,18 @@ export function cosmicFrag(extinctGlsl: string): string {
           float ca = cos(ang);
           float sa = sin(ang);
           vec2 p = vec2(ca * q.x + sa * q.y, -sa * q.x + ca * q.y);
-          float aspect = 0.26 + 0.7 * hash13(cid + 17.0);
+          float aspect = 0.42 + 0.85 * hash13(cid + 17.0);
           p.y /= aspect;
-          float blob = exp(-dot(p, p) * 7.2) * (0.35 + 0.65 * h);
+          float sz = max(uCosmicSize, 0.06);
+          p /= sz;
+          vec2 warp = vec2(
+            vnoise(vec3(p * 1.8, h * 5.0) + cid) - 0.5,
+            vnoise(vec3(p.yx * 1.8, h * 9.0) + cid.yzx) - 0.5
+          );
+          p += warp * (0.38 + 0.34 * hash13(cid + 5.0));
+          float lump = 0.22 + 1.15 * vnoise(vec3(p * 3.1, h * 13.0) + cid.zxy);
+          lump *= 0.45 + 0.7 * vnoise(vec3(p.yx * 5.4, h * 21.0) + cid);
+          float blob = exp(-dot(p, p) * 11.5) * max(0.0, lump) * (0.4 + 0.6 * h);
           smudge += blob;
           float cool = hash13(cid + 31.0);
           tint += blob * mix(vec3(0.86, 0.78, 0.64), vec3(0.52, 0.62, 0.8), cool);
