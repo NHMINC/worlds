@@ -492,6 +492,15 @@ export const UNIVERSE = {
   get GALAXY_WARP(): number {
     return (2 * this.GALAXY_R_MAX) / this.GALAXY_WARP_CROSS_S;
   },
+  /**
+   * Galactocentric radius where latched warp lets go (kpc).
+   * Four disk radii — past Face-on / Edge-on, still inside the
+   * halo. Quiet: no toast. Inward warp still runs so you can
+   * fall home. WASD is unchanged.
+   */
+  get GALAXY_WARP_LIM(): number {
+    return this.GALAXY_R_MAX * 4;
+  },
   /** Within this of the tap, every occupied slot is drawn. */
   GALAXY_REGION_FULL_R: 0.12,
   /** Distance over which the IMF cut ramps to U_FAR. */
@@ -674,7 +683,8 @@ export const UNIVERSE = {
    * pickable. Same seed as the bottle. Dust filters the shell
    * so the lane is a silhouette; the void is vacuum.
    */
-  COSMIC_R: 240,
+  /** Shell radius (kpc). Far enough that travel inside the warp fence never reads as approach. */
+  COSMIC_R: 8000,
   /** Rainbow hue of the void (0..1 around the wheel). 0.62 is the old blue. */
   COSMIC_HUE: 0.62,
   /** How hard that hue is lit. 0 = black; 1 = a readable tinted night. */

@@ -93,8 +93,10 @@ types or star types.
   background** is the other decreed fake: we cannot mint the
   observable universe. A distant shell (`COSMIC_*`) paints a void
   plus galaxy smudges and a photograph of distant star-like
-  pins (`COSMIC_STAR_*`). Not a catalog. Not pickable. Dust
-  filters the shell; the void is vacuum.
+  pins (`COSMIC_STAR_*`). The shell sits far past the warp
+  fence so travel never reads as approaching it. Not a
+  catalog. Not pickable. Dust filters the shell; the void
+  is vacuum.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
@@ -274,7 +276,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - **Explorer gestures.** The camera stays at the bubble centre.
   Fly is a **latched warp**: ↑ / W (or the **Warp** button)
   holds a fixed catalog rate; ↓ / S / **Stop** is stop.
-  A tap, not a hold. Drag looks. After a pinch, the surviving
+  Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
+  quietly unless the nose points inward. A tap, not a hold.
+  Drag looks. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch. A/D still slide.
 - **Render distance** (the only things that “run”): one star system

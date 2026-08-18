@@ -1415,10 +1415,24 @@ export class GalaxyView {
     this.thrustSpeed = 0;
   }
 
+  private bubbleR(): number {
+    return Math.hypot(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
+  }
+
+  /** Warp may run inside the fence, or past it only while flying inward. */
+  private warpMayRun(): boolean {
+    const r = this.bubbleR();
+    const lim = UNIVERSE.GALAXY_WARP_LIM;
+    if (r < lim) return true;
+    this.orientArc();
+    if (r < 1e-6) return true;
+    return this.arcFwd.dot(this.arcCenter) < 0;
+  }
+
   /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
   setWarp(on: boolean): void {
     if (this.mode !== 'region') return;
-    this.thrustOn = on;
+    this.thrustOn = on && this.warpMayRun();
     this.idle = 0;
   }
 
@@ -1790,6 +1804,7 @@ export class GalaxyView {
       this.thrustSpeed = 0;
       return;
     }
+    if (this.thrustOn && !this.warpMayRun()) this.thrustOn = false;
     this.thrustSpeed = this.thrustOn ? UNIVERSE.GALAXY_WARP : 0;
     if (this.thrustSpeed <= 0) return;
     this.orientArc();
