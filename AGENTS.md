@@ -312,10 +312,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   crest is a small Gaussian splat (anti-aliasing only) —
   hardware trilinear of a lone sample is a diamond face-on.
   Ribbon cores are a wall for starlight (lightless); only
-  the thin rim reddens. The far photograph dies on any
-  baked clump, and the Hubble glow covers what the clumps
-  miss — additive glow left the night sparkling through
-  the disk. Dust does not emit or reflect. Not harvest rows. A
+  the thin rim reddens. The far photograph dies on a baked
+  clump or on the thin disk (R < R_max, |y| < zd) — inter-arm
+  gaps are still the galaxy. The Hubble glow covers where it
+  draws (it does not add through the pins). Dust does not
+  emit or reflect. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills
