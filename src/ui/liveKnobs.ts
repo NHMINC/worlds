@@ -224,7 +224,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     about: 'Intensity gain on the harvest PSF. Brighter pins; the catalogue does not change. Next frame.',
     uniform: 'uShineLGain',
     min: 0.05,
-    max: 2.5,
+    max: 5,
     step: 0.01,
     read: () => HARVEST_SHINE_GAIN,
   },

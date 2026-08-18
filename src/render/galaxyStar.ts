@@ -91,10 +91,10 @@ export const HARVEST_PIN_CORE = 0.85;
  * does not inflate a disc. Not an I_MIN floor — that painted
  * every pin at the same I (yellow fog).
  */
-export const HARVEST_SHINE_GAIN = 0.55;
+export const HARVEST_SHINE_GAIN = 2.5;
 export const HARVEST_SHINE_L_P = 0.48;
 export const HARVEST_SHINE_DIST_REF = 8;
-export const HARVEST_SHINE_DIST_P = 0.22;
+export const HARVEST_SHINE_DIST_P = 0.5;
 /**
  * Super-sun tail only. Extra I is identically zero at and below
  * SUPER_L, so the rest of the harvest photograph is unchanged.
