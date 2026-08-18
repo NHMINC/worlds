@@ -7,12 +7,31 @@ import type {
   TerrainOverrideRecord,
 } from '../world/types';
 
+export type HarvestCacheRecord = {
+  key: string;
+  seed: string;
+  kind: 'stars' | 'nebulae';
+  n: number;
+  ids: Float64Array;
+  pos: Float32Array;
+  col: Float32Array;
+  size: Float32Array;
+  pulse: Float32Array;
+  gain: Float32Array;
+  bits: Uint8Array;
+  mk: Uint8Array;
+  lum: Float32Array;
+  kindRow: Uint8Array;
+  ms: number;
+};
+
 class WorldBuilderDB extends Dexie {
   systems!: Table<SystemMeta, string>;
   bodyState!: Table<BodyStateRecord, [string, string]>;
   terrain!: Table<TerrainOverrideRecord, [string, string]>;
   labels!: Table<LabelRecord, string>;
   objects!: Table<ObjectRecord, string>;
+  harvest!: Table<HarvestCacheRecord, string>;
 
   constructor() {
     super('hex-world-builder');
@@ -51,6 +70,12 @@ class WorldBuilderDB extends Dexie {
         await tx.table('labels').clear();
         await tx.table('objects').clear();
       });
+    // v5: packed harvest photograph. Same sky as objectAt; this is
+    // only the walk's product so a second load does not re-read
+    // every address. Player saves are untouched.
+    this.version(5).stores({
+      harvest: 'key, seed, kind',
+    });
   }
 }
 

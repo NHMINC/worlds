@@ -154,10 +154,21 @@ are retired. A later survey will
 resolve the faint neighbours of a camp. Set course loads a
 picked harvest star (or the here / POI focus). We **store
 visits only** (overlays, camera, labels). We do
-  not mint systems. App boot mints the whole-disk backdrop once
+  not mint systems.   App boot mints the whole-disk backdrop once
   (`prepareUniverse`) behind the HTML “Preparing the universe”
   splash — not a React overlay, so Strict Mode remounts cannot
-  flash it twice. The explorer stays mounted (`is-dormant` on a
+  flash it twice. The walk is `objectAt` in bulk: the same
+  addresses, not a random subsample. Cells that cannot host a
+  living survey star (old bulge / bar / halo for the B-star
+  tail; no thin gas for nebulae) are skipped by the clock, not
+  by a different IMF. Height is finished only on keepers.
+  Spokes shard across workers (every worker sees the core);
+  the packed
+  photograph lands in IndexedDB (`HARVEST_CACHE_VER` + seed +
+  floors) so a second load does not re-read the disk. Rebuild
+  remints and overwrites that row. The export JSON does not
+  carry the photograph — a friend regenerates the same sky
+  from the canonical seed. The explorer stays mounted (`is-dormant` on a
   world) so opening the map does not remint or show the splash
   again. An empty save does not write a camp: it queries nearby
   solar-circle hosts for a living world (`discoverHabitable`) and
@@ -235,7 +246,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   frame; rebuild: a draft until Rebuild). The HTML splash
   stays gone; the explorer owns the wait. Mint and remint
   fill a progress bar from the walk itself (star rings,
-  then nebulae, then the dust bake). The bar is a native
+  then nebulae, then the dust bake). A cache hit skips the
+  walk and still bakes dust if needed. The bar is a native
   `<progress>` — Pages CSP is `style-src 'self'`, so a
   fill’s `element.style` never paints. App boot
   mints three catalogs once (`prepareUniverse`): the
@@ -602,6 +614,7 @@ Code map (start here):
 | Galaxy explorer (stars + nebulae + dust + cosmic shell) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
+| Packed harvest cache (IDB, not the export) | `src/store/harvestCache.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |

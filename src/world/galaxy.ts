@@ -729,7 +729,35 @@ export function slotBirthCart(seed: string, cell: number, slot: number): { x: nu
   return { x: R * Math.cos(theta), y: z, z: R * Math.sin(theta) };
 }
 
-export function slotBirthRaw(seed: string, cell: number, slot: number, filled: number): SlotBirth {
+/**
+ * ZAMS mass only. Independent `imfJ` stream — the same draw
+ * `slotBirthRaw` uses. The harvest can reject a dead address
+ * before it pays the birth stream.
+ */
+export function slotZams(seed: string, cell: number, slot: number, filled: number): number {
+  const jitter = u01(seed, 'imfJ', cell, slot);
+  return imfMass(Math.min(0.999999, (slot + jitter) / Math.max(1, filled)));
+}
+
+/**
+ * Clock of a slot without the sech² height. Same draws as
+ * `slotBirthRaw` up to the chemistry rng. Harvest rejects
+ * skip `finishSlotBirth`; `objectAt` always finishes.
+ */
+export interface SlotClock {
+  mid: GalPos;
+  R: number;
+  theta: number;
+  uZ: number;
+  pop: Population;
+  inArm: boolean;
+  inCloud: boolean;
+  ageGyr: number;
+  massZams: number;
+  rng: () => number;
+}
+
+export function slotBirthClock(seed: string, cell: number, slot: number, filled: number): SlotClock {
   const rng = rngFor(seed, cell, slot);
   const mid = cellCenter(cell);
   const { GALAXY_NZ: nz } = UNIVERSE;
@@ -743,17 +771,12 @@ export function slotBirthRaw(seed: string, cell: number, slot: number, filled: n
   // star's id (cell, slot) never moves.
   const { R, theta } = inPlaneBirth(mid, rng(), rng());
   const uZ = rng();
-  const pos: GalPos = {
-    R,
-    theta,
-    z: birthZ(mid.z, R, theta, uZ),
-  };
   // Pop drinks the un-puffed height so warp/flare move the photograph
   // without re-rolling the clock.
   const parts = densityParts({ R, theta, z: mid.z + (uZ - 0.5) * dz });
   const pop = pickPop(parts, rng());
-  const [ageLo, ageHi] = ageWindow(pop, pos.R);
-  const arm = inSpiralArm(pos.R, pos.theta);
+  const [ageLo, ageHi] = ageWindow(pop, R);
+  const arm = inSpiralArm(R, theta);
   const ism = ismNorm(seed, cell);
   // Schmidt–Kennicutt-lite: star formation follows the gas. The denser
   // the cloud, the more recent the births — nurseries emerge instead of
@@ -761,10 +784,35 @@ export function slotBirthRaw(seed: string, cell: number, slot: number, filled: n
   let uAge = rng();
   if (pop === 'thin') uAge = Math.pow(uAge, 1 + UNIVERSE.GALAXY_SFR_GAIN * ism);
   const ageGyr = ageLo + uAge * Math.max(0.01, ageHi - ageLo);
-  const jitter = u01(seed, 'imfJ', cell, slot);
-  const uImf = Math.min(0.999999, (slot + jitter) / Math.max(1, filled));
-  const massZams = imfMass(uImf);
-  return { pos, pop, inArm: arm, inCloud: ism >= UNIVERSE.GALAXY_CLOUD_HII, ageGyr, massZams, rng };
+  return {
+    mid,
+    R,
+    theta,
+    uZ,
+    pop,
+    inArm: arm,
+    inCloud: ism >= UNIVERSE.GALAXY_CLOUD_HII,
+    ageGyr,
+    massZams: slotZams(seed, cell, slot, filled),
+    rng,
+  };
+}
+
+/** Apply the sech² height. Same `pos` `slotBirthRaw` always returned. */
+export function finishSlotBirth(c: SlotClock): SlotBirth {
+  return {
+    pos: { R: c.R, theta: c.theta, z: birthZ(c.mid.z, c.R, c.theta, c.uZ) },
+    pop: c.pop,
+    inArm: c.inArm,
+    inCloud: c.inCloud,
+    ageGyr: c.ageGyr,
+    massZams: c.massZams,
+    rng: c.rng,
+  };
+}
+
+export function slotBirthRaw(seed: string, cell: number, slot: number, filled: number): SlotBirth {
+  return finishSlotBirth(slotBirthClock(seed, cell, slot, filled));
 }
 
 export function isSlotAlive(massZams: number, ageGyr: number): boolean {

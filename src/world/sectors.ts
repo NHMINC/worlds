@@ -32,9 +32,13 @@ import {
   splitId,
   slotScatterKpc,
   slotBirthRaw,
+  slotBirthClock,
+  finishSlotBirth,
+  slotZams,
   slotMsLum,
   spheroidScaleHeight,
   type SlotBirth,
+  type SlotClock,
   slotMsTeff,
   imfQuantile,
   slotRangeForMass,
@@ -42,7 +46,7 @@ import {
   type GalPos,
   type GalaxyObject,
 } from './galaxy';
-import { evolve, imfMass, mkFromTeff, msLifetime, teffToRgb } from './stellar';
+import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
 import { KIND_STAR, emissionLook, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
 import { bakeDustVolume, type DustVolume } from './dustVolume';
 
@@ -355,8 +359,10 @@ export function harvestWalkMass(gates: HarvestGates = harvestGatesFromUniverse()
   return Math.max(UNIVERSE.IMF_MIN, gates.massMsun);
 }
 
+type ClockGate = Pick<SlotClock, 'massZams' | 'ageGyr' | 'inCloud'>;
+
 /** Cheap clock gate: evolve only slots that can be luminous stars. */
-function maybeClockRow(b: SlotBirth, massFloor: number): boolean {
+function maybeClockRow(b: ClockGate, massFloor: number): boolean {
   const m = b.massZams;
   if (m < massFloor) return false;
   const tMs = msLifetime(m);
@@ -365,7 +371,7 @@ function maybeClockRow(b: SlotBirth, massFloor: number): boolean {
 }
 
 /** Old-clock RGB: below the hot floor, only the giant window shines. */
-function maybeGiantRow(b: SlotBirth, giantFloor: number, hotFloor: number): boolean {
+function maybeGiantRow(b: ClockGate, giantFloor: number, hotFloor: number): boolean {
   const m = b.massZams;
   if (m < giantFloor || m >= hotFloor) return false;
   const tMs = msLifetime(m);
@@ -375,7 +381,7 @@ function maybeGiantRow(b: SlotBirth, giantFloor: number, hotFloor: number): bool
 }
 
 /** Cheap clock gate: evolve only slots that can wear a nebula. */
-function maybeNebulaRow(b: SlotBirth): boolean {
+function maybeNebulaRow(b: ClockGate): boolean {
   const m = b.massZams;
   const tMs = msLifetime(m);
   // H II is O/B in a natal cloud. B starts below 8 M☉ — sit the
@@ -434,8 +440,9 @@ function writeRow(
   c.kind[i] = opts.kind;
 }
 
-function sketchEvolve(b: SlotBirth): ReturnType<typeof evolve> {
-  const chem = chemistry(b.pop, b.pos.R, b.ageGyr, b.rng());
+function sketchEvolve(b: SlotBirth | SlotClock): ReturnType<typeof evolve> {
+  const R = 'pos' in b ? b.pos.R : b.R;
+  const chem = chemistry(b.pop, R, b.ageGyr, b.rng());
   return evolve({
     massZams: b.massZams,
     ageGyr: b.ageGyr,
@@ -769,13 +776,56 @@ export function buildSilhouetteCloud(
   return cloud;
 }
 
+/** Catalog span. Omitted ends are the full disk / every spoke. */
+export type HarvestSpan = {
+  ir0?: number;
+  ir1?: number;
+  it0?: number;
+  it1?: number;
+};
+
+/** Packed-harvest cache generation. Bump when the walk or pack shape changes. */
+export const HARVEST_CACHE_VER = 1;
+
+/**
+ * Split the disk into `n` azimuth wedges of equal spoke count.
+ * Every worker sees the core — the giant-branch cost is what
+ * used to serialise behind one inner-ring shard.
+ */
+export function harvestThetaShards(nWorkers: number): [number, number][] {
+  const nth = UNIVERSE.GALAXY_NTH;
+  const n = Math.max(1, Math.min(Math.floor(nWorkers), nth));
+  const out: [number, number][] = [];
+  for (let s = 0; s < n; s++) {
+    out.push([Math.floor((s * nth) / n), Math.floor(((s + 1) * nth) / n)]);
+  }
+  return out;
+}
+
+/** Concatenate shard clouds. Order is not the law — ids are. */
+export function mergeStarClouds(parts: StarCloud[]): StarCloud {
+  let n = 0;
+  let ms = 0;
+  for (const p of parts) {
+    n += p.n;
+    ms = Math.max(ms, p.ms);
+  }
+  const c = allocCloud(Math.max(1, n));
+  let i = 0;
+  for (const p of parts) {
+    for (let k = 0; k < p.n; k++) copyStar(p, k, c, i++);
+  }
+  return { n, ...c, ms };
+}
+
 /** Harvest walk only — no cache, no dust bake. The worker uses this. */
 export function mintSilhouetteCloud(
   seed: string,
   onRing?: (done: number, total: number) => void,
   gates?: HarvestGates,
+  span?: HarvestSpan,
 ): StarCloud {
-  return mintHarvestCloud(seed, performance.now(), onRing, gates);
+  return mintHarvestCloud(seed, performance.now(), onRing, gates, span);
 }
 
 /**
@@ -786,8 +836,9 @@ export function mintSkyClouds(
   seed: string,
   onRing?: (done: number, total: number) => void,
   gates?: HarvestGates,
+  span?: HarvestSpan,
 ): { stars: StarCloud; nebulae: StarCloud } {
-  return walkSkyClouds(seed, performance.now(), onRing, true, true, gates);
+  return walkSkyClouds(seed, performance.now(), onRing, true, true, gates, span);
 }
 
 function mintHarvestCloud(
@@ -795,8 +846,9 @@ function mintHarvestCloud(
   t0: number,
   onRing?: (done: number, total: number) => void,
   gates?: HarvestGates,
+  span?: HarvestSpan,
 ): StarCloud {
-  return walkSkyClouds(seed, t0, onRing, true, false, gates).stars;
+  return walkSkyClouds(seed, t0, onRing, true, false, gates, span).stars;
 }
 
 /**
@@ -808,8 +860,10 @@ function mintHarvestCloud(
 export function mintNebulaCloud(
   seed: string,
   onRing?: (done: number, total: number) => void,
+  span?: HarvestSpan,
 ): StarCloud {
-  return walkSkyClouds(seed, performance.now(), onRing, false, true).nebulae;
+  return walkSkyClouds(seed, performance.now(), onRing, false, true, harvestGatesFromUniverse(), span)
+    .nebulae;
 }
 
 /** Forget and walk the nebula catalog under current UNIVERSE. */
@@ -834,10 +888,15 @@ function walkSkyClouds(
   wantStars: boolean,
   wantNebulae: boolean,
   gates: HarvestGates = harvestGatesFromUniverse(),
+  span?: HarvestSpan,
 ): { stars: StarCloud; nebulae: StarCloud } {
   const g = harvestGatesResolved(gates);
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
     UNIVERSE;
+  const ir0 = Math.max(0, Math.floor(span?.ir0 ?? 0));
+  const ir1 = Math.min(nr, Math.ceil(span?.ir1 ?? nr));
+  const itLo = Math.max(0, Math.floor(span?.it0 ?? 0));
+  const itHi = Math.min(nth, Math.ceil(span?.it1 ?? nth));
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
   const starM = harvestWalkMass(g);
   const giantM = Math.min(g.giantMsun, starM);
@@ -848,57 +907,68 @@ function walkSkyClouds(
   const uHot = wantStars ? uStar : wantNebulae ? uNeb : 1;
   const liveFrac = Math.max(1e-6, 1 - uHot);
   const giantFrac = Math.max(0, uGiantHi - uGiant);
+  const nebFloor = nebulaWalkFloor();
   let stars = allocCloud(wantStars ? 280_000 : 1);
   let nebulae = allocCloud(wantNebulae ? 16_384 : 1);
   let ns = 0;
   let nn = 0;
-  for (let ir = 0; ir < nr; ir++) {
+  for (let ir = ir0; ir < ir1; ir++) {
     const vol = catalogCellVolume(ir);
     const R = ((ir + 0.5) / nr) * rMax;
     for (let iz = 0; iz < nz; iz++) {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
       const ceil = thinDensityCeil(R, z) * vol * nK;
+      // Core extra-visit is the giant-branch door: thin ceil is low
+      // on the box/peanut, but old mass still owes K giants.
       if (ceil * liveFrac < 0.2 && !(wantStars && R < 3.2 && Math.abs(z) < 0.85)) continue;
-      for (let it = 0; it < nth; it++) {
+      for (let it = itLo; it < itHi; it++) {
         const cell = ir * nth * nz + it * nz + iz;
         const mid = cellCenter(cell);
         const parts = densityParts(mid);
-        const spheroid = mid.R < UNIVERSE.GALAXY_BOX_A * 2.6 ? parts.bulge + parts.bar : 0;
-        const expect = (parts.thin + spheroid) * vol * nK;
         const old = parts.bulge + parts.bar;
         const giantExpect = old * vol * nK * giantFrac * 0.07;
-        const walkHot = expect * liveFrac >= 0.2;
+        // Living B stars are a thin-disk clock. Bulge / bar / halo
+        // age floors sit above tMs of the survey tail — walking
+        // those cells is reading the same dead addresses.
+        const walkHot = parts.thin * vol * nK * liveFrac >= 0.2;
         const walkGiant = wantStars && giantExpect >= 3.5;
-        if (!walkHot && !walkGiant && !wantNebulae) continue;
+        // H II and leftover PN/SNR also need a young thin host.
+        // Old spheroid ages are past the nebula window.
+        const walkNeb = wantNebulae && parts.thin > 0;
+        if (!walkHot && !walkGiant && !walkNeb) continue;
         const filled = slotsInCell(seed, cell);
         if (filled <= 0) continue;
         const sHot = Math.floor(uHot * filled);
         const sGiant = Math.floor(uGiant * filled);
         const sGiantHi = Math.floor(uGiantHi * filled);
-        const sNeb = wantNebulae ? Math.floor(uNeb * filled) : sHot;
+        const sNeb = walkNeb ? Math.floor(uNeb * filled) : sHot;
         if (walkGiant) {
           for (let slot = sGiant; slot < sGiantHi; slot++) {
-            const mApprox = imfMass(Math.min(0.999999, (slot + 0.5) / Math.max(1, filled)));
-            if (mApprox < giantM || mApprox >= starM) continue;
-            const tMs = msLifetime(mApprox);
-            if (tMs > UNIVERSE.GALAXY_AGE_GYR || tMs + giantWindow(mApprox) < 6.5) continue;
-            const birth = slotBirthRaw(seed, cell, slot, filled);
-            if (!maybeGiantRow(birth, giantM, starM)) continue;
-            const ev = sketchEvolve(birth);
+            const mass = slotZams(seed, cell, slot, filled);
+            if (mass < giantM || mass >= starM) continue;
+            const tMs = msLifetime(mass);
+            if (tMs > UNIVERSE.GALAXY_AGE_GYR || tMs + giantWindow(mass) < 6.5) continue;
+            const clock = slotBirthClock(seed, cell, slot, filled);
+            if (!maybeGiantRow(clock, giantM, starM)) continue;
+            const ev = sketchEvolve(clock);
             if (!keepSilhouettePhase(ev, g)) continue;
+            const birth = finishSlotBirth(clock);
             if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
             writeEvolved(cell, slot, ns++, stars, birth, ev, true);
           }
         }
         const sTail = Math.min(sHot, sNeb);
-        if (walkHot || wantNebulae) {
+        if (walkHot || walkNeb) {
           for (let slot = sTail; slot < filled; slot++) {
-            const birth = slotBirthRaw(seed, cell, slot, filled);
-            const clock = wantStars && walkHot && maybeClockRow(birth, starM);
-            const neb = wantNebulae && maybeNebulaRow(birth);
-            if (!clock && !neb) continue;
-            const ev = sketchEvolve(birth);
-            if (clock && keepSilhouettePhase(ev, g)) {
+            const mass = slotZams(seed, cell, slot, filled);
+            if (mass < starM && !(walkNeb && mass >= nebFloor)) continue;
+            const clock = slotBirthClock(seed, cell, slot, filled);
+            const keepHot = wantStars && walkHot && maybeClockRow(clock, starM);
+            const neb = walkNeb && maybeNebulaRow(clock);
+            if (!keepHot && !neb) continue;
+            const ev = sketchEvolve(clock);
+            const birth = finishSlotBirth(clock);
+            if (keepHot && keepSilhouettePhase(ev, g)) {
               if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
               writeEvolved(cell, slot, ns++, stars, birth, ev, true);
             }
@@ -910,7 +980,7 @@ function walkSkyClouds(
         }
       }
     }
-    onRing?.(ir + 1, nr);
+    onRing?.(ir - ir0 + 1, Math.max(1, ir1 - ir0));
   }
   return {
     stars: finishCloud(stars, ns, t0),

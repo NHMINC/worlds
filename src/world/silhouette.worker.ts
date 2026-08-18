@@ -5,7 +5,13 @@
  * not the main thread's. Progress is rings walked.
  */
 import { UNIVERSE } from './physics';
-import { mintSkyClouds, mintSilhouetteCloud, mintNebulaCloud, type HarvestGates } from './sectors';
+import {
+  mintSkyClouds,
+  mintSilhouetteCloud,
+  mintNebulaCloud,
+  type HarvestGates,
+  type HarvestSpan,
+} from './sectors';
 import type { StarCloud } from './sectors';
 
 const post = self as unknown as {
@@ -86,6 +92,10 @@ self.onmessage = (
     knobs?: Record<string, number>;
     stars?: boolean;
     nebulae?: boolean;
+    ir0?: number;
+    ir1?: number;
+    it0?: number;
+    it1?: number;
   }>,
 ): void => {
   if (e.data.type !== 'mint') return;
@@ -94,19 +104,26 @@ self.onmessage = (
   const wantStars = e.data.stars !== false;
   const wantNebulae = e.data.nebulae === true;
   const gates = harvestGates(e.data.knobs);
+  const span: HarvestSpan | undefined =
+    e.data.ir0 !== undefined ||
+    e.data.ir1 !== undefined ||
+    e.data.it0 !== undefined ||
+    e.data.it1 !== undefined
+      ? { ir0: e.data.ir0, ir1: e.data.ir1, it0: e.data.it0, it1: e.data.it1 }
+      : undefined;
   const onRing = (done: number, total: number) => {
     post.postMessage({ type: 'progress', seed, done, total });
   };
   let stars: StarCloud | null = null;
   let nebulae: StarCloud | null = null;
   if (wantStars && wantNebulae) {
-    const both = mintSkyClouds(seed, onRing, gates);
+    const both = mintSkyClouds(seed, onRing, gates, span);
     stars = both.stars;
     nebulae = both.nebulae;
   } else if (wantNebulae) {
-    nebulae = mintNebulaCloud(seed, onRing);
+    nebulae = mintNebulaCloud(seed, onRing, span);
   } else {
-    stars = mintSilhouetteCloud(seed, onRing, gates);
+    stars = mintSilhouetteCloud(seed, onRing, gates, span);
   }
   const starPack = stars ? packCloud(stars) : null;
   const nebPack = nebulae ? packCloud(nebulae) : null;

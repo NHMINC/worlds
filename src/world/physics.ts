@@ -569,7 +569,10 @@ export const UNIVERSE = {
    * harvester adds a second slice: slots in [GIANT_M, SILHOUETTE_M)
    * that are on the giant/subgiant clock, kept at GIANT_L
    * (low-mass RGB is ~16–56 L☉ — they fail the 162 L☉ hot floor).
-   * Colour is Teff. Rebuild the harvest; star ids do not move.
+   * Colour is Teff. The hot tail itself is a thin-disk walk —
+   * bulge / bar / halo age floors sit above those lifetimes, so
+   * those cells are not re-read. Rebuild the harvest; star ids
+   * do not move.
    */
   GALAXY_SILHOUETTE_GIANT_M: 0.94,
   GALAXY_SILHOUETTE_GIANT_L: 18,

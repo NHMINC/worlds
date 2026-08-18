@@ -1,10 +1,13 @@
 /**
  * One mint of the shared sky. The whole-disk backdrop is a pure
- * function of the seed; we walk it once per page load and keep it.
- * The explorer attaches the GPU mesh — it does not walk the disk.
- * Cosmic-engineer rebuilds remint or rebake under the live UNIVERSE
- * without bringing the HTML splash back. First boot walks stars
- * and nebulae together; later nebula knobs rebake nebulae only.
+ * function of the seed. The walk is objectAt in bulk — same
+ * addresses, spokes in parallel, dead cells skipped by the clock.
+ * A packed copy lives in IndexedDB so a second load does not
+ * re-read the disk. The explorer attaches the GPU mesh; it does
+ * not walk. Cosmic-engineer rebuilds remint or rebake under the
+ * live UNIVERSE without bringing the HTML splash back. First boot
+ * walks stars and nebulae together; later nebula knobs rebake
+ * nebulae only.
  */
 import { UNIVERSE } from './physics';
 import {
@@ -12,16 +15,25 @@ import {
   forgetNebulae,
   forgetSilhouette,
   harvestDustVolume,
+  harvestThetaShards,
   installNebulaCloud,
   installSilhouetteCloud,
+  mergeStarClouds,
   mintNebulaCloud,
   mintSilhouetteCloud,
   mintSkyClouds,
   nebulaCloud,
   rebakeDustCache,
   silhouetteCloud,
+  type HarvestGates,
+  type HarvestSpan,
   type StarCloud,
 } from './sectors';
+import {
+  forgetHarvestCache,
+  loadHarvestCache,
+  saveHarvestCache,
+} from '../store/harvestCache';
 
 export type UniverseProgress = {
   kind: 'harvest' | 'nebula' | 'dust';
@@ -163,35 +175,42 @@ function nebulaWorkerKnobs(): Record<string, number> {
   };
 }
 
-function runCatalogWorker(
+function gatesFromKnobs(knobs: Record<string, number>): HarvestGates {
+  return {
+    massMsun: knobs.GALAXY_SILHOUETTE_M ?? UNIVERSE.GALAXY_SILHOUETTE_M,
+    lumLsun: knobs.GALAXY_SILHOUETTE_L ?? UNIVERSE.GALAXY_SILHOUETTE_L,
+    giantMsun: knobs.GALAXY_SILHOUETTE_GIANT_M ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
+    giantLsun: knobs.GALAXY_SILHOUETTE_GIANT_L ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
+  };
+}
+
+function mintSync(
   seed: string,
   opts: { stars: boolean; nebulae: boolean; knobs: Record<string, number> },
   onRing: (done: number, total: number) => void,
+  span?: HarvestSpan,
+): { stars: StarCloud | null; nebulae: StarCloud | null } {
+  const gates = gatesFromKnobs(opts.knobs);
+  if (opts.stars && opts.nebulae) return mintSkyClouds(seed, onRing, gates, span);
+  return {
+    stars: opts.stars ? mintSilhouetteCloud(seed, onRing, gates, span) : null,
+    nebulae: opts.nebulae ? mintNebulaCloud(seed, onRing, span) : null,
+  };
+}
+
+function workerCount(): number {
+  const hc = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 1;
+  return Math.max(1, Math.min(8, hc));
+}
+
+function runOneWorker(
+  seed: string,
+  opts: { stars: boolean; nebulae: boolean; knobs: Record<string, number> },
+  span: HarvestSpan | undefined,
+  onRing: (done: number, total: number) => void,
 ): Promise<{ stars: StarCloud | null; nebulae: StarCloud | null }> {
   return new Promise((resolve) => {
-    const fallback = () => {
-      if (opts.stars && opts.nebulae) {
-        const both = mintSkyClouds(seed, onRing, {
-          massMsun: opts.knobs.GALAXY_SILHOUETTE_M ?? UNIVERSE.GALAXY_SILHOUETTE_M,
-          lumLsun: opts.knobs.GALAXY_SILHOUETTE_L ?? UNIVERSE.GALAXY_SILHOUETTE_L,
-          giantMsun: opts.knobs.GALAXY_SILHOUETTE_GIANT_M ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
-          giantLsun: opts.knobs.GALAXY_SILHOUETTE_GIANT_L ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
-        });
-        resolve(both);
-        return;
-      }
-      resolve({
-        stars: opts.stars
-          ? mintSilhouetteCloud(seed, onRing, {
-              massMsun: opts.knobs.GALAXY_SILHOUETTE_M ?? UNIVERSE.GALAXY_SILHOUETTE_M,
-              lumLsun: opts.knobs.GALAXY_SILHOUETTE_L ?? UNIVERSE.GALAXY_SILHOUETTE_L,
-              giantMsun: opts.knobs.GALAXY_SILHOUETTE_GIANT_M ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
-              giantLsun: opts.knobs.GALAXY_SILHOUETTE_GIANT_L ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
-            })
-          : null,
-        nebulae: opts.nebulae ? mintNebulaCloud(seed, onRing) : null,
-      });
-    };
+    const fallback = () => resolve(mintSync(seed, opts, onRing, span));
     try {
       const w = new Worker(new URL('./silhouette.worker.ts', import.meta.url), { type: 'module' });
       w.onmessage = (e: MessageEvent<WorkerMsg>) => {
@@ -217,10 +236,48 @@ function runCatalogWorker(
         knobs: opts.knobs,
         stars: opts.stars,
         nebulae: opts.nebulae,
+        ir0: span?.ir0,
+        ir1: span?.ir1,
+        it0: span?.it0,
+        it1: span?.it1,
       });
     } catch {
       fallback();
     }
+  });
+}
+
+function runCatalogWorker(
+  seed: string,
+  opts: { stars: boolean; nebulae: boolean; knobs: Record<string, number> },
+  onRing: (done: number, total: number) => void,
+): Promise<{ stars: StarCloud | null; nebulae: StarCloud | null }> {
+  const shards = harvestThetaShards(workerCount());
+  if (shards.length <= 1) return runOneWorker(seed, opts, undefined, onRing);
+  const doneAt = shards.map(() => 0);
+  const sizes = shards.map(([a, b]) => Math.max(1, b - a));
+  const total = sizes.reduce((s, n) => s + n, 0);
+  const tick = () => {
+    let done = 0;
+    for (const d of doneAt) done += d;
+    onRing(done, total);
+  };
+  return Promise.all(
+    shards.map(([it0, it1], i) =>
+      runOneWorker(seed, opts, { it0, it1 }, (done, shardTotal) => {
+        const t = Math.max(1, shardTotal);
+        doneAt[i] = Math.round((sizes[i] * done) / t);
+        tick();
+      }),
+    ),
+  ).then((parts) => {
+    const stars = opts.stars
+      ? mergeStarClouds(parts.map((p) => p.stars).filter((c): c is StarCloud => !!c))
+      : null;
+    const nebulae = opts.nebulae
+      ? mergeStarClouds(parts.map((p) => p.nebulae).filter((c): c is StarCloud => !!c))
+      : null;
+    return { stars, nebulae };
   });
 }
 
@@ -238,10 +295,14 @@ function mintInWorker(seed: string): Promise<StarCloud> {
   const knobs = needNeb ? { ...harvestWorkerKnobs(), ...nebulaWorkerKnobs() } : harvestWorkerKnobs();
   return runCatalogWorker(seed, { stars: true, nebulae: needNeb, knobs }, (done, total) => {
     emitHarvest(done, total, span);
-  }).then(({ stars, nebulae }) => {
-    if (nebulae) installNebulaCloud(seed, nebulae);
+  }).then(async ({ stars, nebulae }) => {
+    if (nebulae) {
+      installNebulaCloud(seed, nebulae);
+      void saveHarvestCache('nebulae', seed, nebulaWorkerKnobs(), nebulae);
+    }
     if (!stars) throw new Error('star harvest worker returned no catalog');
     installSilhouetteCloud(seed, stars);
+    void saveHarvestCache('stars', seed, harvestWorkerKnobs(), stars);
     bakeDustIfNeeded(seed);
     return stars;
   });
@@ -249,15 +310,27 @@ function mintInWorker(seed: string): Promise<StarCloud> {
 
 function mintNebulaeInWorker(seed: string): Promise<StarCloud> {
   emitNebulaWalk(0, 1);
-  return runCatalogWorker(
-    seed,
-    { stars: false, nebulae: true, knobs: nebulaWorkerKnobs() },
-    emitNebulaWalk,
-  ).then(({ nebulae }) => {
-    if (!nebulae) throw new Error('nebula worker returned no catalog');
-    installNebulaCloud(seed, nebulae);
-    return nebulae;
-  });
+  const knobs = nebulaWorkerKnobs();
+  return runCatalogWorker(seed, { stars: false, nebulae: true, knobs }, emitNebulaWalk).then(
+    async ({ nebulae }) => {
+      if (!nebulae) throw new Error('nebula worker returned no catalog');
+      installNebulaCloud(seed, nebulae);
+      void saveHarvestCache('nebulae', seed, knobs, nebulae);
+      return nebulae;
+    },
+  );
+}
+
+async function loadPackedSky(seed: string): Promise<StarCloud | null> {
+  const starKnobs = harvestWorkerKnobs();
+  const stars = await loadHarvestCache('stars', seed, starKnobs);
+  if (!stars) return null;
+  installSilhouetteCloud(seed, stars);
+  if (!nebulaCloud(seed)) {
+    const neb = await loadHarvestCache('nebulae', seed, nebulaWorkerKnobs());
+    if (neb) installNebulaCloud(seed, neb);
+  }
+  return stars;
 }
 
 /** Cached harvest, or a worker mint. Safe to call from boot and the explorer. */
@@ -280,6 +353,19 @@ export function prepareUniverse(seed = UNIVERSE.CANONICAL_SEED): Promise<StarClo
         bakeDustIfNeeded(seed);
         return hit;
       }
+      emitProgress({ kind: 'harvest', frac: 0, label: 'Loading the sky…' });
+      const packed = await loadPackedSky(seed);
+      if (packed) {
+        emitHarvest(1, 1, harvestDustVolume(seed) ? 1 : 0.9);
+        if (!nebulaCloud(seed)) {
+          nebulaInflight = mintNebulaeInWorker(seed).finally(() => {
+            nebulaInflight = null;
+          });
+          await nebulaInflight;
+        }
+        bakeDustIfNeeded(seed);
+        return packed;
+      }
       return await mintInWorker(seed);
     } finally {
       inflight = null;
@@ -296,6 +382,7 @@ export function prepareUniverse(seed = UNIVERSE.CANONICAL_SEED): Promise<StarClo
 export async function remintUniverse(seed = UNIVERSE.CANONICAL_SEED): Promise<StarCloud> {
   if (inflight) await inflight;
   forgetSilhouette();
+  await forgetHarvestCache(seed, 'stars');
   inflight = mintInWorker(seed).finally(() => {
     inflight = null;
   });
@@ -306,6 +393,7 @@ export async function remintUniverse(seed = UNIVERSE.CANONICAL_SEED): Promise<St
 export async function rebakeUniverseNebulae(seed = UNIVERSE.CANONICAL_SEED): Promise<StarCloud> {
   if (nebulaInflight) return nebulaInflight;
   forgetNebulae();
+  await forgetHarvestCache(seed, 'nebulae');
   nebulaInflight = mintNebulaeInWorker(seed).finally(() => {
     nebulaInflight = null;
   });
