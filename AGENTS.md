@@ -145,8 +145,9 @@ addresses a system: the id *is* the star, not an index into a stored
 list. The **galaxy explorer** is how you discover: the Hubble glow
 is the mass model on the GPU. Face-on, ~10⁹ stars are the integral.
 The explorer shows the harvest: one magnitude-limited survey —
-every living star above `SILHOUETTE_L` (~10⁵ stars; the count
-is the floor's outcome, not a cap) plus the showpiece nebulae.
+every living star above `SILHOUETTE_M` and `SILHOUETTE_L`
+(~10⁵ stars; the count is those floors' outcome, not a cap)
+plus the showpiece nebulae.
 The shape sample and the `HARVEST_ALL` million-pin photograph
 are retired. A later survey will
 resolve the faint neighbours of a camp. Set course loads a

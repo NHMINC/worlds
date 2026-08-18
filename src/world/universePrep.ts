@@ -169,12 +169,20 @@ function runCatalogWorker(
   return new Promise((resolve) => {
     const fallback = () => {
       if (opts.stars && opts.nebulae) {
-        const both = mintSkyClouds(seed, onRing);
+        const both = mintSkyClouds(seed, onRing, {
+          massMsun: opts.knobs.GALAXY_SILHOUETTE_M ?? UNIVERSE.GALAXY_SILHOUETTE_M,
+          lumLsun: opts.knobs.GALAXY_SILHOUETTE_L ?? UNIVERSE.GALAXY_SILHOUETTE_L,
+        });
         resolve(both);
         return;
       }
       resolve({
-        stars: opts.stars ? mintSilhouetteCloud(seed, onRing) : null,
+        stars: opts.stars
+          ? mintSilhouetteCloud(seed, onRing, {
+              massMsun: opts.knobs.GALAXY_SILHOUETTE_M ?? UNIVERSE.GALAXY_SILHOUETTE_M,
+              lumLsun: opts.knobs.GALAXY_SILHOUETTE_L ?? UNIVERSE.GALAXY_SILHOUETTE_L,
+            })
+          : null,
         nebulae: opts.nebulae ? mintNebulaCloud(seed, onRing) : null,
       });
     };

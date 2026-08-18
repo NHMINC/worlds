@@ -42,7 +42,7 @@ import {
   type GalPos,
   type GalaxyObject,
 } from './galaxy';
-import { evolve, mkFromTeff, msLifetime, msMassFromL, teffToRgb } from './stellar';
+import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
 import { KIND_STAR, emissionLook, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
 import { bakeDustVolume, type DustVolume } from './dustVolume';
 
@@ -308,21 +308,35 @@ function giantWindow(massZams: number): number {
   return Math.min(0.8, tMs * (massZams <= 2 ? 0.15 : massZams < 8 ? 0.08 : UNIVERSE.WR_TAIL));
 }
 
+/** Live survey gates. The worker posts these so a remint cannot
+ *  silently walk the shipped floors. */
+export type HarvestGates = {
+  /** IMF cut (M☉). Slots below this are not walked or shown. */
+  massMsun: number;
+  /** Present-day luminosity cut (L☉). */
+  lumLsun: number;
+};
+
+export function harvestGatesFromUniverse(): HarvestGates {
+  return {
+    massMsun: UNIVERSE.GALAXY_SILHOUETTE_M,
+    lumLsun: UNIVERSE.GALAXY_SILHOUETTE_L,
+  };
+}
+
 /**
- * IMF floor for the star walk. L sets the MS-equivalent mass
- * (the 1.4 M^3.5 invert). M can go deeper still. The walk is the
- * deeper of the two — lowering L used to do nothing while M sat
- * at 3.89 M☉ and every walked MS star already cleared 162 L☉.
+ * IMF floor for the star walk. Survey mass floor is this cut —
+ * raising it used to no-op because the walk sat at min(M, invert(L))
+ * and invert(162 L☉) is already 3.89 M☉.
  */
-export function harvestWalkMass(): number {
-  const fromL = msMassFromL(UNIVERSE.GALAXY_SILHOUETTE_L);
-  return Math.min(UNIVERSE.GALAXY_SILHOUETTE_M, fromL);
+export function harvestWalkMass(gates: HarvestGates = harvestGatesFromUniverse()): number {
+  return Math.max(UNIVERSE.IMF_MIN, gates.massMsun);
 }
 
 /** Cheap clock gate: evolve only slots that can be luminous stars. */
-function maybeClockRow(b: SlotBirth): boolean {
+function maybeClockRow(b: SlotBirth, massFloor: number): boolean {
   const m = b.massZams;
-  if (m < harvestWalkMass()) return false;
+  if (m < massFloor) return false;
   const tMs = msLifetime(m);
   if (b.ageGyr < tMs) return true;
   return b.ageGyr < tMs + giantWindow(m);
@@ -455,7 +469,7 @@ function writeFromBirth(
   alive: boolean,
   forceCheap = false,
 ): void {
-  if (!forceCheap && maybeClockRow(b)) {
+  if (!forceCheap && maybeClockRow(b, harvestWalkMass())) {
     writeEvolved(cell, slot, i, c, b, sketchEvolve(b));
     return;
   }
@@ -517,11 +531,12 @@ function nebulaGain(ev: ReturnType<typeof evolve>, id: number): number {
   }).gain;
 }
 
-function keepSilhouettePhase(ev: ReturnType<typeof evolve>): boolean {
+function keepSilhouettePhase(ev: ReturnType<typeof evolve>, gates: HarvestGates): boolean {
   if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
     return false;
   }
-  return isLuminousPhase(ev.phase, ev.mk, ev.luminosity) && ev.luminosity >= UNIVERSE.GALAXY_SILHOUETTE_L;
+  if (ev.massZams < gates.massMsun) return false;
+  return isLuminousPhase(ev.phase, ev.mk, ev.luminosity) && ev.luminosity >= gates.lumLsun;
 }
 
 function keepNebulaPhase(ev: ReturnType<typeof evolve>, id: number): boolean {
@@ -696,10 +711,9 @@ export function installNebulaCloud(seed: string, cloud: StarCloud): void {
 }
 
 /**
- * Whole-disk star harvest: one magnitude-limited survey. Every
- * living star above SILHOUETTE_L (present-day light; SILHOUETTE_M
- * is the IMF slot gate that makes the walk cheap). No shape sample,
- * no mass stride — the count is an outcome of the floor, not a cap.
+ * Whole-disk star harvest: every living star above both survey
+ * floors (IMF mass and present-day L). No shape sample, no mass
+ * stride — the count is an outcome of those floors, not a cap.
  * Nebulae and dust are their own catalogs.
  */
 export function buildSilhouetteCloud(
@@ -717,8 +731,9 @@ export function buildSilhouetteCloud(
 export function mintSilhouetteCloud(
   seed: string,
   onRing?: (done: number, total: number) => void,
+  gates?: HarvestGates,
 ): StarCloud {
-  return mintHarvestCloud(seed, performance.now(), onRing);
+  return mintHarvestCloud(seed, performance.now(), onRing, gates);
 }
 
 /**
@@ -728,16 +743,18 @@ export function mintSilhouetteCloud(
 export function mintSkyClouds(
   seed: string,
   onRing?: (done: number, total: number) => void,
+  gates?: HarvestGates,
 ): { stars: StarCloud; nebulae: StarCloud } {
-  return walkSkyClouds(seed, performance.now(), onRing, true, true);
+  return walkSkyClouds(seed, performance.now(), onRing, true, true, gates);
 }
 
 function mintHarvestCloud(
   seed: string,
   t0: number,
   onRing?: (done: number, total: number) => void,
+  gates?: HarvestGates,
 ): StarCloud {
-  return walkSkyClouds(seed, t0, onRing, true, false).stars;
+  return walkSkyClouds(seed, t0, onRing, true, false, gates).stars;
 }
 
 /**
@@ -774,12 +791,14 @@ function walkSkyClouds(
   onRing: ((done: number, total: number) => void) | undefined,
   wantStars: boolean,
   wantNebulae: boolean,
+  gates: HarvestGates = harvestGatesFromUniverse(),
 ): { stars: StarCloud; nebulae: StarCloud } {
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
     UNIVERSE;
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
+  const starM = harvestWalkMass(gates);
   const mLo = Math.min(
-    wantStars ? harvestWalkMass() : Infinity,
+    wantStars ? starM : Infinity,
     wantNebulae ? nebulaWalkFloor() : Infinity,
   );
   const uLive = imfQuantile(mLo);
@@ -807,11 +826,11 @@ function walkSkyClouds(
         const sLive = Math.floor(uLive * filled);
         for (let slot = sLive; slot < filled; slot++) {
           const birth = slotBirthRaw(seed, cell, slot, filled);
-          const clock = wantStars && maybeClockRow(birth);
+          const clock = wantStars && maybeClockRow(birth, starM);
           const neb = wantNebulae && maybeNebulaRow(birth);
           if (!clock && !neb) continue;
           const ev = sketchEvolve(birth);
-          if (clock && keepSilhouettePhase(ev)) {
+          if (clock && keepSilhouettePhase(ev, gates)) {
             if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
             writeEvolved(cell, slot, ns++, stars, birth, ev, true);
           }
