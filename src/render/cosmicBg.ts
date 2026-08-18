@@ -4,7 +4,7 @@
  * object has its own shine; engineer gains scale the set.
  * Not a catalog. Not pickable. Seeded from the bottle seed.
  */
-import { mulberry32, xmur3 } from '../world/rng';
+import { xmur3 } from '../world/rng';
 
 /** HSV → linear-ish RGB in 0..1. h wraps. */
 export function hsvRgb(h: number, s: number, v: number): [number, number, number] {
@@ -86,11 +86,62 @@ export type CosmicSmudges = CosmicStars & {
   seed: Float32Array;
 };
 
-function sphereDir(rng: () => number): [number, number, number] {
-  const theta = rng() * Math.PI * 2;
-  const z = rng() * 2 - 1;
-  const r = Math.sqrt(Math.max(0, 1 - z * z));
-  return [Math.cos(theta) * r, z, Math.sin(theta) * r];
+/** Stateless 0..1 from the bottle and an address. Same inputs, same sky. */
+function hash01(seedU: number, i: number, salt: number): number {
+  let h = seedU | 0;
+  h = Math.imul(h ^ (i | 0), 0x9e3779b1);
+  h = Math.imul(h ^ (salt | 0), 0x85ebca6b);
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x7feb352d);
+  h ^= h >>> 15;
+  h = Math.imul(h, 0x846ca68b);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
+function seedUnit(tag: string, seed: string): number {
+  return xmur3(`${tag}:${seed}`)();
+}
+
+/** Golden-spiral direction for address i of a budget of n. */
+function fibonacciDir(i: number, n: number): [number, number, number] {
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const y = n <= 1 ? 0 : 1 - (i / (n - 1)) * 2;
+  const r = Math.sqrt(Math.max(0, 1 - y * y));
+  const theta = golden * i;
+  return [Math.cos(theta) * r, y, Math.sin(theta) * r];
+}
+
+function rotateDir(
+  dir: [number, number, number],
+  yaw: number,
+  pitch: number,
+): [number, number, number] {
+  const cy = Math.cos(yaw);
+  const sy = Math.sin(yaw);
+  const x1 = dir[0] * cy + dir[2] * sy;
+  const z1 = -dir[0] * sy + dir[2] * cy;
+  const cp = Math.cos(pitch);
+  const sp = Math.sin(pitch);
+  const y2 = dir[1] * cp - z1 * sp;
+  const z2 = dir[1] * sp + z1 * cp;
+  return [x1, y2, z2];
+}
+
+function jitterDir(
+  dir: [number, number, number],
+  seedU: number,
+  i: number,
+  amount: number,
+): [number, number, number] {
+  const jx = hash01(seedU, i, 11) * 2 - 1;
+  const jy = hash01(seedU, i, 12) * 2 - 1;
+  const jz = hash01(seedU, i, 13) * 2 - 1;
+  const x = dir[0] + jx * amount;
+  const y = dir[1] + jy * amount;
+  const z = dir[2] + jz * amount;
+  const len = Math.hypot(x, y, z) || 1;
+  return [x / len, y / len, z / len];
 }
 
 /** Cheap large-scale web so smudges pile instead of spraying evenly. */
@@ -101,43 +152,46 @@ function cosmicWeb(dir: [number, number, number], cluster: number): number {
   return web ** Math.max(cluster, 0.35);
 }
 
+function teffRgb(teff: number): [number, number, number] {
+  const t = teff < 0.42 ? teff / 0.42 : (teff - 0.42) / 0.58;
+  if (teff < 0.42) return [1, 0.68 + 0.25 * t, 0.42 + 0.4 * t];
+  return [1 - 0.32 * t, 0.93 - 0.15 * t, 0.82 + 0.18 * t];
+}
+
 /**
- * Photograph budget of distant pins, uniform on the sky.
- * Shine is a steep power so most are dim specks and a few sparkle.
- * Positions are unit directions — the GPU pins them to the far plane.
+ * Photograph budget of distant pins. Address i is a Fibonacci
+ * direction plus hash(seed, i). Same bottle, same sky.
  */
 export function mintCosmicStars(seed: string, n: number): CosmicStars {
-  const rng = mulberry32(xmur3(`cosmic-stars:${seed}`)());
+  const seedU = seedUnit('cosmic-stars', seed);
+  const yaw = hash01(seedU, 0, 90) * Math.PI * 2;
+  const pitch = (hash01(seedU, 0, 91) * 2 - 1) * 0.35;
   const pos = new Float32Array(n * 3);
   const col = new Float32Array(n * 3);
   const shine = new Float32Array(n);
   for (let i = 0; i < n; i++) {
-    const [x, y, z] = sphereDir(rng);
-    pos[i * 3] = x;
-    pos[i * 3 + 1] = y;
-    pos[i * 3 + 2] = z;
-    shine[i] = 0.012 + 2.4 * rng() ** 5.6;
-    const teff = rng();
-    const t = teff < 0.42 ? teff / 0.42 : (teff - 0.42) / 0.58;
-    if (teff < 0.42) {
-      col[i * 3] = 1;
-      col[i * 3 + 1] = 0.68 + 0.25 * t;
-      col[i * 3 + 2] = 0.42 + 0.4 * t;
-    } else {
-      col[i * 3] = 1 - 0.32 * t;
-      col[i * 3 + 1] = 0.93 - 0.15 * t;
-      col[i * 3 + 2] = 0.82 + 0.18 * t;
-    }
+    const dir = jitterDir(rotateDir(fibonacciDir(i, n), yaw, pitch), seedU, i, 0.012);
+    pos[i * 3] = dir[0];
+    pos[i * 3 + 1] = dir[1];
+    pos[i * 3 + 2] = dir[2];
+    shine[i] = 0.012 + 2.4 * hash01(seedU, i, 1) ** 5.6;
+    const rgb = teffRgb(hash01(seedU, i, 2));
+    col[i * 3] = rgb[0];
+    col[i * 3 + 1] = rgb[1];
+    col[i * 3 + 2] = rgb[2];
   }
   return { n, pos, col, shine };
 }
 
 /**
- * Photograph budget of galaxy smudges. Clustered on a web.
- * Each has its own shine, size, and tint — the engineer gain scales the set.
+ * Photograph budget of galaxy smudges. Address i is a Fibonacci
+ * direction plus hash(seed, i). The web only weights shine — it
+ * does not reject slots. Same bottle, same sky.
  */
 export function mintCosmicSmudges(seed: string, n: number, cluster: number): CosmicSmudges {
-  const rng = mulberry32(xmur3(`cosmic-smudges:${seed}`)());
+  const seedU = seedUnit('cosmic-smudges', seed);
+  const yaw = hash01(seedU, 0, 90) * Math.PI * 2;
+  const pitch = (hash01(seedU, 0, 91) * 2 - 1) * 0.35;
   const pos = new Float32Array(n * 3);
   const col = new Float32Array(n * 3);
   const shine = new Float32Array(n);
@@ -145,42 +199,21 @@ export function mintCosmicSmudges(seed: string, n: number, cluster: number): Cos
   const aspect = new Float32Array(n);
   const angle = new Float32Array(n);
   const seedA = new Float32Array(n);
-  let i = 0;
-  let tries = 0;
-  const maxTries = n * 80;
-  while (i < n && tries < maxTries) {
-    tries += 1;
-    const dir = sphereDir(rng);
-    if (rng() > 0.1 + 0.9 * cosmicWeb(dir, cluster)) continue;
+  for (let i = 0; i < n; i++) {
+    const dir = jitterDir(rotateDir(fibonacciDir(i, n), yaw, pitch), seedU, i, 0.02);
     pos[i * 3] = dir[0];
     pos[i * 3 + 1] = dir[1];
     pos[i * 3 + 2] = dir[2];
-    shine[i] = 0.1 + 1.7 * rng() ** 2.3;
-    size[i] = 0.45 + 1.4 * rng();
-    aspect[i] = 0.42 + 0.85 * rng();
-    angle[i] = rng() * Math.PI * 2;
-    seedA[i] = rng();
-    const cool = rng();
+    const web = cosmicWeb(dir, cluster);
+    shine[i] = (0.1 + 1.7 * hash01(seedU, i, 1) ** 2.3) * (0.22 + 0.78 * web);
+    size[i] = 0.45 + 1.4 * hash01(seedU, i, 2);
+    aspect[i] = 0.42 + 0.85 * hash01(seedU, i, 3);
+    angle[i] = hash01(seedU, i, 4) * Math.PI * 2;
+    seedA[i] = hash01(seedU, i, 5);
+    const cool = hash01(seedU, i, 6);
     col[i * 3] = 0.86 - 0.34 * cool;
     col[i * 3 + 1] = 0.78 - 0.16 * cool;
     col[i * 3 + 2] = 0.64 + 0.16 * cool;
-    i += 1;
-  }
-  while (i < n) {
-    const dir = sphereDir(rng);
-    pos[i * 3] = dir[0];
-    pos[i * 3 + 1] = dir[1];
-    pos[i * 3 + 2] = dir[2];
-    shine[i] = 0.1 + 1.7 * rng() ** 2.3;
-    size[i] = 0.45 + 1.4 * rng();
-    aspect[i] = 0.42 + 0.85 * rng();
-    angle[i] = rng() * Math.PI * 2;
-    seedA[i] = rng();
-    const cool = rng();
-    col[i * 3] = 0.86 - 0.34 * cool;
-    col[i * 3 + 1] = 0.78 - 0.16 * cool;
-    col[i * 3 + 2] = 0.64 + 0.16 * cool;
-    i += 1;
   }
   return { n, pos, col, shine, size, aspect, angle, seed: seedA };
 }

@@ -679,9 +679,10 @@ export const UNIVERSE = {
    * observable universe in a browser. This is a distant shell
    * around the catalog: a void colour, a photograph of galaxy
    * smudges (each with its own shine), and a photograph of
-   * distant star-like pins (each with its own shine). Not a
-   * catalog. Not pickable. Same seed as the bottle. Dust
-   * filters the sightline; the void is vacuum.
+   * distant star-like pins (each with its own shine). Address
+   * i is hash(seed, i) on a Fibonacci sky — same bottle, same
+   * sky. Not pickable. Dust filters the sightline; the void
+   * is vacuum.
    */
   /** Decreed sky distance (kpc). The GPU draws the sky on the far plane; this is the law, not a mesh. */
   COSMIC_R: 8000,
