@@ -44,7 +44,6 @@ export function GalaxyExplorer(props: Props) {
   const [knobVal, setKnobVal] = useState(0);
   const [knobDirty, setKnobDirty] = useState(false);
   const [rebuilding, setRebuilding] = useState<null | 'harvest' | 'dust'>(null);
-  const [census, setCensus] = useState<Record<string, number>>({});
   const [frame, setFrame] = useState<GalaxyFrame>({
     mode: 'region',
     theta: 0,
@@ -142,13 +141,6 @@ export function GalaxyExplorer(props: Props) {
     if (ready) viewRef.current?.setVisited(props.visitedStarIds ?? []);
   }, [props.visitedStarIds, ready]);
 
-  // Census only changes when the harvest does — never per frame.
-  useEffect(() => {
-    const view = viewRef.current;
-    if (!view || !ready) return;
-    setCensus(frame.mode === 'region' ? view.census() : {});
-  }, [frame.mode, frame.sector, ready]);
-
   function openKnob(id: string): void {
     const live = liveKnob(id);
     if (live) {
@@ -196,7 +188,6 @@ export function GalaxyExplorer(props: Props) {
       if (k.scope === 'harvest') {
         await remintUniverse(seed);
         view.replaceSky();
-        setCensus(view.census());
       } else {
         rebakeUniverseDust(seed);
         view.replaceDust();
@@ -210,8 +201,6 @@ export function GalaxyExplorer(props: Props) {
 
   const st = selected?.star;
   const cls = st ? classifyStar(st) : '';
-  const censusKeys = Object.keys(census).sort((a, b) => (census[b] ?? 0) - (census[a] ?? 0));
-  const censusMax = Math.max(1, ...censusKeys.map((k) => census[k] ?? 0));
   const inRegion = frame.mode === 'region';
 
   return (
@@ -318,19 +307,6 @@ export function GalaxyExplorer(props: Props) {
           <button className="gd-go" onClick={() => props.onSetCourse(selected)}>
             Set course
           </button>
-        </aside>
-      )}
-
-      {inRegion && censusKeys.length > 0 && (
-        <aside className="galaxy-census">
-          <div className="gx-kicker">Luminous harvest</div>
-          {censusKeys.slice(0, 8).map((k) => (
-            <div key={k} className="gx-bar-row">
-              <span>{k}</span>
-              <i style={{ width: `${(100 * (census[k] ?? 0)) / censusMax}%` }} />
-              <em>{census[k]}</em>
-            </div>
-          ))}
         </aside>
       )}
 

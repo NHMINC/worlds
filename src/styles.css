@@ -1232,7 +1232,6 @@ body,
 
 .galaxy-top,
 .galaxy-dossier,
-.galaxy-census,
 .galaxy-bottom {
   position: absolute;
   z-index: 2;
@@ -1436,37 +1435,6 @@ body,
   color: var(--text-dim);
 }
 
-.galaxy-census {
-  top: calc(68px + env(safe-area-inset-top));
-  right: 12px;
-  width: 168px;
-  padding: 12px 14px;
-}
-
-.gx-bar-row {
-  display: grid;
-  grid-template-columns: 28px 1fr 28px;
-  align-items: center;
-  gap: 6px;
-  margin-top: 5px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.gx-bar-row i {
-  display: block;
-  height: 3px;
-  background: var(--accent);
-  border-radius: 2px;
-  opacity: 0.75;
-}
-
-.gx-bar-row em {
-  font-style: normal;
-  color: var(--text-dim);
-  text-align: right;
-}
-
 .galaxy-bottom {
   left: 12px;
   right: 12px;
@@ -1486,9 +1454,6 @@ body,
     order: 3;
     width: 100%;
     justify-content: flex-start;
-  }
-  .galaxy-census {
-    display: none;
   }
   .galaxy-dossier {
     top: auto;

@@ -39,7 +39,6 @@ import {
   harvestDustVolume,
   regionName,
   sketchMatches,
-  MK_LETTER,
   BIT_REMNANT,
   BIT_DUST,
   BIT_NEBULA,
@@ -535,7 +534,6 @@ export class GalaxyView {
 
   private filter: GalaxyFilter = 'all';
   private selected: GalaxyObject | null = null;
-  private censusMemo: Record<string, number> = {};
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -634,7 +632,6 @@ export class GalaxyView {
     this.bindSky();
     this.regionLabel = regionName(x, y, z);
     this.objects = [];
-    this.censusMemo = {};
     this.resetThrust();
 
     this.arcPos.set(0, 0, 0);
@@ -868,7 +865,6 @@ export class GalaxyView {
     this.cloud = cloud;
     this.sectorPop = cloud?.n ?? 0;
     this.lastEnterMs = cloud?.ms ?? this.lastEnterMs;
-    this.censusMemo = {};
     this.buildSilhouetteStars();
     this.applyStarVis();
     if (this.mode === 'region') this.updateSight(true);
@@ -909,7 +905,6 @@ export class GalaxyView {
 
   setFilter(f: GalaxyFilter): void {
     this.filter = f;
-    this.censusMemo = {};
     this.applyStarVis();
     if (this.mode === 'region') this.updateSight(true);
   }
@@ -939,25 +934,6 @@ export class GalaxyView {
 
   selectedObject(): GalaxyObject | null {
     return this.selected;
-  }
-
-  /** Class census of the open region (cheap MK from the birth clock). */
-  census(): Record<string, number> {
-    if (Object.keys(this.censusMemo).length > 0) return this.censusMemo;
-    const c: Record<string, number> = {};
-    const cloud = this.cloud;
-    if (!cloud) {
-      this.censusMemo = c;
-      return c;
-    }
-    for (let i = 0; i < cloud.n; i++) {
-      if ((cloud.bits[i] & BIT_DUST) !== 0 || cloud.kind[i] === KIND_DUST) continue;
-      if (!sketchMatches(cloud.bits[i], this.filter)) continue;
-      const letter = MK_LETTER[cloud.mk[i]] ?? 'WD';
-      c[letter] = (c[letter] ?? 0) + 1;
-    }
-    this.censusMemo = c;
-    return c;
   }
 
   beaconCount(): number {
