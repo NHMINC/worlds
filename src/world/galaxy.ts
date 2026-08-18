@@ -189,15 +189,16 @@ export function density(p: GalPos): number {
 let ismCornerSeed = '';
 const ismCornerMemo = new Map<number, number>();
 
-function ismCorner(seed: string, ix: number, iy: number, iz: number): number {
+function ismCorner(seed: string, ix: number, iy: number, iz: number, dust = false): number {
   if (seed !== ismCornerSeed) {
     ismCornerMemo.clear();
     ismCornerSeed = seed;
   }
-  const key = ((ix + 512) << 20) | ((iy + 512) << 10) | (iz + 512);
+  const key =
+    (dust ? 0x40000000 : 0) | ((ix + 512) << 20) | ((iy + 512) << 10) | (iz + 512);
   const hit = ismCornerMemo.get(key);
   if (hit !== undefined) return hit;
-  const v = 2 * u01(seed, 'ism', ix, iy, iz) - 1;
+  const v = 2 * u01(seed, dust ? 'dustN' : 'ism', ix, iy, iz) - 1;
   ismCornerMemo.set(key, v);
   return v;
 }
@@ -205,7 +206,7 @@ function ismCorner(seed: string, ix: number, iy: number, iz: number): number {
 const smooth = (t: number) => t * t * (3 - 2 * t);
 
 /** Trilinearly interpolated value noise in [-1, 1] — coherent, not a per-cell coin. */
-function ismNoise(seed: string, x: number, y: number, z: number): number {
+function ismNoise(seed: string, x: number, y: number, z: number, dust = false): number {
   const ix = Math.floor(x);
   const iy = Math.floor(y);
   const iz = Math.floor(z);
@@ -213,44 +214,58 @@ function ismNoise(seed: string, x: number, y: number, z: number): number {
   const fy = smooth(y - iy);
   const fz = smooth(z - iz);
   const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-  const c00 = lerp(ismCorner(seed, ix, iy, iz), ismCorner(seed, ix + 1, iy, iz), fx);
-  const c10 = lerp(ismCorner(seed, ix, iy + 1, iz), ismCorner(seed, ix + 1, iy + 1, iz), fx);
-  const c01 = lerp(ismCorner(seed, ix, iy, iz + 1), ismCorner(seed, ix + 1, iy, iz + 1), fx);
-  const c11 = lerp(ismCorner(seed, ix, iy + 1, iz + 1), ismCorner(seed, ix + 1, iy + 1, iz + 1), fx);
+  const c00 = lerp(ismCorner(seed, ix, iy, iz, dust), ismCorner(seed, ix + 1, iy, iz, dust), fx);
+  const c10 = lerp(ismCorner(seed, ix, iy + 1, iz, dust), ismCorner(seed, ix + 1, iy + 1, iz, dust), fx);
+  const c01 = lerp(ismCorner(seed, ix, iy, iz + 1, dust), ismCorner(seed, ix + 1, iy, iz + 1, dust), fx);
+  const c11 = lerp(
+    ismCorner(seed, ix, iy + 1, iz + 1, dust),
+    ismCorner(seed, ix + 1, iy + 1, iz + 1, dust),
+    fx,
+  );
   return lerp(lerp(c00, c10, fy), lerp(c01, c11, fy), fz);
 }
 
-/**
- * Molecular sheet: bar-swept cavity × exponential decline × arm,
- * height relative to the warped / corrugated midplane. The hole
- * empties the axle (not a painted ring). Occupancy / SFR / H II
- * drink this; stellar density does not.
- */
-function gasBase(p: GalPos): number {
+function gasRadial(p: GalPos): number {
   const U = UNIVERSE;
   const holeR = U.GALAXY_DUST_HOLE;
   const holeP = U.GALAXY_DUST_HOLE_P;
   const hole = holeR <= 0 ? 1 : 1 - Math.exp(-((p.R / holeR) ** holeP));
-  const radial = hole * Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS));
+  return hole * Math.exp(-p.R / (U.GALAXY_RD * U.GALAXY_RD_GAS));
+}
+
+/**
+ * Molecular sheet: bar-swept cavity × exponential decline × arm,
+ * height relative to the warped / corrugated midplane. Occupancy
+ * / SFR / H II drink this; the dust photograph does not.
+ */
+function gasBase(p: GalPos): number {
   const zMid = midplaneZ(p.R, p.theta);
-  return radial * sech2((p.z - zMid) / U.GALAXY_ZD_GAS) * gasArm(p.R, p.theta);
+  return gasRadial(p) * sech2((p.z - zMid) / UNIVERSE.GALAXY_ZD_GAS) * gasArm(p.R, p.theta);
+}
+
+/**
+ * Optical dust sheet: same hole and decline, pinned near the
+ * geometric midplane (DUST_MID = 0). Mild arm hint — not one
+ * spiral ridge. Edge-on the clumps average to a slit.
+ */
+function gasPhoto(p: GalPos): number {
+  const U = UNIVERSE;
+  const zc = U.GALAXY_DUST_MID * midplaneZ(p.R, p.theta);
+  const arms = 1 + U.GALAXY_DUST_ARM * Math.cos(armPhase(p.R, p.theta));
+  return gasRadial(p) * sech2((p.z - zc) / U.GALAXY_ZD_DUST) * arms;
 }
 
 /**
  * Two-octave interpolated turbulence in ~[-1, 1]. Sampled in a
- * spiral-sheared frame so eddies are filaments (along-arm long,
- * across-arm short), not round blobs. Phase is embedded on a
- * circle so θ = 0 and θ = 2π agree — no polar seam.
+ * spiral-sheared frame so natal clouds are filaments (along-arm
+ * long, across-arm short). Occupancy / SFR / H II only.
+ * Phase is embedded on a circle so θ = 0 and θ = 2π agree.
  */
 function ismTurbulence(seed: string, x: number, y: number, z: number): number {
   const f = UNIVERSE.GALAXY_TURB_FREQ;
   const S = UNIVERSE.GALAXY_TURB_SHEAR;
   const R = Math.max(0.15, Math.hypot(x, z));
   const a = armPhase(R, Math.atan2(z, x));
-  // Along-arm = radius (changes slowly as you ride the spiral).
-  // Across-arm = spiral phase on a circle (no θ-seam). Shear
-  // widens that circle so filaments are narrow compared to
-  // their length.
   const along = (R * f) / S;
   const vert = y * f;
   const w = f * S;
@@ -262,42 +277,56 @@ function ismTurbulence(seed: string, x: number, y: number, z: number): number {
 }
 
 /**
+ * Photograph clumps: three Cartesian octaves. Shear only flattens
+ * them in the disk (not an along-arm stretch) so the bake is many
+ * small clouds, not one spiral-length snake. No θ-seam — x,z.
+ */
+function dustTurbulence(seed: string, x: number, y: number, z: number): number {
+  const f = UNIVERSE.GALAXY_DUST_FREQ;
+  const S = Math.max(0.2, UNIVERSE.GALAXY_DUST_SHEAR);
+  const n1 = ismNoise(seed, (x * f) / S, y * f, (z * f) / S, true);
+  const n2 = ismNoise(seed, x * f * 2.2 + 31.7, y * f * 2.2, z * f * 2.2 - 17, true);
+  const n3 = ismNoise(seed, x * f * 4.1 - 8, y * f * 4.1, z * f * 4.1 + 22, true);
+  return 0.5 * n1 + 0.32 * n2 + 0.18 * n3;
+}
+
+/**
  * Occupancy / SFR / H II ceil. The axle-era (1+A)·e^σ — so the
  * hole empties the core without rejuvenating the whole disk.
- * Photograph ceil is `gasCeil` (post-hole crest).
+ * Photograph ceil is `photoCeil` (post-hole crest).
  */
 function occCeil(): number {
   return (1 + UNIVERSE.GALAXY_GAS_ARM_A) * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA);
 }
 
 /**
- * Crest of hole × decline × arm (z on the midplane). The dust
- * bake maps this peak × e^σ to 1 so ribbons write after the hole.
+ * Crest of hole × decline × photo-arm (z = 0). The dust bake
+ * maps this peak × e^σ to 1 so clumps write after the hole.
  */
-let gasCeilMemo = { key: '', v: 0 };
+let photoCeilMemo = { key: '', v: 0 };
 
-function gasCeil(): number {
+function photoCeil(): number {
   const U = UNIVERSE;
-  const key = `${U.GALAXY_DUST_HOLE}|${U.GALAXY_DUST_HOLE_P}|${U.GALAXY_RD}|${U.GALAXY_RD_GAS}|${U.GALAXY_GAS_ARM_A}|${U.GALAXY_TURB_SIGMA}|${U.GALAXY_R_MAX}`;
-  if (gasCeilMemo.key === key) return gasCeilMemo.v;
+  const key = `${U.GALAXY_DUST_HOLE}|${U.GALAXY_DUST_HOLE_P}|${U.GALAXY_RD}|${U.GALAXY_RD_GAS}|${U.GALAXY_DUST_ARM}|${U.GALAXY_DUST_SIGMA}|${U.GALAXY_R_MAX}`;
+  if (photoCeilMemo.key === key) return photoCeilMemo.v;
   let peak = 1e-6;
   for (let i = 0; i <= 80; i++) {
     const R = (i / 80) * U.GALAXY_R_MAX;
     const hole = U.GALAXY_DUST_HOLE <= 0 ? 1 : 1 - Math.exp(-((R / U.GALAXY_DUST_HOLE) ** U.GALAXY_DUST_HOLE_P));
     peak = Math.max(
       peak,
-      hole * Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * (1 + U.GALAXY_GAS_ARM_A),
+      hole * Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * (1 + U.GALAXY_DUST_ARM),
     );
   }
-  const v = peak * Math.exp(U.GALAXY_TURB_SIGMA);
-  gasCeilMemo = { key, v };
+  const v = peak * Math.exp(U.GALAXY_DUST_SIGMA);
+  photoCeilMemo = { key, v };
   return v;
 }
 
 /**
  * Continuous ISM at a catalog point (disk in XZ, Y is height).
- * `field` is occupancy / SFR / H II (occCeil). `photo` is the
- * dense-tail photograph (gasCeil). Same gas, two normalizations.
+ * `field` is occupancy / SFR / H II (occCeil) on the warped
+ * sheet. `photo` is the midplane clump photograph (photoCeil).
  */
 export function ismAt(
   seed: string,
@@ -307,13 +336,16 @@ export function ismAt(
 ): { base: number; field: number; photo: number; turb: number } {
   const p = cartToGal(x, y, z);
   const base = gasBase(p);
-  if (base <= 1e-5) return { base: 0, field: 0, photo: 0, turb: 0 };
-  const turb = ismTurbulence(seed, x, y, z);
-  const raw = base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * turb);
+  const photoBase = gasPhoto(p);
+  if (base <= 1e-5 && photoBase <= 1e-5) return { base: 0, field: 0, photo: 0, turb: 0 };
+  const turb = base > 1e-5 ? ismTurbulence(seed, x, y, z) : 0;
+  const dust = photoBase > 1e-5 ? dustTurbulence(seed, x, y, z) : 0;
+  const raw = base > 1e-5 ? base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * turb) : 0;
+  const photoRaw = photoBase > 1e-5 ? photoBase * Math.exp(UNIVERSE.GALAXY_DUST_SIGMA * dust) : 0;
   return {
     base,
     field: Math.min(1, raw / occCeil()),
-    photo: Math.min(1, raw / gasCeil()),
+    photo: Math.min(1, photoRaw / photoCeil()),
     turb,
   };
 }

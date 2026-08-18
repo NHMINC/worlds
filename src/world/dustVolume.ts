@@ -1,8 +1,9 @@
 /**
- * Dust is the dense tail of the molecular sheet. The explorer
- * never draws dust; it bakes `ismAt` into a volume and marches
- * the sightline. Most of the disc stays 0 — only the filaments
- * write. Occupancy (`dustClumpsInCell`) is a separate census.
+ * Dust is the dense tail of the midplane clump photograph.
+ * The explorer never draws dust; it bakes `ismAt.photo` into a
+ * volume and marches the sightline. Most of the disc stays 0 —
+ * only the small clouds write. Occupancy (`dustClumpsInCell`)
+ * is a separate census on the warped occupancy field.
  *
  * The volume is samples of a continuous field, not bricks. A
  * lone voxel through hardware trilinear is (1−|x|)(1−|z|) —
@@ -54,19 +55,18 @@ function splatCrest(
   iz: number,
   peak: number,
 ): void {
-  // Two voxels out in the disk: a crest is a blob, not a brick.
-  // A 1-tap tent through the wall was the 45° diamond lane.
-  // σ_y stays tighter so edge-on is still a sheet.
-  const invXz = 1 / (2 * 1.35 * 1.35);
-  const invY = 1 / (2 * 0.55 * 0.55);
+  // One voxel out: kill the 45° tent without merging neighbours
+  // into a longer snake. σ_y stays tighter so edge-on is a slit.
+  const invXz = 1 / (2 * 0.7 * 0.7);
+  const invY = 1 / (2 * 0.45 * 0.45);
   for (let dj = -1; dj <= 1; dj++) {
     const jy = iy + dj;
     if (jy < 0 || jy >= ny) continue;
     const wy = Math.exp(-(dj * dj) * invY);
-    for (let dk = -2; dk <= 2; dk++) {
+    for (let dk = -1; dk <= 1; dk++) {
       const jz = iz + dk;
       if (jz < 0 || jz >= nz) continue;
-      for (let di = -2; di <= 2; di++) {
+      for (let di = -1; di <= 1; di++) {
         const jx = ix + di;
         if (jx < 0 || jx >= nx) continue;
         const w = wy * Math.exp(-(di * di + dk * dk) * invXz);

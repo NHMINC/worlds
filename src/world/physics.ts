@@ -357,8 +357,10 @@ export const UNIVERSE = {
   /** Midplane corrugation amplitude (kpc). Several Fourier modes. */
   GALAXY_CORRUGATE: 0.22,
   /** How tightly stellar birth follows that midplane. 1 is glued
-   *  (the S-slab); 0 is a flat sheet. Gas / dust keep the full
-   *  wrinkle. 0.4 leaves a hint of the MW warp. */
+   *  (the S-slab); 0 is a flat sheet. Occupancy / SFR / H II still
+   *  sit on the full wrinkle. The dust photograph uses DUST_MID
+   *  (0 = geometric midplane — edge-on averages to a slit).
+   *  0.4 leaves a hint of the MW warp in the stars. */
   GALAXY_STAR_MID: 0.4,
   GALAXY_RD_THICK: 3.0,
   GALAXY_RD_INNER: 8.0,
@@ -408,16 +410,14 @@ export const UNIVERSE = {
    * ~1/TURB_FREQ kpc — many catalog cells, never a per-cell coin).
    * TURB_SIGMA is that σ (clumping strength); TURB_FREQ is cycles
    * per kpc of the largest eddies. TURB_SHEAR stretches those
-   * eddies along the spiral phase (galactic rotation) so the
-   * photograph is filaments, not round blobs. The gas disk is
-   * flatter than the stars (RD_GAS × stellar Rd), with a bar-swept
-   * inner hole so ribbons are not piled on the axle. One field,
-   * four consumers: the optical-dust bake (dense tail of ismAt),
-   * dust clump occupancy (DUST_N_K clumps per unit field × volume,
-   * at most DUST_MAX per cell), the star-formation age law
-   * (SFR_GAIN — Schmidt–Kennicutt-lite: dense gas births young
-   * stars, i.e. nurseries), and the H II condition (CLOUD_HII —
-   * a young massive star lights its natal cloud). Dust reddens:
+   * eddies along the spiral phase (galactic rotation) so natal
+   * clouds are filaments. The gas disk is flatter than the stars
+   * (RD_GAS × stellar Rd), with a bar-swept inner hole. Occupancy,
+   * SFR, and H II drink that field (occCeil). The optical bake is
+   * a separate photograph: same hole and decline, but a geometric
+   * midplane sheet (DUST_MID, ZD_DUST) of many small clumps
+   * (DUST_FREQ / DUST_SHEAR / DUST_SIGMA) with mild arm preference
+   * (DUST_ARM) — not one warped snake. Dust reddens:
    * extinction per unit optical depth is DUST_RGB (R, G, B) — a
    * mild Cardelli-ish R_V≈3.1 curve (A_R : A_V : A_B). Blue still
    * dies first, but a long edge-on column goes dark, not rust.
@@ -431,10 +431,24 @@ export const UNIVERSE = {
   GALAXY_ZD_GAS: 0.12,
   GALAXY_GAS_ARM_A: 0.7,
   /**
-   * Optical dust is the dense tail of the molecular sheet — the
-   * same ismAt field occupancy / SFR / H II already drink. No
-   * catalog walk of dead slots. HOLE (kpc) empties the axle;
-   * HOLE_P is how sharp the cavity wall is. Star ids do not move.
+   * Dust photograph (ismAt.photo). Occupancy keeps ZD_GAS / GAS_ARM
+   * / TURB_* on the warped sheet so star ids and ages do not move.
+   * DUST_MID = 0 pins the optical sheet to z = 0 — variation is
+   * clump noise, not a corrugated snake, so edge-on averages to
+   * the classic mid-disc slit. DUST_FREQ is cycles/kpc of the
+   * largest clumps; DUST_SHEAR mildly flattens them in the plane
+   * (1 = round; the occupancy TURB_SHEAR 4.2 was the long snake).
+   * DUST_ARM is a hint, not a single ridge. Star ids do not move.
+   */
+  GALAXY_DUST_MID: 0,
+  GALAXY_ZD_DUST: 0.1,
+  GALAXY_DUST_ARM: 0.18,
+  GALAXY_DUST_FREQ: 3.2,
+  GALAXY_DUST_SHEAR: 1.25,
+  GALAXY_DUST_SIGMA: 1.7,
+  /**
+   * Optical dust shares the bar-swept cavity (HOLE / HOLE_P) with
+   * the occupancy sheet. No catalog walk of dead slots.
    */
   GALAXY_DUST_HOLE: 2.4,
   GALAXY_DUST_HOLE_P: 2,
@@ -534,11 +548,11 @@ export const UNIVERSE = {
    * add to a white bar).
    * DUST IS NOT VISIBLE. It is never drawn in EITHER layer — it is
    * a filter on the light law. The fog is the dense tail of
-   * ismAt (hole × decline × arm × sheared turbulence, height
-   * relative to the warped midplane). Only the filaments write;
-   * the rest of the disc stays starry. Ribbon cores are a wall;
-   * only the thin rim reddens. Edge-on is a mottled stripe off
-   * z = 0, not a painted lane. Baked once and marched from the
+   * ismAt.photo (hole × decline × mild arm × small midplane
+   * clumps). Many overlapping clouds, tight to z = 0 — edge-on
+   * they average to a thin slit, not one meandering snake.
+   * Ribbon cores are a wall; only the thin rim reddens. Baked
+   * once and marched from the
    * bubble centre (EXTINCT_STEPS taps). Transmittance is
    * Beer–Lambert: exp(−τ · DUST_RGB). Harvest does not mint
    * dust rows.
@@ -615,11 +629,11 @@ export const UNIVERSE = {
   GALAXY_DUST_K_DENSE: 24,
   /** Power on the dense-tail excess. Higher → thinner filaments. */
   GALAXY_DUST_STREAK: 0.85,
-  /** ismAt field threshold. Most of the disk is below this — the
-   *  photograph is a few arm lanes, not a carpet. The normalized
-   *  tail lives around 0.15–0.27; 0.12 keeps the disc starry and
-   *  still lets ribbon cores reach the wall. */
-  GALAXY_DUST_DENSE_CUT: 0.12,
+  /** ismAt.photo threshold. Most of the disk is below this — the
+   *  photograph is many small midplane clumps, not a carpet and
+   *  not one arm-long snake. 0.06 lets more of the clump tail
+   *  write while cores still reach the wall. */
+  GALAXY_DUST_DENSE_CUT: 0.08,
   /** Column cap. High enough that a dense clump (or a stack along
    *  the plane) can extinguish; not a “keep the core glorious” floor. */
   GALAXY_EXTINCT_MAX: 8,
@@ -627,8 +641,9 @@ export const UNIVERSE = {
   GALAXY_EXTINCT_STEPS: 64,
   /** Density volume for the ISM fog (xz × y). Catalog kpc.
    *  Resolves the ~1 kpc turbulent complexes, not 0.09 kpc cirrus.
-   *  Each crest is Gaussian-splatted so the lattice does not
-   *  print as diamonds (the tent kernel of a lone voxel). */
+   *  Each crest is a tight Gaussian splat so the lattice does
+   *  not print as diamonds — small enough that neighbouring
+   *  clumps stay separate. */
   GALAXY_DUST_VOL_N: 320,
   GALAXY_DUST_VOL_NY: 96,
   /** Local-layer taps: the in-bubble column is at most REGION_R
