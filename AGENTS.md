@@ -309,8 +309,15 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   white like film (the HDR knee pass is retired; it only
   dimmed the whole galaxy). Above
   `HARVEST_SUPER_L` leftover luminosity adds extra I — super-suns
-  only; every fainter harvest row is unchanged. Colour stays in the glow; only the
-  photocentre of a very bright row bleaches. r/d grow is a
+  only; every fainter harvest row is unchanged. Colour is
+  HUE-PRESERVING: hue is a channel ratio, so the painted
+  photocentre caps where its strongest channel saturates — a
+  bright star grows a saturated colour plateau (O blue, giant
+  gold) instead of clipping to white, and the luminosity the
+  plateau cannot show lives in the coloured Lorentzian wings.
+  Only a monstrous photocentre overexposes, like a plate. Star
+  colour (`uShineSat`) and Star glow (`uPsfTail`) are live
+  starlight knobs. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`): `ismAt.photo` —
   hole × decline × domain-

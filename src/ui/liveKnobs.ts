@@ -7,6 +7,7 @@
  */
 import { UNIVERSE } from '../world/physics';
 import {
+  HARVEST_PSF_TAIL,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_SAT,
@@ -305,12 +306,24 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Star colour',
     group: 'starlight',
     hint: 'how much photosphere hue survives',
-    about: 'Saturation of photosphere colour in the glow. High keeps hue; low bleaches the photocentre. Next frame.',
+    about: 'Saturation of photosphere colour, pin and glow alike. The photocentre keeps its hue until it truly overexposes — O stars read blue, the giant branch gold. Next frame.',
     uniform: 'uShineSat',
     min: 0.4,
     max: 5,
     step: 0.05,
     read: () => HARVEST_SHINE_SAT,
+  },
+  {
+    id: 'glowWings',
+    label: 'Star glow',
+    group: 'starlight',
+    hint: 'coloured halo energy around bright stars',
+    about: 'Lorentzian wing energy of the eye PSF — the halo a bright star wears, carried at full colour. Luminosity a saturated photocentre cannot show lives here: blue fire around O stars and nurseries, golden haze over the bulge. Raising it also grows the sprite room for wings. Next frame.',
+    uniform: 'uPsfTail',
+    min: 0.05,
+    max: 1.2,
+    step: 0.01,
+    read: () => HARVEST_PSF_TAIL,
   },
   {
     id: 'super',

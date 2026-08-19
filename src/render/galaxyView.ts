@@ -415,10 +415,18 @@ const STAR_FRAG = /* glsl */ `
     if (vKind < 0.5) {
       // Same device-pixel Gaussian as harvestPinWeight. A 1px hop
       // only exchanges faint halo — not a disc, not a plus.
+      // Hue is a channel RATIO: painting past the channel ceiling
+      // clips R, G, B alike and the colour dies — that is what
+      // whitened every hot star. Cap the painted value where the
+      // strongest channel saturates, so a bright star grows a
+      // saturated colour plateau instead of a white dot; the
+      // luminosity the plateau cannot show already lives in the
+      // Lorentzian wings (the coloured glow).
+      float hueCeil = 1.0 / max(max(vColor.r, max(vColor.g, vColor.b)), 1e-3);
       if (vStamp > 0.5) {
         vec2 d = (gl_PointCoord - 0.5) * vPx;
         float w = exp(-dot(d, d) * uPinCore);
-        float I = max(vVis, 0.0) * w;
+        float I = min(max(vVis, 0.0) * w, hueCeil);
         if (I < 0.008) discard;
         gl_FragColor = vec4(vColor * I, 1.0);
         return;
@@ -435,10 +443,10 @@ const STAR_FRAG = /* glsl */ `
       window *= window;
       float profile = I * (0.95 * core + tail) * window;
       if (profile < 0.008) discard;
-      // Wings keep Teff. Only the photocentre of a very bright
-      // row bleaches — the way a plate overexposes a point.
-      float bleach = smoothstep(1.4, 3.2, I) * core;
-      vec3 c = mix(vColor, vec3(1.0), bleach) * profile;
+      // Only a monstrous photocentre overexposes to white, the way
+      // a plate does — an O star stays blue, a giant stays gold.
+      float bleach = smoothstep(8.0, 26.0, I) * core;
+      vec3 c = mix(vColor, vec3(1.0), bleach) * min(profile, hueCeil);
       gl_FragColor = vec4(c, 1.0);
       return;
     }
