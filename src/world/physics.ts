@@ -457,7 +457,7 @@ export const UNIVERSE = {
    * One knob: envelope, noise flattening, and vertical warp
    * all read it. Photograph only — star ids do not move.
    */
-  GALAXY_DUST_GRIP: 1,
+  GALAXY_DUST_GRIP: 0.3,
   GALAXY_DUST_FREQ: 2.6,
   GALAXY_DUST_SWIRL: 0.85,
   GALAXY_DUST_DETAIL: 0.55,
