@@ -333,7 +333,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Starlight: ribbon cores are a wall (`GALAXY_EXTINCT_WALL`);
   the rim reddens. The cosmic background: the veil (see the
   cosmic-background decree) — it dies wherever the ray touches
-  the sheet. Dust does not emit or reflect. Not harvest rows. A
+  the sheet. All of it grades with `GALAXY_EXTINCT_K`, the one
+  opacity slider: the wall and the veil are depth floors
+  (cap × K / `GALAXY_EXTINCT_K_FULL`), not binary gates — clear
+  at 0, today's black cores at K_FULL. Dust does not emit or
+  reflect. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills

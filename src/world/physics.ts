@@ -617,8 +617,17 @@ export const UNIVERSE = {
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
   /** March multiplier on the baked field — how hard dust filters
-   *  starlight. This is the photograph gain, not a thicker sheet. */
+   *  starlight. This is the photograph gain, not a thicker sheet.
+   *  The one true opacity slider: skin, wall, and veil all grade
+   *  with it, clear at 0 and fully dark at EXTINCT_K_FULL. */
   GALAXY_EXTINCT_K: 6,
+  /** The K at which a wall core / veil touch reaches the full
+   *  column cap (EXTINCT_MAX). Below it the whole dust effect
+   *  grades linearly toward clear — without this reference the
+   *  wall and the veil were binary gates (any K > 0 was already
+   *  a total blackout, because the wall divided K back out).
+   *  A law, baked into the shader — not a live knob. */
+  GALAXY_EXTINCT_K_FULL: 6,
   /** Clump floor: `ismAt.photo` below this is not a cloud. The
    *  bake stores the raw photograph; this carves it in the march
    *  (the old bake-time dense cut, now a live knob). Most of the

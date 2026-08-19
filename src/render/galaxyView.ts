@@ -69,6 +69,8 @@ const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}
  * march carves it live (floor + hardness). Starlight columns are
  * Beer–Lambert with a core wall (extinctT); the far photograph
  * dies under the veil law (extinctLook). Empty space stays clear.
+ * uExtinctK is the one opacity grade: skin, wall, and veil all
+ * scale with it — clear at 0, today's black cores at K_FULL.
  * `steps` is baked per shader.
  */
 const extinctGlsl = (steps: number) => /* glsl */ `
@@ -109,27 +111,32 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     r = max(r, extinctRho(p + dir * h));
     return r;
   }
+  // Opacity grade: skin, wall, and veil all scale with uExtinctK.
+  // K_FULL is the gain at which a core hit / veil touch reaches
+  // the full column cap; below it everything fades toward clear.
+  float extinctGrade() {
+    return min(uExtinctK * ${glslFloat(1 / UNIVERSE.GALAXY_EXTINCT_K_FULL)}, 1.0);
+  }
   // Skin is Beer–Lambert (blue dies first). A hard r≥wall clip
-  // printed the Cartesian lattice as 45° diamonds. The core still
-  // goes lightless; the edge is a ramp, not a faceted isosurface.
+  // printed the Cartesian lattice as 45° diamonds. The core edge
+  // is a ramp, not a faceted isosurface. A core hit is a depth
+  // FLOOR (cap × grade), not a fill that cancels K — so the
+  // opacity slider grades instead of gating.
   float extinctTau(vec3 from, vec3 to) {
     float dCat = length(to - from);
     float dt = dCat / ${glslFloat(steps)};
     vec3 dir = (to - from) / max(dCat, 1e-4);
     float tau = 0.0;
+    float coreHit = 0.0;
     float wall = uExtinctWall;
     float kdt = uExtinctK * dt;
-    float coreFill = uExtinctMax / max(kdt, 1e-4);
     for (int i = 0; i < ${steps}; i++) {
       float r = extinctRhoPeak(from + dir * ((float(i) + 0.5) * dt), dir, dt);
-      if (wall > 1e-4) {
-        float core = smoothstep(wall * 0.62, wall, r);
-        tau += mix(r, max(r, coreFill), core);
-      } else {
-        tau += r;
-      }
+      if (wall > 1e-4) coreHit = max(coreHit, smoothstep(wall * 0.62, wall, r));
+      tau += r;
     }
-    return min(tau * kdt, uExtinctMax);
+    float depth = min(tau * kdt, uExtinctMax);
+    return max(depth, coreHit * uExtinctMax * extinctGrade());
   }
   vec3 extinctT(vec3 from, vec3 to) {
     return exp(-extinctTau(from, to) * uDustRgb);
@@ -160,21 +167,25 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   // dies where the sightline TOUCHES the sheet — at the eye or
   // at any tap. The ramp rides the RAW field around the carve
   // floor (the fade band sits below the floor, exactly where you
-  // can stand), so the rim is a fade, not a pop. Beer–Lambert
-  // still tints the fade. Harvest stars keep their honest
+  // can stand), so the rim is a fade, not a pop. The veil is a
+  // depth FLOOR (cap × grade), not a hard black — it grades with
+  // uExtinctK like everything else, and the fade reddens through
+  // the same Beer–Lambert curve. Harvest stars keep their honest
   // camera→star column (extinctT) — from inside the fog you
   // still see what is close.
   vec3 extinctLook(vec3 from, vec3 dir) {
     float lo = max(uExtinctCut, 1e-3);
     float v0 = lo * 0.55;
     float v1 = lo * 1.1;
+    float veilCap = uExtinctMax * extinctGrade();
     float peak = extinctRhoRaw(from);
-    if (peak >= v1) return vec3(0.0);
+    if (peak >= v1) return exp(-veilCap * uDustRgb);
     vec2 span = extinctSpan(from, dir);
-    if (span.x > span.y) return vec3(1.0 - smoothstep(v0, v1, peak));
     float t0 = max(span.x, 0.0);
     float dCat = span.y - t0;
-    if (dCat < 1e-4) return vec3(1.0 - smoothstep(v0, v1, peak));
+    if (span.x > span.y || dCat < 1e-4) {
+      return exp(-smoothstep(v0, v1, peak) * veilCap * uDustRgb);
+    }
     float dt = dCat / ${glslFloat(steps)};
     float h = max(dt, 0.04) * 0.33;
     float kdt = uExtinctK * dt;
@@ -187,11 +198,12 @@ const extinctGlsl = (steps: number) => /* glsl */ `
       raw = max(raw, extinctRhoRaw(p - dir * h));
       raw = max(raw, extinctRhoRaw(p + dir * h));
       peak = max(peak, raw);
-      if (peak >= v1) return vec3(0.0);
+      if (peak >= v1) break;
       tau += pow(max(raw - uExtinctCut, 0.0), max(uExtinctHard, 0.15));
     }
-    float veil = 1.0 - smoothstep(v0, v1, peak);
-    return veil * exp(-min(tau * kdt, uExtinctMax) * uDustRgb);
+    float depth = min(tau * kdt, uExtinctMax);
+    depth = max(depth, smoothstep(v0, v1, peak) * veilCap);
+    return exp(-depth * uDustRgb);
   }
 `;
 
