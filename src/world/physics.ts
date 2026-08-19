@@ -417,8 +417,9 @@ export const UNIVERSE = {
    * a separate photograph: same hole and decline, but a geometric
    * midplane sheet (DUST_MID, ZD_DUST) of domain-warped fractal
    * fluff (DUST_FREQ / DUST_SWIRL / DUST_DETAIL / DUST_SIGMA) —
-   * a turbulent ocean, angles everywhere, no bank and no snake.
-   * Mild arm preference (DUST_ARM). Dust reddens:
+   * a turbulent ocean, angles everywhere, no bank and no snake,
+   * and NO arm preference (grains are event debris scattered
+   * through the disc, not a tracer of the pattern). Dust reddens:
    * extinction per unit optical depth is DUST_RGB (R, G, B) — a
    * mild Cardelli-ish R_V≈3.1 curve (A_R : A_V : A_B). Blue still
    * dies first, but a long edge-on column goes dark, not rust.
@@ -440,12 +441,11 @@ export const UNIVERSE = {
    * so eddies curl at every angle — no picked directions, no
    * lattice axis. DUST_FREQ is cycles/kpc of the largest clumps;
    * DUST_DETAIL is octave persistence (how much fine wisp rides
-   * the big fluff). DUST_ARM is a hint, not a single ridge.
-   * Star ids do not move.
+   * the big fluff). No arm term: clump positions are the
+   * turbulence alone. Star ids do not move.
    */
   GALAXY_DUST_MID: 0,
   GALAXY_ZD_DUST: 0.1,
-  GALAXY_DUST_ARM: 0.18,
   GALAXY_DUST_FREQ: 2.6,
   GALAXY_DUST_SWIRL: 0.85,
   GALAXY_DUST_DETAIL: 0.55,
@@ -550,7 +550,7 @@ export const UNIVERSE = {
    * photograph stretch. They screen-blend (they glow, they do not
    * add to a white bar).
    * DUST EMITS NOTHING — it filters. The fog is the dense tail
-   * of ismAt.photo (hole × decline × mild arm × small midplane
+   * of ismAt.photo (hole × decline × small midplane
    * clumps). Many overlapping clouds, tight to z = 0 — edge-on
    * they average to a thin slit, not one meandering snake.
    * Ribbon cores are a wall; the thin rim reddens what shines

@@ -306,11 +306,15 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   photocentre of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`): `ismAt.photo` —
-  hole × decline × a mild arm hint × domain-
+  hole × decline × domain-
   warped fractal fluff (`GALAXY_DUST_FREQ` / `_SWIRL` /
   `_DETAIL` / `_SIGMA`): a slow noise field bends the clump
   noise, so eddies curl at every angle — a turbulent ocean, no
-  picked directions, no lattice axis. The bake stores that
+  picked directions, no lattice axis, and NO arm term: grains
+  are event debris (winds, ejecta, supernovae) scattered
+  through the whole disc, not a tracer of the spiral pattern.
+  Occupancy / SFR / H II keep their arm contrast — that is
+  where stars form. The bake stores that
   raw photograph; the cloud carve (floor + hardness,
   `GALAXY_EXTINCT_CUT` / `_HARD` — the old bake-time dense
   cut and streak) is applied per tap in the march, so both

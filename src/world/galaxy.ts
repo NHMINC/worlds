@@ -287,14 +287,17 @@ function gasBase(p: GalPos): number {
 
 /**
  * Optical dust sheet: same hole and decline, pinned near the
- * geometric midplane (DUST_MID = 0). Mild arm hint — not one
- * spiral ridge. Edge-on the clumps average to a slit.
+ * geometric midplane (DUST_MID = 0). NO arm term — dust is a
+ * turbulent phenomenon fed by individual events (winds, ejecta,
+ * supernovae) scattered through the whole disc; the spiral
+ * pattern is where stars form, not where grains sit. Clump
+ * positions are the turbulence alone. Edge-on the clumps
+ * average to a slit.
  */
 function gasPhoto(p: GalPos): number {
   const U = UNIVERSE;
   const zc = U.GALAXY_DUST_MID * midplaneZ(p.R, p.theta);
-  const arms = 1 + U.GALAXY_DUST_ARM * Math.cos(armPhase(p.R, p.theta));
-  return gasRadial(p) * sech2((p.z - zc) / U.GALAXY_ZD_DUST) * arms;
+  return gasRadial(p) * sech2((p.z - zc) / U.GALAXY_ZD_DUST);
 }
 
 /**
@@ -362,23 +365,20 @@ function occCeil(): number {
 }
 
 /**
- * Crest of hole × decline × photo-arm (z = 0). The dust bake
- * maps this peak × e^σ to 1 so clumps write after the hole.
+ * Crest of hole × decline (z = 0). The dust bake maps this
+ * peak × e^σ to 1 so clumps write after the hole.
  */
 let photoCeilMemo = { key: '', v: 0 };
 
 function photoCeil(): number {
   const U = UNIVERSE;
-  const key = `${U.GALAXY_DUST_HOLE}|${U.GALAXY_DUST_HOLE_P}|${U.GALAXY_RD}|${U.GALAXY_RD_GAS}|${U.GALAXY_DUST_ARM}|${U.GALAXY_DUST_SIGMA}|${U.GALAXY_R_MAX}`;
+  const key = `${U.GALAXY_DUST_HOLE}|${U.GALAXY_DUST_HOLE_P}|${U.GALAXY_RD}|${U.GALAXY_RD_GAS}|${U.GALAXY_DUST_SIGMA}|${U.GALAXY_R_MAX}`;
   if (photoCeilMemo.key === key) return photoCeilMemo.v;
   let peak = 1e-6;
   for (let i = 0; i <= 80; i++) {
     const R = (i / 80) * U.GALAXY_R_MAX;
     const hole = U.GALAXY_DUST_HOLE <= 0 ? 1 : 1 - Math.exp(-((R / U.GALAXY_DUST_HOLE) ** U.GALAXY_DUST_HOLE_P));
-    peak = Math.max(
-      peak,
-      hole * Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)) * (1 + U.GALAXY_DUST_ARM),
-    );
+    peak = Math.max(peak, hole * Math.exp(-R / (U.GALAXY_RD * U.GALAXY_RD_GAS)));
   }
   const v = peak * Math.exp(U.GALAXY_DUST_SIGMA);
   photoCeilMemo = { key, v };
