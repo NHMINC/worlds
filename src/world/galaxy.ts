@@ -292,11 +292,14 @@ function gasBase(p: GalPos): number {
  * supernovae) scattered through the whole disc; the spiral
  * pattern is where stars form, not where grains sit. Clump
  * positions are the turbulence alone. Edge-on the clumps
- * average to a slit.
+ * average to a slit. `zOff` is the corrugation: the sheet's
+ * local centre, jittered off the slice by a seeded 2D field —
+ * without it every cloud peaked on exactly z = 0 and flying
+ * through the disc met one coherent surface (an inverse oreo).
  */
-function gasPhoto(p: GalPos): number {
+function gasPhoto(p: GalPos, zOff: number): number {
   const U = UNIVERSE;
-  const zc = U.GALAXY_DUST_MID * midplaneZ(p.R, p.theta);
+  const zc = U.GALAXY_DUST_MID * midplaneZ(p.R, p.theta) + zOff;
   // Grip opens the envelope: 1 is the thin slit; looser and the
   // scale height grows as ZD / grip, freeing ribbons off-plane.
   const zd = U.GALAXY_ZD_DUST / Math.max(U.GALAXY_DUST_GRIP, 0.05);
@@ -406,7 +409,20 @@ export function ismAt(
 ): { base: number; field: number; photo: number; turb: number } {
   const p = cartToGal(x, y, z);
   const base = gasBase(p);
-  const photoBase = gasPhoto(p);
+  // Corrugation: clouds ride bubbles and shocks off the plane, so
+  // the sheet's local centre wanders ±JITTER·(ZD/grip) on a scale
+  // a few clouds wide. The offset field is 2D (x, z) — a whole
+  // cloud moves together — and only computed where dust can live.
+  const U = UNIVERSE;
+  let photoBase = 0;
+  if (gasRadial(p) > 1e-5) {
+    const zdEff = U.GALAXY_ZD_DUST / Math.max(U.GALAXY_DUST_GRIP, 0.05);
+    const jf = U.GALAXY_DUST_FREQ * 0.35;
+    // ×4 normalizes the 4-octave fBm (rms ≈ 0.25) so JITTER is in
+    // honest units: 1 = centres wander about one scale height rms.
+    const zOff = U.GALAXY_DUST_JITTER * zdEff * 4 * dustFbm(seed, x * jf, 0, z * jf, 613);
+    photoBase = gasPhoto(p, zOff);
+  }
   if (base <= 1e-5 && photoBase <= 1e-5) return { base: 0, field: 0, photo: 0, turb: 0 };
   const turb = base > 1e-5 ? ismTurbulence(seed, x, y, z) : 0;
   const dust = photoBase > 1e-5 ? dustTurbulence(seed, x, y, z) : 0;

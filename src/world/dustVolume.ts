@@ -35,10 +35,12 @@ export function dustVolumeBounds(): {
 } {
   const pad = 0.2;
   const half = UNIVERSE.GALAXY_R_MAX + pad;
-  // Loose grip opens the dust scale height (ZD / grip); the bake
-  // volume must grow with it or tall ribbons are clipped flat.
+  // Loose grip opens the dust scale height (ZD / grip), and the
+  // corrugation lifts cloud centres another ±JITTER·zd; the bake
+  // volume must grow with both or tall ribbons are clipped flat.
   const zdEff = UNIVERSE.GALAXY_ZD_DUST / Math.max(UNIVERSE.GALAXY_DUST_GRIP, 0.05);
-  const yHalf = Math.max(UNIVERSE.GALAXY_Z_THICK * 4, zdEff * 4) + pad;
+  const yHalf =
+    Math.max(UNIVERSE.GALAXY_Z_THICK * 4, zdEff * (4 + 4 * UNIVERSE.GALAXY_DUST_JITTER)) + pad;
   return {
     origin: [-half, -yHalf, -half],
     size: [2 * half, 2 * yHalf, 2 * half],

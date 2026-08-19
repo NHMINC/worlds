@@ -336,7 +336,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   tall); loosen it and the envelope opens as ZD / grip while
   the turbulence goes isotropic — the same ribbons grow long
   and project above and below the disc (the bake volume grows
-  with it). Occupancy / SFR / H II stay
+  with it). `GALAXY_DUST_JITTER` corrugates the sheet: a seeded
+  2D field a few clouds wide lifts and sinks the local centre,
+  so each cloud carries its own altitude — with every centre
+  pinned to one slice, flying through the disc met a coherent
+  layer boundary (an inverse oreo). Occupancy / SFR / H II stay
   on the warped molecular sheet — star ids do not move. A
   crest is a small Gaussian splat (anti-aliasing only) —
   hardware trilinear of a lone sample is a diamond face-on.

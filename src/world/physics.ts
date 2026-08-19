@@ -458,6 +458,17 @@ export const UNIVERSE = {
    * all read it. Photograph only — star ids do not move.
    */
   GALAXY_DUST_GRIP: 0.3,
+  /**
+   * Corrugation: how far a cloud's centre wanders off the slice,
+   * in rms units of the effective scale height (ZD / grip). A
+   * seeded 2D field a few clouds wide lifts and sinks the sheet's
+   * local centre, so each cloud carries its own altitude — clouds
+   * ride supernova bubbles and spiral shocks off the plane. 0
+   * pins every centre to one plane and flying through the disc
+   * meets a coherent layer boundary (an inverse oreo), which no
+   * turbulent ISM has.
+   */
+  GALAXY_DUST_JITTER: 1,
   /** Size law only (cycles/kpc of the largest clumps). 4.2 puts
    *  the dominant ribbons near ~240 pc — the scale of the biggest
    *  real molecular complexes (Orion, W51), and still ~2.5 bake
