@@ -55,13 +55,16 @@ export const SHINE_DIST_P = 0.45;
 export const SHINE_SAT = 1.55;
 /**
  * Photograph WHITE BALANCE (kK): the blackbody temperature that
- * reads as pure white. The raw locus crosses white at 6.6 kK, so
- * everything cooler paints orange; balancing warmer (5.2) shifts
- * the palette the way a camera's white balance does — M dwarfs
- * yellow-gold instead of orange, K near warm-white, hot stars a
- * touch bluer — one divide in linear light, no per-class edits.
+ * reads as pure white — one von-Kries divide in linear light,
+ * no per-class edits. The raw locus crosses white at 6.6 kK, so
+ * everything cooler paints orange. The response is asymmetric:
+ * hot stars flip their dominant channel under a warm reference
+ * and shift fast, while warm stars keep red dominant and need
+ * the reference pushed much lower — at 3.0 an M dwarf reads
+ * white. 4.6 lands the owner's palette: M yellow-gold, K
+ * white-gold, hot stars clean blue.
  */
-export const HARVEST_WHITE_K = 5.2;
+export const HARVEST_WHITE_K = 4.6;
 /**
  * Photograph zero-point (L☉). Stays at the original late-B floor
  * so deepening SILHOUETTE_L adds fainter pins instead of
