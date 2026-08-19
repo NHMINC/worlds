@@ -110,14 +110,16 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     return min(uExtinctK * ${glslFloat(1 / UNIVERSE.GALAXY_EXTINCT_K_FULL)}, 1.0);
   }
   // One march, two answers: x = the carved Beer–Lambert skin
-  // integral, y = the CLOUD SUM. Each contiguous run of raw
-  // field above the fade floor is one cloud; its crest (the
-  // segment max) is that cloud's density, and its opacity is a
-  // ramp from the floor to uExtinctAbyss — most clouds are
-  // translucent, a rare dense crest is an abyss on its own,
-  // and overlapping clouds ADD, so two moderate ribbons in
-  // projection can stack to black. Per-cloud, from the field —
-  // not a global gate.
+  // integral, y = the CLOUD COLUMN in units of EXTINCT_COL.
+  // Opacity is a saturating function of local density (a ramp
+  // from the fade floor to uExtinctAbyss) INTEGRATED along the
+  // path — a column, not a crest. A cloud at abyss density goes
+  // lightless in EXTINCT_COL kpc (~one typical diameter); a
+  // wisp of the same density costs its thinness; overlapping
+  // clouds add; a long in-plane column saturates at the cap.
+  // The old per-segment crest rule charged a whole face-on slab
+  // crossing as one near-abyss cloud (the max over the crossing)
+  // — ~3 magnitudes darker than a real disc.
   vec2 extinctMarch(vec3 from, vec3 dir, float t0, float dCat) {
     float dt = dCat / ${glslFloat(steps)};
     float h = max(dt, 0.04) * 0.33;
@@ -125,30 +127,31 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     float v0 = lo * 0.55;
     float abyss = max(uExtinctAbyss, v0 * 2.0);
     float skin = 0.0;
-    float clouds = 0.0;
-    float segMax = 0.0;
+    float col = 0.0;
     for (int i = 0; i < ${steps}; i++) {
       vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
-      // Peak of three raw taps so a thin sheet cannot hide
-      // between taps when the chord is long (edge-on, far above).
-      float raw = extinctRhoRaw(p);
-      raw = max(raw, extinctRhoRaw(p - dir * h));
-      raw = max(raw, extinctRhoRaw(p + dir * h));
-      if (raw > v0) {
-        segMax = max(segMax, raw);
-      } else if (segMax > 0.0) {
-        clouds += smoothstep(v0, abyss, segMax);
-        segMax = 0.0;
-      }
+      // Three in-step taps AVERAGE into the column — they sample
+      // the interval; a max would inflate a thin sheet back into
+      // a wall. The carved skin keeps the max so the reddened rim
+      // cannot slip between taps. RAMP is the density contrast:
+      // opacity is savagely nonlinear in density (a core is
+      // 10–100 mag where the body is a fraction of one), so a
+      // typical body prices near a magnitude and cores go black.
+      float r1 = extinctRhoRaw(p - dir * h);
+      float r2 = extinctRhoRaw(p);
+      float r3 = extinctRhoRaw(p + dir * h);
+      col += (pow(smoothstep(v0, abyss, r1), ${glslFloat(UNIVERSE.GALAXY_EXTINCT_RAMP)})
+        + pow(smoothstep(v0, abyss, r2), ${glslFloat(UNIVERSE.GALAXY_EXTINCT_RAMP)})
+        + pow(smoothstep(v0, abyss, r3), ${glslFloat(UNIVERSE.GALAXY_EXTINCT_RAMP)})) * (dt / 3.0);
+      float raw = max(r2, max(r1, r3));
       skin += pow(max(raw - uExtinctCut, 0.0), max(uExtinctHard, 0.15));
     }
-    if (segMax > 0.0) clouds += smoothstep(v0, abyss, segMax);
-    return vec2(skin, clouds);
+    return vec2(skin, col * ${glslFloat(1 / UNIVERSE.GALAXY_EXTINCT_COL)});
   }
   // Total optical depth of a camera→star column: honest carved
-  // skin plus the per-cloud opacity sum, capped. The old binary
-  // wall is retired — a thin cloud dims a star; only a dense
-  // crest (or a stack of clouds) is lightless.
+  // skin plus the cloud column, capped. A thin cloud dims a
+  // star; only a dense column (one abyss cloud, or a stack) is
+  // lightless.
   float extinctTau(vec3 from, vec3 to) {
     float dCat = length(to - from);
     vec3 dir = (to - from) / max(dCat, 1e-4);
@@ -176,18 +179,18 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (leave < 0.0 || enter > leave) return vec2(1.0, -1.0);
     return vec2(enter, leave);
   }
-  // The far photograph: the same march, the same cloud sum.
+  // The far photograph: the same march, the same cloud column.
   // Honest Beer–Lambert through the toy-thin sheet is glass
   // face-on (T ≈ 0.96 through a ribbon body — the sheet is
   // ~0.15 kpc), so transmission alone can never silhouette the
-  // clouds; the per-cloud opacity is the decreed extra depth.
-  // An eye embedded in a cloud sits inside its segment, so the
-  // sky dims by that cloud's own density — a wisp is a haze, an
-  // abyss is night. The fade band rides the RAW field below the
-  // carve floor, so rims fade, and everything reddens through
-  // the same Beer–Lambert curve. Harvest stars keep their honest
-  // camera→star column (extinctT) — from inside the fog you
-  // still see what is close.
+  // clouds; the saturating column is the decreed extra depth.
+  // An eye embedded in a cloud looks out through the rest of
+  // it — a wisp is a reddened haze, an abyss is night. The fade
+  // band rides the RAW field below the carve floor, so rims
+  // fade, and everything reddens through the same Beer–Lambert
+  // curve. Harvest stars keep their honest camera→star column
+  // (extinctT) — from inside the fog you still see what is
+  // close.
   vec3 extinctLook(vec3 from, vec3 dir) {
     vec2 span = extinctSpan(from, dir);
     if (span.x > span.y) return vec3(1.0);

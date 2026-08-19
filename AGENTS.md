@@ -124,18 +124,22 @@ types or star types.
   across a lane its centre missed. The void clear colour is the
   one light with no object to own it, so the dust filter quad
   multiplies it per pixel before any sprite draws. `extinctLook`
-  is the PER-CLOUD law (decreed optics): each contiguous run of
-  raw field above the fade floor along the ray is one cloud, its
-  crest density sets its opacity (floor →
-  `GALAXY_EXTINCT_ABYSS`), and clouds ADD — most are
-  translucent, a rare dense crest is an abyss, and overlaps
-  stack to black. Honest Beer–Lambert through the ~0.15 kpc toy
-  sheet is glass face-on (T ≈ 0.96 through a ribbon body) and
-  can never silhouette a cloud; the cloud sum can, and an eye
-  embedded in a cloud sits inside its segment. The rim is a fade
-  on the raw field; Beer–Lambert still tints it. Harvest stars
-  march the same camera→star law (`extinctT`) — from inside the
-  fog you still see what is close. Empty space is vacuum.
+  is the CLOUD-COLUMN law (decreed optics, calibrated on the
+  real MW): opacity is a saturating ramp of local density (fade
+  floor → `GALAXY_EXTINCT_ABYSS`, contrast
+  `GALAXY_EXTINCT_RAMP`) integrated along the ray in units of
+  `GALAXY_EXTINCT_COL` — a column, not a crest. A typical cloud
+  is a translucent reddened veil (~1 magnitude, the real
+  face-on disc number); abyss-grade cores (~top 5% of bodies)
+  go lightless in one crossing; overlaps add; long in-plane
+  columns saturate at the cap. Honest Beer–Lambert through the
+  toy-thin sheet is glass face-on (T ≈ 0.96 through a ribbon
+  body) and can never silhouette a cloud; the saturating column
+  can, and an eye embedded in a cloud looks out through the
+  rest of it. The rim is a fade on the raw field; Beer–Lambert
+  still tints it. Harvest stars march the same camera→star law
+  (`extinctT`) — from inside the fog you still see what is
+  close. Empty space is vacuum.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
@@ -336,12 +340,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   on the warped molecular sheet — star ids do not move. A
   crest is a small Gaussian splat (anti-aliasing only) —
   hardware trilinear of a lone sample is a diamond face-on.
-  Starlight and the cosmic background obey the same per-cloud
-  sum (see the cosmic-background decree): every cloud's crest
-  sets its own opacity, overlaps add, and `GALAXY_EXTINCT_K` is
-  the one opacity slider grading it all (clear at 0, full at
-  `GALAXY_EXTINCT_K_FULL`). The old starlight-only binary wall
-  is retired. Dust does not emit or
+  Starlight and the cosmic background obey the same cloud
+  column (see the cosmic-background decree): a saturating ramp
+  of density integrated along the sightline — typical clouds
+  are ~1-magnitude veils, abyss cores black, overlaps add — and
+  `GALAXY_EXTINCT_K` is the one opacity slider grading it all
+  (clear at 0, full at `GALAXY_EXTINCT_K_FULL`). The old
+  starlight-only binary wall is retired. Dust does not emit or
   reflect. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.

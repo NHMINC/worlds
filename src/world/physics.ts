@@ -651,17 +651,30 @@ export const UNIVERSE = {
    *  streak, now live). Higher hardens cores and thins the
    *  edges — opaque without spreading. */
   GALAXY_EXTINCT_HARD: 0.85,
-  /** Per-cloud opacity: the raw crest density at which ONE cloud
-   *  is an abyss (fully dark on its own). Each contiguous run of
-   *  field above the fade floor along a sightline is a cloud; its
-   *  opacity ramps from the floor to this crest, so the log-normal
-   *  field makes most clouds translucent and a rare dense crest
-   *  lightless. Overlapping clouds ADD — two moderate ribbons in
-   *  projection can stack to an abyss. Stars and the cosmic
-   *  background obey the same sum (the old starlight-only binary
-   *  wall is retired). Shipped so ~the top 5% of cloud bodies
-   *  are single-cloud abysses (midplane crest p95 ≈ 0.25). */
+  /** Cloud opacity ramp top: the raw density at which dust counts
+   *  as abyss-grade. Opacity is a COLUMN — a saturating ramp of
+   *  local density (fade floor → this) integrated along the path
+   *  in units of EXTINCT_COL — so the log-normal field prices a
+   *  typical cloud near A_V ≈ 0.5–1 mag (translucent, reddened),
+   *  makes true abysses the rare dense tail (~top 5%, midplane
+   *  p95 ≈ 0.25), and lets overlaps stack toward black. Stars and
+   *  the cosmic background obey the same column. */
   GALAXY_EXTINCT_ABYSS: 0.25,
+  /** The column that saturates: this many kpc of abyss-grade dust
+   *  reaches the full cap (lightless). ~One typical cloud diameter
+   *  (1/DUST_FREQ), so a dense cloud blacks out in one crossing, a
+   *  face-on disc crossing costs about a magnitude (the real MW
+   *  face-on number), and a long in-plane column hits the cap. A
+   *  law, baked into the shader — not a live knob. */
+  GALAXY_EXTINCT_COL: 0.2,
+  /** Density contrast of the opacity ramp (power on the floor →
+   *  abyss smoothstep). Real cloud opacity is savagely nonlinear
+   *  in density — a GMC core is 10–100 mag where the diffuse body
+   *  is a fraction of one. 3 prices a typical cloud body near
+   *  A ≈ 1 mag while abyss-grade cores stay lightless; 1 was a
+   *  linear ramp that charged every body like a core. A law,
+   *  baked into the shader — not a live knob. */
+  GALAXY_EXTINCT_RAMP: 3,
   /** Look test. 0 = dust is extinction. 1 paints the volume lime. */
   GALAXY_DUST_DEBUG: 0,
   /** Column cap. High enough that a dense clump (or a stack along
