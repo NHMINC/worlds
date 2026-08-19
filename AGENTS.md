@@ -114,11 +114,16 @@ types or star types.
   Drawn on the far plane (a clip
   quad, not a surrounding mesh) so triangles never cross
   the camera. The warp fence keeps you off the photograph.
-  Not a catalog. Not pickable. Dust filters the sightline.
-  The distant sky marches the dust box (thin clumps cannot
-  hide); a wall on that ray is lightless for the void and
-  the pins. Empty space is vacuum. The framebuffer clear
-  is black — the cosmic quad paints the night.
+  Not a catalog. Not pickable. Dust filters the sightline —
+  **once, per pixel**: the void, pins, and smudges render
+  unextincted into their own far-plane photograph, and the
+  sky quad composites that texture through one `extinctLook`
+  march at the pixel where the light lands (thin clumps
+  cannot hide; a wall on the ray is lightless). Sprites do
+  not self-extinct — a per-vertex sample let a wide smudge
+  straddle the lane its centre ray missed. Empty space is
+  vacuum. The framebuffer clear is black — the cosmic quad
+  paints the night.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
