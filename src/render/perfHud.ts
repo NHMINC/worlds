@@ -24,8 +24,10 @@ export class PerfHud {
   private ticks = 0;
   private lastFlush = performance.now();
   private on = false;
+  private host: HTMLElement;
 
-  constructor(private host: HTMLElement, gl: WebGLRenderingContext | WebGL2RenderingContext) {
+  constructor(host: HTMLElement, gl: WebGLRenderingContext | WebGL2RenderingContext) {
+    this.host = host;
     if (typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext) {
       this.gl = gl;
       this.ext = gl.getExtension('EXT_disjoint_timer_query_webgl2') as TimerExt | null;
