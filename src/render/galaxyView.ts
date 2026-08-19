@@ -687,7 +687,11 @@ export class GalaxyView {
     this.home = homeStar(seed);
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    // Full device resolution (same cap as the engine). The old 1.5
+    // cap made the browser bilinear-upscale every frame on a 2×
+    // display — a blur that ate ~a third of each star dot's peak
+    // brightness: a residual filter nobody decreed.
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     // The void is black by decree — vacuum emits nothing.
     this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
