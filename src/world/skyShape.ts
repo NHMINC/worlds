@@ -1,8 +1,8 @@
 /**
- * Shared nebula / dust envelope law. Clock or ISM → kind, then a
- * sphere on the virtual source. The same function feeds the distant
- * backdrop and the local sample, so the object you see far away is
- * the one you fly into.
+ * Shared nebula envelope law. Clock → kind, then a sphere on the
+ * virtual source. The same function feeds the distant backdrop and
+ * the local sample, so the object you see far away is the one you
+ * fly into. (Dust is not a kind: the fog is the baked ISM field.)
  *
  * v1 is a camera-facing disc (the cheap sphere silhouette). World
  * size is kpc. A later volume or mesh upgrades this evaluator —
@@ -15,9 +15,8 @@ export const KIND_STAR = 0;
 export const KIND_HII = 1;
 export const KIND_PN = 2;
 export const KIND_SNR = 3;
-export const KIND_DUST = 4;
 
-export type SkyKind = 0 | 1 | 2 | 3 | 4;
+export type SkyKind = 0 | 1 | 2 | 3;
 
 export interface SkyShape {
   kind: SkyKind;
@@ -50,13 +49,12 @@ export function kindFromNebula(nebula: NebulaKind): SkyKind {
 const WHITE: [number, number, number] = [1, 1, 1];
 const CYAN: [number, number, number] = [0.35, 0.95, 0.95];
 const RED: [number, number, number] = [1, 0.26, 0.2];
-const BROWN: [number, number, number] = [0.48, 0.32, 0.18];
 
 /**
  * Sphere on a virtual source. Stars return a tight photosphere;
- * nebulae and dust return a modest ball the shaders draw at 50%
- * alpha. Colour is the kind; radius hashes a little so neighbours
- * are not clones.
+ * nebulae return a modest ball the shaders draw at 50% alpha.
+ * Colour is the kind; radius hashes a little so neighbours are
+ * not clones.
  */
 export function shapeAt(kind: SkyKind, id: number): SkyShape {
   const h0 = shapeHash(id, 1);
@@ -69,17 +67,6 @@ export function shapeAt(kind: SkyKind, id: number): SkyShape {
   }
   if (kind === KIND_HII) {
     return { kind, radiusKpc: r * 1.1, flatten: 0, axes: [1, 1], clump: 1, seed: h0, rgb: WHITE };
-  }
-  if (kind === KIND_DUST) {
-    return {
-      kind,
-      radiusKpc: 0.055 + 0.04 * h0,
-      flatten: 0,
-      axes: [1, 1],
-      clump: 1,
-      seed: h0,
-      rgb: BROWN,
-    };
   }
   return {
     kind: KIND_STAR,

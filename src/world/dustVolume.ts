@@ -6,8 +6,7 @@
  * happens in the march (`extinctRho`), so those are live knobs
  * and the raw cloud body is still known to the eye-inside-a-
  * cloud law. Most of the disc stays 0 — a storage floor keeps
- * empty space empty. Occupancy (`dustClumpsInCell`) is a
- * separate census on the warped occupancy field.
+ * empty space empty.
  *
  * The volume is samples of a continuous field, not bricks. A
  * lone voxel through hardware trilinear is (1−|x|)(1−|z|) —
@@ -114,66 +113,4 @@ export function bakeDustVolume(
     onProgress?.((iy + 1) / ny);
   }
   return { nx, ny, nz, origin, size, data };
-}
-
-function trilinear(vol: DustVolume, x: number, y: number, z: number): number {
-  const { nx, ny, nz, origin: [ox, oy, oz], size, data } = vol;
-  const fx = ((x - ox) / size[0]) * nx - 0.5;
-  const fy = ((y - oy) / size[1]) * ny - 0.5;
-  const fz = ((z - oz) / size[2]) * nz - 0.5;
-  if (fx < -0.5 || fy < -0.5 || fz < -0.5 || fx > nx - 0.5 || fy > ny - 0.5 || fz > nz - 0.5) {
-    return 0;
-  }
-  const x0 = Math.max(0, Math.min(nx - 2, Math.floor(fx)));
-  const y0 = Math.max(0, Math.min(ny - 2, Math.floor(fy)));
-  const z0 = Math.max(0, Math.min(nz - 2, Math.floor(fz)));
-  const tx = Math.max(0, Math.min(1, fx - x0));
-  const ty = Math.max(0, Math.min(1, fy - y0));
-  const tz = Math.max(0, Math.min(1, fz - z0));
-  const at = (ix: number, iy: number, iz: number) => data[ix + nx * (iy + ny * iz)];
-  const c00 = at(x0, y0, z0) * (1 - tx) + at(x0 + 1, y0, z0) * tx;
-  const c10 = at(x0, y0 + 1, z0) * (1 - tx) + at(x0 + 1, y0 + 1, z0) * tx;
-  const c01 = at(x0, y0, z0 + 1) * (1 - tx) + at(x0 + 1, y0, z0 + 1) * tx;
-  const c11 = at(x0, y0 + 1, z0 + 1) * (1 - tx) + at(x0 + 1, y0 + 1, z0 + 1) * tx;
-  const c0 = c00 * (1 - ty) + c10 * ty;
-  const c1 = c01 * (1 - ty) + c11 * ty;
-  return c0 * (1 - tz) + c1 * tz;
-}
-
-/** Optical depth along a segment. Same Riemann sum and the same
- *  floor + hardness carve the vertex shader (`extinctRho`) uses. */
-export function clumpColumnTau(
-  vol: DustVolume,
-  from: [number, number, number],
-  to: [number, number, number],
-  steps = UNIVERSE.GALAXY_EXTINCT_STEPS,
-  k = UNIVERSE.GALAXY_EXTINCT_K,
-  cap = UNIVERSE.GALAXY_EXTINCT_MAX,
-): number {
-  const dx = to[0] - from[0];
-  const dy = to[1] - from[1];
-  const dz = to[2] - from[2];
-  const dist = Math.hypot(dx, dy, dz);
-  const dt = dist / Math.max(1, steps);
-  let tau = 0;
-  const inv = 1 / Math.max(dist, 1e-4);
-  const cut = UNIVERSE.GALAXY_EXTINCT_CUT;
-  const hard = Math.max(UNIVERSE.GALAXY_EXTINCT_HARD, 0.15);
-  for (let i = 0; i < steps; i++) {
-    const t = (i + 0.5) * dt;
-    const raw = trilinear(vol, from[0] + dx * t * inv, from[1] + dy * t * inv, from[2] + dz * t * inv);
-    tau += Math.max(raw - cut, 0) ** hard;
-  }
-  return Math.min(tau * k * dt, cap);
-}
-
-/** RGB transmittance exp(−τ · DUST_RGB). */
-export function clumpTransmittance(
-  vol: DustVolume,
-  from: [number, number, number],
-  to: [number, number, number],
-): [number, number, number] {
-  const tau = clumpColumnTau(vol, from, to);
-  const rgb = UNIVERSE.GALAXY_DUST_RGB;
-  return [Math.exp(-tau * rgb[0]), Math.exp(-tau * rgb[1]), Math.exp(-tau * rgb[2])];
 }

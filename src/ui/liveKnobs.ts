@@ -13,12 +13,11 @@ import {
   HARVEST_SUPER_GAIN,
 } from '../render/galaxyStar';
 
-export type EngineerGroupId = 'cosmic' | 'dust' | 'glow' | 'harvest' | 'starlight' | 'nebulae';
+export type EngineerGroupId = 'cosmic' | 'dust' | 'harvest' | 'starlight' | 'nebulae';
 
 export const ENGINEER_GROUPS: Array<{ id: EngineerGroupId; label: string }> = [
   { id: 'cosmic', label: 'Cosmic background' },
   { id: 'dust', label: 'Galactic dust' },
-  { id: 'glow', label: 'Hubble glow' },
   { id: 'harvest', label: 'Harvest survey' },
   { id: 'starlight', label: 'Starlight' },
   { id: 'nebulae', label: 'Nebulae' },
@@ -263,26 +262,11 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
-    id: 'glowGain',
-    label: 'Glow brightness',
-    group: 'glow',
-    hint: 'how bright the unresolved disk is',
-    about: 'Photograph stretch on the mass-model integral — the Hubble glow the harvest pins sit on. Face-on this is the filled disk; edge-on it is the slit plus the peanut. 0 turns it off. Dust still extincts the march. Next frame.',
-    uniform: 'uGlowGain',
-    min: 0,
-    max: 3,
-    step: 0.02,
-    read: () => UNIVERSE.GALAXY_GLOW_GAIN,
-    write: (v) => {
-      UNIVERSE.GALAXY_GLOW_GAIN = v;
-    },
-  },
-  {
     id: 'photoKnee',
     label: 'Photograph knee',
-    group: 'glow',
+    group: 'starlight',
     hint: 'where a stacked column saturates',
-    about: 'Reinhard white point on the finished explorer photograph. Layers add in HDR; this knee is the last step — a column of pins plus the Hubble integral approaches this brightness, it does not become N times one light. 0.4 keeps the core gold; raise it and Face-on / Edge-on climb toward white. Next frame.',
+    about: 'Reinhard white point on the finished explorer photograph. Layers add in HDR; this knee is the last step — a column of pins approaches this brightness, it does not become N times one light. Raise it and Face-on / Edge-on climb toward white. Next frame.',
     uniform: 'uPhotoKnee',
     min: 0.15,
     max: 2,
@@ -290,111 +274,6 @@ export const LIVE_KNOBS: LiveKnob[] = [
     read: () => UNIVERSE.GALAXY_PHOTO_KNEE,
     write: (v) => {
       UNIVERSE.GALAXY_PHOTO_KNEE = v;
-    },
-  },
-  {
-    id: 'glowOld',
-    label: 'Old-pop light',
-    group: 'glow',
-    hint: 'K-giant weight on thick disk and halo',
-    about: 'How hard the old thick disk and halo light the integral. The spheroid (peanut / bar / nucleus) has its own bump. Does not remint the harvest. Next frame.',
-    uniform: 'uGlowOld',
-    min: 0,
-    max: 3,
-    step: 0.02,
-    read: () => UNIVERSE.GALAXY_GLOW_OLD,
-    write: (v) => {
-      UNIVERSE.GALAXY_GLOW_OLD = v;
-    },
-  },
-  {
-    id: 'glowCore',
-    label: 'Spheroid bump',
-    group: 'glow',
-    hint: 'box, peanut, bar, nucleus',
-    about: 'Extra weight on the old spheroid — boxy bulge, peanut, bar, nucleus. Lift this for a Hubble bump without lighting the thick-disk fog. Next frame.',
-    uniform: 'uGlowCore',
-    min: 0,
-    max: 3,
-    step: 0.02,
-    read: () => UNIVERSE.GALAXY_GLOW_CORE,
-    write: (v) => {
-      UNIVERSE.GALAXY_GLOW_CORE = v;
-    },
-  },
-  {
-    id: 'glowYoung',
-    label: 'Young-disk light',
-    group: 'glow',
-    hint: 'late-B weight on the thin disk',
-    about: 'How hard the thin disk lights the integral. No arm contrast on this term — arms already live in the harvest, H II, and dust lanes. Next frame.',
-    uniform: 'uGlowYoung',
-    min: 0,
-    max: 3,
-    step: 0.02,
-    read: () => UNIVERSE.GALAXY_GLOW_YOUNG,
-    write: (v) => {
-      UNIVERSE.GALAXY_GLOW_YOUNG = v;
-    },
-  },
-  {
-    id: 'glowSfr',
-    label: 'Ionized sheet',
-    group: 'glow',
-    hint: 'faint Hα / [O III] on the mean gas',
-    about: 'Emission on the mean molecular sheet (hole × decline × gas arms). Same line mix as catalog nebulae. Not drawing dust. 0 turns the sheet off. Next frame.',
-    uniform: 'uGlowSfr',
-    min: 0,
-    max: 2.5,
-    step: 0.02,
-    read: () => UNIVERSE.GALAXY_GLOW_SFR,
-    write: (v) => {
-      UNIVERSE.GALAXY_GLOW_SFR = v;
-    },
-  },
-  {
-    id: 'glowCut',
-    label: 'Glow floor',
-    group: 'glow',
-    hint: 'drop the halo fuzz',
-    about: 'Density below this does not emit. Raise it and the outer halo haze vanishes; the disk and bulge stay. Next frame.',
-    uniform: 'uGlowCut',
-    min: 0,
-    max: 0.2,
-    step: 0.002,
-    read: () => UNIVERSE.GALAXY_GLOW_CUT,
-    write: (v) => {
-      UNIVERSE.GALAXY_GLOW_CUT = v;
-    },
-  },
-  {
-    id: 'glowSelf',
-    label: 'Glow depth',
-    group: 'glow',
-    hint: 'how opaque the glowing mass is to itself',
-    about: 'Self-extinction of the integral. Higher and you cannot see through the bulge — the far disk stays behind the near mass. 0 is a glass pancake. Next frame.',
-    uniform: 'uGlowSelf',
-    min: 0,
-    max: 1.2,
-    step: 0.02,
-    read: () => UNIVERSE.GALAXY_GLOW_SELF,
-    write: (v) => {
-      UNIVERSE.GALAXY_GLOW_SELF = v;
-    },
-  },
-  {
-    id: 'glowDust',
-    label: 'Glow through dust',
-    group: 'glow',
-    hint: 'how hard lanes extinct the integral',
-    about: 'Dust on this photograph only. 1 is the same extinction as the harvest pins. 0 is a glass disk (lanes stay on the stars). Raise it and the glow sits deeper behind the ribbons. Next frame.',
-    uniform: 'uGlowDust',
-    min: 0,
-    max: 3,
-    step: 0.02,
-    read: () => UNIVERSE.GALAXY_GLOW_DUST,
-    write: (v) => {
-      UNIVERSE.GALAXY_GLOW_DUST = v;
     },
   },
   {

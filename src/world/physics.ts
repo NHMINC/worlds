@@ -456,8 +456,6 @@ export const UNIVERSE = {
    */
   GALAXY_DUST_HOLE: 2.4,
   GALAXY_DUST_HOLE_P: 2,
-  GALAXY_DUST_N_K: 6000,
-  GALAXY_DUST_MAX: 8,
   GALAXY_SFR_GAIN: 18,
   GALAXY_CLOUD_HII: 0.1,
   GALAXY_DUST_RGB: [0.75, 1.0, 1.32] as [number, number, number],
@@ -537,11 +535,7 @@ export const UNIVERSE = {
    * not a harvest row. The fog is the dense tail of the
    * molecular sheet. Same catalog frame.
    * Distant discs are toy angular
-   * sizes. The Hubble glow is the unresolved integral of the mass
-   * model (densityParts without stellar arms — extra spatial
-   * frequency aliases). Old bulge/bar/thick light is K; young thin
-   * is late-B. Dust extincts that march. A faint ionized sheet
-   * (mean molecular field × gas arms) is a second term, same pass.
+   * sizes.
    * Emission nebulae are self-luminous raymarched shells on
    * the host — brightness is emission measure (rho² along the ray),
    * so rings and filament crossings are geometry. Colour is a LINE
@@ -570,9 +564,7 @@ export const UNIVERSE = {
    * Stars are a soft device-pixel Gaussian of photosphere
    * colour (so a 1-pixel hop only moves the faint halo) — a
    * point of light, no disc, no bloom sprite. Intensity is L^P · (D/d)^q
-   * then I/(1+I) so hue survives. STAR_PX is unused for stars
-   * (kept so older comments that name the knob still resolve).
-   * SUPER_GAIN is leftover exposure. Optical approximations,
+   * then I/(1+I) so hue survives. Optical approximations,
    * like AIR_LINE. Not pickable.
    */
   GALAXY_SILHOUETTE_M: 3.89,
@@ -609,10 +601,6 @@ export const UNIVERSE = {
    *  Three median halvings from 0.65: the top eighth — showpieces.
    *  Rebake the nebula catalog; do not remint stars. */
   GALAXY_SILHOUETTE_NEB_GAIN: 0.932,
-  /** Unused harvest gate: dust rows are no longer minted. Kept so
-   *  older comments that name the knob still resolve. The fog is
-   *  the ISM field; clumps stay addressable via dustId. */
-  GALAXY_SILHOUETTE_DUST_R: 0,
   /** Fewer, fuller: exposure boost on backdrop shell emission. The
    *  count knobs above thin the census; this shows what survives. */
   SILHOUETTE_NEB_BOOST: 1.6,
@@ -650,36 +638,7 @@ export const UNIVERSE = {
    *  (~0.02 kpc vs ~30 for the backdrop), so 3 taps sample it more
    *  densely than the backdrop's 12 — same law, cheaper march. */
   GALAXY_EXTINCT_STEPS_LOCAL: 3,
-  SILHOUETTE_STAR_PX: 14,
   SILHOUETTE_NEBULA_PX: 4,
-  SILHOUETTE_SUPER_GAIN: 1.6,
-  /**
-   * Hubble glow — unresolved integral of the mass model. Live
-   * photograph: a slide is the next frame. Arms stay off the
-   * stellar term (they already live in the harvest + H II + dust).
-   * SFR is the mean molecular sheet, not occupancy turbulence.
-   */
-  /** Photograph stretch on the whole integral. 0 turns the glow off. */
-  GALAXY_GLOW_GAIN: 0.72,
-  /** Weight on old light (thick disk + halo). */
-  GALAXY_GLOW_OLD: 1.15,
-  /** Extra weight on the spheroid (box / peanut / nuc / bar). */
-  GALAXY_GLOW_CORE: 1.25,
-  /** Weight on young thin-disk light (no arm contrast). */
-  GALAXY_GLOW_YOUNG: 0.42,
-  /** Weight on the ionized sheet (mean gas × gas arms). */
-  GALAXY_GLOW_SFR: 0.18,
-  /** Density below this does not emit. Drops the halo fuzz. */
-  GALAXY_GLOW_CUT: 0.012,
-  /** Self-extinction per kpc of glowing density. The far side of
-   *  the bulge does not shine through the near side. */
-  GALAXY_GLOW_SELF: 0.22,
-  /** How hard the harvest dust extincts this integral. 1 is the
-   *  same law as the pins; 0 is a glass disk; >1 hides the glow
-   *  deeper in the lanes. */
-  GALAXY_GLOW_DUST: 1,
-  /** March taps through the disk. Compiled into the shader. */
-  GALAXY_GLOW_STEPS: 48,
   /**
    * Photograph knee (Reinhard white point). Layers add in an
    * HDR buffer; this is the last step. L → knee as the column
@@ -711,7 +670,6 @@ export const UNIVERSE = {
    *  march's filament scale. */
   DUST_FREQ: 11,
   /** Ice mantles condense when the temperature proxy falls below this. */
-  DUST_ICE_WARM: 0.34,
 
   /**
    * Kroupa IMF (number, not mass), amplitudes matched at the breaks:

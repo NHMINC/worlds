@@ -451,52 +451,6 @@ export function ismNorm(seed: string, cell: number): number {
 }
 
 /**
- * Dust clumps are a POPULATION, not a per-cell overlay: expected
- * count = field × volume × GALAXY_DUST_N_K, floor + coin — the same
- * occupancy law as slotsInCell. Sparse gas mints nothing.
- */
-export function dustClumpsInCell(seed: string, cell: number): number {
-  const v = ismNorm(seed, cell);
-  if (v <= 0) return 0;
-  const expect = v * cellVolume(cell) * UNIVERSE.GALAXY_DUST_N_K;
-  const whole = Math.floor(expect);
-  const extra = u01(seed, 'dustOcc', cell) < expect - whole ? 1 : 0;
-  return Math.min(UNIVERSE.GALAXY_DUST_MAX, whole + extra);
-}
-
-export interface DustPhysics {
-  /** Normalized ISM field 0..1 — mean density of the clump. */
-  field: number;
-  feh: number;
-  carbon: number;
-  /** Fraction of grains wearing ice mantles (cold + dense + shielded). */
-  iceFrac: number;
-  /** Fraction of carbonaceous (sooty) grains: C/O-rich gas condenses carbon. */
-  carbonFrac: number;
-}
-
-const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-
-/**
- * What a dust clump is MADE of — a pure function of the address, no
- * storage. Density from the ISM field; metallicity and C/O from the
- * same chemistry law stars drink; temperature falls with radius and
- * dense cores are shielded, so cold outer clumps grow ice mantles
- * while C/O-rich inner gas condenses sooty carbon.
- */
-export function dustPhysics(seed: string, cell: number): DustPhysics {
-  const field = ismNorm(seed, cell);
-  const p = cellCenter(cell);
-  const scatter = u01(seed, 'dustChem', cell);
-  const { feh, carbon } = chemistry('thin', p.R, 0.5, scatter);
-  // Radiation temperature proxy: hot inner disk, cooled by shielding.
-  const warm = Math.exp(-p.R / (UNIVERSE.GALAXY_RD * 2)) * (1 - 0.55 * field);
-  const iceFrac = clamp01(1.4 * (UNIVERSE.DUST_ICE_WARM - warm));
-  const carbonFrac = clamp01((carbon - 1.2) * 0.9);
-  return { field, feh, carbon, iceFrac, carbonFrac };
-}
-
-/**
  * In-plane Gaussian σ (kpc). Scatter only hides the polar lattice.
  * Tightness is occupancy: the nuclear cusp (NUC_RD) and the box already
  * live in the density field. Using the peanut *height* as an in-plane

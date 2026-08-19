@@ -23,8 +23,6 @@ export const GLOW_P = 0.16;
 export const GLOW_DIM = 0.0016;
 /** Hardware sprite cap (px). Not a limit on how many stars may shine. */
 export const POINT_MAX_PX = 56;
-export const PHOTO_K = GLOW_K;
-export const PHOTO_P = GLOW_P;
 export const PHOTO_MIN = 0.0007;
 export const PHOTO_MAX = 0.012;
 /**

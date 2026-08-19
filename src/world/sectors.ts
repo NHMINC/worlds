@@ -50,7 +50,7 @@ import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
 import { KIND_STAR, emissionLook, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
 import { bakeDustVolume, type DustVolume } from './dustVolume';
 
-export { KIND_STAR, KIND_HII, KIND_PN, KIND_SNR, KIND_DUST } from './skyShape';
+export { KIND_STAR, KIND_HII, KIND_PN, KIND_SNR } from './skyShape';
 
 const TAU = Math.PI * 2;
 
@@ -256,20 +256,6 @@ export const BIT_COOL = 8;
 export const BIT_HALO = 16;
 export const BIT_ARM = 32;
 export const BIT_NEBULA = 64;
-export const BIT_DUST = 128;
-
-/** Dust clump (cell, k): an ISM address, not a catalog slot. */
-export function dustId(cell: number, k: number): number {
-  return -(cell * UNIVERSE.GALAXY_DUST_MAX + k + 1);
-}
-
-export function cellFromDustId(id: number): number {
-  return Math.floor((-id - 1) / UNIVERSE.GALAXY_DUST_MAX);
-}
-
-export function isDustId(id: number): boolean {
-  return id < 0;
-}
 
 export type GalaxyFilterName =
   | 'all'
