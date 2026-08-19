@@ -319,7 +319,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Gaussian (a star is unresolved at any brightness); magnitude
   grows the halo's REACH, and the halo soft-knees toward the
   hue ceiling so there is a brightness gradient everywhere — no
-  flat shelf, no rim. The halo WIDTH derives from the
+  flat shelf, no rim. The magnitude zero-point
+  (`HARVEST_SHINE_GAIN`) sits LOW: the survey floor is nearly
+  invisible and brightness runs smoothly from there to the
+  luminous tail — only the top of the population saturates,
+  and it keeps differentiating through halo reach. A high
+  zero-point pinned every star at the ceiling and the sky was
+  a sea of identical dots. The halo WIDTH derives from the
   photosphere radius (R☉ from the clock, carried in the star
   row's size field, `HARVEST_RADIUS_P`): a K giant wears a
   broad gold halo, an O a tight brilliant one, a remnant a pin

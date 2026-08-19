@@ -96,17 +96,19 @@ export const HARVEST_RADIUS_P = 0.45;
 export const HARVEST_RADIUS_MAX = 4.5;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
- * Steep enough in L that an O still outshines the floor; shallow
- * enough that the survey floor clears the pin discard instead of
- * reading as a dark-filtered sky. Shallow in d so approaching
- * does not inflate a disc. Not an I_MIN floor — that painted
- * every pin at the same I (yellow fog). L_P 0.62 is the
- * magnitude law: at 0.48 the compression crushed the blue tail
- * (an O barely outshone the floor and read as one more white
- * dot); 0.62 lets luminosity mean something, and the
- * hue-preserving plateau keeps the extra light BLUE.
+ * GAIN is the magnitude ZERO-POINT and it must sit low: at 2.5
+ * even the faintest harvest star's photocentre was 2.5× the hue
+ * ceiling, so the whole population pinned at maximum and the sky
+ * was a sea of identical dots. At 0.1 the survey floor is nearly
+ * invisible, the median star is clearly sub-ceiling, and
+ * brightness runs SMOOTHLY from there up — only the luminous top
+ * saturates, and it keeps differentiating through halo reach.
+ * No fake limits: every star wears its own magnitude. L_P 0.62
+ * is the magnitude law: at 0.48 the compression crushed the blue
+ * tail; 0.62 lets luminosity mean something, and the
+ * hue-preserving dot keeps the extra light BLUE.
  */
-export const HARVEST_SHINE_GAIN = 2.5;
+export const HARVEST_SHINE_GAIN = 0.1;
 export const HARVEST_SHINE_L_P = 0.62;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_SHINE_DIST_P = 0.5;

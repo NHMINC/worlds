@@ -439,7 +439,8 @@ const STAR_FRAG = /* glsl */ `
         vec2 d = (gl_PointCoord - 0.5) * vPx;
         float w = exp(-dot(d, d) * uPinCore);
         float I = min(max(vVis, 0.0) * w, hueCeil);
-        if (I < 0.008) discard;
+        // Low floor: the faint end fades out, it does not pop.
+        if (I < 0.003) discard;
         gl_FragColor = vec4(vColor * I, 1.0);
         return;
       }
@@ -462,7 +463,7 @@ const STAR_FRAG = /* glsl */ `
       float dotI = min(I * 0.95 * coreT, hueCeil);
       float haloI = hueCeil * (1.0 - exp(-(I * tailT) / hueCeil));
       float profile = max(dotI, haloI) * window;
-      if (profile < 0.008) discard;
+      if (profile < 0.003) discard;
       // Only a truly monstrous photocentre overexposes to white —
       // an O star stays blue, a giant stays gold.
       float bleach = smoothstep(40.0, 160.0, I) * coreT;
