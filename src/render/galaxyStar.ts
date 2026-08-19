@@ -83,18 +83,6 @@ export const HARVEST_PIN_CANVAS = 7;
 /** Device-px⁻². FWHM ≈ 1.3 px; halo dies by ~2.5 px. */
 export const HARVEST_PIN_CORE = 0.85;
 /**
- * Halo width from the photosphere: the HALO radius scales as
- * radius^RADIUS_P (R☉ from evolve, carried in the star row's
- * size field), clamped at RADIUS_MAX. The dot itself never
- * grows — a star is unresolved at any brightness; magnitude
- * and size live entirely in the halo's reach. A documented
- * display stretch, not a class flag: a K giant (~30 R☉) wears
- * a broad gold halo, an O dwarf a tight brilliant one, an M
- * dwarf or remnant stays a pin. 0 restores equal halos.
- */
-export const HARVEST_RADIUS_P = 0.45;
-export const HARVEST_RADIUS_MAX = 4.5;
-/**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
  * GAIN is the magnitude ZERO-POINT (the exposure): the survey
  * floor paints at ~GAIN, dim but present. At 2.5 the whole

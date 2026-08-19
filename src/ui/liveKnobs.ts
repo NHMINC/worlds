@@ -8,7 +8,6 @@
 import { UNIVERSE } from '../world/physics';
 import {
   HARVEST_PSF_TAIL,
-  HARVEST_RADIUS_P,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
@@ -326,18 +325,6 @@ export const LIVE_KNOBS: LiveKnob[] = [
     max: 1,
     step: 0.01,
     read: () => HARVEST_SHINE_L_P,
-  },
-  {
-    id: 'starSize',
-    label: 'Giant size',
-    group: 'starlight',
-    hint: 'photosphere radius → halo width',
-    about: 'Power on the photosphere radius (from the stellar clock) in the halo width. Every star stays a point — a K giant (~30 R☉) wears a broad gold halo around its dot, an O dwarf a tight brilliant one, remnants stay pins. 0 gives every star the same halo shape. Next frame.',
-    uniform: 'uRadiusP',
-    min: 0,
-    max: 0.8,
-    step: 0.01,
-    read: () => HARVEST_RADIUS_P,
   },
   {
     id: 'glowWings',

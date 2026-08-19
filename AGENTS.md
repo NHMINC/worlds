@@ -320,20 +320,18 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   grows the halo's REACH, and the halo soft-knees toward the
   hue ceiling so there is a brightness gradient everywhere — no
   flat shelf, no rim. The magnitude zero-point
-  (`HARVEST_SHINE_GAIN`) sits LOW: the survey floor is nearly
-  invisible and brightness runs smoothly from there to the
-  luminous tail — only the top of the population saturates,
-  and it keeps differentiating through halo reach. A high
-  zero-point pinned every star at the ceiling and the sky was
-  a sea of identical dots. The halo WIDTH derives from the
-  photosphere radius (R☉ from the clock, carried in the star
-  row's size field, `HARVEST_RADIUS_P`): a K giant wears a
-  broad gold halo, an O a tight brilliant one, a remnant a pin
-  — physics, not a class flag. `HARVEST_SHINE_L_P` is the
-  magnitude law — steep enough that the blue tail genuinely
-  outshines the floor. Star colour (`uShineSat`), Star glow
-  (`uPsfTail`), Magnitude contrast (`uShineLP`), and Giant size
-  (`uRadiusP`) are live starlight knobs. r/d grow is a
+  (`HARVEST_SHINE_GAIN`) is the exposure: the survey floor is
+  dim but present and brightness runs smoothly from there to
+  the luminous tail — only the top of the population saturates,
+  and it keeps differentiating through halo reach.
+  `HARVEST_SHINE_L_P` is the steepness of that scale. A real
+  PSF knows only flux — not the photosphere radius, not the
+  class (the radius-widens-the-halo law is retired; a giant's
+  gold is its colour and luminosity). The star row's size field
+  still carries R☉ from the clock for the later close survey.
+  Star colour (`uShineSat`), Star glow (`uPsfTail`), Star shine
+  (`uShineLGain`), and Magnitude contrast (`uShineLP`) are live
+  starlight knobs. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`): `ismAt.photo` —
   hole × decline × domain-

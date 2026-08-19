@@ -22,8 +22,6 @@ import {
   HARVEST_PSF_B,
   HARVEST_PSF_CORE,
   HARVEST_PSF_TAIL,
-  HARVEST_RADIUS_MAX,
-  HARVEST_RADIUS_P,
   HARVEST_PSF_THRESH,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_DIST_REF,
@@ -300,8 +298,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uSuperGain;
   uniform float uSuperP;
   uniform float uPinCanvas;
-  uniform float uRadiusP;
-  uniform float uRadiusMax;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -311,7 +307,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying vec3 vCenterCat;
   varying float vPx;
   varying float vStamp;
-  varying float vBody;
 
   void main() {
     vColor = aColor;
@@ -322,7 +317,6 @@ const SILHOUETTE_VERT = /* glsl */ `
     vCenterCat = vec3(0.0);
     vPx = 0.0;
     vStamp = 0.0;
-    vBody = 1.0;
     // Cull wrong-kind sprites for the pass here — a fragment discard
     // still rasterizes the whole quad, tripling core overdraw. Dust
     // is not harvested (kind > 3.5 never passes either gate).
@@ -361,13 +355,8 @@ const SILHOUETTE_VERT = /* glsl */ `
         ? uSuperGain * (pow(superX, uSuperP) - 1.0)
         : 0.0;
       float shine = (base + extra) * distF;
-      // Every star is a point source: the dot never grows. The
-      // photosphere radius (aSize, R☉ from the clock) widens the
-      // HALO around that point — a giant wears a broad gold halo,
-      // not a disc. Size is physics, not a class flag.
-      vBody = clamp(pow(max(aSize, 0.02), uRadiusP), 1.0, max(uRadiusMax, 1.0));
       float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
-      float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5))) * vBody;
+      float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
       float css = max(1.0, 1.0 + 2.0 * rCss);
       float wingPx = css * uPixel;
       // Floor pin: soft device-pixel Gaussian. A thin plus still
@@ -419,7 +408,6 @@ const STAR_FRAG = /* glsl */ `
   varying vec3 vCenterCat;
   varying float vPx;
   varying float vStamp;
-  varying float vBody;
   void main() {
     if (uPass < 0.5 && vKind > 0.5) discard;
     if (uPass > 0.5 && (vKind < 0.5 || vKind > 3.5)) discard;
@@ -452,12 +440,13 @@ const STAR_FRAG = /* glsl */ `
       float rCss = (edge * vPx * 0.5) / max(uPixel, 1.0);
       // DOT + HALO, never a disc. The dot is a fixed sub-pixel
       // Gaussian — a star is unresolved at any brightness. The
-      // halo is the Lorentzian, widened by the photosphere law
-      // (vBody) and soft-kneed toward the hue ceiling: magnitude
-      // grows the halo's REACH, and there is a brightness
-      // gradient everywhere — no flat shelf, no rim.
+      // halo is the Lorentzian, soft-kneed toward the hue
+      // ceiling: magnitude grows the halo's REACH, and there is
+      // a brightness gradient everywhere — no flat shelf, no
+      // rim. A real PSF knows only flux — not the photosphere
+      // radius, not the class.
       float coreT = exp(-rCss * rCss * uPsfCore);
-      float tailT = uPsfTail / (uPsfA + uPsfB * (rCss / vBody) * (rCss / vBody));
+      float tailT = uPsfTail / (uPsfA + uPsfB * rCss * rCss);
       float window = 1.0 - edge * edge;
       window *= window;
       float dotI = min(I * 0.95 * coreT, hueCeil);
@@ -898,8 +887,6 @@ export class GalaxyView {
       uPsfTail: { value: HARVEST_PSF_TAIL },
       uPsfA: { value: HARVEST_PSF_A },
       uPsfB: { value: HARVEST_PSF_B },
-      uRadiusP: { value: HARVEST_RADIUS_P },
-      uRadiusMax: { value: HARVEST_RADIUS_MAX },
       uPsfThresh: { value: HARVEST_PSF_THRESH },
       uShineLGain: { value: HARVEST_SHINE_GAIN },
       uShineLP: { value: HARVEST_SHINE_L_P },
