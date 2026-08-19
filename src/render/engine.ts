@@ -34,9 +34,8 @@ export type RigMode = 'orbit' | 'flight' | 'surface';
  * spot, pinned to the spinning frame. */
 export type OrbitStyle = 'station' | 'geo';
 
-/** Rough physical fiction: ~300 m hexes at F=96 give a size-100 world a
- * ~24 km radius over R_HOME GL units — one GL unit ≈ 5.3 km. */
-export const KM_PER_UNIT = 5.3;
+/** World unit is a kilometre. Hexes on a size-100 world are tens of km. */
+export const KM_PER_UNIT = 1;
 
 export interface FlightHud {
   /** Nearest body (or the tapped target when one is set). */
@@ -103,15 +102,12 @@ const TAP_SLOP_PX = 7;
  */
 const TERRACE_ROUNDING = 0.3;
 
-/**
- * Display scale for interplanetary space. Lives in UNIVERSE.SPACE_SCALE:
- * chemistry still reads the compact `a`; the camera flies in the stretch.
- */
-const SPACE_SCALE = UNIVERSE.SPACE_SCALE;
+/** Planets store a in AU; the mesh lives in km. */
+const AU_KM = UNIVERSE.AU_KM;
 
-/** LOD ranges (world units to the body's surface) and budgets. */
-const TIER1_DIST = 180;
-const TIER2_DIST = 28;
+/** LOD as multiples of the body's own radius. */
+const TIER1_RAD = 40;
+const TIER2_RAD = 6;
 const MAX_TIER2 = 2;
 const MAX_TIER1 = 5;
 const BUILD_BUDGET_MS = 6;
@@ -119,7 +115,7 @@ const BUILD_BUDGET_MS = 6;
 const TIER2_MAX_F = 224;
 
 /** Flight tuning. */
-const CAPTURE_DIST = 32; // dSurf within which orbit capture is offered
+const CAPTURE_RAD = 7; // dSurf / radius within which orbit capture is offered
 const FLIGHT_STEER = 0.0032; // rad per pixel
 const BLEND_SEC = 1.3;
 /** Surface zoom → walk: positive log-zoom (pinch out / wheel in) raises a
@@ -128,14 +124,12 @@ const BLEND_SEC = 1.3;
 const SURF_WALK_GAIN = 2.6;
 const SURF_STOP_GAIN = 5.0;
 const SURF_HEIGHT_GAIN = 1;
-/** One full revolution of the station-style orbit ride. Geared to the same
- * 3x-slower universe as the celestial clock (UNIVERSE.TIME_SCALE), so a
- * sunrise seen from orbit lasts long enough to be watched. */
-const STATION_PERIOD_SEC = 450;
+/** One full revolution of the station-style orbit ride (ISS-ish). */
+const STATION_PERIOD_SEC = 5400;
 
-/** Starfield radius; camera far plane must exceed it. */
-const STARS_R = 7000;
-const CAM_FAR = 14000;
+/** Temporary in-system starfield; the harvest cubemap retires this. */
+const STARS_R = AU_KM * 40;
+const CAM_FAR = AU_KM * 80;
 
 function smoothstep01(t: number): number {
   const x = Math.min(1, Math.max(0, t));
@@ -229,11 +223,8 @@ export class Engine {
   private starView: StarView | null = null;
   private buildQueue: BuildTask[] = [];
 
-  /** Wall-clock system time, geared down by UNIVERSE.TIME_SCALE: orbits
-   * keep turning between sessions, at a pace where a dawn can be watched.
-   * (Scaled absolute time, so reloads land on consistent positions.) */
-  private readonly epoch =
-    (Date.now() / 1000 - performance.now() / 1000) * UNIVERSE.TIME_SCALE;
+  /** Unix-aligned origin. System time is (epochUnix + now/1000) * TIME_SCALE. */
+  private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
 
   private width = 1;
   private height = 1;
@@ -455,7 +446,7 @@ export class Engine {
       // Planet orbits live in the 10x display space; moon orbits are local.
       const segs = 128;
       const pts = new Float32Array(segs * 3);
-      const dispR = b.parent ? b.orbitRadius : b.orbitRadius * SPACE_SCALE;
+      const dispR = b.parent ? b.orbitRadius : b.orbitRadius * AU_KM;
       const semiMinor = dispR * Math.sqrt(1 - b.ecc * b.ecc);
       for (let i = 0; i < segs; i++) {
         const E = (i / segs) * 2 * Math.PI;
@@ -503,7 +494,7 @@ export class Engine {
         lastNear: 0,
       });
     }
-    this.updateBodyPoses(this.epoch + (performance.now() / 1000) * UNIVERSE.TIME_SCALE);
+    this.updateBodyPoses((this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE);
 
     // Restore the camera, or open in orbit around the home world.
     const cam = state.cam;
@@ -966,18 +957,19 @@ export class Engine {
     for (const rt of this.bodies.values()) {
       if (rt.spec.kind !== 'rocky') continue;
       const dSurf = camPos.distanceTo(rt.pos) - rt.spec.radius;
+      const r = Math.max(1, rt.spec.radius);
       const wantTier2 =
-        (this.mode !== 'flight' && rt.spec.id === this.orbitBodyId) || dSurf < TIER2_DIST;
-      const wantTier1 = dSurf < TIER1_DIST;
+        (this.mode !== 'flight' && rt.spec.id === this.orbitBodyId) || dSurf < r * TIER2_RAD;
+      const wantTier1 = dSurf < r * TIER1_RAD;
       if (wantTier1 || wantTier2) rt.lastNear = now;
       if (wantTier2) {
         this.ensureTier(rt, 2);
-      } else if (rt.tier2 && dSurf > TIER2_DIST * 2.2 && rt.spec.id !== this.orbitBodyId) {
+      } else if (rt.tier2 && dSurf > r * TIER2_RAD * 2.2 && rt.spec.id !== this.orbitBodyId) {
         this.dropTier(rt, 2);
       }
       if (wantTier1) {
         this.ensureTier(rt, 1);
-      } else if (rt.tier1 && dSurf > TIER1_DIST * 1.6) {
+      } else if (rt.tier1 && dSurf > r * TIER1_RAD * 1.6) {
         this.dropTier(rt, 1);
       }
       if (rt.tier2) tier2Count++;
@@ -1044,12 +1036,10 @@ export class Engine {
         );
         rt.orbitLine?.position.copy(parent.pos);
       } else {
-        // Planets render in the 10x display space (the physics kept the
-        // compact a; see SPACE_SCALE).
         rt.pos.set(
-          (rt.orbX.x * xo + rt.orbY.x * yo) * SPACE_SCALE,
-          (rt.orbX.y * xo + rt.orbY.y * yo) * SPACE_SCALE,
-          (rt.orbX.z * xo + rt.orbY.z * yo) * SPACE_SCALE,
+          (rt.orbX.x * xo + rt.orbY.x * yo) * AU_KM,
+          (rt.orbX.y * xo + rt.orbY.y * yo) * AU_KM,
+          (rt.orbX.z * xo + rt.orbY.z * yo) * AU_KM,
         );
       }
 
@@ -1165,7 +1155,7 @@ export class Engine {
           bodyId: shown.spec.id,
           bodyName: shown.spec.name,
           distanceKm: dSurf * KM_PER_UNIT,
-          canOrbit: dSurf < Math.max(CAPTURE_DIST, shown.spec.radius * 4),
+          canOrbit: dSurf < shown.spec.radius * CAPTURE_RAD,
           speedKmS: Math.abs(this.speed) * KM_PER_UNIT,
         };
       }
@@ -1353,7 +1343,7 @@ export class Engine {
       rt = this.nearestBody();
       if (!rt) return;
       const dSurf = this.fPos.distanceTo(rt.pos) - rt.spec.radius;
-      if (dSurf > Math.max(CAPTURE_DIST, rt.spec.radius * 4)) return;
+      if (dSurf > rt.spec.radius * CAPTURE_RAD) return;
     }
     this.orbitBodyId = rt.spec.id;
     this.orbitStyle = style;
@@ -1576,7 +1566,9 @@ export class Engine {
     }
     this.camera.fov = FOV;
     this.camera.aspect = this.width / this.height;
-    this.camera.far = CAM_FAR;
+    const dist0 = this.camera.position.length();
+    this.camera.far = Math.max(CAM_FAR * 0.25, dist0 * 3, AU_KM * 4);
+    this.camera.near = Math.min(this.camera.far / 5e4, Math.max(0.05, this.camera.near));
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
   }
@@ -1893,7 +1885,7 @@ export class Engine {
       const rt = this.pickBody(info.x, info.y);
       if (rt) {
         const dSurf = this.fPos.distanceTo(rt.pos) - rt.spec.radius;
-        if (dSurf < Math.max(CAPTURE_DIST, rt.spec.radius * 4)) this.enterOrbit(rt.spec.id);
+        if (dSurf < rt.spec.radius * CAPTURE_RAD) this.enterOrbit(rt.spec.id);
         else this.flightTarget = rt.spec.id;
       } else {
         this.flightTarget = null;
@@ -1966,7 +1958,7 @@ export class Engine {
     this.lastFrame = now;
     if (!this.system) return;
 
-    const tSys = this.epoch + (now / 1000) * UNIVERSE.TIME_SCALE;
+    const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.updateBodyPoses(tSys);
 
     if (this.blend) {
@@ -2083,7 +2075,7 @@ export class Engine {
       // Distance-scaled cruise: fast across the void, gentle near ground.
       const near = this.nearestBody();
       const dSurf = near ? Math.max(0.05, this.fPos.distanceTo(near.pos) - near.spec.radius) : 40;
-      const vMax = Math.min(1100, Math.max(0.35, 0.45 + 0.85 * dSurf));
+      const vMax = Math.min(AU_KM * 0.02, Math.max(0.08, 0.45 + 0.85 * dSurf));
       const targetSpeed = this.throttle * vMax;
       this.speed += (targetSpeed - this.speed) * (1 - Math.exp(-dt * 4));
       if (Math.abs(this.speed) > 1e-4) {
@@ -2242,7 +2234,7 @@ export class Engine {
       const qInv = this.tmpQ.copy(rt.spinQ).conjugate();
       const lightL = this.tmpV.copy(rt.pos).multiplyScalar(-1).normalize().applyQuaternion(qInv);
       // Live heliocentric distance in physics units (pos is display-stretched).
-      const aPhys = Math.max(rt.pos.length() / SPACE_SCALE, 1);
+      const aPhys = Math.max(rt.pos.length() / AU_KM, 0.02);
       const sunIrr = starIrradianceDisplay(starIrradiance(starL, aPhys));
       const sunLum = UNIVERSE.SUN_LUM * sunIrr;
       if (rt.gasMat) {
@@ -2395,7 +2387,7 @@ export class Engine {
       }
     }
 
-    const starT = this.epoch + (now / 1000) * UNIVERSE.TIME_SCALE;
+    const starT = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.starView?.update(this.camera.position, starT, this.tmpAirT);
 
     this.renderer.render(this.scene, this.camera);

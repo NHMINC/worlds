@@ -264,6 +264,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
+    id: 'timeLapse',
+    label: 'Time lapse',
+    group: 'starlight',
+    hint: 'observer rate: 0 is 1:1, 6 is a million×',
+    about: 'Wall seconds → system seconds as 10^this. 0 is a real day and a real year. Raise it to watch seasons and orbits on the same closed-form clock — pose, night, and season are f(spec, t), not a simulation step. Waves keep their own tick. Next frame.',
+    uniform: 'uTimeLapse',
+    min: 0,
+    max: 6,
+    step: 0.05,
+    read: () => Math.log10(Math.max(1, UNIVERSE.TIME_SCALE)),
+    write: (v) => {
+      UNIVERSE.TIME_SCALE = 10 ** v;
+    },
+  },
+  {
     id: 'shine',
     label: 'Star shine',
     group: 'starlight',

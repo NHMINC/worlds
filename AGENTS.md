@@ -46,8 +46,10 @@ never the system seed — so a restart is a new piece, not a replay.
 > **If the cosmic engineer set only constants and laws, would this still happen?**
 > **RNG does not build the universe.**
 
-This is a physics engine with toy scaling, not a catalogue of planet
-types or star types.
+This is a physics engine, not a catalogue of planet types or star types.
+Spatial scale is real (R☉, AU, km). Time is 1:1; a live observer rate
+is time-lapse on the same closed form. Hex coarseness is the remaining
+toy — Godus blocks on a real-sized globe.
 
 - **No RNG in universe construction.** Everyone in the canonical
   game must stand in the same galaxy. A star, a hex, a smudge, a
@@ -89,19 +91,21 @@ types or star types.
   The explorer asks `objectsNear` for the volume it occupies; within
   a cell the IMF is stratified so zooming in is “include more slots,”
   not “load a bigger array.”
-- **Toy constants live in `UNIVERSE` (`src/world/physics.ts`).** Compress
-  mass, distance, and time so a whole system fits in a bottle and stays
-  fun — but keep the compression **visible and named**, not scattered
-  fudges. “Exaggerate within laws” (great sunsets, readable water) means
-  turning a knob in `UNIVERSE` or in a documented optical approximation,
-  not a one-off `if (sunset) color = orange`.
+- **Named constants live in `UNIVERSE` (`src/world/physics.ts`).** Spatial
+  scale is SI (`AU_KM`, `RSUN_KM`, `REARTH_KM`, `KPC_KM`). Time default
+  is 1:1; `TIME_SCALE` is a live observer rate (time-lapse), not a hidden
+  gearbox. Hex coarseness (`MAX_FINE_F`) is the remaining toy. Keep every
+  compression **visible and named**. “Exaggerate within laws” (great
+  sunsets, readable water) means turning a knob in `UNIVERSE` or a
+  documented optical approximation, not a one-off `if (sunset) color = orange`.
 - **Documented simplifications** (decreed, not hidden): metallic core and
   spin-aligned dipole on every body (a compass works); orbits are stable
   by fiat; we do not integrate an N-body galaxy for 10 Gyr (Milky Way
   density field + IMF + closed-form stellar clock instead); interstellar
-  travel is a deterministic set-course, not a real light-year cruise;
-  short nebula phases are toy-stretched (`HII_GYR`, `PN_GYR`, `SNR_GYR`)
-  so they are findable, the way `TIME_SCALE` stretches a dawn; interiors,
+  travel is a lock plus `v = min(GALAXY_WARP, ARRIVE_K · dist)`, not a
+  real light-year cruise; the photosphere replaces the harvest pin when
+  it covers `STAR_REVEAL_PX`; short nebula phases are toy-stretched
+  (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
   on as laws. Clouds are not a painted deck; aerosol opacity lives
   inside `airExtinction` / the scattering integral. The **cosmic
@@ -276,8 +280,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Thomson scatter of *that* photosphere’s light (`starWind`) — a blue
   star does not grow an orange halo. Inverse-square is two distances
   and one law: bodies use physics `a` (`starIrradiance`, the same `a`
-  T_eq already drank); the eye uses the display stretch
-  (`starEyeFlux`, referenced to `A_HAB · SPACE_SCALE`). Glare is the
+  T_eq already drank, `a` in AU); the eye uses render km
+  (`starEyeFlux`, referenced to `A_HAB · AU_KM`). Glare is the
   eye’s PSF on that flux, not a painted sprite. The disk draws *after*
   the sky shell so the LDR star-veil cannot filter the sun; air in
   front only multiplies the same Chapman transmittance the sky already
@@ -491,10 +495,11 @@ you will debug a stale engine class. The app lives at
   seed would change, and keep old behaviour for systems pinned to a
   previous version.
 
-Time: orbits, spins, and the stellar clock are pure functions of spec
-and wall-clock Unix time (geared by `UNIVERSE.TIME_SCALE`). No hidden
-galaxy or system simulation step that diverges from that. A star’s
-phase at time `t` is `evolve(mass, age(t), Z)`.
+Time: orbits, spins, and day/night are `f(spec, t)` with `t` Unix
+seconds at rate `TIME_SCALE` (default 1 — a real day, a real year).
+Raise the observer rate to time-lapse the same law. The galaxy age is
+a constant; stellar phase does not tick during play. No hidden
+simulation step. A star’s catalog phase is `evolve(mass, age, Z)`.
 
 **Music** is progressive house as a law. `src/audio/theory.ts` is the
 score: ~124 BPM, four-on-the-floor, a 4-chord loop held for bars at a

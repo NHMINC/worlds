@@ -358,11 +358,8 @@ export function makeStar(spec: StarSpec): StarView {
   glare.renderOrder = 13;
   group.add(glare);
 
-  // Inverse-square in the display stretch: intensity is candela so that
-  // illuminance at A_HAB · SPACE_SCALE equals the old constant 2.5 for
-  // L=1 (the scene's exposure). decay 2 is the law; distance 0 is
-  // infinite reach. Inner worlds wash; the Kuiper fades.
-  const dRef = UNIVERSE.A_HAB * UNIVERSE.SPACE_SCALE;
+  // Inverse-square: illuminance at A_HAB · AU_KM equals 2.5 for L=1.
+  const dRef = UNIVERSE.A_HAB * UNIVERSE.AU_KM;
   const light = new THREE.PointLight(lightC, 2.5 * dRef * dRef * spec.luminosity, 0, 2);
   group.add(light);
 

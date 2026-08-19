@@ -48,6 +48,8 @@ import {
 import { SHAPE_GLSL } from '../world/skyShape';
 import type { DustVolume } from '../world/dustVolume';
 import { PerfMeter } from './perfHud';
+import { makeStar, type StarView } from './star';
+import { starSpecFromState } from '../world/systemgen';
 import { prepareUniverse } from '../world/universePrep';
 import {
   COSMIC_STAR_PIN,
@@ -698,6 +700,9 @@ export class GalaxyView {
 
   private filter: GalaxyFilter = 'all';
   private selected: GalaxyObject | null = null;
+  private hostStar: StarView | null = null;
+  private hostStarId = -1;
+  private hostCube: THREE.WebGLCubeRenderTarget | null = null;
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -1251,6 +1256,7 @@ export class GalaxyView {
   /** Live cosmic-engineer write. One uniform, next frame. */
   setLiveUniform(name: string, value: number): void {
     this.wake();
+    if (name === 'uTimeLapse') return;
     if (name === 'uWhiteK') {
       const wb = whiteRefLinear(value);
       for (const mat of this.cloudMats()) {
@@ -1686,6 +1692,7 @@ export class GalaxyView {
     this.canvas.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    this.detachHostStar();
     this.disposeArcStars();
     this.disposeCosmic();
     this.pickRing.geometry.dispose();
@@ -1767,7 +1774,104 @@ export class GalaxyView {
     this.camera.lookAt(this.arcLook);
     this.theta = this.arcYaw;
     this.phi = Math.PI / 2 - this.arcPitch;
+    const lock = this.selected ?? this.focusObj;
+    if (lock) {
+      const c = galToCart(lock.pos);
+      const d = Math.hypot(
+        c.x - this.arcCenter.x,
+        c.y - this.arcCenter.y,
+        c.z - this.arcCenter.z,
+      );
+      this.camera.near = Math.min(0.001, Math.max(1e-14, d * 0.04));
+    } else {
+      this.camera.near = 0.001;
+    }
+    this.camera.far = regionCamFar();
+    this.camera.updateProjectionMatrix();
     this.pushMagUniforms();
+  }
+
+  private hostLock(): GalaxyObject | null {
+    return this.selected ?? this.focusObj;
+  }
+
+  private detachHostStar(): void {
+    if (this.hostStar) {
+      this.scene.remove(this.hostStar.group);
+      this.hostStar.dispose();
+      this.hostStar = null;
+    }
+    this.hostStarId = -1;
+    if (this.hostCube) {
+      this.hostCube.dispose();
+      this.hostCube = null;
+    }
+    if (this.silPts) this.silPts.visible = true;
+    if (this.silEmisPts) this.silEmisPts.visible = true;
+    if (this.cosmicStarPts) this.cosmicStarPts.visible = true;
+    if (this.cosmicSmudgePts) this.cosmicSmudgePts.visible = true;
+    this.scene.background = null;
+    this.applyStarVis();
+  }
+
+  private hideHarvestId(id: number): void {
+    if (!this.starVis || !this.cloud) return;
+    const arr = this.starVis.array as Float32Array;
+    const { ids, n } = this.cloud;
+    const lim = Math.min(n, arr.length);
+    for (let i = 0; i < lim; i++) {
+      if (ids[i] === id) arr[i] = 0;
+    }
+    this.starVis.needsUpdate = true;
+  }
+
+  private bakeHostSky(): void {
+    if (this.hostStar) this.hostStar.group.visible = false;
+    const rt = this.hostCube ?? new THREE.WebGLCubeRenderTarget(256);
+    this.hostCube = rt;
+    const cubeCam = new THREE.CubeCamera(0.02, regionCamFar(), rt);
+    cubeCam.update(this.renderer, this.scene);
+    this.scene.background = rt.texture;
+    if (this.silPts) this.silPts.visible = false;
+    if (this.silEmisPts) this.silEmisPts.visible = false;
+    if (this.cosmicStarPts) this.cosmicStarPts.visible = false;
+    if (this.cosmicSmudgePts) this.cosmicSmudgePts.visible = false;
+    if (this.hostStar) this.hostStar.group.visible = true;
+  }
+
+  /** Photosphere replaces the harvest pin once it covers STAR_REVEAL_PX. */
+  private updateHostStar(now: number): void {
+    const lock = this.hostLock();
+    if (!lock) {
+      if (this.hostStar) this.detachHostStar();
+      return;
+    }
+    const cart = galToCart(lock.pos);
+    const dx = cart.x - this.arcCenter.x;
+    const dy = cart.y - this.arcCenter.y;
+    const dz = cart.z - this.arcCenter.z;
+    const dist = Math.hypot(dx, dy, dz);
+    const Rkpc = Math.max(1e-8, lock.star.radius) * UNIVERSE.RSUN_KM / UNIVERSE.KPC_KM;
+    const px = (Rkpc / Math.max(dist, 1e-16)) * this.pxPerRad();
+    if (px < UNIVERSE.STAR_REVEAL_PX) {
+      if (this.hostStar) this.detachHostStar();
+      return;
+    }
+    if (this.hostStarId !== lock.id || !this.hostStar) {
+      this.detachHostStar();
+      const spec = starSpecFromState(lock.star, () => 0.5);
+      this.hostStar = makeStar(spec);
+      this.hostStar.group.scale.setScalar(1 / UNIVERSE.KPC_KM);
+      this.scene.add(this.hostStar.group);
+      this.hostStarId = lock.id;
+      this.hideHarvestId(lock.id);
+      this.bakeHostSky();
+    }
+    this.hostStar.group.position.set(dx, dy, dz);
+    const camLocal = new THREE.Vector3();
+    this.hostStar.group.worldToLocal(camLocal.copy(this.camera.position));
+    this.hostStar.update(camLocal, now * 0.001, new THREE.Vector3(1, 1, 1));
+    this.wake(2);
   }
 
   /**
@@ -2110,9 +2214,22 @@ export class GalaxyView {
       return;
     }
     if (this.thrustOn && !this.warpMayRun()) this.thrustOn = false;
-    this.thrustSpeed = this.thrustOn ? UNIVERSE.GALAXY_WARP : 0;
-    if (this.thrustSpeed <= 0) return;
     this.orientArc();
+    let v = UNIVERSE.GALAXY_WARP;
+    const lock = this.selected ?? this.focusObj;
+    if (lock) {
+      const c = galToCart(lock.pos);
+      const dx = c.x - this.arcCenter.x;
+      const dy = c.y - this.arcCenter.y;
+      const dz = c.z - this.arcCenter.z;
+      const d = Math.hypot(dx, dy, dz);
+      const toward = d > 1e-12
+        ? (dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z) / d
+        : 1;
+      if (toward > 0.55) v = Math.min(v, UNIVERSE.ARRIVE_K * Math.max(d, 1e-14));
+    }
+    this.thrustSpeed = this.thrustOn ? v : 0;
+    if (this.thrustSpeed <= 0) return;
     const step = this.thrustSpeed * dt;
     this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
   }
@@ -2395,6 +2512,8 @@ export class GalaxyView {
     ringFor(this.hereRing, 0.0005, 0.045, 0.06);
     this.pickRing.rotation.z = t * 0.35;
     this.hereRing.rotation.z = t * -0.22;
+
+    this.updateHostStar(now);
 
     // One scene, one pass, straight to the canvas: the void is
     // black (vacuum emits nothing), self-extincted background

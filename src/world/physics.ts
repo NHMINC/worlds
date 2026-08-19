@@ -1,12 +1,13 @@
 import { mulberry32, xmur3 } from './rng';
 
 /**
- * The physics engine of the bottle universe.
+ * The physics engine of the universe.
  *
- * THE CHARTER: this universe runs entirely on physics, with deliberate tweaks
- * to mass, distance and time so it fits in a bottle. We set parameters and
- * laws; we never hand-roll outcomes. When a world looks wrong, fix the law,
- * not the world. Every toy-scaling constant lives in the UNIVERSE block
+ * THE CHARTER: we set parameters and laws; we never hand-roll outcomes.
+ * When a world looks wrong, fix the law, not the world. Spatial scale is
+ * real (R☉, AU, km). Time is 1:1 with the wall; a live observer rate is
+ * time-lapse on the same closed form, not a hidden gearbox. Hex coarseness
+ * is the remaining toy. Every named constant lives in the UNIVERSE block
  * below — never as per-case fudges scattered through the code.
  *
  * Archetypes are OUTPUTS, never inputs: there is no world-type switch here.
@@ -27,32 +28,42 @@ import { mulberry32, xmur3 } from './rng';
 
 // ------------------------------------------------------------------ constants
 
-/** All toy scalings of the bottle universe, in one visible place. */
+/** All named constants of the universe, in one visible place. */
 export const UNIVERSE = {
-  /** Gravity law: g = G_TOY · density(rel Earth) · radius(rel home world). */
-  G_TOY: 1.35,
-  /** Reference GL radius of a size-100 rocky world (radiusRel = 1). */
-  R_HOME: 4.48,
+  /** SI / km conversions. One metric; catalog stays kpc on the GPU. */
+  PC_M: 3.085677581e16,
+  AU_M: 1.495978707e11,
+  AU_KM: 1.495978707e8,
+  RSUN_M: 6.957e8,
+  RSUN_KM: 6.957e5,
+  REARTH_M: 6.371e6,
+  REARTH_KM: 6371,
+  /** 1 kpc in km. Equal to PC_M metres: 1000 pc × m/pc ÷ 1000 m/km. */
+  KPC_KM: 3.085677581e16,
 
-  /** Stellar flux: T_eq = T_HAB · L^0.25 · sqrt(A_HAB / a). */
+  /** Earth mean density (kg/m³) — moon/planet Kepler mass. */
+  RHO_EARTH: 5514,
+  G_SI: 6.6743e-11,
+  GM_SUN: 1.3271244e20,
+  SEC_DAY: 86400,
+  SEC_YEAR: 365.25 * 86400,
+
+  /** Gravity law: g = G_TOY · density(rel Earth) · radius(rel Earth). Earth is 1 g. */
+  G_TOY: 1,
+  /** Reference radius of a size-100 rocky world (km). radiusRel = R / R_HOME. */
+  R_HOME: 6371,
+
+  /** Stellar flux: T_eq = T_HAB · L^0.25 · sqrt(A_HAB / a). a in AU. */
   T_HAB: 278,
-  A_HAB: 90,
+  A_HAB: 1,
 
   /**
-   * Render stretch of interplanetary space. Chemistry and T_eq read the
-   * compact `a`; the camera flies in a · SPACE_SCALE so worlds are
-   * destinations. Inverse-square at a BODY uses physics `a` (the same
-   * number T_eq already drank). Inverse-square at the EYE — glare,
-   * photosphere wash — uses the stretched distance, referenced to
-   * A_HAB · SPACE_SCALE (the bottle's 1 AU on screen).
+   * 1 R☉ in the local mesh unit (km). Stefan–Boltzmann Teff uses
+   * R / STAR_R_GL. The catalog already stores R in solar units.
    */
-  SPACE_SCALE: 10,
-
-  /**
-   * Bottle radius of 1 Rsun. Stefan–Boltzmann Teff uses R / STAR_R_GL.
-   * The generator's G dwarf sits near 20; remnants floor above this.
-   */
-  STAR_R_GL: 20,
+  get STAR_R_GL(): number {
+    return this.RSUN_KM;
+  },
   STAR_TEFF_SUN: 5772,
 
   /**
@@ -66,7 +77,7 @@ export const UNIVERSE = {
 
   /**
    * Eye/optics glare: ONE radially uniform falloff around the disk.
-   * Angular half-width at A_HAB·SPACE_SCALE for L=1 (radians); scales
+   * Angular half-width at A_HAB·AU_KM for L=1 (radians); scales
    * as sqrt(flux) so a close approach widens the wash and the outer
    * system keeps a bright point. GLARE_GAIN is the core brightness.
    * The sun should only dominate the frame when you are looking at
@@ -108,9 +119,10 @@ export const UNIVERSE = {
    */
   STAR_IRR_ADAPT: 0.55,
 
-  /** Accretion disk temperature: T_disk = DISK_C · L^0.25 · a^-DISK_P (K). */
-  DISK_C: 2670,
-  DISK_P: 0.55,
+  /** Accretion disk temperature: T_disk = DISK_C · L^0.25 · a^-DISK_P (K), a in AU.
+   *  DISK_C = T_HAB and DISK_P = 1/2 puts the water frost near 2.7 AU for L=1. */
+  DISK_C: 278,
+  DISK_P: 0.5,
 
   /** Condensation temperatures (K), toy-compressed. */
   FROST_H2O: 170,
@@ -180,7 +192,7 @@ export const UNIVERSE = {
   /** Tidal locking: planets inside LOCK_A · sqrt(L) are locked; a band
    * outside that is a seeded coin flip (torque falls off as 1/a^6, so the
    * transition is narrow). */
-  LOCK_A: 46,
+  LOCK_A: 0.51,
   LOCK_COIN: 1.35,
 
   /** Dial mapping: temp01 = (T_surf − T_COLD) / (T_HOT − T_COLD). */
@@ -308,12 +320,17 @@ export const UNIVERSE = {
   WAVE_SLOPE_ANISO: 0.22,
   GLINT_GAIN: 3.2,
 
-  /** The universe's gearbox: wall seconds → system seconds. Everything
-   * celestial (orbits, spin, days, seasons) turns this much slower than
-   * the wall clock, so a dawn is something you can watch. Applied where
-   * wall time becomes system time; wave/foam animation keeps its own
-   * cosmetic clock. */
-  TIME_SCALE: 1 / 3,
+  /** Observer rate: wall seconds → system seconds. Default 1 is a real
+   * day and a real year. Raise it to time-lapse the same closed form
+   * (pose, season, night). Wave/foam keep their own cosmetic clock. */
+  TIME_SCALE: 1,
+
+  /**
+   * Approach: v = min(GALAXY_WARP, ARRIVE_K · dist). The locked host
+   * becomes a furnace when its photosphere exceeds STAR_REVEAL_PX.
+   */
+  ARRIVE_K: 0.35,
+  STAR_REVEAL_PX: 3,
 
   /**
    * The shared galaxy. One seed, one SBbc (grand-design barred spiral).
@@ -738,10 +755,9 @@ export const UNIVERSE = {
   REMNANT_NS: 25,
 
   /**
-   * Short phases, toy-stretched so they are findable in the bottle the
-   * way TIME_SCALE stretches a dawn. Real PN/SNR last 10^4 yr; here they
-   * last these Gyr so a traveler can discover them. The law is still
-   * “time since death,” not a painted nebula type.
+   * Short phases, toy-stretched so they are findable. Real PN/SNR last
+   * 10^4 yr; here they last these Gyr so a traveler can discover them.
+   * The law is still “time since death,” not a painted nebula type.
    */
   HII_GYR: 0.012,
   PN_GYR: 0.04,
@@ -828,7 +844,7 @@ export interface HydrosphereSpec {
 
 export interface BodyPhysics {
   kind: 'rocky' | 'gas';
-  /** Radius relative to the home world (R_HOME GL units). */
+  /** Radius relative to the home world (R_HOME km). */
   radiusRel: number;
   /** Bulk density relative to Earth. */
   densityRel: number;
@@ -1672,13 +1688,12 @@ export function seaState(p: BodyPhysics, tide = 0): SeaState {
  * and anyone reasoning about the law without opening GLSL.
  */
 /**
- * Inverse-square irradiance at orbital radius `a` (physics GL, not the
- * display stretch). L=1 at A_HAB is 1 — the exposure the shaders are
- * graded for. Closer worlds bake; the outer system fades. Always the
- * compact `a` chemistry already drank, never a · SPACE_SCALE.
+ * Inverse-square irradiance at orbital radius `a` (AU). L=1 at A_HAB
+ * is 1 — the exposure the shaders are graded for. Closer worlds bake;
+ * the outer system fades.
  */
 export function starIrradiance(L: number, a: number): number {
-  const r = Math.max(a, 1);
+  const r = Math.max(a, 0.02);
   return Math.max(0, L) * (UNIVERSE.A_HAB * UNIVERSE.A_HAB) / (r * r);
 }
 
@@ -1696,9 +1711,8 @@ export function starIrradianceDisplay(irr: number): number {
 
 /**
  * Photosphere Teff from Stefan–Boltzmann. T / Tsun = (L / R_rel²)^0.25
- * with R_rel = radiusGL / STAR_R_GL. The same closed form stellar.ts
- * uses on catalog stars; the bottle's G dwarf (L=1, R=STAR_R_GL) is
- * 5772 K by construction.
+ * with R_rel = R_km / RSUN_KM. The same closed form stellar.ts
+ * uses on catalog stars; a G dwarf (L=1, R=1 R☉) is 5772 K.
  */
 export function starTeff(L: number, radiusGL: number): number {
   const R = Math.max(0.04, radiusGL / UNIVERSE.STAR_R_GL);
@@ -1741,13 +1755,12 @@ export function starWind(L: number, teff: number): number {
 }
 
 /**
- * Eye-frame flux for glare. `d` is the RENDER distance to the star
- * (camera in the SPACE_SCALE stretch). Referenced to A_HAB · SPACE_SCALE
- * so a habitable-zone look at L=1 is flux 1 — the same exposure the
- * body law uses, seen from the cockpit instead of the orbit.
+ * Eye-frame flux for glare. `d` is the render distance to the star
+ * in km. Referenced to A_HAB · AU_KM so a habitable-zone look at L=1
+ * is flux 1 — the same exposure the body law uses, from the cockpit.
  */
 export function starEyeFlux(L: number, d: number): number {
-  const dRef = UNIVERSE.A_HAB * UNIVERSE.SPACE_SCALE;
+  const dRef = UNIVERSE.A_HAB * UNIVERSE.AU_KM;
   const r = Math.max(d, 1);
   return Math.max(0, L) * (dRef * dRef) / (r * r);
 }

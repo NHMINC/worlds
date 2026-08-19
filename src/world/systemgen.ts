@@ -8,7 +8,8 @@ import { rgbToHex, teffToRgb, type StellarState } from './stellar';
 /**
  * The star system generator: one root seed deterministically unfolds into a
  * star, 4-15 planets, and their moons, all obeying the bottle universe's
- * physics (see physics.ts and its charter). The generator lays down the
+ * physics (see physics.ts and its charter). Orbits are AU, radii km.
+ * The generator lays down the
  * orbital skeleton — geometric accretion spacing, Kepler periods, seeded
  * eccentricity and inclination, a tidal-locking law — and the physics module
  * derives everything else (gravity, atmosphere, oceans, palettes) from each
@@ -23,7 +24,7 @@ import { rgbToHex, teffToRgb, type StellarState } from './stellar';
  * keeping the old behavior available for systems pinned to it.
  */
 
-export const CURRENT_GEN_VERSION = 14;
+export const CURRENT_GEN_VERSION = 15;
 
 export type RGB = [number, number, number];
 
@@ -44,9 +45,9 @@ export interface BodySpec {
   kind: BodyKind;
   /** Terrain seed (rocky bodies): hash of system seed + slot. */
   seed: string;
-  /** GL radius (water surface for rocky bodies). The home scale is ~4.48. */
+  /** Radius in km (water surface for rocky bodies). Earth is R_HOME. */
   radius: number;
-  /** Orbit around the parent (sun for planets, planet for moons). */
+  /** Orbit around the parent: AU for planets, km for moons. */
   orbitRadius: number;
   orbitPeriod: number;
   orbitPhase: number;
@@ -79,7 +80,10 @@ export interface BodySpec {
 
 export interface StarSpec {
   name: string;
+  /** Photosphere radius in km. */
   radius: number;
+  /** Mass in solar units — Kepler periods. */
+  mass: number;
   /** Photosphere and halo tint. */
   color: string;
   /** Light color for lit siblings. */
@@ -156,9 +160,25 @@ function rollObliquity(rng: () => number): number {
 
 // ---------------------------------------------------------------- orbits
 
-/** GL orbital scale (doubled worlds need a doubled system). */
-const A0 = 32;
-const A_MAX = 420;
+/** Inner / outer accretion rim, AU. Geometric spacing fills the ladder. */
+const A0 = 0.35;
+const A_MAX = 30;
+const FROST_AU = 2.7;
+
+function keplerPlanetSec(aAu: number, massSun: number): number {
+  return UNIVERSE.SEC_YEAR * Math.pow(Math.max(0.02, aAu), 1.5) / Math.sqrt(Math.max(0.08, massSun));
+}
+
+function bodyMassKg(radiusKm: number, densityRel: number): number {
+  const r = radiusKm * 1000;
+  return densityRel * UNIVERSE.RHO_EARTH * (4 / 3) * Math.PI * r * r * r;
+}
+
+function keplerMoonSec(aKm: number, parentMassKg: number): number {
+  const a = Math.max(1e3, aKm) * 1000;
+  const mu = UNIVERSE.G_SI * Math.max(1e18, parentMassKg);
+  return 2 * Math.PI * Math.sqrt((a * a * a) / mu);
+}
 
 // ---------------------------------------------------------------- generator
 
@@ -167,16 +187,17 @@ function rollBottleStar(rng: () => number): StarSpec {
   const starRoll = rng();
   const Z = 0.45 + Math.pow(rng(), 1.6) * 1.9;
   const CO = 0.5 + Math.pow(rng(), 2.5) * 1.2;
+  const R = UNIVERSE.RSUN_KM;
   if (starRoll < 0.44) {
-    return { name: starName(rng), radius: 18.4 + rng() * 4.8, color: '#fff1c4', lightColor: '#fff4dc', luminosity: 0.9 + rng() * 0.3, metallicity: Z, carbon: CO };
+    return { name: starName(rng), radius: R * (0.95 + rng() * 0.12), mass: 1, color: '#fff1c4', lightColor: '#fff4dc', luminosity: 0.9 + rng() * 0.3, metallicity: Z, carbon: CO };
   }
   if (starRoll < 0.72) {
-    return { name: starName(rng), radius: 16.0 + rng() * 4.0, color: '#ffd9a0', lightColor: '#ffe2b8', luminosity: 0.42 + rng() * 0.2, metallicity: Z, carbon: CO };
+    return { name: starName(rng), radius: R * (0.78 + rng() * 0.1), mass: 0.7, color: '#ffd9a0', lightColor: '#ffe2b8', luminosity: 0.42 + rng() * 0.2, metallicity: Z, carbon: CO };
   }
   if (starRoll < 0.88) {
-    return { name: starName(rng), radius: 12.8 + rng() * 2.8, color: '#ffb28a', lightColor: '#ffc9a4', luminosity: 0.07 + rng() * 0.09, metallicity: Z, carbon: CO };
+    return { name: starName(rng), radius: R * (0.48 + rng() * 0.12), mass: 0.4, color: '#ffb28a', lightColor: '#ffc9a4', luminosity: 0.07 + rng() * 0.09, metallicity: Z, carbon: CO };
   }
-  return { name: starName(rng), radius: 20.8 + rng() * 5.6, color: '#f4f6ff', lightColor: '#eef2ff', luminosity: 1.7 + rng() * 0.7, metallicity: Z, carbon: CO };
+  return { name: starName(rng), radius: R * (1.15 + rng() * 0.2), mass: 1.3, color: '#f4f6ff', lightColor: '#eef2ff', luminosity: 1.7 + rng() * 0.7, metallicity: Z, carbon: CO };
 }
 
 /** Catalog star → bottle StarSpec. L, Z, C/O come from evolve(), not dice. */
@@ -190,11 +211,11 @@ export function starSpecFromState(st: StellarState, rng: () => number): StarSpec
     Math.min(1, rgb[1] * 1.04 + 0.06),
     Math.min(1, rgb[2] * 1.02 + 0.04),
   ]);
-  // GL radius: the bottle's G dwarf is ~20 for 1 Rsun. Floor so remnants still read.
-  const glR = 10 + 10 * Math.min(3.2, Math.sqrt(Math.max(0.04, st.radius)));
+  const Rsun = Math.max(1e-6, st.radius) * UNIVERSE.RSUN_KM;
   return {
     name: starName(rng),
-    radius: glR,
+    radius: Rsun,
+    mass: Math.max(0.08, st.mass),
     color: hex,
     lightColor: light,
     luminosity: Math.max(1e-8, st.luminosity),
@@ -244,7 +265,7 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
     const diskT = UNIVERSE.DISK_C * Math.pow(L, 0.25) * Math.pow(a, -UNIVERSE.DISK_P);
     const beyondFrost = diskT < UNIVERSE.FROST_H2O;
     // Capture odds peak just past the frost line and taper at the rim.
-    const pGas = beyondFrost ? 0.72 - 0.3 * clamp01((a - 180) / (A_MAX - 180)) : 0;
+    const pGas = beyondFrost ? 0.72 - 0.3 * clamp01((a - FROST_AU) / (A_MAX - FROST_AU)) : 0;
     isGas.push(rng() < pGas);
   }
   // Accretion in this universe always leaves at least one giant when the
@@ -318,7 +339,7 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
     // overlapping rings; migration and ladder jitter occasionally would).
     let a = finalOrbits[i];
     if (a < prevApoapsis * 1.05) a = prevApoapsis * 1.06;
-    const period = 240 * Math.pow(a / A0, 1.5);
+    const period = keplerPlanetSec(a, star.mass);
     const phase = rng() * 2 * Math.PI;
     const name = `${star.name} ${ROMAN[i]}`;
 
@@ -340,7 +361,7 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
     const axialAz = rng() * 2 * Math.PI;
 
     if (finalGas[i]) {
-      const radius = 8.0 + rng() * 6.8;
+      const radius = UNIVERSE.REARTH_KM * (3.9 + rng() * 7.2);
       const physics = gasPhysics({ seed: bodySeed, a, radiusGL: radius, L, Z, CO });
       const gas = gasBands(rng, physics);
       bodies.push({
@@ -348,12 +369,12 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
         orbitRadius: a, orbitPeriod: period, orbitPhase: phase,
         ecc, inc, node, peri,
         obliquity, axialAz,
-        spinPeriod: 40 + rng() * 50, tidallyLocked: false, parent: null,
+        spinPeriod: 3.6e4 + rng() * 2.9e4, tidallyLocked: false, parent: null,
         physics, gas, meanColor: gas.color,
       });
     } else {
       const size = 25 + Math.round(rng() * 75);
-      const radius = 2.0 + 2.48 * (size / 100);
+      const radius = UNIVERSE.REARTH_KM * (0.446 + 0.554 * (size / 100));
       const physics = rockyPhysics({ seed: bodySeed, a, radiusGL: radius, L, Z, CO, lockedToStar: locked });
       const haze = hazeSpec(physics);
       bodies.push({
@@ -361,7 +382,7 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
         orbitRadius: a, orbitPeriod: period, orbitPhase: phase,
         ecc, inc, node, peri,
         obliquity, axialAz,
-        spinPeriod: locked ? period : 90 + rng() * 110, tidallyLocked: locked, parent: null,
+        spinPeriod: locked ? period : UNIVERSE.SEC_DAY * (0.45 + rng() * 1.8), tidallyLocked: locked, parent: null,
         physics,
         size, temp: physics.temp01, seaLevel: physics.sea01,
         // A translucent shroud only tints the distant ball as much as its
@@ -390,9 +411,9 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
       // small moons for every large one): only the biggest stay geologically
       // alive enough to outgas an atmosphere (see UNIVERSE.OUTGAS_R).
       const mdraw = rng();
-      const mradius = Math.max(0.64, parent.radius * (0.09 + mdraw * mdraw * 0.19));
+      const mradius = Math.max(UNIVERSE.REARTH_KM * 0.14, parent.radius * (0.09 + mdraw * mdraw * 0.19));
       const morb = parent.radius * (2.8 + 2.2 * j) + rng() * parent.radius;
-      const mper = 40 + 50 * j + rng() * 30;
+      const mper = keplerMoonSec(morb, bodyMassKg(parent.radius, parent.physics.densityRel));
       // Same feeding zone as the parent: the moon's chemistry is the
       // parent's orbit's chemistry, and its own (small) gravity decides the
       // rest — big cold moons keep air, small ones go bare.
