@@ -583,6 +583,13 @@ export class GalaxyView {
   private cosmicPts: THREE.Mesh | null = null;
   private cosmicGeo: THREE.BufferGeometry | null = null;
   private cosmicMat: THREE.ShaderMaterial | null = null;
+  /** The background photograph: void + pins + smudges render here
+   *  unextincted; the sky quad composites it through the dust
+   *  per pixel. Per-vertex extinction of an extended sprite let
+   *  a 240 px smudge straddle the lane its centre ray missed. */
+  private cosmicScene = new THREE.Scene();
+  private cosmicRt: THREE.WebGLRenderTarget | null = null;
+  private voidClear = new THREE.Color(0, 0, 0);
   private cosmicStarPts: THREE.Points | null = null;
   private cosmicStarGeo: THREE.BufferGeometry | null = null;
   private cosmicStarMat: THREE.ShaderMaterial | null = null;
@@ -823,7 +830,7 @@ export class GalaxyView {
       this.cosmicMat = null;
     }
     if (this.cosmicStarPts) {
-      this.scene.remove(this.cosmicStarPts);
+      this.cosmicScene.remove(this.cosmicStarPts);
       this.cosmicStarGeo?.dispose();
       this.cosmicStarMat?.dispose();
       this.cosmicStarPts = null;
@@ -831,13 +838,15 @@ export class GalaxyView {
       this.cosmicStarMat = null;
     }
     if (this.cosmicSmudgePts) {
-      this.scene.remove(this.cosmicSmudgePts);
+      this.cosmicScene.remove(this.cosmicSmudgePts);
       this.cosmicSmudgeGeo?.dispose();
       this.cosmicSmudgeMat?.dispose();
       this.cosmicSmudgePts = null;
       this.cosmicSmudgeGeo = null;
       this.cosmicSmudgeMat = null;
     }
+    this.cosmicRt?.dispose();
+    this.cosmicRt = null;
     this.disposeGlow();
   }
 
@@ -1054,23 +1063,23 @@ export class GalaxyView {
     return out;
   }
 
+  /** The void is the background photograph's clear colour, not a
+   *  uniform: pins and smudges add onto it in the cosmic pass. */
   setVoidColor(hue: number, intensity: number): void {
     const rgb = cosmicVoidRgb(hue, intensity);
-    this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
-    const u = this.cosmicMat?.uniforms.uVoidRgb;
-    if (u?.value instanceof THREE.Vector3) u.value.set(rgb[0], rgb[1], rgb[2]);
-    else if (u) u.value = new THREE.Vector3(rgb[0], rgb[1], rgb[2]);
+    this.voidClear.setRGB(rgb[0], rgb[1], rgb[2]);
   }
 
   private buildCosmic(): void {
     if (this.cosmicPts) return;
     const geo = new THREE.PlaneGeometry(2, 2);
     const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
+    this.voidClear.setRGB(voidRgb[0], voidRgb[1], voidRgb[2]);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
       fragmentShader: cosmicFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS), UNIVERSE.GALAXY_EXTINCT_STEPS),
       uniforms: {
-        uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
+        uCosmicTex: { value: this.cosmicRt?.texture ?? null },
         uCenter: { value: new THREE.Vector3() },
         uCamRotInv: { value: new THREE.Matrix3() },
         uInvProj: { value: new THREE.Matrix4() },
@@ -1113,14 +1122,12 @@ export class GalaxyView {
     geo.setAttribute('aCrisp', new THREE.BufferAttribute(cloud.crisp, 1));
     geo.setDrawRange(0, this.cosmicCount('smudge'));
     const mat = new THREE.ShaderMaterial({
-      vertexShader: cosmicSmudgeVert(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
+      vertexShader: cosmicSmudgeVert(),
       fragmentShader: cosmicSmudgeFrag(),
       uniforms: {
-        uCenter: { value: new THREE.Vector3() },
         uCosmicGain: { value: UNIVERSE.COSMIC_GAIN },
         uCosmicSize: { value: UNIVERSE.COSMIC_SIZE },
         uPxPerRad: { value: this.pxPerRad() },
-        ...this.extinctUniforms(),
       },
       transparent: true,
       depthWrite: false,
@@ -1133,7 +1140,7 @@ export class GalaxyView {
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     pts.renderOrder = -7;
-    this.scene.add(pts);
+    this.cosmicScene.add(pts);
     this.cosmicSmudgePts = pts;
     this.cosmicSmudgeGeo = geo;
     this.cosmicSmudgeMat = mat;
@@ -1166,14 +1173,12 @@ export class GalaxyView {
     geo.setAttribute('aShine', new THREE.BufferAttribute(cloud.shine, 1));
     geo.setDrawRange(0, this.cosmicCount('star'));
     const mat = new THREE.ShaderMaterial({
-      vertexShader: cosmicStarVert(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
+      vertexShader: cosmicStarVert(),
       fragmentShader: cosmicStarFrag(),
       uniforms: {
-        uCenter: { value: new THREE.Vector3() },
         uStarGain: { value: UNIVERSE.COSMIC_STAR_GAIN },
         uPinCanvas: { value: COSMIC_STAR_PIN },
         uPinCore: { value: COSMIC_STAR_PIN_CORE },
-        ...this.extinctUniforms(),
       },
       transparent: true,
       depthWrite: false,
@@ -1186,7 +1191,7 @@ export class GalaxyView {
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     pts.renderOrder = -6;
-    this.scene.add(pts);
+    this.cosmicScene.add(pts);
     this.cosmicStarPts = pts;
     this.cosmicStarGeo = geo;
     this.cosmicStarMat = mat;
@@ -1241,6 +1246,28 @@ export class GalaxyView {
     this.glowGeo = geo;
     this.glowMat = mat;
     this.pushMagUniforms();
+  }
+
+  /** Far-plane photograph: void + pins + smudges, unextincted.
+   *  Same size as the canvas so pins stay crisp; HalfFloat so a
+   *  bright pin is not clipped before the dust filters it. */
+  private ensureCosmicRt(w: number, h: number): void {
+    const rw = Math.max(1, Math.round(w));
+    const rh = Math.max(1, Math.round(h));
+    if (rw < 8 || rh < 8) return;
+    if (this.cosmicRt && this.cosmicRt.width === rw && this.cosmicRt.height === rh) return;
+    this.cosmicRt?.dispose();
+    this.cosmicRt = new THREE.WebGLRenderTarget(rw, rh, {
+      type: THREE.HalfFloatType,
+      format: THREE.RGBAFormat,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+    });
+    this.cosmicRt.texture.colorSpace = THREE.NoColorSpace;
+    if (this.cosmicMat?.uniforms.uCosmicTex) {
+      this.cosmicMat.uniforms.uCosmicTex.value = this.cosmicRt.texture;
+    }
   }
 
   /** HDR target + blit. Layers add here; the knee is the last step. */
@@ -1692,6 +1719,7 @@ export class GalaxyView {
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
     const pr = this.renderer.getPixelRatio();
+    this.ensureCosmicRt(w * pr, h * pr);
     this.ensurePhoto(w * pr, h * pr);
   }
 
@@ -2357,7 +2385,19 @@ export class GalaxyView {
 
     const pr = this.renderer.getPixelRatio();
     const el = this.renderer.domElement;
-    this.ensurePhoto(el.width || el.clientWidth * pr, el.height || el.clientHeight * pr);
+    const rw = el.width || el.clientWidth * pr;
+    const rh = el.height || el.clientHeight * pr;
+    this.ensureCosmicRt(rw, rh);
+    this.ensurePhoto(rw, rh);
+    // Pass 1: the background photograph — void clear colour, pins
+    // and smudges added, no extinction. The sky quad in the main
+    // scene composites it through the per-pixel dust march.
+    if (this.cosmicRt) {
+      this.renderer.setRenderTarget(this.cosmicRt);
+      this.renderer.setClearColor(this.voidClear, 1);
+      this.renderer.clear();
+      this.renderer.render(this.cosmicScene, this.camera);
+    }
     if (this.photoRt) {
       this.renderer.setRenderTarget(this.photoRt);
       this.renderer.setClearColor(0x000000, 1);
@@ -2366,6 +2406,8 @@ export class GalaxyView {
       this.renderer.setRenderTarget(null);
       this.renderer.render(this.photoScene, this.photoCam);
     } else {
+      this.renderer.setRenderTarget(null);
+      this.renderer.setClearColor(0x000000, 1);
       this.renderer.render(this.scene, this.camera);
     }
     this.callbacks.onFrame?.({

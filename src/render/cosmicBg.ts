@@ -5,6 +5,14 @@
  * angle, Hubble axis) — not a sprite stamp, not an archetype
  * switch. Each object has its own shine; engineer gains scale
  * the set. Not a catalog. Not pickable. Seeded from the bottle.
+ *
+ * Occlusion happens once, per pixel: the void, pins, and
+ * smudges render UNEXTINCTED into their own far-plane target,
+ * and the sky quad composites that photograph through one dust
+ * march (extinctLook). Per-vertex extinction of an extended
+ * sprite was the leak — a 240 px smudge whose centre ray
+ * slipped between clumps painted its whole disc across the
+ * lane. A stamp cannot straddle a lane it never consults.
  */
 import { xmur3 } from '../world/rng';
 
@@ -60,14 +68,15 @@ export function cosmicVert(): string {
 `;
 }
 
-/** The sky shell: void filtered by dust, or the lime
- *  look-test skin when debug is on. `steps` must match
- *  the included extinctGlsl march. */
+/** The sky compositor: the finished background photograph
+ *  (void + pins + smudges, unextincted) filtered by one
+ *  per-pixel dust march — or the lime look-test skin when
+ *  debug is on. `steps` must match the included extinctGlsl. */
 export function cosmicFrag(extinctChunk: string, steps: number): string {
   const n = Number.isInteger(steps) ? `${steps}.0` : `${steps}`;
   return /* glsl */ `
   ${extinctChunk}
-  uniform vec3 uVoidRgb;
+  uniform sampler2D uCosmicTex;
   uniform vec3 uCenter;
   uniform mat3 uCamRotInv;
   uniform mat4 uInvProj;
@@ -140,12 +149,14 @@ export function cosmicFrag(extinctChunk: string, steps: number): string {
     vec4 view = uInvProj * vec4(vNdc, 1.0, 1.0);
     vec3 camDir = normalize(view.xyz / max(abs(view.w), 1e-6));
     vec3 dir = normalize(uCamRotInv * camDir);
+    vec3 night = texture2D(uCosmicTex, vNdc * 0.5 + 0.5).rgb;
     if (uDustDebug >= 0.5) {
-      gl_FragColor = vec4(foxLook(uCenter, dir, uVoidRgb), 1.0);
+      gl_FragColor = vec4(foxLook(uCenter, dir, night), 1.0);
       return;
     }
-    // The real sky: void filtered by the dust. Dust does not emit.
-    gl_FragColor = vec4(extinctLook(uCenter, dir) * uVoidRgb, 1.0);
+    // The real sky: the whole photograph filtered by the dust,
+    // at the pixel where its light lands. Dust does not emit.
+    gl_FragColor = vec4(extinctLook(uCenter, dir) * night, 1.0);
   }
 `;
 }
@@ -276,12 +287,12 @@ export function mintCosmicSmudges(seed: string, n: number, cluster: number): Cos
   return { n, pos, col, shine, size, aspect, angle, seed: seedA, crisp };
 }
 
-export function cosmicStarVert(extinctGlsl: string): string {
+/** No extinction here: the pin renders into the background
+ *  photograph; the sky quad filters that photograph per pixel. */
+export function cosmicStarVert(): string {
   return /* glsl */ `
-  ${extinctGlsl}
   attribute vec3 aColor;
   attribute float aShine;
-  uniform vec3 uCenter;
   uniform float uStarGain;
   uniform float uPinCanvas;
   uniform float uPinCore;
@@ -305,10 +316,8 @@ export function cosmicStarVert(extinctGlsl: string): string {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
     }
-    vec3 ext = extinctLook(uCenter, dir);
-    float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
-    vI = aShine * uStarGain * extLum;
-    vColor = aColor * ext / max(extLum, 1e-3);
+    vI = aShine * uStarGain;
+    vColor = aColor;
     float n = clamp(pow(aShine / 9.5, 0.38), 0.0, 1.0);
     vNear = n;
     float pin = uPinCanvas * mix(0.5, 2.85, n);
@@ -340,9 +349,9 @@ export function cosmicStarFrag(): string {
 `;
 }
 
-export function cosmicSmudgeVert(extinctGlsl: string): string {
+/** No extinction here either — same law as the pins. */
+export function cosmicSmudgeVert(): string {
   return /* glsl */ `
-  ${extinctGlsl}
   attribute vec3 aColor;
   attribute float aShine;
   attribute float aSize;
@@ -350,7 +359,6 @@ export function cosmicSmudgeVert(extinctGlsl: string): string {
   attribute float aAngle;
   attribute float aSeed;
   attribute float aCrisp;
-  uniform vec3 uCenter;
   uniform float uCosmicGain;
   uniform float uCosmicSize;
   uniform float uPxPerRad;
@@ -375,10 +383,8 @@ export function cosmicSmudgeVert(extinctGlsl: string): string {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
     }
-    vec3 ext = extinctLook(uCenter, dir);
-    float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
-    vI = aShine * uCosmicGain * extLum;
-    vColor = aColor * ext / max(extLum, 1e-3);
+    vI = aShine * uCosmicGain;
+    vColor = aColor;
     vIncl = clamp(aAspect, 0.0, 1.0);
     vAngle = aAngle;
     vSeed = aSeed;
