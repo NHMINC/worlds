@@ -831,15 +831,38 @@ function walkSkyClouds(
   }
   // Stratum edges in ZAMS mass (M☉): M | K | G | F | A | B | O+.
   const strataM = [UNIVERSE.IMF_MIN, 0.45, 0.8, 1.15, 1.6, 3, 8];
-  const uEdge = strataM.map((m) => Math.min(1, Math.max(0, imfQuantile(m))));
-  uEdge.push(1);
   const nStrata = strataM.length;
   const budget = UNIVERSE.GALAXY_SAMPLE_N / nStrata;
-  const stratStep: number[] = [];
+  // One sampling plan: the mass strata (gate 'any'), then the ZOO
+  // strata — rare classes as survey categories. A zoo stride is
+  // sized by the class's estimated clock-window fraction, so each
+  // collects ~its budget with cheap clock gates instead of an
+  // exhaustive walk (finding every pulsar would mean reading 5M
+  // NS-mass addresses; every black hole is 1.28M rows — 5× the
+  // whole budget). Quiet old NS and WDs ride the mass strata in
+  // their honest share. Budgets scale with SAMPLE_N.
+  type Gate = 'any' | 'bh' | 'pulsar' | 'alive';
+  const cats: Array<{ u0: number; u1: number; step: number; gate: Gate }> = [];
+  const uOf = (m: number) => Math.min(1, Math.max(0, imfQuantile(m)));
+  const addCat = (m0: number, m1: number, catBudget: number, fracEst: number, gate: Gate) => {
+    const u0 = uOf(m0);
+    const u1 = m1 >= 1000 ? 1 : uOf(m1);
+    const pop = Math.max(0, (u1 - u0) * totalSlots);
+    if (pop <= 0 || catBudget <= 0) return;
+    cats.push({ u0, u1, step: Math.max(1, (pop * fracEst) / catBudget), gate });
+  };
   for (let j = 0; j < nStrata; j++) {
-    const pop = Math.max(0, (uEdge[j + 1] - uEdge[j]) * totalSlots);
-    stratStep.push(Math.max(1, pop / Math.max(1, budget)));
+    addCat(strataM[j], j + 1 < nStrata ? strataM[j + 1] : 1000, budget, 1, 'any');
   }
+  const N = UNIVERSE.GALAXY_SAMPLE_N;
+  // Black holes: everything ≥ REMNANT_NS is dead almost at birth.
+  addCat(UNIVERSE.REMNANT_NS, 1000, N * 0.03, 1, 'bh');
+  // Pulsars: the PULSAR_GYR death window on the NS mass slice
+  // (~1.5% of NS addresses are pulsars right now).
+  addCat(UNIVERSE.REMNANT_WD, UNIVERSE.REMNANT_NS, N * 0.015, UNIVERSE.PULSAR_GYR / 8, 'pulsar');
+  // Living massive tail: O supergiants and Wolf–Rayet — alive
+  // fraction of the ≥ REMNANT_NS slice is ~tMs / age span.
+  addCat(UNIVERSE.REMNANT_NS, 1000, N * 0.002, 0.0014, 'alive');
   const spanFrac = (Math.max(1, itHi - itLo) / Math.max(1, nth)) *
     (Math.max(1, ir1 - ir0) / Math.max(1, nr));
   const uNeb = imfQuantile(nebulaWalkFloor());
@@ -866,17 +889,27 @@ function walkSkyClouds(
         const filled = slotsInCell(seed, cell);
         if (filled <= 0) continue;
         if (wantStars) {
-          let prevSlot = -1;
-          for (let j = 0; j < nStrata; j++) {
-            const lo = uEdge[j] * filled;
-            const hi = uEdge[j + 1] * filled;
-            const step = stratStep[j];
-            for (let u = lo + u01(seed, 'sample', cell, j) * step; u < hi; u += step) {
+          const kept: number[] = [];
+          for (let j = 0; j < cats.length; j++) {
+            const cat = cats[j];
+            const lo = cat.u0 * filled;
+            const hi = cat.u1 * filled;
+            for (let u = lo + u01(seed, 'sample', cell, j) * cat.step; u < hi; u += cat.step) {
               const slot = Math.floor(u);
-              if (slot === prevSlot || slot >= filled) continue;
-              prevSlot = slot;
+              if (slot >= filled || kept.includes(slot)) continue;
               const clock = slotBirthClock(seed, cell, slot, filled);
+              // Cheap clock gates: reject before paying evolve.
+              if (cat.gate !== 'any') {
+                const tMs = msLifetime(clock.massZams);
+                const dead = clock.ageGyr - tMs - giantWindow(clock.massZams);
+                if (cat.gate === 'alive' && dead >= 0) continue;
+                if (cat.gate === 'bh' && dead < 0) continue;
+                if (cat.gate === 'pulsar' && (dead < 0 || dead >= UNIVERSE.PULSAR_GYR)) continue;
+              }
               const ev = sketchEvolve(clock);
+              if (cat.gate === 'bh' && ev.phase !== 'black_hole') continue;
+              if (cat.gate === 'pulsar' && ev.phase !== 'pulsar') continue;
+              kept.push(slot);
               const birth = finishSlotBirth(clock);
               if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
               writeEvolved(cell, slot, ns++, stars, birth, ev, true);

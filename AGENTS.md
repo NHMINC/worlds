@@ -185,10 +185,15 @@ temperature are one axis on the main sequence). Within a
 stratum the sample stays uniform across cells, so regions keep
 their true character: the O/B budget lands in the arms, the
 giant budget pools in the old core, massive strata are largely
-remnants because that is the clock. The walk counts the exact
-population first (one hash pass), so the count lands on
-`GALAXY_SAMPLE_N` within the strides. Nebulae stay their own
-catalog.
+remnants because that is the clock. ZOO strata ride on top —
+rare classes as survey categories (black holes, pulsars, the
+living massive tail), each with a stride sized by its clock
+window so it collects its budget with cheap gates instead of
+an exhaustive walk. Quiet old NS and WDs ride the mass strata
+in their honest share. The walk counts the exact population
+first (one hash pass), so the count lands near
+`GALAXY_SAMPLE_N` (zoo budgets add a few %). Nebulae stay
+their own catalog.
 The shape sample and the `HARVEST_ALL` million-pin photograph
 are retired. A later survey will
 resolve the faint neighbours of a camp. Set course loads a
