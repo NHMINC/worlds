@@ -308,7 +308,7 @@ export const REBUILD_KNOBS: RebuildKnob[] = [
     label: 'Sample size',
     group: 'harvest',
     hint: 'how many stars the harvest draws from the galaxy',
-    about: 'The harvest is a uniform sample of the whole population — one slot per (population / this) — so proportions are the galaxy\'s own: mostly M dwarfs, sun-like in their share, giants where mass is old, remnants, the rare living O/B. No brightness floor. Bigger samples take a proportionally longer remint. Needs remint.',
+    about: 'The harvest budget, split equally across the spectral-class mass strata (a truly uniform draw is ~85% red dwarfs). Each stratum samples uniformly across the galaxy, so regions keep their character — O/B in the arms, giants in the old core, remnants where mass died. Bigger samples take a proportionally longer remint. Needs remint.',
     scope: 'harvest',
     key: 'GALAXY_SAMPLE_N',
     min: 100_000,

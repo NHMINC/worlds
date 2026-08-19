@@ -804,17 +804,21 @@ function walkSkyClouds(
   const itLo = Math.max(0, Math.floor(span?.it0 ?? 0));
   const itHi = Math.min(nth, Math.ceil(span?.it1 ?? nth));
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
-  // UNIFORM SAMPLE: one row per sampleStep occupied slots. The
-  // IMF is stratified by slot index, so a systematic stride over
-  // slots (hashed per-cell offset) IS an IMF-proportional sample
-  // — the harvest mirrors the population's true proportions:
-  // mostly M dwarfs, sun-like in their share, giants where mass
-  // is old, remnants, the rare living O/B. No brightness floor —
-  // the magnitude-limited survey was 97% B stars (brightness and
-  // temperature are one axis on the main sequence).
-  // Exact population for this seed and knobs — one cheap hash
-  // pass (no births), so the sample count lands on SAMPLE_N
-  // within the stride instead of drifting with calibration.
+  // STRATIFIED SAMPLE: collectors as arithmetic. A truly uniform
+  // draw of 10⁹ stars is ~85% M/L dwarfs — the sky is a dim red
+  // smudge. Instead the IMF is cut into mass strata (the spectral
+  // classes), each stratum gets an EQUAL share of the budget, and
+  // each is sampled with its own systematic stride. Because slots
+  // are IMF-ordered, a stratum is a contiguous slot slice per
+  // cell — no score-keeping, no rejection, no full collectors:
+  // the stride per stratum IS the quota. Within a stratum the
+  // sample stays uniform across cells, so regions contribute in
+  // their true proportion — O/B budget lands in the arms, the
+  // giant budget pools in the old core. A stratum poorer than
+  // its budget is simply taken whole (stride clamps at 1).
+  //
+  // Exact population first — one cheap hash pass (no births), so
+  // the total lands on SAMPLE_N within the strides.
   let totalSlots = 0;
   if (wantStars) {
     for (let ir = 0; ir < nr; ir++) {
@@ -825,7 +829,17 @@ function walkSkyClouds(
       }
     }
   }
-  const sampleStep = Math.max(1, totalSlots / Math.max(1, UNIVERSE.GALAXY_SAMPLE_N));
+  // Stratum edges in ZAMS mass (M☉): M | K | G | F | A | B | O+.
+  const strataM = [UNIVERSE.IMF_MIN, 0.45, 0.8, 1.15, 1.6, 3, 8];
+  const uEdge = strataM.map((m) => Math.min(1, Math.max(0, imfQuantile(m))));
+  uEdge.push(1);
+  const nStrata = strataM.length;
+  const budget = UNIVERSE.GALAXY_SAMPLE_N / nStrata;
+  const stratStep: number[] = [];
+  for (let j = 0; j < nStrata; j++) {
+    const pop = Math.max(0, (uEdge[j + 1] - uEdge[j]) * totalSlots);
+    stratStep.push(Math.max(1, pop / Math.max(1, budget)));
+  }
   const spanFrac = (Math.max(1, itHi - itLo) / Math.max(1, nth)) *
     (Math.max(1, ir1 - ir0) / Math.max(1, nr));
   const uNeb = imfQuantile(nebulaWalkFloor());
@@ -852,13 +866,21 @@ function walkSkyClouds(
         const filled = slotsInCell(seed, cell);
         if (filled <= 0) continue;
         if (wantStars) {
-          for (let u = u01(seed, 'sample', cell) * sampleStep; u < filled; u += sampleStep) {
-            const slot = Math.floor(u);
-            const clock = slotBirthClock(seed, cell, slot, filled);
-            const ev = sketchEvolve(clock);
-            const birth = finishSlotBirth(clock);
-            if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
-            writeEvolved(cell, slot, ns++, stars, birth, ev, true);
+          let prevSlot = -1;
+          for (let j = 0; j < nStrata; j++) {
+            const lo = uEdge[j] * filled;
+            const hi = uEdge[j + 1] * filled;
+            const step = stratStep[j];
+            for (let u = lo + u01(seed, 'sample', cell, j) * step; u < hi; u += step) {
+              const slot = Math.floor(u);
+              if (slot === prevSlot || slot >= filled) continue;
+              prevSlot = slot;
+              const clock = slotBirthClock(seed, cell, slot, filled);
+              const ev = sketchEvolve(clock);
+              const birth = finishSlotBirth(clock);
+              if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
+              writeEvolved(cell, slot, ns++, stars, birth, ev, true);
+            }
           }
         }
         if (wantNebulae) {

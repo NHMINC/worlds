@@ -603,12 +603,16 @@ export const UNIVERSE = {
    * then I/(1+I) so hue survives. Optical approximations,
    * like AIR_LINE. Not pickable.
    */
-  /** Harvest sample size. The walk keeps one slot per
-   *  (POPULATION / SAMPLE_N) — a deterministic systematic stride
-   *  over each cell's IMF-stratified slots, so the sample follows
-   *  the population's true proportions at any size. The count is
-   *  the law's outcome (± the stride), not a hard cap. Bigger
-   *  samples cost a proportionally longer remint. */
+  /** Harvest sample size. STRATIFIED: the IMF is cut into mass
+   *  strata (the spectral classes) and each stratum gets an equal
+   *  share of this budget, sampled by its own deterministic
+   *  stride over the IMF-ordered slots — collectors as
+   *  arithmetic, no rejection. A truly uniform draw was ~85% M/L
+   *  dwarfs (a dim red smudge). Within a stratum the sample stays
+   *  uniform across cells, so regions keep their character: O/B
+   *  in the arms, giants pooled in the old core. Massive strata
+   *  are largely remnants at galactic ages — that is the clock,
+   *  not a bug. Count is the law's outcome (± the strides). */
   GALAXY_SAMPLE_N: 250_000,
   /** Nebula catalog: IMF floor (M☉) for the PN / SNR walk.
    *  H II (m ≥ 8 in a cloud) is always walked. 3.89 matches the

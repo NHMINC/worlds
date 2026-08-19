@@ -173,17 +173,22 @@ list. The **galaxy explorer** is how you discover. The Hubble-glow
 integral (an unresolved mass-model march) is retired — too
 artificial and too slow; the shape of the galaxy is the harvest
 itself plus the nebulae and the dust lanes.
-The explorer shows the harvest: one UNIFORM SAMPLE of the whole
-population (`GALAXY_SAMPLE_N`, ~250k of ~10⁹) — a deterministic
-systematic stride over each cell's IMF-stratified slots, so the
-sample mirrors the galaxy's true proportions: mostly M dwarfs,
-sun-like stars in their share, giants where mass is old,
-remnants, the rare living O/B. No brightness floor — the old
-magnitude-limited survey was 97% B stars (brightness and
-temperature are one axis on the main sequence, so the sky was
-monochrome). The walk counts the exact population first (one
-hash pass), so the sample count lands on `GALAXY_SAMPLE_N`
-within the stride. Nebulae stay their own catalog.
+The explorer shows the harvest: one STRATIFIED SAMPLE of the
+whole population (`GALAXY_SAMPLE_N`, ~250k of ~10⁹). The IMF is
+cut into mass strata (the spectral classes); each stratum gets
+an equal share of the budget and is sampled by its own
+deterministic systematic stride over the IMF-ordered slots —
+collectors as arithmetic, no rejection, no score-keeping. A
+truly uniform draw was ~85% M/L dwarfs (a dim red smudge); the
+old magnitude-limited survey was 97% B stars (brightness and
+temperature are one axis on the main sequence). Within a
+stratum the sample stays uniform across cells, so regions keep
+their true character: the O/B budget lands in the arms, the
+giant budget pools in the old core, massive strata are largely
+remnants because that is the clock. The walk counts the exact
+population first (one hash pass), so the count lands on
+`GALAXY_SAMPLE_N` within the strides. Nebulae stay their own
+catalog.
 The shape sample and the `HARVEST_ALL` million-pin photograph
 are retired. A later survey will
 resolve the faint neighbours of a camp. Set course loads a
@@ -289,11 +294,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `<progress>` — Pages CSP is `style-src 'self'`, so a
   fill’s `element.style` never paints. App boot
   mints three catalogs once (`prepareUniverse`): the
-  uniform star sample (`buildSilhouetteCloud` — one row per
-  population/`GALAXY_SAMPLE_N` slots, IMF-proportional by
-  construction; the giants of the Hubble bump sit where the
-  mass is old because that is where old slots are, not a
-  painted core. One knob: Sample size, 100k–1M),
+  stratified star sample (`buildSilhouetteCloud` — equal budget
+  per IMF mass stratum, each stratum uniform across the galaxy;
+  the giants of the Hubble bump sit where the mass is old
+  because that is where old slots are, not a painted core. One
+  knob: Sample size, 100k–1M),
   the nebula catalog (`remintNebulaCache` — H II plus PN /
   SNR above `SILHOUETTE_NEB_GAIN`; `NEBULA_M` is that walk's
   IMF gate; host id is still `packId`), and dust as
