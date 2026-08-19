@@ -89,10 +89,6 @@ export function dustFilterFrag(extinctChunk: string, steps: number): string {
   uniform mat4 uInvProj;
   varying vec2 vNdc;
 
-  float foxHash(float n) {
-    return fract(sin(n) * 43758.5453);
-  }
-
   vec3 foxGrad(vec3 p) {
     float e = 0.12;
     return vec3(
@@ -102,18 +98,13 @@ export function dustFilterFrag(extinctChunk: string, steps: number): string {
     );
   }
 
-  // Grain follows the shear: long along θ, tight across R and y.
-  float foxSkin(vec3 p) {
-    float R = max(length(p.xz), 0.25);
-    float th = atan(p.z, p.x);
-    float along = th * R * 16.0;
-    float across = R * 38.0;
-    float vert = p.y * 52.0;
-    float a = foxHash(along + 13.7 * foxHash(across + 8.1 * foxHash(vert)));
-    float b = foxHash(along * 2.15 + across * 0.28 + vert * 1.05 + 4.2);
-    return mix(0.68, 1.14, a) * mix(0.86, 1.1, b);
-  }
-
+  // Look-test census: every shading term is a smooth function of
+  // the CATALOG point (density, its gradient, a fixed sun), so the
+  // clouds are a stable texture that holds still as the camera
+  // moves. Hash grain re-rolled with every camera step (shimmer);
+  // rim / specular followed the view direction (a sheen that
+  // warped as you moved). Both are gone. The cloud texture IS the
+  // field: cores shade deeper, wisps stay pale.
   vec3 foxLook(vec3 from, vec3 dir, vec3 voidC) {
     vec2 span = extinctSpan(from, dir);
     if (span.x > span.y) return voidC;
@@ -128,23 +119,12 @@ export function dustFilterFrag(extinctChunk: string, steps: number): string {
       float r = extinctRho(p);
       if (r < 0.008 || a > 0.97) continue;
       vec3 nrm = -normalize(foxGrad(p) + vec3(1e-6));
-      float ndl = 0.2 + 0.8 * max(dot(nrm, L), 0.0);
-      float facing = max(dot(nrm, -dir), 0.0);
-      float wrap = 0.16 + 0.84 * facing;
-      float rim = pow(1.0 - facing, 2.4);
-      vec3 h = normalize(L - dir);
-      float spec = pow(max(dot(nrm, h), 0.0), 22.0) * 0.4;
-      float grain = foxSkin(p);
-      float wall = uExtinctWall;
-      float isWall = (wall > 1e-4 && r >= wall) ? 1.0 : 0.0;
-      // Look-test is a census of the volume, not the wall's blackness.
-      // Cores read as solid lime; the rim stays a thinner skin.
+      float ndl = 0.22 + 0.78 * max(dot(nrm, L), 0.0);
+      float deep = smoothstep(0.0, 0.35, r);
       vec3 lit = vec3(0.55, 1.0, 0.22);
-      vec3 shade = vec3(0.08, 0.48, 0.1);
-      vec3 lime = mix(shade, lit, ndl * wrap) * grain;
-      lime += rim * vec3(0.6, 1.0, 0.4) * 0.55;
-      lime += spec * vec3(0.9, 1.0, 0.75);
-      float da = 1.0 - exp(-smoothstep(0.008, 0.22, r) * mix(2.6, 5.2, isWall));
+      vec3 shade = vec3(0.07, 0.42, 0.1);
+      vec3 lime = mix(shade, lit, ndl) * mix(1.0, 0.6, deep);
+      float da = 1.0 - exp(-smoothstep(0.008, 0.22, r) * 3.4);
       float w = (1.0 - a) * da;
       rgb = mix(rgb, lime, w);
       a += w;
