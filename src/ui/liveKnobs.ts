@@ -8,8 +8,10 @@
 import { UNIVERSE } from '../world/physics';
 import {
   HARVEST_PSF_TAIL,
+  HARVEST_RADIUS_P,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_GAIN,
+  HARVEST_SHINE_L_P,
   HARVEST_SHINE_SAT,
   HARVEST_SUPER_GAIN,
 } from '../render/galaxyStar';
@@ -312,6 +314,30 @@ export const LIVE_KNOBS: LiveKnob[] = [
     max: 5,
     step: 0.05,
     read: () => HARVEST_SHINE_SAT,
+  },
+  {
+    id: 'starMag',
+    label: 'Magnitude contrast',
+    group: 'starlight',
+    hint: 'how much luminosity separates the stars',
+    about: 'Power on luminosity in the photograph. Low compresses everything toward one brightness (the blue tail vanishes into the crowd); high lets an O star genuinely outshine the floor — and the hue-preserving plateau keeps that extra light blue. Next frame.',
+    uniform: 'uShineLP',
+    min: 0.3,
+    max: 1,
+    step: 0.01,
+    read: () => HARVEST_SHINE_L_P,
+  },
+  {
+    id: 'starSize',
+    label: 'Giant size',
+    group: 'starlight',
+    hint: 'photosphere radius → painted body',
+    about: 'Power on the photosphere radius (from the stellar clock) in the painted body. A K giant (~30 R☉) grows a wide soft gold orb, an O dwarf stays a brilliant point, remnants stay pins. 0 paints everything as a pure point. Next frame.',
+    uniform: 'uRadiusP',
+    min: 0,
+    max: 0.8,
+    step: 0.01,
+    read: () => HARVEST_RADIUS_P,
   },
   {
     id: 'glowWings',

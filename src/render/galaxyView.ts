@@ -22,6 +22,8 @@ import {
   HARVEST_PSF_B,
   HARVEST_PSF_CORE,
   HARVEST_PSF_TAIL,
+  HARVEST_RADIUS_MAX,
+  HARVEST_RADIUS_P,
   HARVEST_PSF_THRESH,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_DIST_REF,
@@ -298,6 +300,8 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uSuperGain;
   uniform float uSuperP;
   uniform float uPinCanvas;
+  uniform float uRadiusP;
+  uniform float uRadiusMax;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -307,6 +311,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   varying vec3 vCenterCat;
   varying float vPx;
   varying float vStamp;
+  varying float vBody;
 
   void main() {
     vColor = aColor;
@@ -317,6 +322,7 @@ const SILHOUETTE_VERT = /* glsl */ `
     vCenterCat = vec3(0.0);
     vPx = 0.0;
     vStamp = 0.0;
+    vBody = 1.0;
     // Cull wrong-kind sprites for the pass here — a fragment discard
     // still rasterizes the whole quad, tripling core overdraw. Dust
     // is not harvested (kind > 3.5 never passes either gate).
@@ -359,14 +365,19 @@ const SILHOUETTE_VERT = /* glsl */ `
       float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
       float css = max(1.0, 1.0 + 2.0 * rCss);
       float wingPx = css * uPixel;
+      // Painted body from the photosphere: aSize carries R☉ from
+      // the clock. A giant paints a wide soft orb, a dwarf a
+      // point — size is physics, not a class flag.
+      vBody = clamp(pow(max(aSize, 0.02), uRadiusP), 1.0, max(uRadiusMax, 1.0));
+      float pin = uPinCanvas * vBody;
       // Floor pin: soft device-pixel Gaussian. A thin plus still
       // blinked — GL_POINTS hops the covered set by 1px. Wings
       // that already need more room keep the CSS PSF.
-      if (wingPx <= uPinCanvas) {
-        gl_PointSize = uPinCanvas;
+      if (wingPx <= pin) {
+        gl_PointSize = pin;
         vStamp = 1.0;
       } else {
-        gl_PointSize = max(uPixel, wingPx);
+        gl_PointSize = max(uPixel, max(wingPx, pin));
       }
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
@@ -408,6 +419,7 @@ const STAR_FRAG = /* glsl */ `
   varying vec3 vCenterCat;
   varying float vPx;
   varying float vStamp;
+  varying float vBody;
   void main() {
     if (uPass < 0.5 && vKind > 0.5) discard;
     if (uPass > 0.5 && (vKind < 0.5 || vKind > 3.5)) discard;
@@ -423,9 +435,12 @@ const STAR_FRAG = /* glsl */ `
       // luminosity the plateau cannot show already lives in the
       // Lorentzian wings (the coloured glow).
       float hueCeil = 1.0 / max(max(vColor.r, max(vColor.g, vColor.b)), 1e-3);
+      // vBody widens the painted Gaussians by the photosphere
+      // radius law — a giant is a soft wide orb, not a hot pin.
+      float body2 = vBody * vBody;
       if (vStamp > 0.5) {
         vec2 d = (gl_PointCoord - 0.5) * vPx;
-        float w = exp(-dot(d, d) * uPinCore);
+        float w = exp(-dot(d, d) * uPinCore / body2);
         float I = min(max(vVis, 0.0) * w, hueCeil);
         if (I < 0.008) discard;
         gl_FragColor = vec4(vColor * I, 1.0);
@@ -437,15 +452,15 @@ const STAR_FRAG = /* glsl */ `
       // PSF lives in CSS pixels, not sprite UVs. Stretching a
       // gaussian to fill the quad was the white-disc photograph.
       float rCss = (edge * vPx * 0.5) / max(uPixel, 1.0);
-      float core = exp(-rCss * rCss * uPsfCore);
+      float core = exp(-rCss * rCss * uPsfCore / body2);
       float tail = uPsfTail / (uPsfA + uPsfB * rCss * rCss);
       float window = 1.0 - edge * edge;
       window *= window;
       float profile = I * (0.95 * core + tail) * window;
       if (profile < 0.008) discard;
-      // Only a monstrous photocentre overexposes to white, the way
-      // a plate does — an O star stays blue, a giant stays gold.
-      float bleach = smoothstep(8.0, 26.0, I) * core;
+      // Only a truly monstrous photocentre overexposes to white —
+      // an O star stays blue, a giant stays gold.
+      float bleach = smoothstep(40.0, 160.0, I) * core;
       vec3 c = mix(vColor, vec3(1.0), bleach) * min(profile, hueCeil);
       gl_FragColor = vec4(c, 1.0);
       return;
@@ -877,6 +892,8 @@ export class GalaxyView {
       uPsfTail: { value: HARVEST_PSF_TAIL },
       uPsfA: { value: HARVEST_PSF_A },
       uPsfB: { value: HARVEST_PSF_B },
+      uRadiusP: { value: HARVEST_RADIUS_P },
+      uRadiusMax: { value: HARVEST_RADIUS_MAX },
       uPsfThresh: { value: HARVEST_PSF_THRESH },
       uShineLGain: { value: HARVEST_SHINE_GAIN },
       uShineLP: { value: HARVEST_SHINE_L_P },

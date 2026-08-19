@@ -83,15 +83,29 @@ export const HARVEST_PIN_CANVAS = 7;
 /** Device-px⁻². FWHM ≈ 1.3 px; halo dies by ~2.5 px. */
 export const HARVEST_PIN_CORE = 0.85;
 /**
+ * Painted body from the photosphere: core width scales as
+ * radius^RADIUS_P (R☉ from evolve, carried in the star row's
+ * size field), clamped at RADIUS_MAX. A documented display
+ * stretch, not a class flag: a K giant (~30 R☉) paints a wide
+ * soft gold orb, an O dwarf (~10 R☉) a brilliant compact point,
+ * an M dwarf or remnant stays a pin. 0 restores pure points.
+ */
+export const HARVEST_RADIUS_P = 0.45;
+export const HARVEST_RADIUS_MAX = 4.5;
+/**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
  * Steep enough in L that an O still outshines the floor; shallow
  * enough that the survey floor clears the pin discard instead of
  * reading as a dark-filtered sky. Shallow in d so approaching
  * does not inflate a disc. Not an I_MIN floor — that painted
- * every pin at the same I (yellow fog).
+ * every pin at the same I (yellow fog). L_P 0.62 is the
+ * magnitude law: at 0.48 the compression crushed the blue tail
+ * (an O barely outshone the floor and read as one more white
+ * dot); 0.62 lets luminosity mean something, and the
+ * hue-preserving plateau keeps the extra light BLUE.
  */
 export const HARVEST_SHINE_GAIN = 2.5;
-export const HARVEST_SHINE_L_P = 0.48;
+export const HARVEST_SHINE_L_P = 0.62;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_SHINE_DIST_P = 0.5;
 /**

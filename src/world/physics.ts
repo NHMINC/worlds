@@ -457,7 +457,7 @@ export const UNIVERSE = {
    * One knob: envelope, noise flattening, and vertical warp
    * all read it. Photograph only — star ids do not move.
    */
-  GALAXY_DUST_GRIP: 0.3,
+  GALAXY_DUST_GRIP: 0.67,
   /**
    * Corrugation: how far a cloud's centre wanders off the slice,
    * in rms units of the effective scale height (ZD / grip). A

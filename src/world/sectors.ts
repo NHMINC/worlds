@@ -46,7 +46,7 @@ import {
   type GalPos,
   type GalaxyObject,
 } from './galaxy';
-import { evolve, mkFromTeff, msLifetime, teffToRgb } from './stellar';
+import { evolve, mkFromTeff, msLifetime, msRadius, teffToRgb } from './stellar';
 import { KIND_STAR, emissionLook, kindFromNebula, shapeAt, type SkyKind } from './skyShape';
 import { bakeDustVolume, type DustVolume } from './dustVolume';
 
@@ -480,7 +480,10 @@ function writeEvolved(
     bits: bit,
     mk: ev.mk ? (MK_IX[ev.mk] ?? 0) : 0,
     pulse: shape.seed,
-    size: look ? look.radiusKpc : L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0),
+    // Star rows carry the photosphere radius (R☉) — the painted
+    // body derives from it (a K giant is a wide gold orb, an O a
+    // brilliant point). Nebulae keep their shell radius in kpc.
+    size: look ? look.radiusKpc : Math.min(500, Math.max(0.02, ev.radius)),
     gain: look ? look.gain : 0.22 + 0.78 * (L / (L + 0.25)),
   });
 }
@@ -516,7 +519,9 @@ function writeFromBirth(
     bits: bit,
     mk: alive ? (MK_IX[mkFromTeff(teff)] ?? 0) : 0,
     pulse: 0,
-    size: L < 0.05 ? 1.15 : 1.45 + Math.min(5.2, Math.log10(1 + L) * 2.0),
+    // Photosphere radius (R☉) for the painted body; a remnant pin
+    // stays a point.
+    size: alive ? msRadius(b.massZams) : 0.02,
     gain: 0.22 + 0.78 * (L / (L + 0.25)),
   });
 }
