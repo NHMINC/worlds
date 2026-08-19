@@ -1,9 +1,13 @@
 /**
- * Dust is the dense tail of the midplane clump photograph.
- * The explorer never draws dust; it bakes `ismAt.photo` into a
- * volume and marches the sightline. Most of the disc stays 0 —
- * only the small clouds write. Occupancy (`dustClumpsInCell`)
- * is a separate census on the warped occupancy field.
+ * Dust is the midplane clump photograph, baked RAW. The explorer
+ * never draws dust; it bakes `ismAt.photo` into a volume and
+ * marches the sightline. Carving the clouds out of the field
+ * (floor + hardness — the old bake-time dense cut and streak)
+ * happens in the march (`extinctRho`), so those are live knobs
+ * and the raw cloud body is still known to the eye-inside-a-
+ * cloud law. Most of the disc stays 0 — a storage floor keeps
+ * empty space empty. Occupancy (`dustClumpsInCell`) is a
+ * separate census on the warped occupancy field.
  *
  * The volume is samples of a continuous field, not bricks. A
  * lone voxel through hardware trilinear is (1−|x|)(1−|z|) —
@@ -77,7 +81,13 @@ function splatCrest(
   }
 }
 
-/** Sample the ISM dense tail into a 3D density volume. Empty space stays 0. */
+/** Storage floor: field this thin can never matter to any carve
+ *  (the shipped floor is 0.08) and skipping it keeps the volume
+ *  sparse. Not a law — a compression constant. */
+const BAKE_FLOOR = 0.02;
+
+/** Sample the raw clump photograph into a 3D density volume.
+ *  Empty space stays 0; the march carves the clouds. */
 export function bakeDustVolume(
   seed: string,
   onProgress?: (frac: number) => void,
@@ -90,8 +100,6 @@ export function bakeDustVolume(
   const vx = size[0] / nx;
   const vy = size[1] / ny;
   const vz = size[2] / nz;
-  const cut = UNIVERSE.GALAXY_DUST_DENSE_CUT;
-  const streak = UNIVERSE.GALAXY_DUST_STREAK;
   for (let iy = 0; iy < ny; iy++) {
     const y = origin[1] + (iy + 0.5) * vy;
     for (let iz = 0; iz < nz; iz++) {
@@ -99,9 +107,8 @@ export function bakeDustVolume(
       for (let ix = 0; ix < nx; ix++) {
         const x = origin[0] + (ix + 0.5) * vx;
         const field = ismAt(seed, x, y, z).photo;
-        const excess = field - cut;
-        if (excess <= 0) continue;
-        splatCrest(data, nx, ny, nz, ix, iy, iz, Math.min(1, excess ** streak));
+        if (field <= BAKE_FLOOR) continue;
+        splatCrest(data, nx, ny, nz, ix, iy, iz, Math.min(1, field));
       }
     }
     onProgress?.((iy + 1) / ny);
@@ -133,7 +140,8 @@ function trilinear(vol: DustVolume, x: number, y: number, z: number): number {
   return c0 * (1 - tz) + c1 * tz;
 }
 
-/** Optical depth along a segment. Same Riemann sum the vertex shader uses. */
+/** Optical depth along a segment. Same Riemann sum and the same
+ *  floor + hardness carve the vertex shader (`extinctRho`) uses. */
 export function clumpColumnTau(
   vol: DustVolume,
   from: [number, number, number],
@@ -149,9 +157,12 @@ export function clumpColumnTau(
   const dt = dist / Math.max(1, steps);
   let tau = 0;
   const inv = 1 / Math.max(dist, 1e-4);
+  const cut = UNIVERSE.GALAXY_EXTINCT_CUT;
+  const hard = Math.max(UNIVERSE.GALAXY_EXTINCT_HARD, 0.15);
   for (let i = 0; i < steps; i++) {
     const t = (i + 0.5) * dt;
-    tau += trilinear(vol, from[0] + dx * t * inv, from[1] + dy * t * inv, from[2] + dz * t * inv);
+    const raw = trilinear(vol, from[0] + dx * t * inv, from[1] + dy * t * inv, from[2] + dz * t * inv);
+    tau += Math.max(raw - cut, 0) ** hard;
   }
   return Math.min(tau * k * dt, cap);
 }

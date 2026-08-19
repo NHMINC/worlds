@@ -121,7 +121,14 @@ types or star types.
   march at the pixel where the light lands (thin clumps
   cannot hide; a wall on the ray is lightless). Sprites do
   not self-extinct — a per-vertex sample let a wide smudge
-  straddle the lane its centre ray missed. Empty space is
+  straddle the lane its centre ray missed. An eye EMBEDDED
+  in a cloud loses the photograph in every direction
+  (decreed optics, same family as the wall: the sheet is
+  ~0.15 kpc thin, so honest Beer–Lambert left the poles
+  clear and pins shone inside the lane); the rim is a fade
+  on the raw field. Harvest stars keep their honest
+  camera→star column — from inside the fog you still see
+  what is close. Empty space is
   vacuum. The framebuffer clear is black — the cosmic quad
   paints the night.
 
@@ -299,12 +306,17 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
-  is sightline extinction** (`extinctGlsl`): the dense tail of
-  `ismAt.photo` — hole × decline × a mild arm hint × domain-
+  is sightline extinction** (`extinctGlsl`): `ismAt.photo` —
+  hole × decline × a mild arm hint × domain-
   warped fractal fluff (`GALAXY_DUST_FREQ` / `_SWIRL` /
   `_DETAIL` / `_SIGMA`): a slow noise field bends the clump
   noise, so eddies curl at every angle — a turbulent ocean, no
-  picked directions, no lattice axis. The sheet sits on the
+  picked directions, no lattice axis. The bake stores that
+  raw photograph; the cloud carve (floor + hardness,
+  `GALAXY_EXTINCT_CUT` / `_HARD` — the old bake-time dense
+  cut and streak) is applied per tap in the march, so both
+  are live knobs and the bake never needs a re-run to reshape
+  the clouds. The sheet sits on the
   geometric midplane (`GALAXY_DUST_MID` = 0) so edge-on it
   still averages to a thin slit. Occupancy / SFR / H II stay
   on the warped molecular sheet — star ids do not move. A

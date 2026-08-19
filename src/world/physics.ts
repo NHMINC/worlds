@@ -619,29 +619,22 @@ export const UNIVERSE = {
   /** March multiplier on the baked field — how hard dust filters
    *  starlight. This is the photograph gain, not a thicker sheet. */
   GALAXY_EXTINCT_K: 6,
-  /** Density below this is empty. Thin haze drops; cores stay.
-   *  0 is the raw bake. Does not grow the ribbons. */
-  GALAXY_EXTINCT_CUT: 0,
-  /** Power on remaining density. 1 is linear (the bake). Higher
-   *  hardens cores and thins the edges — opaque without spreading. */
-  GALAXY_EXTINCT_HARD: 1,
-  /** Density at or above this is a wall. The ribbon core is
-   *  lightless; only the rim still reddens. 0 is the old veil. */
+  /** Clump floor: `ismAt.photo` below this is not a cloud. The
+   *  bake stores the raw photograph; this carves it in the march
+   *  (the old bake-time dense cut, now a live knob). Most of the
+   *  disk is below this — the photograph is many small midplane
+   *  clumps, not a carpet. Also the body threshold for the
+   *  eye-inside-a-cloud night. */
+  GALAXY_EXTINCT_CUT: 0.08,
+  /** Power on the excess above the floor (the old bake-time
+   *  streak, now live). Higher hardens cores and thins the
+   *  edges — opaque without spreading. */
+  GALAXY_EXTINCT_HARD: 0.85,
+  /** Carved density at or above this is a wall. The ribbon core
+   *  is lightless; only the rim still reddens. 0 is the old veil. */
   GALAXY_EXTINCT_WALL: 0.14,
   /** Look test. 0 = dust is extinction. 1 paints the volume lime. */
   GALAXY_DUST_DEBUG: 0,
-  /** Mean-sheet opacity (per kpc of gasBase × d2g). Sets the edge-on
-   *  lane vs a clear face-on / in-plane hop. */
-  GALAXY_DUST_K_DIFFUSE: 0.42,
-  /** Extra opacity on sheared overdensities (rise^STREAK). */
-  GALAXY_DUST_K_DENSE: 24,
-  /** Power on the dense-tail excess. Higher → thinner filaments. */
-  GALAXY_DUST_STREAK: 0.85,
-  /** ismAt.photo threshold. Most of the disk is below this — the
-   *  photograph is many small midplane clumps, not a carpet and
-   *  not one arm-long snake. 0.06 lets more of the clump tail
-   *  write while cores still reach the wall. */
-  GALAXY_DUST_DENSE_CUT: 0.08,
   /** Column cap. High enough that a dense clump (or a stack along
    *  the plane) can extinguish; not a “keep the core glorious” floor. */
   GALAXY_EXTINCT_MAX: 8,

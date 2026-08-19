@@ -90,17 +90,22 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   uniform sampler3D uDustVol;
   uniform vec3 uDustOrigin;
   uniform vec3 uDustInvSize;
-  float extinctRho(vec3 p) {
+  // Raw photograph field (the bake stores ismAt.photo uncarved).
+  float extinctRhoRaw(vec3 p) {
     vec3 uv = (p - uDustOrigin) * uDustInvSize;
     if (uv.x < 0.0 || uv.y < 0.0 || uv.z < 0.0 ||
         uv.x > 1.0 || uv.y > 1.0 || uv.z > 1.0) return 0.0;
     // WebGL2 / GLSL3: Three rewrites texture2D → texture, not texture3D.
     // texture3D fails to compile and the whole harvest Points program dies.
     // Linear 3D tap. Isolated voxels used to read as diamonds
-    // (the tent kernel); the bake now splats a Gaussian so the
+    // (the tent kernel); the bake splats a Gaussian so the
     // isosurface follows the sheet, not the lattice.
-    float rho = texture(uDustVol, uv).r;
-    float t = max(rho - uExtinctCut, 0.0);
+    return texture(uDustVol, uv).r;
+  }
+  // The cloud carve: floor + hardness (the old bake-time dense
+  // cut and streak) applied per tap, so both are live knobs.
+  float extinctRho(vec3 p) {
+    float t = max(extinctRhoRaw(p) - uExtinctCut, 0.0);
     return pow(t, max(uExtinctHard, 0.15));
   }
   // Peak in this step so a thin wall cannot hide between taps
@@ -157,19 +162,35 @@ const extinctGlsl = (steps: number) => /* glsl */ `
   // then a wall on the sightline is lightless — independent of
   // tap spacing. Camera→far (same dt as a nearby star) skipped
   // whole clouds and the void showed through.
+  //
+  // Decreed optics, same family as the wall: an eye EMBEDDED in a
+  // cloud loses the far photograph in every direction — forward
+  // scatter at the eye erases distant point sources long before
+  // the thin residual column would (the sheet is ~0.15 kpc thick;
+  // honest Beer–Lambert left the poles nearly clear and pins shone
+  // through the lane you were parked in). The ramp rides the RAW
+  // field so the whole cloud body counts (the carve floor empties
+  // exactly where you can stand); the rim is a fade, not a pop.
+  // Harvest stars keep their honest camera→star column — from
+  // inside the fog you still see what is close.
   vec3 extinctLook(vec3 from, vec3 dir) {
+    float lo = max(uExtinctCut, 1e-3);
+    float night = 1.0 - smoothstep(lo * 0.55, lo * 1.1, extinctRhoRaw(from));
+    if (night < 1e-3) return vec3(0.0);
     vec2 span = extinctSpan(from, dir);
-    if (span.x > span.y) return vec3(1.0);
+    if (span.x > span.y) return vec3(night);
     float t0 = max(span.x, 0.0);
     float t1 = span.y;
     float dCat = t1 - t0;
-    if (dCat < 1e-4) return vec3(1.0);
+    if (dCat < 1e-4) return vec3(night);
     float dt = dCat / ${glslFloat(steps)};
     float kdt = uExtinctK * dt;
     float wall = uExtinctWall;
     float coreFill = uExtinctMax / max(kdt, 1e-4);
     float tau = 0.0;
-    float peak = 0.0;
+    // The eye's own voxel joins the wall test: the first tap sits
+    // half a step out and could exit a small clump you are inside.
+    float peak = extinctRho(from);
     for (int i = 0; i < ${steps}; i++) {
       vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
       float r = extinctRhoPeak(p, dir, dt);
@@ -182,7 +203,7 @@ const extinctGlsl = (steps: number) => /* glsl */ `
       }
     }
     if (wall > 1e-4 && peak >= wall * 0.62) return vec3(0.0);
-    return exp(-min(tau * kdt, uExtinctMax) * uDustRgb);
+    return night * exp(-min(tau * kdt, uExtinctMax) * uDustRgb);
   }
 `;
 
