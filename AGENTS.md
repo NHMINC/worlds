@@ -296,11 +296,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   eye’s PSF once the wings need more room than that stamp
   (Gaussian core + Lorentzian tail — the same glare shape as
   the in-system sun). Magnitude lifts the wings with no
-  bright-end cap; it does not stamp a larger disc. A column
-  of pins adds into an HDR photograph; `GALAXY_PHOTO_KNEE`
-  Reinhard-compresses the finished frame — N lights in a
-  line saturate at that white point, they do not become
-  N times one light. Above
+  bright-end cap; it does not stamp a larger disc. Pins add
+  straight into the canvas — a stacked column saturates to
+  white like film (the HDR knee pass is retired; it only
+  dimmed the whole galaxy). Above
   `HARVEST_SUPER_L` leftover luminosity adds extra I — super-suns
   only; every fainter harvest row is unchanged. Colour stays in the glow; only the
   photocentre of a very bright row bleaches. r/d grow is a

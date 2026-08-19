@@ -602,12 +602,6 @@ export class GalaxyView {
   private cosmicSmudgePts: THREE.Points | null = null;
   private cosmicSmudgeGeo: THREE.BufferGeometry | null = null;
   private cosmicSmudgeMat: THREE.ShaderMaterial | null = null;
-  /** HDR photograph: layers add, then one Reinhard knee. */
-  private photoRt: THREE.WebGLRenderTarget | null = null;
-  private photoMat: THREE.ShaderMaterial | null = null;
-  private photoQuad: THREE.Mesh | null = null;
-  private photoScene = new THREE.Scene();
-  private photoCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   /** Star harvest positions (the vertex shader subtracts uCenter). */
   private cloud: StarCloud | null = null;
   /** Nebula catalog — own mesh, rebakes without reminting stars. */
@@ -942,9 +936,9 @@ export class GalaxyView {
 
   /**
    * Two passes per layer, one shared fragment: stars add light
-   * into the HDR photograph; emission nebulae SCREEN so shells
-   * do not stack to a white bar among themselves. One Reinhard
-   * knee after the composite is the accumulation cap. Dust has
+   * straight into the photograph; emission nebulae SCREEN so
+   * shells do not stack to a white bar among themselves. A
+   * stacked star column saturates to white like film. Dust has
    * no pass: both vertex shaders fold sightline extinction in.
    */
   private makeCloudMaterial(
@@ -1204,70 +1198,6 @@ export class GalaxyView {
     this.cosmicStarMat = mat;
   }
 
-  /** HDR target + blit. Layers add here; the knee is the last step. */
-  private ensurePhoto(w: number, h: number): void {
-    const rw = Math.max(1, Math.round(w));
-    const rh = Math.max(1, Math.round(h));
-    if (rw < 8 || rh < 8) return;
-    if (this.photoRt && this.photoRt.width === rw && this.photoRt.height === rh) return;
-    this.photoRt?.dispose();
-    this.photoRt = new THREE.WebGLRenderTarget(rw, rh, {
-      type: THREE.HalfFloatType,
-      format: THREE.RGBAFormat,
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      depthBuffer: false,
-    });
-    this.photoRt.texture.colorSpace = THREE.NoColorSpace;
-    if (!this.photoMat) {
-      this.photoMat = new THREE.ShaderMaterial({
-        vertexShader: /* glsl */ `
-          varying vec2 vUv;
-          void main() {
-            vUv = uv;
-            gl_Position = vec4(position.xy, 0.0, 1.0);
-          }
-        `,
-        fragmentShader: /* glsl */ `
-          uniform sampler2D uPhoto;
-          uniform float uPhotoKnee;
-          varying vec2 vUv;
-          void main() {
-            vec3 c = texture2D(uPhoto, vUv).rgb;
-            float L = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 1e-6);
-            c *= 1.0 / (1.0 + L / max(uPhotoKnee, 1e-4));
-            gl_FragColor = vec4(c, 1.0);
-          }
-        `,
-        uniforms: {
-          uPhoto: { value: this.photoRt.texture },
-          uPhotoKnee: { value: UNIVERSE.GALAXY_PHOTO_KNEE },
-        },
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false,
-      });
-      const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.photoMat);
-      quad.frustumCulled = false;
-      this.photoScene.add(quad);
-      this.photoQuad = quad;
-    } else {
-      this.photoMat.uniforms.uPhoto.value = this.photoRt.texture;
-    }
-  }
-
-  private disposePhoto(): void {
-    if (this.photoQuad) {
-      this.photoScene.remove(this.photoQuad);
-      this.photoQuad.geometry.dispose();
-      this.photoQuad = null;
-    }
-    this.photoMat?.dispose();
-    this.photoMat = null;
-    this.photoRt?.dispose();
-    this.photoRt = null;
-  }
-
   /** Live cosmic-engineer write. One uniform, next frame. */
   setLiveUniform(name: string, value: number): void {
     if (name === 'uVoidRgb') {
@@ -1298,11 +1228,6 @@ export class GalaxyView {
       if (u) u.value = value;
       if (this.cosmicMat) this.applyFilterBlend(this.cosmicMat);
     }
-    if (name === 'uPhotoKnee') {
-      UNIVERSE.GALAXY_PHOTO_KNEE = value;
-      if (this.photoMat?.uniforms.uPhotoKnee) this.photoMat.uniforms.uPhotoKnee.value = value;
-      return;
-    }
     for (const mat of this.cloudMats()) {
       const u = mat.uniforms[name];
       if (u) u.value = value;
@@ -1317,8 +1242,7 @@ export class GalaxyView {
       this.silEmisMat?.uniforms[name] ??
       this.cosmicMat?.uniforms[name] ??
       this.cosmicStarMat?.uniforms[name] ??
-      this.cosmicSmudgeMat?.uniforms[name] ??
-      this.photoMat?.uniforms[name];
+      this.cosmicSmudgeMat?.uniforms[name];
     return typeof u?.value === 'number' ? u.value : null;
   }
 
@@ -1655,8 +1579,6 @@ export class GalaxyView {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
-    const pr = this.renderer.getPixelRatio();
-    this.ensurePhoto(w * pr, h * pr);
   }
 
   /** Pause the loop while the explorer is hidden so the planet can run. */
@@ -1685,7 +1607,6 @@ export class GalaxyView {
     window.removeEventListener('keyup', this.onKeyUp);
     this.disposeArcStars();
     this.disposeCosmic();
-    this.disposePhoto();
     this.pickRing.geometry.dispose();
     (this.pickRing.material as THREE.Material).dispose();
     this.hereRing.geometry.dispose();
@@ -2317,26 +2238,13 @@ export class GalaxyView {
     this.pickRing.rotation.z = t * 0.35;
     this.hereRing.rotation.z = t * -0.22;
 
-    const pr = this.renderer.getPixelRatio();
-    const el = this.renderer.domElement;
-    const rw = el.width || el.clientWidth * pr;
-    const rh = el.height || el.clientHeight * pr;
-    this.ensurePhoto(rw, rh);
-    // One scene, one pass: the void is the clear colour, background
-    // sprites add onto it, the dust filter quad multiplies all of
-    // it per pixel, then the galaxy draws in front. The knee is last.
-    if (this.photoRt) {
-      this.renderer.setRenderTarget(this.photoRt);
-      this.renderer.setClearColor(this.voidClear, 1);
-      this.renderer.clear();
-      this.renderer.render(this.scene, this.camera);
-      this.renderer.setRenderTarget(null);
-      this.renderer.render(this.photoScene, this.photoCam);
-    } else {
-      this.renderer.setRenderTarget(null);
-      this.renderer.setClearColor(this.voidClear, 1);
-      this.renderer.render(this.scene, this.camera);
-    }
+    // One scene, one pass, straight to the canvas: the void is the
+    // clear colour, background sprites add onto it, the dust filter
+    // quad multiplies all of it per pixel, then the galaxy draws in
+    // front. A stacked column saturates to white — film, not a knee.
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(this.voidClear, 1);
+    this.renderer.render(this.scene, this.camera);
     this.callbacks.onFrame?.({
       mode: this.mode,
       theta: this.theta,

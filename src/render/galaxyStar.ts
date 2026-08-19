@@ -37,8 +37,8 @@ export const AIM_R_MAX = 0.22;
 /**
  * Photograph: I = GAIN · L^P · (DREF / d)^DIST_P.
  * Steep in L so the luminous tail is not one white.
- * Display brightness is the HDR sum after one Reinhard
- * knee (`GALAXY_PHOTO_KNEE`) — a column saturates.
+ * Pins add straight into the canvas; a stacked column
+ * saturates to white like film.
  */
 export const SHINE_L_GAIN = 0.14;
 export const SHINE_L_P = 0.62;

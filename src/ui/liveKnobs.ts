@@ -262,21 +262,6 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
-    id: 'photoKnee',
-    label: 'Photograph knee',
-    group: 'starlight',
-    hint: 'where a stacked column saturates',
-    about: 'Reinhard white point on the finished explorer photograph. Layers add in HDR; this knee is the last step — a column of pins approaches this brightness, it does not become N times one light. Raise it and Face-on / Edge-on climb toward white. Next frame.',
-    uniform: 'uPhotoKnee',
-    min: 0.15,
-    max: 2,
-    step: 0.02,
-    read: () => UNIVERSE.GALAXY_PHOTO_KNEE,
-    write: (v) => {
-      UNIVERSE.GALAXY_PHOTO_KNEE = v;
-    },
-  },
-  {
     id: 'nebula',
     label: 'Nebula glow',
     group: 'nebulae',

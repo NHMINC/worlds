@@ -642,12 +642,6 @@ export const UNIVERSE = {
    *  densely than the backdrop's 12 — same law, cheaper march. */
   GALAXY_EXTINCT_STEPS_LOCAL: 3,
   SILHOUETTE_NEBULA_PX: 4,
-  /**
-   * Photograph knee (Reinhard white point). Layers add in an
-   * HDR buffer; this is the last step. L → knee as the column
-   * grows — N lights do not become N times one light.
-   */
-  GALAXY_PHOTO_KNEE: 0.35,
   /** Emission-nebula glow gain (photograph stretch, not new energy).
    *  Shells screen-blend: dest + src·(1-dest). They glow and
    *  saturate; they do not add to a white bar. This is one cloud. */
