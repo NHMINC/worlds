@@ -85,17 +85,19 @@ export const HARVEST_PIN_CORE = 0.85;
 /**
  * Fly-distance shine: I = GAIN · (L/LREF)^P · (DREF / d)^DIST_P.
  * GAIN is the magnitude ZERO-POINT (the exposure): the survey
- * floor paints at ~GAIN, dim but present. At 2.5 the whole
- * population pinned at the hue ceiling — a sea of identical
- * dots; at 0.1 the faint half vanished. 0.28 keeps every star
- * visible while the scale still runs smoothly to the ceiling.
- * L_P is the STEEPNESS of that scale: 0.48 spans floor→bright
- * in about one decade of painted intensity — the gap reads
- * without the faint end dropping out; the luminous tail still
- * saturates and keeps differentiating through halo reach.
- * Star shine / Magnitude contrast are these two laws, live.
+ * floor paints at ~GAIN. The harvest is a magnitude-limited
+ * survey of the BRIGHTEST objects — its floor is already a
+ * significant beacon, not the faintest star of a 10⁹ galaxy —
+ * so the exposure sits MEDIUM: every row clearly present, the
+ * sliders working on real light sources instead of spending
+ * their range lifting the floor into visibility. At 2.5 the
+ * whole population pinned at the hue ceiling (a sea of
+ * identical dots); at 0.1 the faint half vanished. L_P is the
+ * STEEPNESS of the scale; the luminous tail saturates and keeps
+ * differentiating through halo reach. Star shine / Magnitude
+ * contrast are these two laws, live.
  */
-export const HARVEST_SHINE_GAIN = 0.28;
+export const HARVEST_SHINE_GAIN = 0.5;
 export const HARVEST_SHINE_L_P = 0.48;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_SHINE_DIST_P = 0.5;
