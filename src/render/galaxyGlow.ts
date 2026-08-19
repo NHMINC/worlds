@@ -6,9 +6,7 @@
  * a luminosity-weighted population mix: old bulge/bar/thick → K,
  * young thin → late-B. Dust extincts the march the way it extincts
  * stars. A faint ionized sheet (mean molecular field × gas arms)
- * is a second term, same pass, own gain. The integral sits in
- * front of the far photograph: a drawn pixel covers the night
- * (dest·(1−α), α=1). Additive glow cannot cover.
+ * is a second term, same pass, own gain.
  */
 import { UNIVERSE } from '../world/physics';
 import { teffToRgb } from '../world/stellar';
@@ -214,10 +212,8 @@ export function glowFrag(extinctChunk: string, steps: number): string {
       em += src * T * dt;
     }
     vec3 c = em * uGlowGain;
-    float L = max(dot(c, vec3(0.2126, 0.7152, 0.0722)), 0.0);
-    if (L < 0.004) discard;
-    // Drawn glow is in front of the decreed night. dest+src left
-    // pins in every inter-clump gap; dest*(1−α) with α=1 covers.
+    float a = max(c.r, max(c.g, c.b));
+    if (a < 0.004) discard;
     gl_FragColor = vec4(c, 1.0);
   }
 `;

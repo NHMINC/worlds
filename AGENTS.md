@@ -116,15 +116,9 @@ types or star types.
   the camera. The warp fence keeps you off the photograph.
   Not a catalog. Not pickable. Dust filters the sightline.
   The distant sky marches the dust box (thin clumps cannot
-  hide). The bake is already the dense tail: a clump is a
-  wall, and so is the thin disk (R < R_max, |y| < zd) — the
-  Milky Way is in front of the Hubble Deep Field, including
-  the inter-arm gaps. Leftover Beer–Lambert still read as
-  night (K is gain, not thickness). Empty space is vacuum.
-  The Hubble glow sits in front of that night (a drawn glow
-  pixel covers the photograph — it does not add through the
-  pins). The framebuffer clear is black — the
-  cosmic quad paints the night.
+  hide); a wall on that ray is lightless for the void and
+  the pins. Empty space is vacuum. The framebuffer clear
+  is black — the cosmic quad paints the night.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
@@ -311,12 +305,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   on the warped molecular sheet — star ids do not move. A
   crest is a small Gaussian splat (anti-aliasing only) —
   hardware trilinear of a lone sample is a diamond face-on.
-  Ribbon cores are a wall for starlight (lightless); only
-  the thin rim reddens. The far photograph dies on a baked
-  clump or on the thin disk (R < R_max, |y| < zd) — inter-arm
-  gaps are still the galaxy. The Hubble glow covers where it
-  draws (it does not add through the pins). Dust does not
-  emit or reflect. Not harvest rows. A
+  Ribbon cores are a wall (lightless); only the thin rim reddens.
+  Dust does not emit or reflect. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills
