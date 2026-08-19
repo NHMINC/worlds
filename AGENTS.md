@@ -351,10 +351,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   class (the radius-widens-the-halo law is retired; a giant's
   gold is its colour and luminosity). The star row's size field
   still carries R☉ from the clock for the later close survey.
-  Star colour (`uShineSat`), Star shine (`uShineLGain`), and
-  Magnitude contrast (`uShineLP`) are live starlight knobs; the
-  PSF wing energy is a law, not a knob (it read as a second
-  brightness slider). r/d grow is a
+  Colour is NATURAL: the raw blackbody chromaticity (teffToRgb),
+  hue-normalized only — saturation pushes distorted hue (yellow
+  drifted orange) and are retired. Star shine (`uShineLGain`)
+  and Magnitude contrast (`uShineLP`) are the live starlight
+  knobs; the PSF wing energy is a law, not a knob (it read as a
+  second brightness slider). r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`): `ismAt.photo` —
   hole × decline × domain-

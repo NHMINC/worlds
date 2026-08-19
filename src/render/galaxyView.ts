@@ -27,7 +27,6 @@ import {
   HARVEST_SHINE_DIST_REF,
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
-  HARVEST_SHINE_SAT,
   POINT_FLUX_EPS,
   glowRadiusKpc,
 } from './galaxyStar';
@@ -289,7 +288,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uShineLP;
   uniform float uShineDistRef;
   uniform float uShineDistP;
-  uniform float uShineSat;
   uniform float uPinCanvas;
   varying vec3 vColor;
   varying float vVis;
@@ -356,14 +354,14 @@ const SILHOUETTE_VERT = /* glsl */ `
       } else {
         gl_PointSize = max(uPixel, wingPx);
       }
-      // Spectral gamma: normalize by the dominant channel, then a
-      // power on the rest. The old luminance-preserving mix could
-      // never make a hot star BLUE — green carries 72% of the
-      // luminance weight, so it pinned g high and clamped b at 1:
-      // white-cyan forever. This law deepens colour monotonically
-      // and keeps the hue: an O goes true blue, a giant rich gold.
+      // Natural colouring: the raw blackbody chromaticity
+      // (teffToRgb), hue-normalized to its dominant channel and
+      // nothing else. The spectral-gamma push is retired — it
+      // powered sub-dominant channels down, and green falls
+      // faster than red, so yellow drifted orange. The law is
+      // the blackbody; the paint does not editorialize.
       float maxc = max(aColor.r, max(aColor.g, aColor.b));
-      vColor = pow(aColor / max(maxc, 1e-3), vec3(uShineSat));
+      vColor = aColor / max(maxc, 1e-3);
       vVis = shine;
       vPx = gl_PointSize;
     }
@@ -884,7 +882,6 @@ export class GalaxyView {
       uShineLP: { value: HARVEST_SHINE_L_P },
       uShineDistRef: { value: HARVEST_SHINE_DIST_REF },
       uShineDistP: { value: HARVEST_SHINE_DIST_P },
-      uShineSat: { value: HARVEST_SHINE_SAT },
       uPinCanvas: { value: HARVEST_PIN_CANVAS },
       uPinCore: { value: HARVEST_PIN_CORE },
       uFluxEps: { value: POINT_FLUX_EPS },

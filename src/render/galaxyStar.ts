@@ -47,15 +47,6 @@ export const SHINE_DIST_P = 0.45;
 /** Photograph saturation: how far teff RGB is pushed off white. */
 export const SHINE_SAT = 1.55;
 /**
- * Spectral gamma of the harvest photograph (see harvestChroma).
- * 1 = raw blackbody. 1.5 reads like film: B stars blue-WHITE
- * (their real photographic look), K giants warm gold. 2.7 was a
- * fight against additive bleaching; under MAX compositing hue
- * survives per pixel, and that depth dyed the whole B-heavy
- * harvest azure.
- */
-export const HARVEST_SHINE_SAT = 1.5;
-/**
  * Photograph zero-point (L☉). Stays at the original late-B floor
  * so deepening SILHOUETTE_L adds fainter pins instead of
  * re-exposing every star already in the sky.
@@ -159,15 +150,13 @@ export function harvestShine(L: number, d: number): number {
   return base * dist;
 }
 
-/** Spectral gamma — the same law the harvest vertex uses:
- *  normalize by the dominant channel, power the rest. Deepens
- *  colour monotonically with the hue preserved (an O goes true
- *  blue, a giant rich gold); the old luminance-preserving mix
- *  pinned hot stars at white-cyan. */
+/** Natural colouring — the same law the harvest vertex uses: raw
+ *  blackbody chromaticity, hue-normalized to its dominant
+ *  channel, nothing pushed. Saturation edits distorted hue
+ *  (yellow drifted orange); the blackbody is the law. */
 export function harvestChroma(rgb: [number, number, number]): [number, number, number] {
   const maxc = Math.max(rgb[0], rgb[1], rgb[2], 1e-3);
-  const ch = (c: number) => Math.pow(Math.max(c, 0) / maxc, HARVEST_SHINE_SAT);
-  return [ch(rgb[0]), ch(rgb[1]), ch(rgb[2])];
+  return [rgb[0] / maxc, rgb[1] / maxc, rgb[2] / maxc];
 }
 
 /** Unused close-survey radius. Harvest GPU size is harvestStarPx. */
