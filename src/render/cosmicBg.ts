@@ -25,6 +25,12 @@
  * dust in its own shader.
  */
 import { xmur3 } from '../world/rng';
+import {
+  HARVEST_PSF_A,
+  HARVEST_PSF_B,
+  HARVEST_PSF_TAIL,
+  HARVEST_PSF_THRESH,
+} from './galaxyStar';
 
 /**
  * Far-plane sky. A surrounding sphere puts triangles through w = 0
@@ -236,7 +242,11 @@ export function mintCosmicSmudges(seed: string, n: number, cluster: number): Cos
 
 /** A pin dims itself — the same process as a harvest star: its
  *  own shader marches the camera→sky sightline (extinctLook) and
- *  multiplies its own light. A point source is exact per vertex. */
+ *  multiplies its own light. A point source is exact per vertex.
+ *  The paint is the SAME dot+halo magnitude law as the harvest
+ *  (same PSF constants): a fixed dot, brightness grows the
+ *  halo's reach — the minted spread (dim field + rare bright
+ *  tail) shows as magnitude, not as a size ramp. */
 export function cosmicStarVert(extinctChunk: string): string {
   return /* glsl */ `
   ${extinctChunk}
@@ -244,13 +254,10 @@ export function cosmicStarVert(extinctChunk: string): string {
   attribute float aShine;
   uniform float uStarGain;
   uniform float uPinCanvas;
-  uniform float uPinCore;
   uniform vec3 uCenter;
   varying vec3 vColor;
   varying float vI;
   varying float vPx;
-  varying float vCore;
-  varying float vNear;
 
   void main() {
     vec3 dir = normalize(position);
@@ -259,8 +266,6 @@ export function cosmicStarVert(extinctChunk: string): string {
     if (mv.z > -0.08) {
       vI = 0.0;
       vPx = 0.0;
-      vCore = 0.0;
-      vNear = 0.0;
       vColor = vec3(0.0);
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
@@ -268,12 +273,11 @@ export function cosmicStarVert(extinctChunk: string): string {
     }
     vI = aShine * uStarGain;
     vColor = aColor * extinctLook(uCenter, dir);
-    float n = clamp(pow(aShine / 9.5, 0.38), 0.0, 1.0);
-    vNear = n;
-    float pin = uPinCanvas * mix(0.5, 2.85, n);
-    gl_PointSize = pin;
-    vPx = pin;
-    vCore = uPinCore * mix(0.36, 2.15, n);
+    // Sprite = room for the visible wings, never a disc radius.
+    float num = ${HARVEST_PSF_TAIL} * vI / ${HARVEST_PSF_THRESH} - ${HARVEST_PSF_A};
+    float rPx = sqrt(max(0.0, num / ${HARVEST_PSF_B}));
+    gl_PointSize = max(uPinCanvas, 1.0 + 2.0 * rPx);
+    vPx = gl_PointSize;
     vec4 clip = projectionMatrix * mv;
     gl_Position = vec4(clip.xy, clip.w, clip.w);
   }
@@ -282,19 +286,25 @@ export function cosmicStarVert(extinctChunk: string): string {
 
 export function cosmicStarFrag(): string {
   return /* glsl */ `
+  uniform float uPinCore;
   varying vec3 vColor;
   varying float vI;
   varying float vPx;
-  varying float vCore;
-  varying float vNear;
 
   void main() {
     if (vI < 1e-5) discard;
     vec2 d = (gl_PointCoord - 0.5) * vPx;
     float rr = dot(d, d);
-    float w = exp(-rr * vCore) + vNear * 0.28 / (1.0 + rr * 0.07);
-    if (w < 0.01) discard;
-    gl_FragColor = vec4(vColor * (vI * w), 1.0);
+    // Dot + halo, hue-preserving — the harvest law verbatim: the
+    // dot is fixed; magnitude grows the halo's reach toward the
+    // colour ceiling with a gradient everywhere.
+    float hueCeil = 1.0 / max(max(vColor.r, max(vColor.g, vColor.b)), 1e-3);
+    float dotI = min(vI * exp(-rr * uPinCore), hueCeil);
+    float tailT = ${HARVEST_PSF_TAIL} / (${HARVEST_PSF_A} + ${HARVEST_PSF_B} * rr);
+    float haloI = hueCeil * (1.0 - exp(-(vI * tailT) / hueCeil));
+    float I = max(dotI, haloI);
+    if (I < 0.003) discard;
+    gl_FragColor = vec4(vColor * I, 1.0);
   }
 `;
 }

@@ -457,7 +457,7 @@ export const UNIVERSE = {
    * One knob: envelope, noise flattening, and vertical warp
    * all read it. Photograph only — star ids do not move.
    */
-  GALAXY_DUST_GRIP: 0.67,
+  GALAXY_DUST_GRIP: 0.75,
   /**
    * Corrugation: how far a cloud's centre wanders off the slice,
    * in rms units of the effective scale height (ZD / grip). A
@@ -667,10 +667,12 @@ export const UNIVERSE = {
    *  local density (fade floor → this) integrated along the path
    *  in units of EXTINCT_COL — so the log-normal field prices a
    *  typical cloud near A_V ≈ 0.5–1 mag (translucent, reddened),
-   *  makes true abysses the rare dense tail (~top 5%, midplane
-   *  p95 ≈ 0.25), and lets overlaps stack toward black. Stars and
-   *  the cosmic background obey the same column. */
-  GALAXY_EXTINCT_ABYSS: 0.25,
+   *  makes true abysses the rare dense tail, and lets overlaps
+   *  stack toward black. Stars and the cosmic background obey
+   *  the same column. 0.65 is the owner's calibration: single
+   *  clouds stay hazy veils (midplane crests top out ~0.67);
+   *  darkness is earned by stacked columns. */
+  GALAXY_EXTINCT_ABYSS: 0.65,
   /** The column that saturates: this many kpc of abyss-grade dust
    *  reaches the full cap (lightless). ~One typical cloud diameter
    *  (1/DUST_FREQ), so a dense cloud blacks out in one crossing, a
