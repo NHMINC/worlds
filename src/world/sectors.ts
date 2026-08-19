@@ -861,9 +861,13 @@ function walkSkyClouds(
   // leave the census — the zoo keeps the interesting ones.
   const aliveEst = (m0: number, m1: number) =>
     Math.min(1, Math.max(0.02, msLifetime(Math.sqrt(m0 * m1)) / 8));
-  // Hot strata get smaller budgets — their living members are
-  // rare, and every kept row costs 1/aliveFrac clock reads.
-  const stratW = [1.15, 1.15, 1.05, 0.95, 0.7, 0.35, 0.12];
+  // Budget weights per stratum (M K G F A B O). Under MAX the
+  // carpet between bright winners is the numerous dim classes —
+  // all-warm M/K by count read as a tan wash — so the white
+  // middle (G/F/A) carries more of the budget. Hot strata stay
+  // small: living members are rare and each kept row costs
+  // 1/aliveFrac clock reads.
+  const stratW = [0.7, 0.9, 1.25, 1.25, 0.9, 0.35, 0.12];
   for (let j = 0; j < nStrata; j++) {
     const m0 = strataM[j];
     const m1 = j + 1 < nStrata ? strataM[j + 1] : 1000;
