@@ -193,9 +193,12 @@ export function mintCosmicStars(seed: string, n: number): CosmicStars {
     pos[i * 3] = dir[0];
     pos[i * 3 + 1] = dir[1];
     pos[i * 3 + 2] = dir[2];
-    // Same hash, two powers: a dim field plus a rare nearby tail.
+    // Magnitude variety: a log-spread across ~3 decades with a
+    // faint-heavy bias (real source counts are power laws) —
+    // most pins are barely-there specks, a rare few blaze. The
+    // dot+halo paint shows the spread as magnitude, not size.
     const flux = hash01(seedU, i, 1);
-    shine[i] = 0.0025 + 0.55 * flux ** 2.4 + 8.8 * flux ** 11;
+    shine[i] = 0.02 * Math.pow(1500, Math.pow(flux, 2.2));
     const rgb = teffRgb(hash01(seedU, i, 2));
     col[i * 3] = rgb[0];
     col[i * 3 + 1] = rgb[1];
