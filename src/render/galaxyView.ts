@@ -354,14 +354,16 @@ const SILHOUETTE_VERT = /* glsl */ `
       } else {
         gl_PointSize = max(uPixel, wingPx);
       }
-      // Natural colouring: the raw blackbody chromaticity
-      // (teffToRgb), hue-normalized to its dominant channel and
-      // nothing else. The spectral-gamma push is retired — it
-      // powered sub-dominant channels down, and green falls
-      // faster than red, so yellow drifted orange. The law is
-      // the blackbody; the paint does not editorialize.
-      float maxc = max(aColor.r, max(aColor.g, aColor.b));
-      vColor = aColor / max(maxc, 1e-3);
+      // Natural colouring with honest colour management: the
+      // blackbody law (teffToRgb) yields DISPLAY (sRGB) colour,
+      // so decode to linear here — all light math (intensity,
+      // extinction, the hue ceiling) runs in linear light — and
+      // the fragment encodes back to sRGB. Skipping the round
+      // trip scaled sRGB primaries by linear intensity: midtones
+      // darkened, warmth exaggerated, the disk washed tan-brown.
+      vec3 lin = pow(max(aColor, 0.0), vec3(2.2));
+      float maxc = max(lin.r, max(lin.g, lin.b));
+      vColor = lin / max(maxc, 1e-3);
       vVis = shine;
       vPx = gl_PointSize;
     }
@@ -421,7 +423,9 @@ const STAR_FRAG = /* glsl */ `
         float I = min(max(vVis, 0.0) * w, hueCeil);
         // Low floor: the faint end fades out, it does not pop.
         if (I < 0.003) discard;
-        gl_FragColor = vec4(vColor * I, 1.0);
+        // Encode linear light back to sRGB. Gamma is monotone,
+        // so MAX compositing picks the same winner.
+        gl_FragColor = vec4(pow(clamp(vColor * I, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
         return;
       }
       float edge = length(p);
@@ -449,7 +453,8 @@ const STAR_FRAG = /* glsl */ `
       // an O star stays blue, a giant stays gold.
       float bleach = smoothstep(40.0, 160.0, I) * coreT;
       vec3 c = mix(vColor, vec3(1.0), bleach) * profile;
-      gl_FragColor = vec4(c, 1.0);
+      // Encode linear light back to sRGB (monotone — MAX-safe).
+      gl_FragColor = vec4(pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
       return;
     }
     // Emission nebulae: self-luminous shells. Brightness is emission

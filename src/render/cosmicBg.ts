@@ -275,7 +275,8 @@ export function cosmicStarVert(extinctChunk: string): string {
       return;
     }
     vI = aShine * uStarGain;
-    vColor = aColor * extinctLook(uCenter, dir);
+    // sRGB → linear; extinction and intensity are linear light.
+    vColor = pow(max(aColor, 0.0), vec3(2.2)) * extinctLook(uCenter, dir);
     // Sprite = room for the visible wings, never a disc radius.
     float num = ${HARVEST_PSF_TAIL} * vI / ${HARVEST_PSF_THRESH} - ${HARVEST_PSF_A};
     float rPx = sqrt(max(0.0, num / ${HARVEST_PSF_B}));
@@ -307,7 +308,8 @@ export function cosmicStarFrag(): string {
     float haloI = hueCeil * (1.0 - exp(-(vI * tailT) / hueCeil));
     float I = max(dotI, haloI);
     if (I < 0.003) discard;
-    gl_FragColor = vec4(vColor * I, 1.0);
+    // Encode linear light back to sRGB (monotone — MAX-safe).
+    gl_FragColor = vec4(pow(clamp(vColor * I, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
   }
 `;
 }

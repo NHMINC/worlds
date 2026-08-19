@@ -841,7 +841,7 @@ function walkSkyClouds(
   // NS-mass addresses; every black hole is 1.28M rows — 5× the
   // whole budget). Quiet old NS and WDs ride the mass strata in
   // their honest share. Budgets scale with SAMPLE_N.
-  type Gate = 'any' | 'bh' | 'pulsar' | 'alive' | 'giant';
+  type Gate = 'living' | 'bh' | 'pulsar' | 'alive' | 'giant';
   const cats: Array<{ u0: number; u1: number; step: number; gate: Gate }> = [];
   const uOf = (m: number) => Math.min(1, Math.max(0, imfQuantile(m)));
   const addCat = (m0: number, m1: number, catBudget: number, fracEst: number, gate: Gate) => {
@@ -851,8 +851,23 @@ function walkSkyClouds(
     if (pop <= 0 || catBudget <= 0) return;
     cats.push({ u0, u1, step: Math.max(1, (pop * fracEst) / catBudget), gate });
   };
+  // Mass strata are LIVING-gated: equal budgets in birth slots
+  // spent most of the white-star budget on corpses (the A
+  // stratum yielded 3.9k living of a 35.7k budget — the rest
+  // were invisible white-dwarf rows) and the living sky came out
+  // warm-heavy 3:1. The stride is scaled by each stratum's alive
+  // fraction (≈ tMs at the stratum's mid mass over the ~8 Gyr
+  // age span) so the budget buys living stars. Quiet remnants
+  // leave the census — the zoo keeps the interesting ones.
+  const aliveEst = (m0: number, m1: number) =>
+    Math.min(1, Math.max(0.02, msLifetime(Math.sqrt(m0 * m1)) / 8));
+  // Hot strata get smaller budgets — their living members are
+  // rare, and every kept row costs 1/aliveFrac clock reads.
+  const stratW = [1.15, 1.15, 1.05, 0.95, 0.7, 0.35, 0.12];
   for (let j = 0; j < nStrata; j++) {
-    addCat(strataM[j], j + 1 < nStrata ? strataM[j + 1] : 1000, budget, 1, 'any');
+    const m0 = strataM[j];
+    const m1 = j + 1 < nStrata ? strataM[j + 1] : 1000;
+    addCat(m0, m1, budget * stratW[j], aliveEst(m0, Math.min(m1, 60)), 'living');
   }
   const N = UNIVERSE.GALAXY_SAMPLE_N;
   // Black holes: everything ≥ REMNANT_NS is dead almost at birth.
@@ -908,17 +923,25 @@ function walkSkyClouds(
               if (slot >= filled || kept.includes(slot)) continue;
               const clock = slotBirthClock(seed, cell, slot, filled);
               // Cheap clock gates: reject before paying evolve.
-              if (cat.gate !== 'any') {
-                const tMs = msLifetime(clock.massZams);
-                const dead = clock.ageGyr - tMs - giantWindow(clock.massZams);
-                if (cat.gate === 'alive' && dead >= 0) continue;
-                if (cat.gate === 'bh' && dead < 0) continue;
-                if (cat.gate === 'pulsar' && (dead < 0 || dead >= UNIVERSE.PULSAR_GYR)) continue;
-                if (cat.gate === 'giant' && (clock.ageGyr < tMs || dead >= 0)) continue;
-              }
+              const tMs = msLifetime(clock.massZams);
+              const dead = clock.ageGyr - tMs - giantWindow(clock.massZams);
+              if (cat.gate === 'living' && dead >= 0) continue;
+              if (cat.gate === 'alive' && dead >= 0) continue;
+              if (cat.gate === 'bh' && dead < 0) continue;
+              if (cat.gate === 'pulsar' && (dead < 0 || dead >= UNIVERSE.PULSAR_GYR)) continue;
+              if (cat.gate === 'giant' && (clock.ageGyr < tMs || dead >= 0)) continue;
               const ev = sketchEvolve(clock);
               if (cat.gate === 'bh' && ev.phase !== 'black_hole') continue;
               if (cat.gate === 'pulsar' && ev.phase !== 'pulsar') continue;
+              if (
+                cat.gate === 'living' &&
+                (ev.phase === 'white_dwarf' ||
+                  ev.phase === 'neutron_star' ||
+                  ev.phase === 'pulsar' ||
+                  ev.phase === 'black_hole')
+              ) {
+                continue;
+              }
               if (
                 cat.gate === 'giant' &&
                 ev.phase !== 'giant' &&
