@@ -20,6 +20,8 @@ import {
   HARVEST_PIN_CORE,
   HARVEST_PSF_A,
   HARVEST_PSF_B,
+  HARVEST_DENS_GAIN,
+  HARVEST_HUE_FLOOR,
   HARVEST_PSF_CORE,
   HARVEST_WHITE_K,
   whiteRefLinear,
@@ -292,6 +294,8 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uShineDistP;
   uniform float uPinCanvas;
   uniform vec3 uWhiteRef;
+  uniform float uDensGain;
+  uniform float uHueFloor;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -344,6 +348,12 @@ const SILHOUETTE_VERT = /* glsl */ `
       float L = max(aLum, 1e-4);
       float distF = pow(uShineDistRef / max(d, 0.4), uShineDistP);
       float shine = uShineLGain * pow(L / max(uLRef, 1.0), uShineLP) * distF;
+      // AMBASSADOR GLOW: aVis carries the local star density —
+      // each row wears the integrated light of its ~thousands of
+      // unsampled neighbours. Dense-core ambassadors run the
+      // overexposure law into white-gold: the Hubble bulge from
+      // the density field, not a painted core.
+      shine *= 1.0 + uDensGain * clamp(aVis, 0.0, 1.0);
       float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
       float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
       float css = max(1.0, 1.0 + 2.0 * rCss);
@@ -368,6 +378,14 @@ const SILHOUETTE_VERT = /* glsl */ `
       vec3 lin = pow(max(aColor, 0.0), vec3(2.2)) / max(uWhiteRef, vec3(1e-3));
       float maxc = max(lin.r, max(lin.g, lin.b));
       vColor = lin / max(maxc, 1e-3);
+      // AMBASSADOR COLOUR FLOOR: integrated old-population light
+      // blends to gold, never a lone dwarf's brown. Warm rows
+      // floor green/blue at yellow-gold (linear 0.70 / 0.27 ≈
+      // display 0.85 / 0.55); 0 restores individual colours.
+      if (vColor.r >= vColor.b) {
+        vColor.g = max(vColor.g, 0.70 * uHueFloor);
+        vColor.b = max(vColor.b, 0.27 * uHueFloor);
+      }
       vVis = shine;
       vPx = gl_PointSize;
     }
@@ -886,6 +904,8 @@ export class GalaxyView {
     return {
       uLRef: { value: HARVEST_L_REF },
       uWhiteRef: { value: new THREE.Vector3(...whiteRefLinear(HARVEST_WHITE_K)) },
+      uDensGain: { value: HARVEST_DENS_GAIN },
+      uHueFloor: { value: HARVEST_HUE_FLOOR },
       uPsfCore: { value: HARVEST_PSF_CORE },
       uPsfTail: { value: HARVEST_PSF_TAIL },
       uPsfA: { value: HARVEST_PSF_A },

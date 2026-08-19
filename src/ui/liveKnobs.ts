@@ -7,6 +7,8 @@
  */
 import { UNIVERSE } from '../world/physics';
 import {
+  HARVEST_DENS_GAIN,
+  HARVEST_HUE_FLOOR,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
@@ -284,6 +286,30 @@ export const LIVE_KNOBS: LiveKnob[] = [
     max: 1,
     step: 0.01,
     read: () => HARVEST_SHINE_DIST_P,
+  },
+  {
+    id: 'densGlow',
+    label: 'Density glow',
+    group: 'starlight',
+    hint: 'ambassador light: dense regions glow',
+    about: 'Each sampled star stands in for thousands of unsampled neighbours; this scales its light with the local star density — the stand-in for the unresolved sum a real photograph integrates. High and the core runs the overexposure law into white-gold; 0 paints every row as itself alone. Next frame.',
+    uniform: 'uDensGain',
+    min: 0,
+    max: 20,
+    step: 0.1,
+    read: () => HARVEST_DENS_GAIN,
+  },
+  {
+    id: 'hueFloor',
+    label: 'Colour floor',
+    group: 'starlight',
+    hint: 'warm colours start at yellow-gold',
+    about: 'Integrated old-population light blends to gold, never a lone dwarf\'s brown — warm rows floor their green/blue at yellow-gold. 1 is the shipped blend; 0 restores individual star colours (browns return). Next frame.',
+    uniform: 'uHueFloor',
+    min: 0,
+    max: 1.2,
+    step: 0.01,
+    read: () => HARVEST_HUE_FLOOR,
   },
   {
     id: 'whiteBal',

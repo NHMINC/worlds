@@ -338,7 +338,15 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   whiteout is impossible by construction, and density reads as
   coverage. The HDR knee pass and the super-sun extra-I patch
   are retired — the magnitude law owns the whole scale.)
-  Colour is
+  The AMBASSADOR laws are the decreed stand-in for the
+  unresolved sum a real photograph integrates (we cannot draw
+  10⁹ stars on a phone): each sampled row carries its local
+  star density (baked in the gain field) and its light scales
+  with it (`HARVEST_DENS_GAIN`) — the Hubble bulge glows out of
+  the density field, not a painted core — and warm rows floor
+  their colour at yellow-gold (`HARVEST_HUE_FLOOR`), because
+  integrated old-population light blends to gold, never a lone
+  dwarf's brown. Colour is
   hue-preserving up to the channel ceiling, then OVEREXPOSES:
   light past the ceiling whitens the pixel the way a saturated
   photocell blends white — a glowing gold giant reads

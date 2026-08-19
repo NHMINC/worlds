@@ -54,6 +54,23 @@ export const SHINE_DIST_P = 0.45;
 /** Photograph saturation: how far teff RGB is pushed off white. */
 export const SHINE_SAT = 1.55;
 /**
+ * AMBASSADOR GLOW: each sampled star stands in for thousands of
+ * unsampled neighbours, so its light scales with the local star
+ * density — the closed-form stand-in for the unresolved sum a
+ * real photograph integrates (we cannot draw 10⁹ stars on a
+ * phone). Dense-core rows run the overexposure law into
+ * white-gold; the Hubble bulge emerges from the density field.
+ */
+export const HARVEST_DENS_GAIN = 6;
+/**
+ * AMBASSADOR COLOUR FLOOR: integrated old-population light blends
+ * to gold (luminosity weighting favours the yellower members),
+ * never to the brown of a lone dim dwarf. Warm (red-dominant)
+ * rows floor their green/blue at yellow-gold; 1 is the shipped
+ * floor, 0 restores individual star colours.
+ */
+export const HARVEST_HUE_FLOOR = 1;
+/**
  * Photograph WHITE BALANCE (kK): the blackbody temperature that
  * reads as pure white — one von-Kries divide in linear light,
  * no per-class edits. The raw locus crosses white at 6.6 kK, so

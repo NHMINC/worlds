@@ -916,6 +916,13 @@ function walkSkyClouds(
         const cell = ir * nth * nz + it * nz + iz;
         const filled = slotsInCell(seed, cell);
         if (filled <= 0) continue;
+        // AMBASSADOR density: each sampled row stands in for
+        // ~sampleStep unsampled neighbours, so it carries the
+        // local density (log-normalized over the model's ~3.4
+        // decades) — the paint turns it into the integrated
+        // glow the unresolved sum would have produced.
+        const rho = filled / Math.max(vol * nK, 1e-9);
+        const dens01 = Math.min(1, Math.max(0, Math.log10(Math.max(rho, 1e-4) * 100) / 3.3));
         if (wantStars) {
           const kept: number[] = [];
           for (let j = 0; j < cats.length; j++) {
@@ -958,6 +965,8 @@ function walkSkyClouds(
               const birth = finishSlotBirth(clock);
               if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
               writeEvolved(cell, slot, ns++, stars, birth, ev, true);
+              // Star rows carry the ambassador density in gain.
+              stars.gain[ns - 1] = dens01;
             }
           }
         }
