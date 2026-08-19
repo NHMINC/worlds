@@ -83,12 +83,14 @@ export const HARVEST_PIN_CANVAS = 7;
 /** Device-px⁻². FWHM ≈ 1.3 px; halo dies by ~2.5 px. */
 export const HARVEST_PIN_CORE = 0.85;
 /**
- * Painted body from the photosphere: core width scales as
+ * Halo width from the photosphere: the HALO radius scales as
  * radius^RADIUS_P (R☉ from evolve, carried in the star row's
- * size field), clamped at RADIUS_MAX. A documented display
- * stretch, not a class flag: a K giant (~30 R☉) paints a wide
- * soft gold orb, an O dwarf (~10 R☉) a brilliant compact point,
- * an M dwarf or remnant stays a pin. 0 restores pure points.
+ * size field), clamped at RADIUS_MAX. The dot itself never
+ * grows — a star is unresolved at any brightness; magnitude
+ * and size live entirely in the halo's reach. A documented
+ * display stretch, not a class flag: a K giant (~30 R☉) wears
+ * a broad gold halo, an O dwarf a tight brilliant one, an M
+ * dwarf or remnant stays a pin. 0 restores equal halos.
  */
 export const HARVEST_RADIUS_P = 0.45;
 export const HARVEST_RADIUS_MAX = 4.5;

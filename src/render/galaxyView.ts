@@ -361,23 +361,23 @@ const SILHOUETTE_VERT = /* glsl */ `
         ? uSuperGain * (pow(superX, uSuperP) - 1.0)
         : 0.0;
       float shine = (base + extra) * distF;
+      // Every star is a point source: the dot never grows. The
+      // photosphere radius (aSize, R☉ from the clock) widens the
+      // HALO around that point — a giant wears a broad gold halo,
+      // not a disc. Size is physics, not a class flag.
+      vBody = clamp(pow(max(aSize, 0.02), uRadiusP), 1.0, max(uRadiusMax, 1.0));
       float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
-      float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
+      float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5))) * vBody;
       float css = max(1.0, 1.0 + 2.0 * rCss);
       float wingPx = css * uPixel;
-      // Painted body from the photosphere: aSize carries R☉ from
-      // the clock. A giant paints a wide soft orb, a dwarf a
-      // point — size is physics, not a class flag.
-      vBody = clamp(pow(max(aSize, 0.02), uRadiusP), 1.0, max(uRadiusMax, 1.0));
-      float pin = uPinCanvas * vBody;
       // Floor pin: soft device-pixel Gaussian. A thin plus still
       // blinked — GL_POINTS hops the covered set by 1px. Wings
       // that already need more room keep the CSS PSF.
-      if (wingPx <= pin) {
-        gl_PointSize = pin;
+      if (wingPx <= uPinCanvas) {
+        gl_PointSize = uPinCanvas;
         vStamp = 1.0;
       } else {
-        gl_PointSize = max(uPixel, max(wingPx, pin));
+        gl_PointSize = max(uPixel, wingPx);
       }
       float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
       vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
@@ -435,12 +435,9 @@ const STAR_FRAG = /* glsl */ `
       // luminosity the plateau cannot show already lives in the
       // Lorentzian wings (the coloured glow).
       float hueCeil = 1.0 / max(max(vColor.r, max(vColor.g, vColor.b)), 1e-3);
-      // vBody widens the painted Gaussians by the photosphere
-      // radius law — a giant is a soft wide orb, not a hot pin.
-      float body2 = vBody * vBody;
       if (vStamp > 0.5) {
         vec2 d = (gl_PointCoord - 0.5) * vPx;
-        float w = exp(-dot(d, d) * uPinCore / body2);
+        float w = exp(-dot(d, d) * uPinCore);
         float I = min(max(vVis, 0.0) * w, hueCeil);
         if (I < 0.008) discard;
         gl_FragColor = vec4(vColor * I, 1.0);
@@ -452,16 +449,24 @@ const STAR_FRAG = /* glsl */ `
       // PSF lives in CSS pixels, not sprite UVs. Stretching a
       // gaussian to fill the quad was the white-disc photograph.
       float rCss = (edge * vPx * 0.5) / max(uPixel, 1.0);
-      float core = exp(-rCss * rCss * uPsfCore / body2);
-      float tail = uPsfTail / (uPsfA + uPsfB * rCss * rCss);
+      // DOT + HALO, never a disc. The dot is a fixed sub-pixel
+      // Gaussian — a star is unresolved at any brightness. The
+      // halo is the Lorentzian, widened by the photosphere law
+      // (vBody) and soft-kneed toward the hue ceiling: magnitude
+      // grows the halo's REACH, and there is a brightness
+      // gradient everywhere — no flat shelf, no rim.
+      float coreT = exp(-rCss * rCss * uPsfCore);
+      float tailT = uPsfTail / (uPsfA + uPsfB * (rCss / vBody) * (rCss / vBody));
       float window = 1.0 - edge * edge;
       window *= window;
-      float profile = I * (0.95 * core + tail) * window;
+      float dotI = min(I * 0.95 * coreT, hueCeil);
+      float haloI = hueCeil * (1.0 - exp(-(I * tailT) / hueCeil));
+      float profile = max(dotI, haloI) * window;
       if (profile < 0.008) discard;
       // Only a truly monstrous photocentre overexposes to white —
       // an O star stays blue, a giant stays gold.
-      float bleach = smoothstep(40.0, 160.0, I) * core;
-      vec3 c = mix(vColor, vec3(1.0), bleach) * min(profile, hueCeil);
+      float bleach = smoothstep(40.0, 160.0, I) * coreT;
+      vec3 c = mix(vColor, vec3(1.0), bleach) * profile;
       gl_FragColor = vec4(c, 1.0);
       return;
     }

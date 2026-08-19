@@ -315,16 +315,19 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   bright star grows a saturated colour plateau (O blue, giant
   gold) instead of clipping to white, and the luminosity the
   plateau cannot show lives in the coloured Lorentzian wings.
-  Only a monstrous photocentre overexposes, like a plate. The
-  painted BODY derives from the photosphere radius (R☉ from the
-  clock, carried in the star row's size field,
-  `HARVEST_RADIUS_P`): a K giant is a wide soft gold orb, an O
-  a brilliant point, a remnant a pin — physics, not a class
-  flag. `HARVEST_SHINE_L_P` is the magnitude law — steep enough
-  that the blue tail genuinely outshines the floor. Star colour
-  (`uShineSat`), Star glow (`uPsfTail`), Magnitude contrast
-  (`uShineLP`), and Giant size (`uRadiusP`) are live starlight
-  knobs. r/d grow is a
+  DOT + HALO, never a disc: the dot is a fixed sub-pixel
+  Gaussian (a star is unresolved at any brightness); magnitude
+  grows the halo's REACH, and the halo soft-knees toward the
+  hue ceiling so there is a brightness gradient everywhere — no
+  flat shelf, no rim. The halo WIDTH derives from the
+  photosphere radius (R☉ from the clock, carried in the star
+  row's size field, `HARVEST_RADIUS_P`): a K giant wears a
+  broad gold halo, an O a tight brilliant one, a remnant a pin
+  — physics, not a class flag. `HARVEST_SHINE_L_P` is the
+  magnitude law — steep enough that the blue tail genuinely
+  outshines the floor. Star colour (`uShineSat`), Star glow
+  (`uPsfTail`), Magnitude contrast (`uShineLP`), and Giant size
+  (`uRadiusP`) are live starlight knobs. r/d grow is a
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`): `ismAt.photo` —
   hole × decline × domain-
