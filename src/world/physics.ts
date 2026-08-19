@@ -458,7 +458,17 @@ export const UNIVERSE = {
    * all read it. Photograph only — star ids do not move.
    */
   GALAXY_DUST_GRIP: 0.3,
-  GALAXY_DUST_FREQ: 2.6,
+  /** Size law only (cycles/kpc of the largest clumps). 4.2 puts
+   *  the dominant ribbons near ~240 pc — the scale of the biggest
+   *  real molecular complexes (Orion, W51), and still ~2.5 bake
+   *  voxels so the lattice stays hidden. Number is DUST_COVER. */
+  GALAXY_DUST_FREQ: 4.2,
+  /** Number law: lifts (>1) or sinks (<1) the whole turbulence
+   *  distribution with the summits pinned at 1 — more or fewer
+   *  crests clear the cloud floor, while clump size (FREQ) and
+   *  the darkness of the densest clouds (crest height vs
+   *  EXTINCT_ABYSS) stay put. 1 is identity. */
+  GALAXY_DUST_COVER: 1,
   GALAXY_DUST_SWIRL: 0.85,
   GALAXY_DUST_DETAIL: 0.55,
   GALAXY_DUST_SIGMA: 1.7,

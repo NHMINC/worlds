@@ -310,8 +310,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   planet-zoom law, not this sky. **Dust is never drawn — it
   is sightline extinction** (`extinctGlsl`): `ismAt.photo` —
   hole × decline × domain-
-  warped fractal fluff (`GALAXY_DUST_FREQ` / `_SWIRL` /
-  `_DETAIL` / `_SIGMA`): a slow noise field bends the clump
+  warped fractal fluff (`GALAXY_DUST_FREQ` is the size law,
+  `GALAXY_DUST_COVER` the number law — summits pinned, so
+  count moves without moving size or crest darkness; plus
+  `_SWIRL` / `_DETAIL` / `_SIGMA`): a slow noise field bends the clump
   noise, so eddies curl at every angle — a turbulent ocean, no
   picked directions, no lattice axis, and NO arm term: grains
   are event debris (winds, ejecta, supernovae) scattered

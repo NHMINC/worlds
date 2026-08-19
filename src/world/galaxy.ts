@@ -411,7 +411,13 @@ export function ismAt(
   const turb = base > 1e-5 ? ismTurbulence(seed, x, y, z) : 0;
   const dust = photoBase > 1e-5 ? dustTurbulence(seed, x, y, z) : 0;
   const raw = base > 1e-5 ? base * Math.exp(UNIVERSE.GALAXY_TURB_SIGMA * turb) : 0;
-  const photoRaw = photoBase > 1e-5 ? photoBase * Math.exp(UNIVERSE.GALAXY_DUST_SIGMA * dust) : 0;
+  // Cloud cover: lift (or sink) the whole turbulence distribution
+  // while pinning the summits at 1, so the NUMBER of crests over
+  // the cloud floor changes without moving the size law (FREQ) or
+  // the darkness of the densest clouds (their crest height).
+  const cover = Math.max(UNIVERSE.GALAXY_DUST_COVER, 0.05);
+  const lifted = 1 - (1 - dust) / cover;
+  const photoRaw = photoBase > 1e-5 ? photoBase * Math.exp(UNIVERSE.GALAXY_DUST_SIGMA * lifted) : 0;
   return {
     base,
     field: Math.min(1, raw / occCeil()),
