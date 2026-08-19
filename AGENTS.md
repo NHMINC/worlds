@@ -308,9 +308,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   bright-end cap; it does not stamp a larger disc. Pins add
   straight into the canvas — a stacked column saturates to
   white like film (the HDR knee pass is retired; it only
-  dimmed the whole galaxy). Above
-  `HARVEST_SUPER_L` leftover luminosity adds extra I — super-suns
-  only; every fainter harvest row is unchanged. Colour is
+  dimmed the whole galaxy; the super-sun extra-I patch is
+  retired too — the magnitude law owns the whole scale).
+  Colour is
   HUE-PRESERVING: hue is a channel ratio, so the painted
   photocentre caps where its strongest channel saturates — a
   bright star grows a saturated colour plateau (O blue, giant

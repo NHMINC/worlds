@@ -28,9 +28,6 @@ import {
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
   HARVEST_SHINE_SAT,
-  HARVEST_SUPER_GAIN,
-  HARVEST_SUPER_L,
-  HARVEST_SUPER_P,
   POINT_FLUX_EPS,
   glowRadiusKpc,
 } from './galaxyStar';
@@ -293,9 +290,6 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uShineDistRef;
   uniform float uShineDistP;
   uniform float uShineSat;
-  uniform float uSuperL;
-  uniform float uSuperGain;
-  uniform float uSuperP;
   uniform float uPinCanvas;
   varying vec3 vColor;
   varying float vVis;
@@ -348,12 +342,7 @@ const SILHOUETTE_VERT = /* glsl */ `
       float d = max(length(mv.xyz), 0.001);
       float L = max(aLum, 1e-4);
       float distF = pow(uShineDistRef / max(d, 0.4), uShineDistP);
-      float base = uShineLGain * pow(L / max(uLRef, 1.0), uShineLP);
-      float superX = L / max(uSuperL, 1.0);
-      float extra = superX > 1.0
-        ? uSuperGain * (pow(superX, uSuperP) - 1.0)
-        : 0.0;
-      float shine = (base + extra) * distF;
+      float shine = uShineLGain * pow(L / max(uLRef, 1.0), uShineLP) * distF;
       float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
       float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
       float css = max(1.0, 1.0 + 2.0 * rCss);
@@ -896,9 +885,6 @@ export class GalaxyView {
       uShineDistRef: { value: HARVEST_SHINE_DIST_REF },
       uShineDistP: { value: HARVEST_SHINE_DIST_P },
       uShineSat: { value: HARVEST_SHINE_SAT },
-      uSuperL: { value: HARVEST_SUPER_L },
-      uSuperGain: { value: HARVEST_SUPER_GAIN },
-      uSuperP: { value: HARVEST_SUPER_P },
       uPinCanvas: { value: HARVEST_PIN_CANVAS },
       uPinCore: { value: HARVEST_PIN_CORE },
       uFluxEps: { value: POINT_FLUX_EPS },

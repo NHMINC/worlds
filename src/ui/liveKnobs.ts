@@ -11,7 +11,6 @@ import {
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
   HARVEST_SHINE_SAT,
-  HARVEST_SUPER_GAIN,
 } from '../render/galaxyStar';
 
 export type EngineerGroupId = 'cosmic' | 'dust' | 'harvest' | 'starlight' | 'nebulae';
@@ -309,18 +308,6 @@ export const LIVE_KNOBS: LiveKnob[] = [
     max: 1,
     step: 0.01,
     read: () => HARVEST_SHINE_L_P,
-  },
-  {
-    id: 'super',
-    label: 'Super-sun glow',
-    group: 'starlight',
-    hint: 'extra glare on the rare brightest stars',
-    about: 'Leftover-luminosity glare above the super-sun floor. Fainter harvest rows are unchanged. Next frame.',
-    uniform: 'uSuperGain',
-    min: 0,
-    max: 16,
-    step: 0.1,
-    read: () => HARVEST_SUPER_GAIN,
   },
 ];
 

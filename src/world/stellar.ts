@@ -121,7 +121,16 @@ export function mkFromTeff(teff: number): MKClass {
   return mkGrade(teff).mk;
 }
 
-/** Cheap blackbody (Tanner–Helland-ish) for photosphere colour. */
+/**
+ * Blackbody photosphere colour (Tanner–Helland, t in kK). The
+ * old port had unit slips — the hot branch powered (t − 6) where
+ * the law wants (10t − 60) (T–H works in hundreds of Kelvin),
+ * and the cool green offset was 0.48 for a true 0.27 — washing
+ * every star toward white: a 30 kK photosphere painted
+ * (0.85, 0.89, 1) when the real blackbody is (0.62, 0.75, 1).
+ * No downstream saturation could recover colour the source law
+ * never emitted. Hot stars are blue; M stars are orange.
+ */
 export function teffToRgb(teff: number): [number, number, number] {
   if (teff <= 0) return [0.12, 0.1, 0.16];
   const t = Math.max(1, Math.min(40, teff / 1000));
@@ -130,11 +139,11 @@ export function teffToRgb(teff: number): [number, number, number] {
   let b: number;
   if (t <= 6.6) {
     r = 1;
-    g = Math.max(0, Math.min(1, 0.3901 * Math.log(t) + 0.48));
-    b = t <= 1.9 ? 0 : Math.max(0, Math.min(1, 0.5432 * Math.log(t - 0.8) + 0.12));
+    g = Math.max(0, Math.min(1, 0.3901 * Math.log(t) + 0.2664));
+    b = t <= 1.9 ? 0 : Math.max(0, Math.min(1, 0.5432 * Math.log(t - 1) + 0.0545));
   } else {
-    r = Math.max(0.6, Math.min(1, 1.2929 * Math.pow(t - 6, -0.1332)));
-    g = Math.max(0.7, Math.min(1, 1.1295 * Math.pow(t - 6, -0.0755)));
+    r = Math.max(0, Math.min(1, 1.29294 * Math.pow(10 * t - 60, -0.1332047592)));
+    g = Math.max(0, Math.min(1, 1.12989 * Math.pow(10 * t - 60, -0.0755148492)));
     b = 1;
   }
   return [r, g, b];
