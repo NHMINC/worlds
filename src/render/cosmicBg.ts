@@ -258,6 +258,7 @@ export function cosmicStarVert(extinctChunk: string): string {
   uniform float uStarGain;
   uniform float uPinCanvas;
   uniform vec3 uCenter;
+  uniform vec3 uWhiteRef;
   varying vec3 vColor;
   varying float vI;
   varying float vPx;
@@ -275,8 +276,9 @@ export function cosmicStarVert(extinctChunk: string): string {
       return;
     }
     vI = aShine * uStarGain;
-    // sRGB → linear; extinction and intensity are linear light.
-    vColor = pow(max(aColor, 0.0), vec3(2.2)) * extinctLook(uCenter, dir);
+    // sRGB → linear, white-balanced; extinction is linear light.
+    vColor = (pow(max(aColor, 0.0), vec3(2.2)) / max(uWhiteRef, vec3(1e-3)))
+      * extinctLook(uCenter, dir);
     // Sprite = room for the visible wings, never a disc radius.
     float num = ${HARVEST_PSF_TAIL} * vI / ${HARVEST_PSF_THRESH} - ${HARVEST_PSF_A};
     float rPx = sqrt(max(0.0, num / ${HARVEST_PSF_B}));

@@ -10,6 +10,7 @@ import {
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
+  HARVEST_WHITE_K,
 } from '../render/galaxyStar';
 
 export type EngineerGroupId = 'cosmic' | 'dust' | 'harvest' | 'starlight' | 'nebulae';
@@ -283,6 +284,18 @@ export const LIVE_KNOBS: LiveKnob[] = [
     max: 1,
     step: 0.01,
     read: () => HARVEST_SHINE_DIST_P,
+  },
+  {
+    id: 'whiteBal',
+    label: 'White balance',
+    group: 'starlight',
+    hint: 'which star temperature reads pure white (kK)',
+    about: 'The photograph\'s white point in thousands of Kelvin — the camera law, one divide in linear light. 6.6 is the raw blackbody locus (everything cooler paints orange); warmer balances shift the whole palette: M dwarfs yellow-gold, K warm-white, hot stars a touch bluer. Next frame.',
+    uniform: 'uWhiteK',
+    min: 4,
+    max: 8,
+    step: 0.05,
+    read: () => HARVEST_WHITE_K,
   },
   {
     id: 'starMag',

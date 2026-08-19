@@ -10,6 +10,13 @@
  */
 import * as THREE from 'three';
 import type { GalaxyObject } from '../world/galaxy';
+import { teffToRgb } from '../world/stellar';
+
+/** Linear-light colour of the white-balance reference blackbody. */
+export function whiteRefLinear(kK: number): [number, number, number] {
+  const s = teffToRgb(Math.max(2, kK) * 1000);
+  return [Math.pow(s[0], 2.2), Math.pow(s[1], 2.2), Math.pow(s[2], 2.2)];
+}
 
 /**
  * Toy close-survey paint radius (catalog kpc). Real R☉ is metres
@@ -46,6 +53,15 @@ export const SHINE_DIST_REF = 40;
 export const SHINE_DIST_P = 0.45;
 /** Photograph saturation: how far teff RGB is pushed off white. */
 export const SHINE_SAT = 1.55;
+/**
+ * Photograph WHITE BALANCE (kK): the blackbody temperature that
+ * reads as pure white. The raw locus crosses white at 6.6 kK, so
+ * everything cooler paints orange; balancing warmer (5.2) shifts
+ * the palette the way a camera's white balance does — M dwarfs
+ * yellow-gold instead of orange, K near warm-white, hot stars a
+ * touch bluer — one divide in linear light, no per-class edits.
+ */
+export const HARVEST_WHITE_K = 5.2;
 /**
  * Photograph zero-point (L☉). Stays at the original late-B floor
  * so deepening SILHOUETTE_L adds fainter pins instead of

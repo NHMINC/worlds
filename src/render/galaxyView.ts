@@ -21,6 +21,8 @@ import {
   HARVEST_PSF_A,
   HARVEST_PSF_B,
   HARVEST_PSF_CORE,
+  HARVEST_WHITE_K,
+  whiteRefLinear,
   HARVEST_PSF_TAIL,
   HARVEST_PSF_THRESH,
   HARVEST_SHINE_DIST_P,
@@ -289,6 +291,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uShineDistRef;
   uniform float uShineDistP;
   uniform float uPinCanvas;
+  uniform vec3 uWhiteRef;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -358,10 +361,11 @@ const SILHOUETTE_VERT = /* glsl */ `
       // blackbody law (teffToRgb) yields DISPLAY (sRGB) colour,
       // so decode to linear here — all light math (intensity,
       // extinction, the hue ceiling) runs in linear light — and
-      // the fragment encodes back to sRGB. Skipping the round
-      // trip scaled sRGB primaries by linear intensity: midtones
-      // darkened, warmth exaggerated, the disk washed tan-brown.
-      vec3 lin = pow(max(aColor, 0.0), vec3(2.2));
+      // the fragment encodes back to sRGB. uWhiteRef is the
+      // photograph's WHITE BALANCE: the linear colour of the
+      // reference blackbody that reads as white — one divide,
+      // the camera law, no per-class edits.
+      vec3 lin = pow(max(aColor, 0.0), vec3(2.2)) / max(uWhiteRef, vec3(1e-3));
       float maxc = max(lin.r, max(lin.g, lin.b));
       vColor = lin / max(maxc, 1e-3);
       vVis = shine;
@@ -881,6 +885,7 @@ export class GalaxyView {
   private shineUniforms(): Record<string, THREE.IUniform> {
     return {
       uLRef: { value: HARVEST_L_REF },
+      uWhiteRef: { value: new THREE.Vector3(...whiteRefLinear(HARVEST_WHITE_K)) },
       uPsfCore: { value: HARVEST_PSF_CORE },
       uPsfTail: { value: HARVEST_PSF_TAIL },
       uPsfA: { value: HARVEST_PSF_A },
@@ -1196,6 +1201,7 @@ export class GalaxyView {
         uPinCanvas: { value: COSMIC_STAR_PIN },
         uPinCore: { value: COSMIC_STAR_PIN_CORE },
         uCenter: { value: new THREE.Vector3() },
+        uWhiteRef: { value: new THREE.Vector3(...whiteRefLinear(HARVEST_WHITE_K)) },
         ...this.extinctUniforms(),
       },
       transparent: true,
@@ -1219,6 +1225,14 @@ export class GalaxyView {
 
   /** Live cosmic-engineer write. One uniform, next frame. */
   setLiveUniform(name: string, value: number): void {
+    if (name === 'uWhiteK') {
+      const wb = whiteRefLinear(value);
+      for (const mat of this.cloudMats()) {
+        const u = mat.uniforms.uWhiteRef;
+        if (u) (u.value as THREE.Vector3).set(wb[0], wb[1], wb[2]);
+      }
+      return;
+    }
     if (name === 'uStarN') {
       UNIVERSE.COSMIC_STAR_N = value;
       this.cosmicStarGeo?.setDrawRange(0, this.cosmicCount('star'));
