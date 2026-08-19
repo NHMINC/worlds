@@ -47,9 +47,9 @@ export const SHINE_DIST_P = 0.45;
 /** Photograph saturation: how far teff RGB is pushed off white. */
 export const SHINE_SAT = 1.55;
 /**
- * Harvest photograph: push Teff further off grey so a floor pin
- * still reads O-blue / M-orange. The old SHINE_SAT was a backdrop
- * number; fly pins need more chroma.
+ * Spectral gamma of the harvest photograph (see harvestChroma).
+ * 1 = raw blackbody (pale, never visibly blue); 2.7 turns a hot
+ * photosphere true blue and a K giant rich gold.
  */
 export const HARVEST_SHINE_SAT = 2.7;
 /**
@@ -171,11 +171,14 @@ export function harvestShine(L: number, d: number): number {
   return (base + harvestSuperExtra(L)) * dist;
 }
 
-/** Teff RGB pushed off grey. Same mix the harvest vertex uses. */
+/** Spectral gamma — the same law the harvest vertex uses:
+ *  normalize by the dominant channel, power the rest. Deepens
+ *  colour monotonically with the hue preserved (an O goes true
+ *  blue, a giant rich gold); the old luminance-preserving mix
+ *  pinned hot stars at white-cyan. */
 export function harvestChroma(rgb: [number, number, number]): [number, number, number] {
-  const lum = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
-  const sat = HARVEST_SHINE_SAT;
-  const ch = (c: number) => Math.min(1, Math.max(0, lum + sat * (c - lum)));
+  const maxc = Math.max(rgb[0], rgb[1], rgb[2], 1e-3);
+  const ch = (c: number) => Math.pow(Math.max(c, 0) / maxc, HARVEST_SHINE_SAT);
   return [ch(rgb[0]), ch(rgb[1]), ch(rgb[2])];
 }
 

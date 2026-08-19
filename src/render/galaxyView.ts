@@ -367,8 +367,14 @@ const SILHOUETTE_VERT = /* glsl */ `
       } else {
         gl_PointSize = max(uPixel, wingPx);
       }
-      float lum = dot(aColor, vec3(0.2126, 0.7152, 0.0722));
-      vColor = clamp(mix(vec3(lum), aColor, uShineSat), 0.0, 1.0);
+      // Spectral gamma: normalize by the dominant channel, then a
+      // power on the rest. The old luminance-preserving mix could
+      // never make a hot star BLUE — green carries 72% of the
+      // luminance weight, so it pinned g high and clamped b at 1:
+      // white-cyan forever. This law deepens colour monotonically
+      // and keeps the hue: an O goes true blue, a giant rich gold.
+      float maxc = max(aColor.r, max(aColor.g, aColor.b));
+      vColor = pow(aColor / max(maxc, 1e-3), vec3(uShineSat));
       vVis = shine;
       vPx = gl_PointSize;
     }
