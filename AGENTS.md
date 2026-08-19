@@ -106,31 +106,32 @@ types or star types.
   on as laws. Clouds are not a painted deck; aerosol opacity lives
   inside `airExtinction` / the scattering integral. The **cosmic
   background** is the other decreed fake: we cannot mint the
-  observable universe. A distant shell (`COSMIC_*`) paints a void
-  plus distant galaxies (one inclined disk each — hash
-  size, cos i, position angle, Hubble axis, crispness)
-  and a photograph of distant star-like pins (`COSMIC_STAR_*`,
-  a dim field plus a rare bright tail).
-  Drawn on the far plane (a clip
-  quad, not a surrounding mesh) so triangles never cross
-  the camera. The warp fence keeps you off the photograph.
-  Not a catalog. Not pickable. Dust filters the sightline —
-  **once, per pixel**: the void, pins, and smudges render
-  unextincted into their own far-plane photograph, and the
-  sky quad composites that texture through one `extinctLook`
-  march at the pixel where the light lands (thin clumps
-  cannot hide; a wall on the ray is lightless). Sprites do
-  not self-extinct — a per-vertex sample let a wide smudge
-  straddle the lane its centre ray missed. An eye EMBEDDED
-  in a cloud loses the photograph in every direction
-  (decreed optics, same family as the wall: the sheet is
-  ~0.15 kpc thin, so honest Beer–Lambert left the poles
-  clear and pins shone inside the lane); the rim is a fade
-  on the raw field. Harvest stars keep their honest
-  camera→star column — from inside the fog you still see
-  what is close. Empty space is
-  vacuum. The framebuffer clear is black — the cosmic quad
-  paints the night.
+  observable universe. It is SCENE CONTENT of the one galaxy
+  scene — decreed content at extreme distance, not an external
+  skybox: a void (the scene's clear colour) plus distant
+  galaxies (one inclined disk each — hash size, cos i, position
+  angle, Hubble axis, crispness) and distant star-like pins
+  (`COSMIC_STAR_*`, a dim field plus a rare bright tail). Past
+  the dust box, extra distance adds nothing to a sightline, so
+  the sprites draw as far-plane directions (w = 0; triangles
+  never cross the camera). The warp fence keeps you off the
+  photograph. Not a catalog. Not pickable. Dust filters it under
+  **one law, once, per pixel**: the background draws first
+  (clear + pins + smudges, unextincted), then the dust filter
+  quad MULTIPLIES the framebuffer by one `extinctLook` march per
+  pixel before anything inside the galaxy draws. Sprites do not
+  self-extinct — a per-vertex sample let a wide smudge straddle
+  the lane its centre ray missed. `extinctLook` is the VEIL law
+  (decreed optics): the far photograph dies where the sightline
+  TOUCHES the sheet — raw field over 0.55×..1.1× the carve floor,
+  at the eye or at any tap. Honest Beer–Lambert through the
+  ~0.15 kpc toy sheet is glass face-on (T ≈ 0.96 through a
+  ribbon body) and can never silhouette a cloud; the veil can,
+  and an eye embedded in a cloud is just its first sample. The
+  rim is a fade on the raw field; Beer–Lambert still tints it.
+  Harvest stars keep their honest camera→star column with the
+  core wall (`extinctT`) — from inside the fog you still see
+  what is close. Empty space is vacuum.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
@@ -320,8 +321,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   on the warped molecular sheet — star ids do not move. A
   crest is a small Gaussian splat (anti-aliasing only) —
   hardware trilinear of a lone sample is a diamond face-on.
-  Ribbon cores are a wall (lightless); only the thin rim reddens.
-  Dust does not emit or reflect. Not harvest rows. A
+  Starlight: ribbon cores are a wall (`GALAXY_EXTINCT_WALL`);
+  the rim reddens. The cosmic background: the veil (see the
+  cosmic-background decree) — it dies wherever the ray touches
+  the sheet. Dust does not emit or reflect. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills

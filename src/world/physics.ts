@@ -611,15 +611,18 @@ export const UNIVERSE = {
    *  bake stores the raw photograph; this carves it in the march
    *  (the old bake-time dense cut, now a live knob). Most of the
    *  disk is below this — the photograph is many small midplane
-   *  clumps, not a carpet. Also the body threshold for the
-   *  eye-inside-a-cloud night. */
+   *  clumps, not a carpet. Also anchors the VEIL ramp: the far
+   *  photograph fades out over raw 0.55×..1.1× this floor, at the
+   *  eye or anywhere on the sightline (extinctLook). */
   GALAXY_EXTINCT_CUT: 0.08,
   /** Power on the excess above the floor (the old bake-time
    *  streak, now live). Higher hardens cores and thins the
    *  edges — opaque without spreading. */
   GALAXY_EXTINCT_HARD: 0.85,
-  /** Carved density at or above this is a wall. The ribbon core
-   *  is lightless; only the rim still reddens. 0 is the old veil. */
+  /** Starlight columns only (extinctT): carved density at or above
+   *  this is a wall — a star behind a ribbon core is lightless.
+   *  The far photograph does not use the wall; the veil (CUT ramp)
+   *  kills it earlier. */
   GALAXY_EXTINCT_WALL: 0.14,
   /** Look test. 0 = dust is extinction. 1 paints the volume lime. */
   GALAXY_DUST_DEBUG: 0,

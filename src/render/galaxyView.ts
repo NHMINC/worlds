@@ -50,7 +50,7 @@ import { prepareUniverse } from '../world/universePrep';
 import {
   COSMIC_STAR_PIN,
   COSMIC_STAR_PIN_CORE,
-  cosmicFrag,
+  dustFilterFrag,
   cosmicSmudgeFrag,
   cosmicSmudgeVert,
   cosmicStarFrag,
@@ -64,10 +64,12 @@ import {
 const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}`);
 
 /**
- * Dust is not drawn; it is subtraction. Density is the harvest
- * clump population, baked into a 3D volume (each row a sphere of
- * gain · (1 − r²/R²)). A sightline through a cloud goes dark;
- * empty space stays clear. `steps` is baked per shader.
+ * Dust is not drawn; it is subtraction. The bake stores the raw
+ * midplane clump photograph (`ismAt.photo`) in a 3D volume; the
+ * march carves it live (floor + hardness). Starlight columns are
+ * Beer–Lambert with a core wall (extinctT); the far photograph
+ * dies under the veil law (extinctLook). Empty space stays clear.
+ * `steps` is baked per shader.
  */
 const extinctGlsl = (steps: number) => /* glsl */ `
   uniform float uExtinctK;
@@ -148,52 +150,48 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (leave < 0.0 || enter > leave) return vec2(1.0, -1.0);
     return vec2(enter, leave);
   }
-  // Distant sky: march the dust box (thin clumps cannot hide),
-  // then a wall on the sightline is lightless — independent of
-  // tap spacing. Camera→far (same dt as a nearby star) skipped
-  // whole clouds and the void showed through.
-  //
-  // Decreed optics, same family as the wall: an eye EMBEDDED in a
-  // cloud loses the far photograph in every direction — forward
-  // scatter at the eye erases distant point sources long before
-  // the thin residual column would (the sheet is ~0.15 kpc thick;
-  // honest Beer–Lambert left the poles nearly clear and pins shone
-  // through the lane you were parked in). The ramp rides the RAW
-  // field so the whole cloud body counts (the carve floor empties
-  // exactly where you can stand); the rim is a fade, not a pop.
-  // Harvest stars keep their honest camera→star column — from
-  // inside the fog you still see what is close.
+  // The VEIL: one decreed optical law for the far photograph.
+  // Honest Beer–Lambert through the toy-thin sheet is glass
+  // face-on (T ≈ 0.96 through a ribbon body — the sheet is
+  // ~0.15 kpc), so transmission alone can never silhouette the
+  // clouds; and an eye EMBEDDED in a cloud must lose the sky in
+  // every direction (forward scatter erases distant point
+  // sources). Both are the same statement: the far photograph
+  // dies where the sightline TOUCHES the sheet — at the eye or
+  // at any tap. The ramp rides the RAW field around the carve
+  // floor (the fade band sits below the floor, exactly where you
+  // can stand), so the rim is a fade, not a pop. Beer–Lambert
+  // still tints the fade. Harvest stars keep their honest
+  // camera→star column (extinctT) — from inside the fog you
+  // still see what is close.
   vec3 extinctLook(vec3 from, vec3 dir) {
     float lo = max(uExtinctCut, 1e-3);
-    float night = 1.0 - smoothstep(lo * 0.55, lo * 1.1, extinctRhoRaw(from));
-    if (night < 1e-3) return vec3(0.0);
+    float v0 = lo * 0.55;
+    float v1 = lo * 1.1;
+    float peak = extinctRhoRaw(from);
+    if (peak >= v1) return vec3(0.0);
     vec2 span = extinctSpan(from, dir);
-    if (span.x > span.y) return vec3(night);
+    if (span.x > span.y) return vec3(1.0 - smoothstep(v0, v1, peak));
     float t0 = max(span.x, 0.0);
-    float t1 = span.y;
-    float dCat = t1 - t0;
-    if (dCat < 1e-4) return vec3(night);
+    float dCat = span.y - t0;
+    if (dCat < 1e-4) return vec3(1.0 - smoothstep(v0, v1, peak));
     float dt = dCat / ${glslFloat(steps)};
+    float h = max(dt, 0.04) * 0.33;
     float kdt = uExtinctK * dt;
-    float wall = uExtinctWall;
-    float coreFill = uExtinctMax / max(kdt, 1e-4);
     float tau = 0.0;
-    // The eye's own voxel joins the wall test: the first tap sits
-    // half a step out and could exit a small clump you are inside.
-    float peak = extinctRho(from);
     for (int i = 0; i < ${steps}; i++) {
       vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
-      float r = extinctRhoPeak(p, dir, dt);
-      peak = max(peak, r);
-      if (wall > 1e-4) {
-        float core = smoothstep(wall * 0.62, wall, r);
-        tau += mix(r, max(r, coreFill), core);
-      } else {
-        tau += r;
-      }
+      // Peak of three raw taps so a thin wall cannot hide between
+      // taps when the chord is long (edge-on, camera far above).
+      float raw = extinctRhoRaw(p);
+      raw = max(raw, extinctRhoRaw(p - dir * h));
+      raw = max(raw, extinctRhoRaw(p + dir * h));
+      peak = max(peak, raw);
+      if (peak >= v1) return vec3(0.0);
+      tau += pow(max(raw - uExtinctCut, 0.0), max(uExtinctHard, 0.15));
     }
-    if (wall > 1e-4 && peak >= wall * 0.62) return vec3(0.0);
-    return night * exp(-min(tau * kdt, uExtinctMax) * uDustRgb);
+    float veil = 1.0 - smoothstep(v0, v1, peak);
+    return veil * exp(-min(tau * kdt, uExtinctMax) * uDustRgb);
   }
 `;
 
@@ -590,15 +588,13 @@ export class GalaxyView {
   private silEmisGeo: THREE.BufferGeometry | null = null;
   private silEmisMat: THREE.ShaderMaterial | null = null;
   private silDustTex: THREE.Data3DTexture | null = null;
+  /** The dust filter quad: multiplies the background (void clear +
+   *  pins + smudges — everything beyond the dust box) by one
+   *  per-pixel march. Not a skybox; the background is scene
+   *  content and this is the one law that filters it. */
   private cosmicPts: THREE.Mesh | null = null;
   private cosmicGeo: THREE.BufferGeometry | null = null;
   private cosmicMat: THREE.ShaderMaterial | null = null;
-  /** The background photograph: void + pins + smudges render here
-   *  unextincted; the sky quad composites it through the dust
-   *  per pixel. Per-vertex extinction of an extended sprite let
-   *  a 240 px smudge straddle the lane its centre ray missed. */
-  private cosmicScene = new THREE.Scene();
-  private cosmicRt: THREE.WebGLRenderTarget | null = null;
   private voidClear = new THREE.Color(0, 0, 0);
   private cosmicStarPts: THREE.Points | null = null;
   private cosmicStarGeo: THREE.BufferGeometry | null = null;
@@ -835,7 +831,7 @@ export class GalaxyView {
       this.cosmicMat = null;
     }
     if (this.cosmicStarPts) {
-      this.cosmicScene.remove(this.cosmicStarPts);
+      this.scene.remove(this.cosmicStarPts);
       this.cosmicStarGeo?.dispose();
       this.cosmicStarMat?.dispose();
       this.cosmicStarPts = null;
@@ -843,15 +839,13 @@ export class GalaxyView {
       this.cosmicStarMat = null;
     }
     if (this.cosmicSmudgePts) {
-      this.cosmicScene.remove(this.cosmicSmudgePts);
+      this.scene.remove(this.cosmicSmudgePts);
       this.cosmicSmudgeGeo?.dispose();
       this.cosmicSmudgeMat?.dispose();
       this.cosmicSmudgePts = null;
       this.cosmicSmudgeGeo = null;
       this.cosmicSmudgeMat = null;
     }
-    this.cosmicRt?.dispose();
-    this.cosmicRt = null;
   }
 
   private disposeSilhouette(): void {
@@ -1055,11 +1049,28 @@ export class GalaxyView {
     return out;
   }
 
-  /** The void is the background photograph's clear colour, not a
-   *  uniform: pins and smudges add onto it in the cosmic pass. */
+  /** The void is the scene's clear colour — the zero level of the
+   *  photograph. Pins and smudges add onto it; the dust filter
+   *  multiplies all of it. */
   setVoidColor(hue: number, intensity: number): void {
     const rgb = cosmicVoidRgb(hue, intensity);
     this.voidClear.setRGB(rgb[0], rgb[1], rgb[2]);
+    const u = this.cosmicMat?.uniforms.uVoidRgb;
+    if (u) (u.value as THREE.Vector3).set(rgb[0], rgb[1], rgb[2]);
+  }
+
+  /** Dust filters; it never emits. The quad multiplies the frame
+   *  (dst × T) — except the lime look-test, which paints opaque. */
+  private applyFilterBlend(mat: THREE.ShaderMaterial): void {
+    const debug = ((mat.uniforms.uDustDebug?.value as number) ?? 0) >= 0.5;
+    if (debug) {
+      mat.blending = THREE.NoBlending;
+    } else {
+      mat.blending = THREE.CustomBlending;
+      mat.blendEquation = THREE.AddEquation;
+      mat.blendSrc = THREE.DstColorFactor;
+      mat.blendDst = THREE.ZeroFactor;
+    }
   }
 
   private buildCosmic(): void {
@@ -1069,21 +1080,25 @@ export class GalaxyView {
     this.voidClear.setRGB(voidRgb[0], voidRgb[1], voidRgb[2]);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
-      fragmentShader: cosmicFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS), UNIVERSE.GALAXY_EXTINCT_STEPS),
+      fragmentShader: dustFilterFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS), UNIVERSE.GALAXY_EXTINCT_STEPS),
       uniforms: {
-        uCosmicTex: { value: this.cosmicRt?.texture ?? null },
+        uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
         uCenter: { value: new THREE.Vector3() },
         uCamRotInv: { value: new THREE.Matrix3() },
         uInvProj: { value: new THREE.Matrix4() },
         ...this.extinctUniforms(),
       },
+      transparent: true,
       depthWrite: false,
       depthTest: false,
       toneMapped: false,
     });
+    this.applyFilterBlend(mat);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.frustumCulled = false;
-    mesh.renderOrder = -8;
+    // After the background sprites (−8 / −7), before everything
+    // inside the galaxy: the filter only touches light from beyond.
+    mesh.renderOrder = -6;
     this.scene.add(mesh);
     this.cosmicPts = mesh;
     this.cosmicGeo = geo;
@@ -1132,7 +1147,7 @@ export class GalaxyView {
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
     pts.renderOrder = -7;
-    this.cosmicScene.add(pts);
+    this.scene.add(pts);
     this.cosmicSmudgePts = pts;
     this.cosmicSmudgeGeo = geo;
     this.cosmicSmudgeMat = mat;
@@ -1182,33 +1197,11 @@ export class GalaxyView {
     });
     const pts = new THREE.Points(geo, mat);
     pts.frustumCulled = false;
-    pts.renderOrder = -6;
-    this.cosmicScene.add(pts);
+    pts.renderOrder = -8;
+    this.scene.add(pts);
     this.cosmicStarPts = pts;
     this.cosmicStarGeo = geo;
     this.cosmicStarMat = mat;
-  }
-
-  /** Far-plane photograph: void + pins + smudges, unextincted.
-   *  Same size as the canvas so pins stay crisp; HalfFloat so a
-   *  bright pin is not clipped before the dust filters it. */
-  private ensureCosmicRt(w: number, h: number): void {
-    const rw = Math.max(1, Math.round(w));
-    const rh = Math.max(1, Math.round(h));
-    if (rw < 8 || rh < 8) return;
-    if (this.cosmicRt && this.cosmicRt.width === rw && this.cosmicRt.height === rh) return;
-    this.cosmicRt?.dispose();
-    this.cosmicRt = new THREE.WebGLRenderTarget(rw, rh, {
-      type: THREE.HalfFloatType,
-      format: THREE.RGBAFormat,
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-      depthBuffer: false,
-    });
-    this.cosmicRt.texture.colorSpace = THREE.NoColorSpace;
-    if (this.cosmicMat?.uniforms.uCosmicTex) {
-      this.cosmicMat.uniforms.uCosmicTex.value = this.cosmicRt.texture;
-    }
   }
 
   /** HDR target + blit. Layers add here; the knee is the last step. */
@@ -1299,7 +1292,12 @@ export class GalaxyView {
       this.remintCosmicSmudges();
       return;
     }
-    if (name === 'uDustDebug') value = value >= 0.5 ? 1 : 0;
+    if (name === 'uDustDebug') {
+      value = value >= 0.5 ? 1 : 0;
+      const u = this.cosmicMat?.uniforms.uDustDebug;
+      if (u) u.value = value;
+      if (this.cosmicMat) this.applyFilterBlend(this.cosmicMat);
+    }
     if (name === 'uPhotoKnee') {
       UNIVERSE.GALAXY_PHOTO_KNEE = value;
       if (this.photoMat?.uniforms.uPhotoKnee) this.photoMat.uniforms.uPhotoKnee.value = value;
@@ -1658,7 +1656,6 @@ export class GalaxyView {
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
     const pr = this.renderer.getPixelRatio();
-    this.ensureCosmicRt(w * pr, h * pr);
     this.ensurePhoto(w * pr, h * pr);
   }
 
@@ -2324,27 +2321,20 @@ export class GalaxyView {
     const el = this.renderer.domElement;
     const rw = el.width || el.clientWidth * pr;
     const rh = el.height || el.clientHeight * pr;
-    this.ensureCosmicRt(rw, rh);
     this.ensurePhoto(rw, rh);
-    // Pass 1: the background photograph — void clear colour, pins
-    // and smudges added, no extinction. The sky quad in the main
-    // scene composites it through the per-pixel dust march.
-    if (this.cosmicRt) {
-      this.renderer.setRenderTarget(this.cosmicRt);
-      this.renderer.setClearColor(this.voidClear, 1);
-      this.renderer.clear();
-      this.renderer.render(this.cosmicScene, this.camera);
-    }
+    // One scene, one pass: the void is the clear colour, background
+    // sprites add onto it, the dust filter quad multiplies all of
+    // it per pixel, then the galaxy draws in front. The knee is last.
     if (this.photoRt) {
       this.renderer.setRenderTarget(this.photoRt);
-      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.setClearColor(this.voidClear, 1);
       this.renderer.clear();
       this.renderer.render(this.scene, this.camera);
       this.renderer.setRenderTarget(null);
       this.renderer.render(this.photoScene, this.photoCam);
     } else {
       this.renderer.setRenderTarget(null);
-      this.renderer.setClearColor(0x000000, 1);
+      this.renderer.setClearColor(this.voidClear, 1);
       this.renderer.render(this.scene, this.camera);
     }
     this.callbacks.onFrame?.({

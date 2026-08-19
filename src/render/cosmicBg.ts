@@ -1,18 +1,24 @@
 /**
- * Cosmic background: a far-plane void, a photograph of distant
- * galaxies, and distant pins. Each
- * galaxy is one inclined disk (hash size, cos i, position
- * angle, Hubble axis) — not a sprite stamp, not an archetype
- * switch. Each object has its own shine; engineer gains scale
- * the set. Not a catalog. Not pickable. Seeded from the bottle.
+ * Cosmic background: the void, distant galaxies, and distant
+ * star-like pins — SCENE CONTENT of the one galaxy scene, not an
+ * external skybox. The universe beyond the catalog is decreed
+ * content at extreme distance: past the dust box, extra distance
+ * adds nothing to any sightline, so the far plane (w = 0
+ * directions) is optically identical to any huge shell radius and
+ * is where it draws. Each galaxy is one inclined disk (hash size,
+ * cos i, position angle, Hubble axis) — not a sprite stamp, not an
+ * archetype switch. Not a catalog. Not pickable. Seeded from the
+ * bottle.
  *
- * Occlusion happens once, per pixel: the void, pins, and
- * smudges render UNEXTINCTED into their own far-plane target,
- * and the sky quad composites that photograph through one dust
- * march (extinctLook). Per-vertex extinction of an extended
- * sprite was the leak — a 240 px smudge whose centre ray
- * slipped between clumps painted its whole disc across the
- * lane. A stamp cannot straddle a lane it never consults.
+ * Occlusion is one law for everything out there: the void is the
+ * photograph's clear colour, pins and smudges ADD onto it, then
+ * the dust filter quad (dustFilterFrag) MULTIPLIES the framebuffer
+ * by one per-pixel march (extinctLook) before anything inside the
+ * galaxy draws. Dust emits nothing; it filters. Per-vertex
+ * extinction of an extended sprite was the leak — a 240 px smudge
+ * whose centre ray slipped between clumps painted its whole disc
+ * across the lane. A stamp cannot straddle a lane it never
+ * consults; a screen multiply consults every pixel.
  */
 import { xmur3 } from '../world/rng';
 
@@ -68,15 +74,16 @@ export function cosmicVert(): string {
 `;
 }
 
-/** The sky compositor: the finished background photograph
- *  (void + pins + smudges, unextincted) filtered by one
- *  per-pixel dust march — or the lime look-test skin when
- *  debug is on. `steps` must match the included extinctGlsl. */
-export function cosmicFrag(extinctChunk: string, steps: number): string {
+/** The dust filter: a full-screen quad that MULTIPLIES what the
+ *  background already put in each pixel (void clear + pins +
+ *  smudges) by one per-pixel dust march — or paints the opaque
+ *  lime look-test skin when debug is on (blending switches with
+ *  it). `steps` must match the included extinctGlsl. */
+export function dustFilterFrag(extinctChunk: string, steps: number): string {
   const n = Number.isInteger(steps) ? `${steps}.0` : `${steps}`;
   return /* glsl */ `
   ${extinctChunk}
-  uniform sampler2D uCosmicTex;
+  uniform vec3 uVoidRgb;
   uniform vec3 uCenter;
   uniform mat3 uCamRotInv;
   uniform mat4 uInvProj;
@@ -149,14 +156,13 @@ export function cosmicFrag(extinctChunk: string, steps: number): string {
     vec4 view = uInvProj * vec4(vNdc, 1.0, 1.0);
     vec3 camDir = normalize(view.xyz / max(abs(view.w), 1e-6));
     vec3 dir = normalize(uCamRotInv * camDir);
-    vec3 night = texture2D(uCosmicTex, vNdc * 0.5 + 0.5).rgb;
     if (uDustDebug >= 0.5) {
-      gl_FragColor = vec4(foxLook(uCenter, dir, night), 1.0);
+      gl_FragColor = vec4(foxLook(uCenter, dir, uVoidRgb), 1.0);
       return;
     }
-    // The real sky: the whole photograph filtered by the dust,
-    // at the pixel where its light lands. Dust does not emit.
-    gl_FragColor = vec4(extinctLook(uCenter, dir) * night, 1.0);
+    // Dust does not emit: this fragment is the transmittance the
+    // blend multiplies onto whatever background light landed here.
+    gl_FragColor = vec4(extinctLook(uCenter, dir), 1.0);
   }
 `;
 }
@@ -287,8 +293,8 @@ export function mintCosmicSmudges(seed: string, n: number, cluster: number): Cos
   return { n, pos, col, shine, size, aspect, angle, seed: seedA, crisp };
 }
 
-/** No extinction here: the pin renders into the background
- *  photograph; the sky quad filters that photograph per pixel. */
+/** No extinction here: the pin adds into the framebuffer before
+ *  the dust filter quad multiplies the whole background per pixel. */
 export function cosmicStarVert(): string {
   return /* glsl */ `
   attribute vec3 aColor;
