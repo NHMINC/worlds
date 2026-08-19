@@ -992,6 +992,25 @@ body,
   touch-action: none;
 }
 
+.gx-perf {
+  position: absolute;
+  top: calc(96px + env(safe-area-inset-top));
+  right: calc(10px + env(safe-area-inset-right));
+  z-index: 6;
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #9fe8a9;
+  background: rgba(5, 10, 18, 0.72);
+  border: 1px solid rgba(140, 255, 170, 0.25);
+  border-radius: 6px;
+  padding: 4px 8px;
+  pointer-events: none;
+  white-space: pre;
+}
+
+.gx-perf.is-off {
+  display: none;
+}
+
 .gx-warp {
   position: absolute;
   right: calc(16px + env(safe-area-inset-right));

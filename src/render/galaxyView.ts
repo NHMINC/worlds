@@ -47,6 +47,7 @@ import {
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
 import type { DustVolume } from '../world/dustVolume';
+import { PerfHud } from './perfHud';
 import { prepareUniverse } from '../world/universePrep';
 import {
   COSMIC_STAR_PIN,
@@ -713,6 +714,7 @@ export class GalaxyView {
     // display — a blur that ate ~a third of each star dot's peak
     // brightness: a residual filter nobody decreed.
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.perf = new PerfHud(canvas.parentElement ?? document.body, this.renderer.getContext());
     // The void is black by decree — vacuum emits nothing.
     this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
@@ -1328,6 +1330,7 @@ export class GalaxyView {
    *  quad and sprites) kept a dead 1×1 placeholder volume forever
    *  and the background sailed through every cloud. */
   private dustWired: DustVolume | null = null;
+  private perf!: PerfHud;
 
   /** Swap the 3D texture on the existing sky — after any bake:
    *  the initial boot mint, a cache load, or a knob rebake. */
@@ -1664,6 +1667,7 @@ export class GalaxyView {
 
   dispose(): void {
     this.disposed = true;
+    this.perf.dispose();
     cancelAnimationFrame(this.raf);
     this.canvas.removeEventListener('pointerdown', this.onDown);
     this.canvas.removeEventListener('pointermove', this.onMove);
@@ -2044,6 +2048,10 @@ export class GalaxyView {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     this.wake();
+    if (e.code === 'KeyP' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      this.perf.toggle();
+      return;
+    }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (this.mode === 'region' && !e.repeat) {
       if (e.code === 'ArrowUp' || e.code === 'KeyW') {
@@ -2290,6 +2298,7 @@ export class GalaxyView {
 
   private frame = (): void => {
     if (this.disposed || !this.active) return;
+    const f0 = performance.now();
     // Rewire every material whenever the baked volume changes —
     // the one path that covers boot mint, cache hit, and rebuild.
     if (harvestDustVolume(this.seed) !== this.dustWired) {
@@ -2325,6 +2334,7 @@ export class GalaxyView {
     // A visible selection keeps its ring spinning.
     if (this.selected) this.wake(1);
     if (this.restIn <= 0) {
+      this.perf.tick(performance.now() - f0, false);
       this.raf = requestAnimationFrame(this.frame);
       return;
     }
@@ -2364,7 +2374,10 @@ export class GalaxyView {
     // sprites add onto it, then the galaxy draws in front. A
     // stacked column saturates to white — film, not a knee.
     this.renderer.setRenderTarget(null);
+    this.perf.beginDraw();
     this.renderer.render(this.scene, this.camera);
+    this.perf.endDraw();
+    this.perf.tick(performance.now() - f0, true);
     this.callbacks.onFrame?.({
       mode: this.mode,
       theta: this.theta,
