@@ -4,14 +4,14 @@
  * marches the sightline. Carving the clouds out of the field
  * (floor + hardness — the old bake-time dense cut and streak)
  * happens in the march (`extinctRho`), so those are live knobs
- * and the raw cloud body is still known to the veil law
- * (`extinctLook`). Most of the disc stays 0 — a storage floor
- * keeps empty space empty.
+ * and the raw cloud body is still known to the per-cloud
+ * opacity law (`extinctMarch`). Most of the disc stays 0 — a
+ * storage floor keeps empty space empty.
  *
  * The volume is samples of a continuous field, not bricks. A
  * lone voxel through hardware trilinear is (1−|x|)(1−|z|) —
  * a diamond face-on. Each crest is therefore splatted with a
- * small Gaussian (peak-preserving) so the wall and the lime
+ * small Gaussian (peak-preserving) so cloud crests and the lime
  * skin follow the field, not the lattice.
  */
 import { UNIVERSE } from './physics';

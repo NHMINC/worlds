@@ -565,8 +565,10 @@ export const UNIVERSE = {
    * of ismAt.photo (hole × decline × small midplane
    * clumps). Many overlapping clouds, tight to z = 0 — edge-on
    * they average to a thin slit, not one meandering snake.
-   * Ribbon cores are a wall; the thin rim reddens what shines
-   * through. Baked once and marched from the
+   * Every cloud carries its own opacity (crest density vs
+   * EXTINCT_ABYSS): most are translucent haze, a rare dense
+   * crest is lightless, and overlaps add. The thin rim reddens
+   * what shines through. Baked once and marched from the
    * bubble centre (EXTINCT_STEPS taps). Transmittance is
    * Beer–Lambert: exp(−τ · DUST_RGB). Harvest does not mint
    * dust rows.
@@ -618,33 +620,38 @@ export const UNIVERSE = {
   SILHOUETTE_NEB_BOOST: 1.6,
   /** March multiplier on the baked field — how hard dust filters
    *  starlight. This is the photograph gain, not a thicker sheet.
-   *  The one true opacity slider: skin, wall, and veil all grade
-   *  with it, clear at 0 and fully dark at EXTINCT_K_FULL. */
+   *  The one true opacity slider: the skin and the per-cloud
+   *  opacity sum both grade with it, clear at 0 and fully dark
+   *  at EXTINCT_K_FULL. */
   GALAXY_EXTINCT_K: 6,
-  /** The K at which a wall core / veil touch reaches the full
+  /** The K at which an abyss-density cloud reaches the full
    *  column cap (EXTINCT_MAX). Below it the whole dust effect
-   *  grades linearly toward clear — without this reference the
-   *  wall and the veil were binary gates (any K > 0 was already
-   *  a total blackout, because the wall divided K back out).
-   *  A law, baked into the shader — not a live knob. */
+   *  grades linearly toward clear. A law, baked into the
+   *  shader — not a live knob. */
   GALAXY_EXTINCT_K_FULL: 6,
   /** Clump floor: `ismAt.photo` below this is not a cloud. The
    *  bake stores the raw photograph; this carves it in the march
    *  (the old bake-time dense cut, now a live knob). Most of the
    *  disk is below this — the photograph is many small midplane
-   *  clumps, not a carpet. Also anchors the VEIL ramp: the far
-   *  photograph fades out over raw 0.55×..1.1× this floor, at the
-   *  eye or anywhere on the sightline (extinctLook). */
+   *  clumps, not a carpet. Also anchors the per-cloud fade: a
+   *  cloud's opacity ramps from raw 0.55× this floor up to
+   *  EXTINCT_ABYSS (extinctMarch). */
   GALAXY_EXTINCT_CUT: 0.08,
   /** Power on the excess above the floor (the old bake-time
    *  streak, now live). Higher hardens cores and thins the
    *  edges — opaque without spreading. */
   GALAXY_EXTINCT_HARD: 0.85,
-  /** Starlight columns only (extinctT): carved density at or above
-   *  this is a wall — a star behind a ribbon core is lightless.
-   *  The far photograph does not use the wall; the veil (CUT ramp)
-   *  kills it earlier. */
-  GALAXY_EXTINCT_WALL: 0.14,
+  /** Per-cloud opacity: the raw crest density at which ONE cloud
+   *  is an abyss (fully dark on its own). Each contiguous run of
+   *  field above the fade floor along a sightline is a cloud; its
+   *  opacity ramps from the floor to this crest, so the log-normal
+   *  field makes most clouds translucent and a rare dense crest
+   *  lightless. Overlapping clouds ADD — two moderate ribbons in
+   *  projection can stack to an abyss. Stars and the cosmic
+   *  background obey the same sum (the old starlight-only binary
+   *  wall is retired). Shipped so ~the top 5% of cloud bodies
+   *  are single-cloud abysses (midplane crest p95 ≈ 0.25). */
+  GALAXY_EXTINCT_ABYSS: 0.25,
   /** Look test. 0 = dust is extinction. 1 paints the volume lime. */
   GALAXY_DUST_DEBUG: 0,
   /** Column cap. High enough that a dense clump (or a stack along

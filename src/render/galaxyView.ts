@@ -66,19 +66,19 @@ const glslFloat = (x: number): string => (Number.isInteger(x) ? `${x}.0` : `${x}
 /**
  * Dust is not drawn; it is subtraction. The bake stores the raw
  * midplane clump photograph (`ismAt.photo`) in a 3D volume; the
- * march carves it live (floor + hardness). Starlight columns are
- * Beer–Lambert with a core wall (extinctT); the far photograph
- * dies under the veil law (extinctLook). Empty space stays clear.
- * uExtinctK is the one opacity grade: skin, wall, and veil all
- * scale with it — clear at 0, today's black cores at K_FULL.
- * `steps` is baked per shader.
+ * march carves it live (floor + hardness). One law for stars and
+ * the far photograph: Beer–Lambert skin plus a PER-CLOUD opacity
+ * sum — each cloud's crest density sets how dark it is, and
+ * overlapping clouds add (extinctMarch). Empty space stays clear.
+ * uExtinctK is the one opacity grade — clear at 0, full at
+ * K_FULL. `steps` is baked per shader.
  */
 const extinctGlsl = (steps: number) => /* glsl */ `
   uniform float uExtinctK;
   uniform float uExtinctMax;
   uniform float uExtinctCut;
   uniform float uExtinctHard;
-  uniform float uExtinctWall;
+  uniform float uExtinctAbyss;
   uniform float uDustDebug;
   uniform vec3 uDustRgb;
   uniform sampler3D uDustVol;
@@ -102,41 +102,59 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     float t = max(extinctRhoRaw(p) - uExtinctCut, 0.0);
     return pow(t, max(uExtinctHard, 0.15));
   }
-  // Peak in this step so a thin wall cannot hide between taps
-  // when the chord is long (edge-on, or camera far above).
-  float extinctRhoPeak(vec3 p, vec3 dir, float dt) {
-    float r = extinctRho(p);
-    float h = max(dt, 0.04) * 0.33;
-    r = max(r, extinctRho(p - dir * h));
-    r = max(r, extinctRho(p + dir * h));
-    return r;
-  }
-  // Opacity grade: skin, wall, and veil all scale with uExtinctK.
-  // K_FULL is the gain at which a core hit / veil touch reaches
+  // Opacity grade: skin and cloud opacity all scale with uExtinctK.
+  // K_FULL is the gain at which an abyss-density cloud reaches
   // the full column cap; below it everything fades toward clear.
   float extinctGrade() {
     return min(uExtinctK * ${glslFloat(1 / UNIVERSE.GALAXY_EXTINCT_K_FULL)}, 1.0);
   }
-  // Skin is Beer–Lambert (blue dies first). A hard r≥wall clip
-  // printed the Cartesian lattice as 45° diamonds. The core edge
-  // is a ramp, not a faceted isosurface. A core hit is a depth
-  // FLOOR (cap × grade), not a fill that cancels K — so the
-  // opacity slider grades instead of gating.
+  // One march, two answers: x = the carved Beer–Lambert skin
+  // integral, y = the CLOUD SUM. Each contiguous run of raw
+  // field above the fade floor is one cloud; its crest (the
+  // segment max) is that cloud's density, and its opacity is a
+  // ramp from the floor to uExtinctAbyss — most clouds are
+  // translucent, a rare dense crest is an abyss on its own,
+  // and overlapping clouds ADD, so two moderate ribbons in
+  // projection can stack to black. Per-cloud, from the field —
+  // not a global gate.
+  vec2 extinctMarch(vec3 from, vec3 dir, float t0, float dCat) {
+    float dt = dCat / ${glslFloat(steps)};
+    float h = max(dt, 0.04) * 0.33;
+    float lo = max(uExtinctCut, 1e-3);
+    float v0 = lo * 0.55;
+    float abyss = max(uExtinctAbyss, v0 * 2.0);
+    float skin = 0.0;
+    float clouds = 0.0;
+    float segMax = 0.0;
+    for (int i = 0; i < ${steps}; i++) {
+      vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
+      // Peak of three raw taps so a thin sheet cannot hide
+      // between taps when the chord is long (edge-on, far above).
+      float raw = extinctRhoRaw(p);
+      raw = max(raw, extinctRhoRaw(p - dir * h));
+      raw = max(raw, extinctRhoRaw(p + dir * h));
+      if (raw > v0) {
+        segMax = max(segMax, raw);
+      } else if (segMax > 0.0) {
+        clouds += smoothstep(v0, abyss, segMax);
+        segMax = 0.0;
+      }
+      skin += pow(max(raw - uExtinctCut, 0.0), max(uExtinctHard, 0.15));
+    }
+    if (segMax > 0.0) clouds += smoothstep(v0, abyss, segMax);
+    return vec2(skin, clouds);
+  }
+  // Total optical depth of a camera→star column: honest carved
+  // skin plus the per-cloud opacity sum, capped. The old binary
+  // wall is retired — a thin cloud dims a star; only a dense
+  // crest (or a stack of clouds) is lightless.
   float extinctTau(vec3 from, vec3 to) {
     float dCat = length(to - from);
-    float dt = dCat / ${glslFloat(steps)};
     vec3 dir = (to - from) / max(dCat, 1e-4);
-    float tau = 0.0;
-    float coreHit = 0.0;
-    float wall = uExtinctWall;
-    float kdt = uExtinctK * dt;
-    for (int i = 0; i < ${steps}; i++) {
-      float r = extinctRhoPeak(from + dir * ((float(i) + 0.5) * dt), dir, dt);
-      if (wall > 1e-4) coreHit = max(coreHit, smoothstep(wall * 0.62, wall, r));
-      tau += r;
-    }
-    float depth = min(tau * kdt, uExtinctMax);
-    return max(depth, coreHit * uExtinctMax * extinctGrade());
+    vec2 m = extinctMarch(from, dir, 0.0, dCat);
+    float depth = min(m.x * uExtinctK * dCat * ${glslFloat(1 / steps)}, uExtinctMax);
+    depth += uExtinctMax * extinctGrade() * m.y;
+    return min(depth, uExtinctMax);
   }
   vec3 extinctT(vec3 from, vec3 to) {
     return exp(-extinctTau(from, to) * uDustRgb);
@@ -157,53 +175,28 @@ const extinctGlsl = (steps: number) => /* glsl */ `
     if (leave < 0.0 || enter > leave) return vec2(1.0, -1.0);
     return vec2(enter, leave);
   }
-  // The VEIL: one decreed optical law for the far photograph.
+  // The far photograph: the same march, the same cloud sum.
   // Honest Beer–Lambert through the toy-thin sheet is glass
   // face-on (T ≈ 0.96 through a ribbon body — the sheet is
   // ~0.15 kpc), so transmission alone can never silhouette the
-  // clouds; and an eye EMBEDDED in a cloud must lose the sky in
-  // every direction (forward scatter erases distant point
-  // sources). Both are the same statement: the far photograph
-  // dies where the sightline TOUCHES the sheet — at the eye or
-  // at any tap. The ramp rides the RAW field around the carve
-  // floor (the fade band sits below the floor, exactly where you
-  // can stand), so the rim is a fade, not a pop. The veil is a
-  // depth FLOOR (cap × grade), not a hard black — it grades with
-  // uExtinctK like everything else, and the fade reddens through
+  // clouds; the per-cloud opacity is the decreed extra depth.
+  // An eye embedded in a cloud sits inside its segment, so the
+  // sky dims by that cloud's own density — a wisp is a haze, an
+  // abyss is night. The fade band rides the RAW field below the
+  // carve floor, so rims fade, and everything reddens through
   // the same Beer–Lambert curve. Harvest stars keep their honest
   // camera→star column (extinctT) — from inside the fog you
   // still see what is close.
   vec3 extinctLook(vec3 from, vec3 dir) {
-    float lo = max(uExtinctCut, 1e-3);
-    float v0 = lo * 0.55;
-    float v1 = lo * 1.1;
-    float veilCap = uExtinctMax * extinctGrade();
-    float peak = extinctRhoRaw(from);
-    if (peak >= v1) return exp(-veilCap * uDustRgb);
     vec2 span = extinctSpan(from, dir);
+    if (span.x > span.y) return vec3(1.0);
     float t0 = max(span.x, 0.0);
     float dCat = span.y - t0;
-    if (span.x > span.y || dCat < 1e-4) {
-      return exp(-smoothstep(v0, v1, peak) * veilCap * uDustRgb);
-    }
-    float dt = dCat / ${glslFloat(steps)};
-    float h = max(dt, 0.04) * 0.33;
-    float kdt = uExtinctK * dt;
-    float tau = 0.0;
-    for (int i = 0; i < ${steps}; i++) {
-      vec3 p = from + dir * (t0 + (float(i) + 0.5) * dt);
-      // Peak of three raw taps so a thin wall cannot hide between
-      // taps when the chord is long (edge-on, camera far above).
-      float raw = extinctRhoRaw(p);
-      raw = max(raw, extinctRhoRaw(p - dir * h));
-      raw = max(raw, extinctRhoRaw(p + dir * h));
-      peak = max(peak, raw);
-      if (peak >= v1) break;
-      tau += pow(max(raw - uExtinctCut, 0.0), max(uExtinctHard, 0.15));
-    }
-    float depth = min(tau * kdt, uExtinctMax);
-    depth = max(depth, smoothstep(v0, v1, peak) * veilCap);
-    return exp(-depth * uDustRgb);
+    if (dCat < 1e-4) return vec3(1.0);
+    vec2 m = extinctMarch(from, dir, t0, dCat);
+    float depth = min(m.x * uExtinctK * dCat * ${glslFloat(1 / steps)}, uExtinctMax);
+    depth += uExtinctMax * extinctGrade() * m.y;
+    return exp(-min(depth, uExtinctMax) * uDustRgb);
   }
 `;
 
@@ -909,7 +902,7 @@ export class GalaxyView {
       uExtinctMax: { value: UNIVERSE.GALAXY_EXTINCT_MAX },
       uExtinctCut: { value: UNIVERSE.GALAXY_EXTINCT_CUT },
       uExtinctHard: { value: UNIVERSE.GALAXY_EXTINCT_HARD },
-      uExtinctWall: { value: UNIVERSE.GALAXY_EXTINCT_WALL },
+      uExtinctAbyss: { value: UNIVERSE.GALAXY_EXTINCT_ABYSS },
       uDustDebug: { value: dustDebugOn() ? 1 : UNIVERSE.GALAXY_DUST_DEBUG },
       uDustRgb: { value: new THREE.Vector3(...UNIVERSE.GALAXY_DUST_RGB) },
       uDustVol: { value: tex },
