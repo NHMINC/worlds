@@ -46,6 +46,7 @@ import {
   type StarCloud,
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
+import type { DustVolume } from '../world/dustVolume';
 import { prepareUniverse } from '../world/universePrep';
 import {
   COSMIC_STAR_PIN,
@@ -1283,12 +1284,21 @@ export class GalaxyView {
     if (this.mode === 'region') this.updateSight(true);
   }
 
-  /** After a dust rebake — swap the 3D texture on the existing sky. */
+  /** The dust volume the materials currently point at. The frame
+   *  loop compares it with the cache — the initial boot bake used
+   *  to notify nobody, so materials built before it (the cosmic
+   *  quad and sprites) kept a dead 1×1 placeholder volume forever
+   *  and the background sailed through every cloud. */
+  private dustWired: DustVolume | null = null;
+
+  /** Swap the 3D texture on the existing sky — after any bake:
+   *  the initial boot mint, a cache load, or a knob rebake. */
   replaceDust(): void {
     this.silDustTex?.dispose();
     this.silDustTex = null;
     const tex = this.ensureDustTexture();
     const vol = harvestDustVolume(this.seed);
+    this.dustWired = vol;
     const origin = vol?.origin ?? [-1, -1, -1];
     const size = vol?.size ?? [2, 2, 2];
     for (const mat of this.cloudMats()) {
@@ -2214,6 +2224,9 @@ export class GalaxyView {
 
   private frame = (): void => {
     if (this.disposed || !this.active) return;
+    // Rewire every material whenever the baked volume changes —
+    // the one path that covers boot mint, cache hit, and rebuild.
+    if (harvestDustVolume(this.seed) !== this.dustWired) this.replaceDust();
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
