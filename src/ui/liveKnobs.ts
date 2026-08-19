@@ -308,7 +308,7 @@ export const REBUILD_KNOBS: RebuildKnob[] = [
     label: 'Sample size',
     group: 'harvest',
     hint: 'how many stars the harvest draws from the galaxy',
-    about: 'The harvest budget, split equally across the spectral-class mass strata (a truly uniform draw is ~85% red dwarfs), plus zoo strata that guarantee the showpieces: black holes, pulsars, the living massive tail. Each stratum samples uniformly across the galaxy, so regions keep their character — O/B in the arms, giants in the old core. Bigger samples take a proportionally longer remint. Needs remint.',
+    about: 'The harvest budget, split equally across the spectral-class mass strata (a truly uniform draw is ~85% red dwarfs), plus zoo strata that guarantee the showpieces: the gold giant branch, black holes, pulsars, the living massive tail. Each stratum samples uniformly across the galaxy, so regions keep their character — O/B in the arms, gold giants pooled in the old core. Bigger samples take a proportionally longer remint. Needs remint.',
     scope: 'harvest',
     key: 'GALAXY_SAMPLE_N',
     min: 100_000,

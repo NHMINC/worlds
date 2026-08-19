@@ -841,7 +841,7 @@ function walkSkyClouds(
   // NS-mass addresses; every black hole is 1.28M rows — 5× the
   // whole budget). Quiet old NS and WDs ride the mass strata in
   // their honest share. Budgets scale with SAMPLE_N.
-  type Gate = 'any' | 'bh' | 'pulsar' | 'alive';
+  type Gate = 'any' | 'bh' | 'pulsar' | 'alive' | 'giant';
   const cats: Array<{ u0: number; u1: number; step: number; gate: Gate }> = [];
   const uOf = (m: number) => Math.min(1, Math.max(0, imfQuantile(m)));
   const addCat = (m0: number, m1: number, catBudget: number, fracEst: number, gate: Gate) => {
@@ -863,6 +863,15 @@ function walkSkyClouds(
   // Living massive tail: O supergiants and Wolf–Rayet — alive
   // fraction of the ≥ REMNANT_NS slice is ~tMs / age span.
   addCat(UNIVERSE.REMNANT_NS, 1000, N * 0.002, 0.0014, 'alive');
+  // GIANT BRANCH: mid-mass slots inside their post-MS window —
+  // the gold that lights the old core. A pixel under MAX shows
+  // its brightest star, and number-proportional strata make the
+  // bulge's median star a dim orange dwarf (a brown core). The
+  // real bulge is golden because its LIGHT is K giants —
+  // numerically rare, photometrically dominant. This category
+  // is the magnitude/colour band the mass strata cannot see:
+  // same mass, different clock phase.
+  addCat(0.9, 3, N * 0.08, 0.03, 'giant');
   const spanFrac = (Math.max(1, itHi - itLo) / Math.max(1, nth)) *
     (Math.max(1, ir1 - ir0) / Math.max(1, nr));
   const uNeb = imfQuantile(nebulaWalkFloor());
@@ -905,10 +914,19 @@ function walkSkyClouds(
                 if (cat.gate === 'alive' && dead >= 0) continue;
                 if (cat.gate === 'bh' && dead < 0) continue;
                 if (cat.gate === 'pulsar' && (dead < 0 || dead >= UNIVERSE.PULSAR_GYR)) continue;
+                if (cat.gate === 'giant' && (clock.ageGyr < tMs || dead >= 0)) continue;
               }
               const ev = sketchEvolve(clock);
               if (cat.gate === 'bh' && ev.phase !== 'black_hole') continue;
               if (cat.gate === 'pulsar' && ev.phase !== 'pulsar') continue;
+              if (
+                cat.gate === 'giant' &&
+                ev.phase !== 'giant' &&
+                ev.phase !== 'subgiant' &&
+                ev.phase !== 'carbon_star'
+              ) {
+                continue;
+              }
               kept.push(slot);
               const birth = finishSlotBirth(clock);
               if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);

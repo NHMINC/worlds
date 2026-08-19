@@ -187,9 +187,16 @@ their true character: the O/B budget lands in the arms, the
 giant budget pools in the old core, massive strata are largely
 remnants because that is the clock. ZOO strata ride on top —
 rare classes as survey categories (black holes, pulsars, the
-living massive tail), each with a stride sized by its clock
-window so it collects its budget with cheap gates instead of
-an exhaustive walk. Quiet old NS and WDs ride the mass strata
+living massive tail, and the GIANT BRANCH: mid-mass slots in
+their post-MS window — the gold that lights the old core;
+under MAX a pixel shows its brightest star, and without this
+category the bulge's median star is a dim orange dwarf, a
+brown core), each with a stride sized by its clock window so
+it collects its budget with cheap gates instead of an
+exhaustive walk. Magnitude and colour are outputs of
+(mass, clock phase), so mass strata × clock windows IS the
+type : magnitude : colour grid — no combinatorial table.
+Quiet old NS and WDs ride the mass strata
 in their honest share. The walk counts the exact population
 first (one hash pass), so the count lands near
 `GALAXY_SAMPLE_N` (zoo budgets add a few %). Nebulae stay
