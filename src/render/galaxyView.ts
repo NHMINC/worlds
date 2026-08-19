@@ -57,7 +57,6 @@ import {
   cosmicStarFrag,
   cosmicStarVert,
   cosmicVert,
-  cosmicVoidRgb,
   mintCosmicSmudges,
   mintCosmicStars,
 } from './cosmicBg';
@@ -622,7 +621,6 @@ export class GalaxyView {
   private cosmicPts: THREE.Mesh | null = null;
   private cosmicGeo: THREE.BufferGeometry | null = null;
   private cosmicMat: THREE.ShaderMaterial | null = null;
-  private voidClear = new THREE.Color(0, 0, 0);
   private cosmicStarPts: THREE.Points | null = null;
   private cosmicStarGeo: THREE.BufferGeometry | null = null;
   private cosmicStarMat: THREE.ShaderMaterial | null = null;
@@ -692,8 +690,7 @@ export class GalaxyView {
 
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    // Black, not the void tint. The cosmic quad paints the night.
-    // An unfiltered clear was the void shining through dust holes.
+    // The void is black by decree — vacuum emits nothing.
     this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
 
@@ -1070,43 +1067,24 @@ export class GalaxyView {
     return out;
   }
 
-  /** The void is the scene's clear colour — the zero level of the
-   *  photograph. Pins and smudges add onto it; the dust filter
-   *  multiplies all of it. */
-  setVoidColor(hue: number, intensity: number): void {
-    const rgb = cosmicVoidRgb(hue, intensity);
-    this.voidClear.setRGB(rgb[0], rgb[1], rgb[2]);
-    const u = this.cosmicMat?.uniforms.uVoidRgb;
-    if (u) (u.value as THREE.Vector3).set(rgb[0], rgb[1], rgb[2]);
-  }
-
-  /** Dust filters; it never emits. The quad multiplies the void
-   *  clear (dst × T) before any sprite draws — pins and smudges
-   *  extinct themselves. The lime look-test instead paints opaque
-   *  over the whole sky, so it draws after the sprites. */
+  /** The void is black by decree — vacuum emits nothing, so there
+   *  is no background light for a filter to multiply (sprites
+   *  extinct themselves). The fullscreen quad survives only as
+   *  the lime fog look-test: visible when debug is on, skipped
+   *  entirely otherwise (a fullscreen dust march saved per frame). */
   private applyFilterBlend(mat: THREE.ShaderMaterial): void {
     const debug = ((mat.uniforms.uDustDebug?.value as number) ?? 0) >= 0.5;
-    if (debug) {
-      mat.blending = THREE.NoBlending;
-    } else {
-      mat.blending = THREE.CustomBlending;
-      mat.blendEquation = THREE.AddEquation;
-      mat.blendSrc = THREE.DstColorFactor;
-      mat.blendDst = THREE.ZeroFactor;
-    }
-    if (this.cosmicPts) this.cosmicPts.renderOrder = debug ? -6 : -9;
+    mat.blending = THREE.NoBlending;
+    if (this.cosmicPts) this.cosmicPts.visible = debug;
   }
 
   private buildCosmic(): void {
     if (this.cosmicPts) return;
     const geo = new THREE.PlaneGeometry(2, 2);
-    const voidRgb = cosmicVoidRgb(UNIVERSE.COSMIC_HUE, UNIVERSE.COSMIC_INT);
-    this.voidClear.setRGB(voidRgb[0], voidRgb[1], voidRgb[2]);
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicVert(),
       fragmentShader: dustFilterFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS), UNIVERSE.GALAXY_EXTINCT_STEPS),
       uniforms: {
-        uVoidRgb: { value: new THREE.Vector3(voidRgb[0], voidRgb[1], voidRgb[2]) },
         uCenter: { value: new THREE.Vector3() },
         uCamRotInv: { value: new THREE.Matrix3() },
         uInvProj: { value: new THREE.Matrix4() },
@@ -1119,9 +1097,8 @@ export class GalaxyView {
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.frustumCulled = false;
-    // Before the background sprites (−8 / −7): the quad only
-    // darkens the void clear. Sprites extinct their own light.
-    mesh.renderOrder = -9;
+    // The look-test paints over the whole sky, after the sprites.
+    mesh.renderOrder = -6;
     this.scene.add(mesh);
     this.cosmicPts = mesh;
     this.cosmicGeo = geo;
@@ -1235,10 +1212,6 @@ export class GalaxyView {
 
   /** Live cosmic-engineer write. One uniform, next frame. */
   setLiveUniform(name: string, value: number): void {
-    if (name === 'uVoidRgb') {
-      this.setVoidColor(UNIVERSE.COSMIC_HUE, value);
-      return;
-    }
     if (name === 'uStarN') {
       UNIVERSE.COSMIC_STAR_N = value;
       this.cosmicStarGeo?.setDrawRange(0, this.cosmicCount('star'));
@@ -2285,12 +2258,11 @@ export class GalaxyView {
     this.pickRing.rotation.z = t * 0.35;
     this.hereRing.rotation.z = t * -0.22;
 
-    // One scene, one pass, straight to the canvas: the void is the
-    // clear colour, background sprites add onto it, the dust filter
-    // quad multiplies all of it per pixel, then the galaxy draws in
-    // front. A stacked column saturates to white — film, not a knee.
+    // One scene, one pass, straight to the canvas: the void is
+    // black (vacuum emits nothing), self-extincted background
+    // sprites add onto it, then the galaxy draws in front. A
+    // stacked column saturates to white — film, not a knee.
     this.renderer.setRenderTarget(null);
-    this.renderer.setClearColor(this.voidClear, 1);
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onFrame?.({
       mode: this.mode,

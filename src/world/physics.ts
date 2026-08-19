@@ -761,9 +761,10 @@ export const UNIVERSE = {
   /**
    * Cosmic background — the decreed fake. We cannot mint the
    * observable universe in a browser. This is a distant shell
-   * around the catalog: a void colour, a photograph of distant
-   * galaxies (inclined disks — hash size, orientation, Hubble
-   * axis, crispness; each with its own shine), and a photograph of
+   * around the catalog: a black void (vacuum emits nothing), a
+   * photograph of distant galaxies (inclined disks — hash size,
+   * orientation, Hubble axis, crispness; each with its own
+   * shine), and a photograph of
    * distant star-like pins (a dim field plus a rare bright tail).
    * Address i is hash(seed, i) on the sphere — same bottle, same sky.
    * A draw-range prefix must still cover 4π (a Fibonacci spiral
@@ -772,10 +773,6 @@ export const UNIVERSE = {
    */
   /** Decreed sky distance (kpc). The GPU draws the sky on the far plane; this is the law, not a mesh. */
   COSMIC_R: 8000,
-  /** Rainbow hue of the void (0..1 around the wheel). 230° / 360. */
-  COSMIC_HUE: 230 / 360,
-  /** How hard that hue is lit. 0 = black; 1 = a readable tinted night. */
-  COSMIC_INT: 0.05,
   /** Photograph gain on the smudge set. Each smudge also has its own shine. */
   COSMIC_GAIN: 1,
   /** Set-wide angular scale. Each galaxy already has its own size. */

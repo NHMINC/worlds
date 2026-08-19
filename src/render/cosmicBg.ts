@@ -18,49 +18,13 @@
  * the old leak — a disc painted across a lane its centre missed —
  * so a smudge marches per FRAGMENT: each pixel rebuilds its own
  * catalog direction from the point coord and asks the dust
- * itself. The void clear colour is the one light with no object
- * to own it, so the dust filter quad (dustFilterFrag) multiplies
- * it per pixel BEFORE any sprite draws. Nothing out there can
- * reach the eye without consulting the dust in its own shader.
+ * itself. The void is BLACK by decree — vacuum emits nothing —
+ * so no filter pass is needed behind the sprites; the fullscreen
+ * quad (dustFilterFrag) survives only as the lime fog look-test.
+ * Nothing out there can reach the eye without consulting the
+ * dust in its own shader.
  */
 import { xmur3 } from '../world/rng';
-
-/** HSV → linear-ish RGB in 0..1. h wraps. */
-export function hsvRgb(h: number, s: number, v: number): [number, number, number] {
-  const hh = ((h % 1) + 1) % 1;
-  const ss = Math.max(0, Math.min(1, s));
-  const vv = Math.max(0, Math.min(1, v));
-  const i = Math.floor(hh * 6);
-  const f = hh * 6 - i;
-  const p = vv * (1 - ss);
-  const q = vv * (1 - f * ss);
-  const t = vv * (1 - (1 - f) * ss);
-  switch (i % 6) {
-    case 0:
-      return [vv, t, p];
-    case 1:
-      return [q, vv, p];
-    case 2:
-      return [p, vv, t];
-    case 3:
-      return [p, q, vv];
-    case 4:
-      return [t, p, vv];
-    default:
-      return [vv, p, q];
-  }
-}
-
-/** Saturation of the void tint. Hue is the engineer wheel; this stays a colour. */
-const VOID_SAT = 0.78;
-/** Value at intensity 1 — a readable tinted night, not a neon sky. */
-const VOID_V = 0.22;
-
-/** Void colour from a rainbow hue and an intensity (both 0..1). */
-export function cosmicVoidRgb(hue: number, intensity: number): [number, number, number] {
-  const i = Math.max(0, Math.min(1, intensity));
-  return hsvRgb(hue, VOID_SAT, i * VOID_V);
-}
 
 /**
  * Far-plane sky. A surrounding sphere puts triangles through w = 0
@@ -77,17 +41,16 @@ export function cosmicVert(): string {
 `;
 }
 
-/** The dust filter: a full-screen quad that MULTIPLIES the void
- *  clear colour by one per-pixel dust march, drawn before any
- *  sprite (pins and smudges extinct themselves) — or paints the
- *  opaque lime look-test skin when debug is on (blending and
- *  draw order switch with it). `steps` must match the included
- *  extinctGlsl. */
+/** The lime look-test quad. The void is black by decree, so
+ *  there is no background light left for a dust filter to
+ *  multiply (pins and smudges extinct themselves) — the quad
+ *  draws ONLY when the fog debug is on, painting the opaque
+ *  lime skin of the baked ribbons. `steps` must match the
+ *  included extinctGlsl. */
 export function dustFilterFrag(extinctChunk: string, steps: number): string {
   const n = Number.isInteger(steps) ? `${steps}.0` : `${steps}`;
   return /* glsl */ `
   ${extinctChunk}
-  uniform vec3 uVoidRgb;
   uniform vec3 uCenter;
   uniform mat3 uCamRotInv;
   uniform mat4 uInvProj;
@@ -109,13 +72,13 @@ export function dustFilterFrag(extinctChunk: string, steps: number): string {
   // rim / specular followed the view direction (a sheen that
   // warped as you moved). Both are gone. The cloud texture IS the
   // field: cores shade deeper, wisps stay pale.
-  vec3 foxLook(vec3 from, vec3 dir, vec3 voidC) {
+  vec3 foxLook(vec3 from, vec3 dir) {
     vec2 span = extinctSpan(from, dir);
-    if (span.x > span.y) return voidC;
+    if (span.x > span.y) return vec3(0.0);
     float t0 = max(span.x, 0.0);
     float dCat = span.y - t0;
     float dt = dCat / ${n};
-    vec3 rgb = voidC;
+    vec3 rgb = vec3(0.0);
     float a = 0.0;
     vec3 L = normalize(vec3(0.32, 0.86, 0.4));
     for (int i = 0; i < ${steps}; i++) {
@@ -140,13 +103,7 @@ export function dustFilterFrag(extinctChunk: string, steps: number): string {
     vec4 view = uInvProj * vec4(vNdc, 1.0, 1.0);
     vec3 camDir = normalize(view.xyz / max(abs(view.w), 1e-6));
     vec3 dir = normalize(uCamRotInv * camDir);
-    if (uDustDebug >= 0.5) {
-      gl_FragColor = vec4(foxLook(uCenter, dir, uVoidRgb), 1.0);
-      return;
-    }
-    // Dust does not emit: this fragment is the transmittance the
-    // blend multiplies onto whatever background light landed here.
-    gl_FragColor = vec4(extinctLook(uCenter, dir), 1.0);
+    gl_FragColor = vec4(foxLook(uCenter, dir), 1.0);
   }
 `;
 }

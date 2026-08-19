@@ -108,7 +108,8 @@ types or star types.
   background** is the other decreed fake: we cannot mint the
   observable universe. It is SCENE CONTENT of the one galaxy
   scene — decreed content at extreme distance, not an external
-  skybox: a void (the scene's clear colour) plus distant
+  skybox: a black void (vacuum emits nothing — the tinted-night
+  hue system is retired) plus distant
   galaxies (one inclined disk each — hash size, cos i, position
   angle, Hubble axis, crispness) and distant star-like pins
   (`COSMIC_STAR_*`, a dim field plus a rare bright tail). Past
@@ -121,9 +122,10 @@ types or star types.
   exactly like a harvest star dims its own pin. Pins march per
   vertex (a point source is exact); smudges march per FRAGMENT —
   one centre-ray sample was the old leak, a 240 px disc painted
-  across a lane its centre missed. The void clear colour is the
-  one light with no object to own it, so the dust filter quad
-  multiplies it per pixel before any sprite draws. `extinctLook`
+  across a lane its centre missed. A black void needs no
+  filtering, so the fullscreen quad survives only as the lime
+  fog look-test (drawn only when the debug knob is on).
+  `extinctLook`
   is the CLOUD-COLUMN law (decreed optics, calibrated on the
   real MW): opacity is a saturating ramp of local density (fade
   floor → `GALAXY_EXTINCT_ABYSS`, contrast
@@ -261,10 +263,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, nebulae). Each option states what the setting
   does. Remint / rebake knobs are amber. Live photograph
-  knobs already sit on the GPU (void colour is a hue
-  wheel plus intensity, smudge brightness and count,
+  knobs already sit on the GPU (smudge brightness and count,
   background-star brightness and count, extinction, shine,
-  photograph knee, nebula glow) — a slide is the next frame. Rebuild knobs (survey
+  nebula glow) — a slide is the next frame. Rebuild knobs (survey
   floors, nebula catalog, ribbon-geometry laws): the slider is a
   draft until **Rebuild** writes `UNIVERSE` and remints /
   rebakes, or **Cancel** discards. Star remint, nebula walk,
