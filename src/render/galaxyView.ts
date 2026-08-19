@@ -1245,6 +1245,7 @@ export class GalaxyView {
 
   /** Live cosmic-engineer write. One uniform, next frame. */
   setLiveUniform(name: string, value: number): void {
+    this.wake();
     if (name === 'uWhiteK') {
       const wb = whiteRefLinear(value);
       for (const mat of this.cloudMats()) {
@@ -1297,6 +1298,7 @@ export class GalaxyView {
 
   /** After a star remint — drop the star mesh only. Nebulae and fog stay. */
   replaceSky(): void {
+    this.wake();
     this.disposeStars();
     const cloud = silhouetteCloud(this.seed);
     this.cloud = cloud;
@@ -1309,6 +1311,7 @@ export class GalaxyView {
 
   /** After a nebula rebake — drop the nebula mesh only. Stars and fog stay. */
   replaceNebulae(): void {
+    this.wake();
     this.disposeNebulae();
     const neb = nebulaCloud(this.seed);
     this.nebulae = neb;
@@ -1329,6 +1332,7 @@ export class GalaxyView {
   /** Swap the 3D texture on the existing sky — after any bake:
    *  the initial boot mint, a cache load, or a knob rebake. */
   replaceDust(): void {
+    this.wake();
     this.silDustTex?.dispose();
     this.silDustTex = null;
     const tex = this.ensureDustTexture();
@@ -1362,6 +1366,7 @@ export class GalaxyView {
   // --------------------------------------------------------------- state
 
   setFilter(f: GalaxyFilter): void {
+    this.wake();
     this.filter = f;
     this.applyStarVis();
     this.applyNebVis();
@@ -1431,6 +1436,7 @@ export class GalaxyView {
   }
 
   setPreset(p: GalaxyPreset): void {
+    this.wake();
     if (p === 'home') {
       const obj = this.hereObj ?? this.home;
       if (!obj) return;
@@ -1512,6 +1518,7 @@ export class GalaxyView {
 
   /** Open the region around a star and select it. */
   focus(obj: GalaxyObject): void {
+    this.wake();
     const c = galToCart(obj.pos);
     this.enterRegion(c.x, c.y, c.z, obj);
   }
@@ -1634,6 +1641,7 @@ export class GalaxyView {
   }
 
   resize(w: number, h: number): void {
+    this.wake();
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
@@ -1645,6 +1653,7 @@ export class GalaxyView {
     this.active = on;
     if (on) {
       this.lastT = performance.now();
+      this.wake();
       if (!this.raf) this.raf = requestAnimationFrame(this.frame);
     } else {
       cancelAnimationFrame(this.raf);
@@ -1703,6 +1712,7 @@ export class GalaxyView {
   }
 
   private select(obj: GalaxyObject | null): void {
+    this.wake();
     this.selected = obj;
     this.placeHighlights();
     this.callbacks.onSelect(obj);
@@ -1794,6 +1804,7 @@ export class GalaxyView {
     void prepareUniverse(this.seed).then(() => {
       if (this.disposed) return;
       this.bindSky();
+      this.wake();
     });
   }
 
@@ -1936,6 +1947,7 @@ export class GalaxyView {
   // ------------------------------------------------------------- input
 
   private onDown = (e: PointerEvent): void => {
+    this.wake();
     e.preventDefault();
     try {
       this.canvas.setPointerCapture(e.pointerId);
@@ -1960,6 +1972,7 @@ export class GalaxyView {
   };
 
   private onMove = (e: PointerEvent): void => {
+    this.wake();
     if (!this.pointers.has(e.pointerId)) return;
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
@@ -2009,6 +2022,7 @@ export class GalaxyView {
   }
 
   private onUp = (e: PointerEvent): void => {
+    this.wake();
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch0 = 0;
     if (this.pointers.size === 0) {
@@ -2022,12 +2036,14 @@ export class GalaxyView {
   };
 
   private onWheel = (e: WheelEvent): void => {
+    this.wake();
     e.preventDefault();
     this.zoom(Math.exp(e.deltaY * ZOOM_WHEEL_SENS));
     this.idle = 0;
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
+    this.wake();
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (this.mode === 'region' && !e.repeat) {
       if (e.code === 'ArrowUp' || e.code === 'KeyW') {
@@ -2055,6 +2071,7 @@ export class GalaxyView {
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
+    this.wake();
     this.keys.delete(e.code);
   };
 
@@ -2257,11 +2274,28 @@ export class GalaxyView {
 
   // --------------------------------------------------------------- frame
 
+  /** Frames left before the loop rests. The galaxy is a static
+   *  catalog: at rest nothing changes, so nothing should render —
+   *  every star vertex re-marches the dust column each draw
+   *  (~37M texture taps a frame), pure heat when the camera is
+   *  still. Planets will live inside this scene; it must idle
+   *  cold. */
+  private restIn = 90;
+  private lastPose = { x: NaN, y: 0, z: 0, yaw: 0, pitch: 0 };
+
+  /** Keep the loop rendering for at least n more frames. */
+  private wake(n = 45): void {
+    this.restIn = Math.max(this.restIn, n);
+  }
+
   private frame = (): void => {
     if (this.disposed || !this.active) return;
     // Rewire every material whenever the baked volume changes —
     // the one path that covers boot mint, cache hit, and rebuild.
-    if (harvestDustVolume(this.seed) !== this.dustWired) this.replaceDust();
+    if (harvestDustVolume(this.seed) !== this.dustWired) {
+      this.replaceDust();
+      this.wake();
+    }
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
@@ -2269,6 +2303,32 @@ export class GalaxyView {
     this.cruise(dt);
     this.steerArc(dt);
     this.applyCam();
+    // Motion is the universal wake: input, warp, damping, and
+    // settling all end as pose drift. Everything else that can
+    // change a pixel calls wake() explicitly.
+    const p = this.lastPose;
+    const moved =
+      Math.abs(p.x - this.arcCenter.x) > 1e-9 ||
+      Math.abs(p.y - this.arcCenter.y) > 1e-9 ||
+      Math.abs(p.z - this.arcCenter.z) > 1e-9 ||
+      Math.abs(p.yaw - this.theta) > 1e-9 ||
+      Math.abs(p.pitch - this.phi) > 1e-9;
+    if (moved || !Number.isFinite(p.x)) {
+      p.x = this.arcCenter.x;
+      p.y = this.arcCenter.y;
+      p.z = this.arcCenter.z;
+      p.yaw = this.theta;
+      p.pitch = this.phi;
+      this.wake(30);
+    }
+    if (this.thrustOn) this.wake(2);
+    // A visible selection keeps its ring spinning.
+    if (this.selected) this.wake(1);
+    if (this.restIn <= 0) {
+      this.raf = requestAnimationFrame(this.frame);
+      return;
+    }
+    this.restIn--;
     this.updateSight();
     this.aimReticle();
 
