@@ -48,10 +48,13 @@ export const SHINE_DIST_P = 0.45;
 export const SHINE_SAT = 1.55;
 /**
  * Spectral gamma of the harvest photograph (see harvestChroma).
- * 1 = raw blackbody (pale, never visibly blue); 2.7 turns a hot
- * photosphere true blue and a K giant rich gold.
+ * 1 = raw blackbody. 1.5 reads like film: B stars blue-WHITE
+ * (their real photographic look), K giants warm gold. 2.7 was a
+ * fight against additive bleaching; under MAX compositing hue
+ * survives per pixel, and that depth dyed the whole B-heavy
+ * harvest azure.
  */
-export const HARVEST_SHINE_SAT = 2.7;
+export const HARVEST_SHINE_SAT = 1.5;
 /**
  * Photograph zero-point (L☉). Stays at the original late-B floor
  * so deepening SILHOUETTE_L adds fainter pins instead of
