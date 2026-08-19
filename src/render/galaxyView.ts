@@ -435,24 +435,23 @@ const STAR_FRAG = /* glsl */ `
       // gaussian to fill the quad was the white-disc photograph.
       float rCss = (edge * vPx * 0.5) / max(uPixel, 1.0);
       // DOT + HALO, never a disc. The dot is a fixed sub-pixel
-      // Gaussian — a star is unresolved at any brightness. The
-      // halo is the Lorentzian, soft-kneed toward the hue
-      // ceiling: magnitude grows the halo's REACH, and there is
-      // a brightness gradient everywhere — no flat shelf, no
-      // rim. A real PSF knows only flux — not the photosphere
-      // radius, not the class.
+      // Gaussian — a star is unresolved at any brightness; the
+      // halo is the Lorentzian and magnitude grows its REACH.
       float coreT = exp(-rCss * rCss * uPsfCore);
       float tailT = uPsfTail / (uPsfA + uPsfB * rCss * rCss);
       float window = 1.0 - edge * edge;
       window *= window;
-      float dotI = min(I * 0.95 * coreT, hueCeil);
-      float haloI = hueCeil * (1.0 - exp(-(I * tailT) / hueCeil));
-      float profile = max(dotI, haloI) * window;
-      if (profile < 0.003) discard;
-      // Only a truly monstrous photocentre overexposes to white —
-      // an O star stays blue, a giant stays gold.
-      float bleach = smoothstep(40.0, 160.0, I) * coreT;
-      vec3 c = mix(vColor, vec3(1.0), bleach) * profile;
+      // OVEREXPOSURE: hue survives up to the channel ceiling;
+      // light past it whitens the pixel, the way a saturated
+      // photocell blends white. A glowing gold star reads
+      // white-gold core, gold shoulder, gold halo; a dim orange
+      // dwarf never crosses the ceiling and stays orange. The
+      // soft knee keeps a brightness gradient everywhere.
+      float w = I * (0.95 * coreT + tailT);
+      float base = hueCeil * (1.0 - exp(-w / hueCeil));
+      float whiten = 1.0 - exp(-max(w - hueCeil, 0.0) * 0.5);
+      vec3 c = base * mix(vColor, vec3(1.0), whiten) * window;
+      if (max(c.r, max(c.g, c.b)) < 0.003) discard;
       // Encode linear light back to sRGB (monotone — MAX-safe).
       gl_FragColor = vec4(pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
       return;

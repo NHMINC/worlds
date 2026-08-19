@@ -339,16 +339,16 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   coverage. The HDR knee pass and the super-sun extra-I patch
   are retired — the magnitude law owns the whole scale.)
   Colour is
-  HUE-PRESERVING: hue is a channel ratio, so the painted
-  photocentre caps where its strongest channel saturates — a
-  bright star grows a saturated colour plateau (O blue, giant
-  gold) instead of clipping to white, and the luminosity the
-  plateau cannot show lives in the coloured Lorentzian wings.
+  hue-preserving up to the channel ceiling, then OVEREXPOSES:
+  light past the ceiling whitens the pixel the way a saturated
+  photocell blends white — a glowing gold giant reads
+  white-gold core, gold shoulder, gold halo; a dim orange dwarf
+  never crosses the ceiling and stays honestly orange. A
+  saturated-flat photocentre was a painted dead pixel.
   DOT + HALO, never a disc: the dot is a fixed sub-pixel
   Gaussian (a star is unresolved at any brightness); magnitude
-  grows the halo's REACH, and the halo soft-knees toward the
-  hue ceiling so there is a brightness gradient everywhere — no
-  flat shelf, no rim. The magnitude zero-point
+  grows the halo's REACH, and the soft knee keeps a brightness
+  gradient everywhere — no flat shelf, no rim. The magnitude zero-point
   (`HARVEST_SHINE_GAIN`) is the exposure: the survey floor is
   dim but present and brightness runs smoothly from there to
   the luminous tail — only the top of the population saturates,

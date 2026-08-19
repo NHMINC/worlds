@@ -299,17 +299,19 @@ export function cosmicStarFrag(): string {
     if (vI < 1e-5) discard;
     vec2 d = (gl_PointCoord - 0.5) * vPx;
     float rr = dot(d, d);
-    // Dot + halo, hue-preserving — the harvest law verbatim: the
-    // dot is fixed; magnitude grows the halo's reach toward the
-    // colour ceiling with a gradient everywhere.
+    // Dot + halo with overexposure — the harvest law verbatim:
+    // hue survives to the channel ceiling; light past it whitens
+    // the pixel like a saturated photocell. Bright pins wear
+    // white cores and coloured halos.
     float hueCeil = 1.0 / max(max(vColor.r, max(vColor.g, vColor.b)), 1e-3);
-    float dotI = min(vI * exp(-rr * uPinCore), hueCeil);
     float tailT = ${HARVEST_PSF_TAIL} / (${HARVEST_PSF_A} + ${HARVEST_PSF_B} * rr);
-    float haloI = hueCeil * (1.0 - exp(-(vI * tailT) / hueCeil));
-    float I = max(dotI, haloI);
-    if (I < 0.003) discard;
+    float w = vI * (0.95 * exp(-rr * uPinCore) + tailT);
+    float base = hueCeil * (1.0 - exp(-w / hueCeil));
+    float whiten = 1.0 - exp(-max(w - hueCeil, 0.0) * 0.5);
+    vec3 c = base * mix(vColor, vec3(1.0), whiten);
+    if (max(c.r, max(c.g, c.b)) < 0.003) discard;
     // Encode linear light back to sRGB (monotone — MAX-safe).
-    gl_FragColor = vec4(pow(clamp(vColor * I, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
+    gl_FragColor = vec4(pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2)), 1.0);
   }
 `;
 }
