@@ -160,6 +160,14 @@ export function GalaxyExplorer(props: Props) {
     });
   }, []);
 
+  const [perfText, setPerfText] = useState('');
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setPerfText(viewRef.current?.perfSummary() ?? '');
+    }, 500);
+    return () => window.clearInterval(id);
+  }, []);
+
   function openKnob(id: string): void {
     const live = liveKnob(id);
     if (live) {
@@ -501,6 +509,7 @@ export function GalaxyExplorer(props: Props) {
             Cosmic engineer
           </button>
         )}
+        {!engineer && perfText && <span className="gx-perf-inline">{perfText}</span>}
       </footer>
     </div>
   );

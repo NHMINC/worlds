@@ -992,23 +992,12 @@ body,
   touch-action: none;
 }
 
-.gx-perf {
-  position: absolute;
-  top: calc(96px + env(safe-area-inset-top));
-  right: calc(10px + env(safe-area-inset-right));
-  z-index: 6;
-  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #9fe8a9;
-  background: rgba(5, 10, 18, 0.72);
-  border: 1px solid rgba(140, 255, 170, 0.25);
-  border-radius: 6px;
-  padding: 4px 8px;
+.gx-perf-inline {
+  margin-left: 10px;
+  font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: rgba(159, 232, 169, 0.85);
   pointer-events: none;
-  white-space: pre;
-}
-
-.gx-perf.is-off {
-  display: none;
+  white-space: nowrap;
 }
 
 .gx-warp {

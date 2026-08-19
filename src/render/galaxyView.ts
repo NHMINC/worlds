@@ -47,7 +47,7 @@ import {
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
 import type { DustVolume } from '../world/dustVolume';
-import { PerfHud } from './perfHud';
+import { PerfMeter } from './perfHud';
 import { prepareUniverse } from '../world/universePrep';
 import {
   COSMIC_STAR_PIN,
@@ -714,7 +714,7 @@ export class GalaxyView {
     // display — a blur that ate ~a third of each star dot's peak
     // brightness: a residual filter nobody decreed.
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.perf = new PerfHud(canvas.parentElement ?? document.body, this.renderer.getContext());
+    this.perf = new PerfMeter(this.renderer.getContext());
     // The void is black by decree — vacuum emits nothing.
     this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
@@ -1330,7 +1330,7 @@ export class GalaxyView {
    *  quad and sprites) kept a dead 1×1 placeholder volume forever
    *  and the background sailed through every cloud. */
   private dustWired: DustVolume | null = null;
-  private perf!: PerfHud;
+  private perf!: PerfMeter;
 
   /** Swap the 3D texture on the existing sky — after any bake:
    *  the initial boot mint, a cache load, or a knob rebake. */
@@ -1411,6 +1411,11 @@ export class GalaxyView {
   /** The arc's loaded survey — every row is a tappable catalog id. */
   surveyStars(): GalaxyObject[] {
     return this.objects;
+  }
+
+  /** Latest performance summary for the bottom bar. */
+  perfSummary(): string {
+    return this.perf.summary();
   }
 
   /** Local catalog stars close enough to lock the reticle. Smoke / HUD. */
@@ -1667,7 +1672,6 @@ export class GalaxyView {
 
   dispose(): void {
     this.disposed = true;
-    this.perf.dispose();
     cancelAnimationFrame(this.raf);
     this.canvas.removeEventListener('pointerdown', this.onDown);
     this.canvas.removeEventListener('pointermove', this.onMove);
@@ -2048,10 +2052,6 @@ export class GalaxyView {
 
   private onKeyDown = (e: KeyboardEvent): void => {
     this.wake();
-    if (e.code === 'KeyP' && !e.metaKey && !e.ctrlKey && !e.altKey) {
-      this.perf.toggle();
-      return;
-    }
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (this.mode === 'region' && !e.repeat) {
       if (e.code === 'ArrowUp' || e.code === 'KeyW') {
