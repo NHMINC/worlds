@@ -446,6 +446,18 @@ export const UNIVERSE = {
    */
   GALAXY_DUST_MID: 0,
   GALAXY_ZD_DUST: 0.1,
+  /**
+   * Disk grip: how tightly the photograph hugs the midplane.
+   * 1 pins the classic thin slit (scale height = ZD_DUST) and
+   * flattens the eddies (clouds wider than tall). Loosen it and
+   * the effective scale height opens as ZD_DUST / grip while the
+   * turbulence goes isotropic and the vertical swirl wakes up —
+   * the same warped fBm is then free to carve longer ribbons
+   * that climb out of the disc instead of lying down in it.
+   * One knob: envelope, noise flattening, and vertical warp
+   * all read it. Photograph only — star ids do not move.
+   */
+  GALAXY_DUST_GRIP: 1,
   GALAXY_DUST_FREQ: 2.6,
   GALAXY_DUST_SWIRL: 0.85,
   GALAXY_DUST_DETAIL: 0.55,

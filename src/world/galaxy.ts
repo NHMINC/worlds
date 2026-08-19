@@ -297,7 +297,10 @@ function gasBase(p: GalPos): number {
 function gasPhoto(p: GalPos): number {
   const U = UNIVERSE;
   const zc = U.GALAXY_DUST_MID * midplaneZ(p.R, p.theta);
-  return gasRadial(p) * sech2((p.z - zc) / U.GALAXY_ZD_DUST);
+  // Grip opens the envelope: 1 is the thin slit; looser and the
+  // scale height grows as ZD / grip, freeing ribbons off-plane.
+  const zd = U.GALAXY_ZD_DUST / Math.max(U.GALAXY_DUST_GRIP, 0.05);
+  return gasRadial(p) * sech2((p.z - zc) / zd);
 }
 
 /**
@@ -341,18 +344,23 @@ function dustFbm(seed: string, x: number, y: number, z: number, salt: number): n
  * Photograph turbulence: domain-warped fractal noise. One slow
  * noise field bends the sample frame of another, so eddies curl
  * at every angle — fluff and chaos, no angle bank, no lattice
- * axis. y is compressed (clouds are wider than tall inside the
- * thin sheet) but still warps, so edge-on is churn, not ticks.
+ * axis. Grip sets the anisotropy: tight (1) compresses y (clouds
+ * wider than tall inside the thin sheet) and damps the vertical
+ * warp; loose lets the same field churn isotropically, so
+ * ribbons grow long and climb out of the plane.
  */
 function dustTurbulence(seed: string, x: number, y: number, z: number): number {
   const f = UNIVERSE.GALAXY_DUST_FREQ;
   const A = UNIVERSE.GALAXY_DUST_SWIRL;
+  const grip = Math.min(1, Math.max(0, UNIVERSE.GALAXY_DUST_GRIP));
+  const yc = 1 - 0.5 * grip;
+  const wyA = A * (1 - 0.65 * grip);
   // The swirl field: lower frequency than the clumps it bends.
   const wf = f * 0.45;
-  const wx = A * dustFbm(seed, x * wf, y * wf * 0.5, z * wf, 101);
-  const wz = A * dustFbm(seed, x * wf, y * wf * 0.5, z * wf, 211);
-  const wy = 0.35 * A * dustFbm(seed, x * wf, y * wf * 0.5, z * wf, 307);
-  return dustFbm(seed, (x + wx) * f, (y + wy) * f * 0.5, (z + wz) * f, 0);
+  const wx = A * dustFbm(seed, x * wf, y * wf * yc, z * wf, 101);
+  const wz = A * dustFbm(seed, x * wf, y * wf * yc, z * wf, 211);
+  const wy = wyA * dustFbm(seed, x * wf, y * wf * yc, z * wf, 307);
+  return dustFbm(seed, (x + wx) * f, (y + wy) * f * yc, (z + wz) * f, 0);
 }
 
 /**

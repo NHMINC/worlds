@@ -35,7 +35,10 @@ export function dustVolumeBounds(): {
 } {
   const pad = 0.2;
   const half = UNIVERSE.GALAXY_R_MAX + pad;
-  const yHalf = UNIVERSE.GALAXY_Z_THICK * 4 + pad;
+  // Loose grip opens the dust scale height (ZD / grip); the bake
+  // volume must grow with it or tall ribbons are clipped flat.
+  const zdEff = UNIVERSE.GALAXY_ZD_DUST / Math.max(UNIVERSE.GALAXY_DUST_GRIP, 0.05);
+  const yHalf = Math.max(UNIVERSE.GALAXY_Z_THICK * 4, zdEff * 4) + pad;
   return {
     origin: [-half, -yHalf, -half],
     size: [2 * half, 2 * yHalf, 2 * half],

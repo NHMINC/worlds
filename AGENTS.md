@@ -320,7 +320,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   are live knobs and the bake never needs a re-run to reshape
   the clouds. The sheet sits on the
   geometric midplane (`GALAXY_DUST_MID` = 0) so edge-on it
-  still averages to a thin slit. Occupancy / SFR / H II stay
+  still averages to a thin slit. `GALAXY_DUST_GRIP` is how
+  tightly it hugs that plane: at 1 the scale height is
+  `GALAXY_ZD_DUST` and the eddies are flattened (wider than
+  tall); loosen it and the envelope opens as ZD / grip while
+  the turbulence goes isotropic — the same ribbons grow long
+  and project above and below the disc (the bake volume grows
+  with it). Occupancy / SFR / H II stay
   on the warped molecular sheet — star ids do not move. A
   crest is a small Gaussian splat (anti-aliasing only) —
   hardware trilinear of a lone sample is a diamond face-on.
