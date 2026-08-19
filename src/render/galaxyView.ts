@@ -1058,8 +1058,10 @@ export class GalaxyView {
     if (u) (u.value as THREE.Vector3).set(rgb[0], rgb[1], rgb[2]);
   }
 
-  /** Dust filters; it never emits. The quad multiplies the frame
-   *  (dst × T) — except the lime look-test, which paints opaque. */
+  /** Dust filters; it never emits. The quad multiplies the void
+   *  clear (dst × T) before any sprite draws — pins and smudges
+   *  extinct themselves. The lime look-test instead paints opaque
+   *  over the whole sky, so it draws after the sprites. */
   private applyFilterBlend(mat: THREE.ShaderMaterial): void {
     const debug = ((mat.uniforms.uDustDebug?.value as number) ?? 0) >= 0.5;
     if (debug) {
@@ -1070,6 +1072,7 @@ export class GalaxyView {
       mat.blendSrc = THREE.DstColorFactor;
       mat.blendDst = THREE.ZeroFactor;
     }
+    if (this.cosmicPts) this.cosmicPts.renderOrder = debug ? -6 : -9;
   }
 
   private buildCosmic(): void {
@@ -1092,16 +1095,16 @@ export class GalaxyView {
       depthTest: false,
       toneMapped: false,
     });
-    this.applyFilterBlend(mat);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.frustumCulled = false;
-    // After the background sprites (−8 / −7), before everything
-    // inside the galaxy: the filter only touches light from beyond.
-    mesh.renderOrder = -6;
+    // Before the background sprites (−8 / −7): the quad only
+    // darkens the void clear. Sprites extinct their own light.
+    mesh.renderOrder = -9;
     this.scene.add(mesh);
     this.cosmicPts = mesh;
     this.cosmicGeo = geo;
     this.cosmicMat = mat;
+    this.applyFilterBlend(mat);
     this.buildCosmicSmudges();
     this.buildCosmicStars();
     this.pushMagUniforms();
@@ -1129,11 +1132,14 @@ export class GalaxyView {
     geo.setDrawRange(0, this.cosmicCount('smudge'));
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicSmudgeVert(),
-      fragmentShader: cosmicSmudgeFrag(),
+      fragmentShader: cosmicSmudgeFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
       uniforms: {
         uCosmicGain: { value: UNIVERSE.COSMIC_GAIN },
         uCosmicSize: { value: UNIVERSE.COSMIC_SIZE },
         uPxPerRad: { value: this.pxPerRad() },
+        uCenter: { value: new THREE.Vector3() },
+        uCamRotInv: { value: new THREE.Matrix3() },
+        ...this.extinctUniforms(),
       },
       transparent: true,
       depthWrite: false,
@@ -1179,12 +1185,14 @@ export class GalaxyView {
     geo.setAttribute('aShine', new THREE.BufferAttribute(cloud.shine, 1));
     geo.setDrawRange(0, this.cosmicCount('star'));
     const mat = new THREE.ShaderMaterial({
-      vertexShader: cosmicStarVert(),
+      vertexShader: cosmicStarVert(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
       fragmentShader: cosmicStarFrag(),
       uniforms: {
         uStarGain: { value: UNIVERSE.COSMIC_STAR_GAIN },
         uPinCanvas: { value: COSMIC_STAR_PIN },
         uPinCore: { value: COSMIC_STAR_PIN_CORE },
+        uCenter: { value: new THREE.Vector3() },
+        ...this.extinctUniforms(),
       },
       transparent: true,
       depthWrite: false,

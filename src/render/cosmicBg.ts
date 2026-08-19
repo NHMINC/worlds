@@ -10,15 +10,18 @@
  * archetype switch. Not a catalog. Not pickable. Seeded from the
  * bottle.
  *
- * Occlusion is one law for everything out there: the void is the
- * photograph's clear colour, pins and smudges ADD onto it, then
- * the dust filter quad (dustFilterFrag) MULTIPLIES the framebuffer
- * by one per-pixel march (extinctLook) before anything inside the
- * galaxy draws. Dust emits nothing; it filters. Per-vertex
- * extinction of an extended sprite was the leak — a 240 px smudge
- * whose centre ray slipped between clumps painted its whole disc
- * across the lane. A stamp cannot straddle a lane it never
- * consults; a screen multiply consults every pixel.
+ * Occlusion is the same process as everything inside the galaxy:
+ * every background object extincts ITS OWN light with the shared
+ * march (extinctLook), exactly like a harvest star dims its own
+ * pin. Pins are point sources — one march per vertex is exact.
+ * Smudges are wide (up to 240 px), and one centre-ray sample was
+ * the old leak — a disc painted across a lane its centre missed —
+ * so a smudge marches per FRAGMENT: each pixel rebuilds its own
+ * catalog direction from the point coord and asks the dust
+ * itself. The void clear colour is the one light with no object
+ * to own it, so the dust filter quad (dustFilterFrag) multiplies
+ * it per pixel BEFORE any sprite draws. Nothing out there can
+ * reach the eye without consulting the dust in its own shader.
  */
 import { xmur3 } from '../world/rng';
 
@@ -74,11 +77,12 @@ export function cosmicVert(): string {
 `;
 }
 
-/** The dust filter: a full-screen quad that MULTIPLIES what the
- *  background already put in each pixel (void clear + pins +
- *  smudges) by one per-pixel dust march — or paints the opaque
- *  lime look-test skin when debug is on (blending switches with
- *  it). `steps` must match the included extinctGlsl. */
+/** The dust filter: a full-screen quad that MULTIPLIES the void
+ *  clear colour by one per-pixel dust march, drawn before any
+ *  sprite (pins and smudges extinct themselves) — or paints the
+ *  opaque lime look-test skin when debug is on (blending and
+ *  draw order switch with it). `steps` must match the included
+ *  extinctGlsl. */
 export function dustFilterFrag(extinctChunk: string, steps: number): string {
   const n = Number.isInteger(steps) ? `${steps}.0` : `${steps}`;
   return /* glsl */ `
@@ -273,15 +277,18 @@ export function mintCosmicSmudges(seed: string, n: number, cluster: number): Cos
   return { n, pos, col, shine, size, aspect, angle, seed: seedA, crisp };
 }
 
-/** No extinction here: the pin adds into the framebuffer before
- *  the dust filter quad multiplies the whole background per pixel. */
-export function cosmicStarVert(): string {
+/** A pin dims itself — the same process as a harvest star: its
+ *  own shader marches the camera→sky sightline (extinctLook) and
+ *  multiplies its own light. A point source is exact per vertex. */
+export function cosmicStarVert(extinctChunk: string): string {
   return /* glsl */ `
+  ${extinctChunk}
   attribute vec3 aColor;
   attribute float aShine;
   uniform float uStarGain;
   uniform float uPinCanvas;
   uniform float uPinCore;
+  uniform vec3 uCenter;
   varying vec3 vColor;
   varying float vI;
   varying float vPx;
@@ -303,7 +310,7 @@ export function cosmicStarVert(): string {
       return;
     }
     vI = aShine * uStarGain;
-    vColor = aColor;
+    vColor = aColor * extinctLook(uCenter, dir);
     float n = clamp(pow(aShine / 9.5, 0.38), 0.0, 1.0);
     vNear = n;
     float pin = uPinCanvas * mix(0.5, 2.85, n);
@@ -335,7 +342,9 @@ export function cosmicStarFrag(): string {
 `;
 }
 
-/** No extinction here either — same law as the pins. */
+/** A smudge is wide (up to 240 px) — one centre-ray sample was the
+ *  old leak, so extinction happens per FRAGMENT: each pixel of the
+ *  disc reconstructs its own catalog direction and marches it. */
 export function cosmicSmudgeVert(): string {
   return /* glsl */ `
   attribute vec3 aColor;
@@ -354,6 +363,8 @@ export function cosmicSmudgeVert(): string {
   varying float vAngle;
   varying float vSeed;
   varying float vCrisp;
+  varying vec3 vDir;
+  varying float vAng;
 
   void main() {
     vec3 dir = normalize(position);
@@ -365,6 +376,8 @@ export function cosmicSmudgeVert(): string {
       vAngle = 0.0;
       vSeed = 0.0;
       vCrisp = 0.0;
+      vDir = vec3(0.0, 0.0, 1.0);
+      vAng = 0.0;
       gl_PointSize = 0.0;
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
@@ -376,21 +389,30 @@ export function cosmicSmudgeVert(): string {
     vSeed = aSeed;
     vCrisp = clamp(aCrisp, 0.0, 1.0);
     float ang = max(aSize, 0.16) * max(uCosmicSize, 0.06) * 0.062;
-    gl_PointSize = clamp(ang * uPxPerRad, 14.0, 240.0);
+    float px = clamp(ang * uPxPerRad, 14.0, 240.0);
+    gl_PointSize = px;
+    vDir = dir;
+    // Angular radius of the stamp — the frag rebuilds each pixel's ray.
+    vAng = 0.5 * px / max(uPxPerRad, 1.0);
     vec4 clip = projectionMatrix * mv;
     gl_Position = vec4(clip.xy, clip.w, clip.w);
   }
 `;
 }
 
-export function cosmicSmudgeFrag(): string {
+export function cosmicSmudgeFrag(extinctChunk: string): string {
   return /* glsl */ `
+  ${extinctChunk}
+  uniform vec3 uCenter;
+  uniform mat3 uCamRotInv;
   varying vec3 vColor;
   varying float vI;
   varying float vIncl;
   varying float vAngle;
   varying float vSeed;
   varying float vCrisp;
+  varying vec3 vDir;
+  varying float vAng;
 
   float h11(float n) {
     return fract(sin(n) * 43758.5453);
@@ -439,10 +461,17 @@ export function cosmicSmudgeFrag(): string {
 
     float I = (bulge + diskI * (0.38 + 0.62 * (0.26 + arms)) + bar) * rim * dust * lump * haze;
     if (I < 0.012) discard;
+    // This pixel's own sightline: the sprite centre direction plus
+    // the point-coord offset in the camera's screen basis (point
+    // coords run y-down). One march per pixel — a wide disc cannot
+    // straddle a dust lane its centre ray missed.
+    vec3 rayDir = normalize(
+      vDir + tan(vAng) * (uCamRotInv * vec3(q.x, -q.y, 0.0)));
+    vec3 ext = extinctLook(uCenter, rayDir);
     vec3 warm = vColor * vec3(1.1, 0.9, 0.74);
     vec3 cool = vColor * vec3(0.78, 0.86, 1.06);
     vec3 rgb = mix(cool, warm, clamp(bulge / max(I, 1e-4), 0.0, 1.0));
-    gl_FragColor = vec4(rgb * (vI * I), 1.0);
+    gl_FragColor = vec4(rgb * (vI * I) * ext, 1.0);
   }
 `;
 }

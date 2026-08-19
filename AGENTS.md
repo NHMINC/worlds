@@ -115,25 +115,27 @@ types or star types.
   the dust box, extra distance adds nothing to a sightline, so
   the sprites draw as far-plane directions (w = 0; triangles
   never cross the camera). The warp fence keeps you off the
-  photograph. Not a catalog. Not pickable. Dust filters it under
-  **one law, once, per pixel**: the background draws first
-  (clear + pins + smudges, unextincted), then the dust filter
-  quad MULTIPLIES the framebuffer by one `extinctLook` march per
-  pixel before anything inside the galaxy draws. Sprites do not
-  self-extinct — a per-vertex sample let a wide smudge straddle
-  the lane its centre ray missed. `extinctLook` is the PER-CLOUD
-  law (decreed optics): each contiguous run of raw field above
-  the fade floor along the ray is one cloud, its crest density
-  sets its opacity (floor → `GALAXY_EXTINCT_ABYSS`), and clouds
-  ADD — most are translucent, a rare dense crest is an abyss,
-  and overlaps stack to black. Honest Beer–Lambert through the
-  ~0.15 kpc toy sheet is glass face-on (T ≈ 0.96 through a
-  ribbon body) and can never silhouette a cloud; the cloud sum
-  can, and an eye embedded in a cloud sits inside its segment.
-  The rim is a fade on the raw field; Beer–Lambert still tints
-  it. Harvest stars march the same camera→star law (`extinctT`)
-  — from inside the fog you still see what is close. Empty
-  space is vacuum.
+  photograph. Not a catalog. Not pickable. Dust filters it the
+  same way it filters everything else: **every background object
+  extincts its own light in its own shader** (`extinctLook`),
+  exactly like a harvest star dims its own pin. Pins march per
+  vertex (a point source is exact); smudges march per FRAGMENT —
+  one centre-ray sample was the old leak, a 240 px disc painted
+  across a lane its centre missed. The void clear colour is the
+  one light with no object to own it, so the dust filter quad
+  multiplies it per pixel before any sprite draws. `extinctLook`
+  is the PER-CLOUD law (decreed optics): each contiguous run of
+  raw field above the fade floor along the ray is one cloud, its
+  crest density sets its opacity (floor →
+  `GALAXY_EXTINCT_ABYSS`), and clouds ADD — most are
+  translucent, a rare dense crest is an abyss, and overlaps
+  stack to black. Honest Beer–Lambert through the ~0.15 kpc toy
+  sheet is glass face-on (T ≈ 0.96 through a ribbon body) and
+  can never silhouette a cloud; the cloud sum can, and an eye
+  embedded in a cloud sits inside its segment. The rim is a fade
+  on the raw field; Beer–Lambert still tints it. Harvest stars
+  march the same camera→star law (`extinctT`) — from inside the
+  fog you still see what is close. Empty space is vacuum.
 
 If you are about to special-case a seed, a body id, or a named planet
 type: stop. Change the law. A new `if` that papers over one ugly world is
