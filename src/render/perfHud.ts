@@ -2,7 +2,7 @@
  * Performance meter: rendered FPS, main-thread frame cost, and
  * GPU frame time via EXT_disjoint_timer_query_webgl2 where the
  * browser allows it (desktop Chrome does; iOS Safari does not —
- * it shows "—"). A pure collector: the explorer's bottom bar
+ * it shows "n/a"). A pure collector: the explorer's bottom bar
  * reads `summary()` and renders it next to Cosmic engineer.
  */
 type TimerExt = {
@@ -54,13 +54,30 @@ export class PerfMeter {
     this.poll();
     const now = performance.now();
     if (now - this.lastFlush < 500) return;
-    const dt = (now - this.lastFlush) / 1000;
+    this.flush(now);
+  }
+
+  /** Force the resting line now — the loop is about to stop. */
+  markRest(): void {
+    this.drawn = 0;
+    this.flush(performance.now());
+  }
+
+  private flush(now: number): void {
+    const dt = Math.max(1e-3, (now - this.lastFlush) / 1000);
     const fps = this.drawn / dt;
     const resting = this.drawn === 0;
+    const gpu = resting
+      ? '—'
+      : this.hasGpu
+        ? `${this.gpuMs.toFixed(1)} ms`
+        : this.ext
+          ? '—'
+          : 'n/a';
     const parts = [
       resting ? 'resting' : `${fps.toFixed(0)} fps`,
       `cpu ${resting ? '~0' : this.cpuMs.toFixed(1)} ms`,
-      `gpu ${this.hasGpu && !resting ? this.gpuMs.toFixed(1) + ' ms' : '—'}`,
+      `gpu ${gpu}`,
     ];
     const mem = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
     if (mem) parts.push(`js ${(mem.usedJSHeapSize / 1048576).toFixed(0)} MB`);

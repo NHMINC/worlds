@@ -426,13 +426,17 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Nothing queries or rebuilds the catalog per camera move — the
   old free-flight explorer's blink / cluster / stutter / re-roll
   bug class is retired along with the raymarched field and the
-  dynamic beacon system. The render loop RESTS: the catalog is
-  static, so a still camera renders nothing (every star vertex
-  re-marches the dust column per draw — pure heat at rest).
-  Motion is the universal wake (pose drift from input, warp,
-  damping); knob writes, swaps, resize, and selection wake
-  explicitly; a visible selection keeps its ring spinning.
-  Planets will live inside this scene — it must idle cold. A painted starfield is still a lie: every
+  dynamic beacon system.   The render loop RESTS: the catalog is
+  static, so a still camera renders nothing and rAF stops
+  (every star vertex re-marches the dust column per draw —
+  pure heat at rest). Motion is the universal wake (pose
+  drift from input or warp). Knob writes, swaps, and a real
+  resize wake explicitly. Hover, a parked Home pick, and a
+  spinning focus ring do not — those markers freeze at rest.
+  The bottom-bar readout says `resting` when the loop has
+  stopped; GPU ms needs `EXT_disjoint_timer_query_webgl2`
+  (desktop Chrome) and reads `n/a` on iOS Safari. Planets
+  will live inside this scene — it must idle cold. A painted starfield is still a lie: every
   individual star drawn anywhere is an addressable catalog row.
   The in-system night shell (`buildStars`) is still unseeded and
   must retire so ground and explorer agree.

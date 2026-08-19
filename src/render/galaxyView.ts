@@ -693,6 +693,8 @@ export class GalaxyView {
   private thrustSpeed = 0;
   private idle = 0;
   private lastT = performance.now();
+  private viewW = 0;
+  private viewH = 0;
 
   private filter: GalaxyFilter = 'all';
   private selected: GalaxyObject | null = null;
@@ -737,7 +739,7 @@ export class GalaxyView {
 
     this.setHere(hereStarId);
     this.openAtHere();
-    this.raf = requestAnimationFrame(this.frame);
+    if (!this.raf) this.raf = requestAnimationFrame(this.frame);
   }
 
   // ------------------------------------------------------------- markers
@@ -765,6 +767,7 @@ export class GalaxyView {
   setHere(id: number | null): void {
     this.hereObj = id != null ? objectAt(this.seed, id) : null;
     this.placeHighlights();
+    this.wake();
   }
 
   setVisited(ids: number[]): void {
@@ -1649,6 +1652,9 @@ export class GalaxyView {
   }
 
   resize(w: number, h: number): void {
+    if (w === this.viewW && h === this.viewH) return;
+    this.viewW = w;
+    this.viewH = h;
     this.wake();
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
@@ -1713,6 +1719,7 @@ export class GalaxyView {
     if (this.mode !== 'region') return;
     this.thrustOn = on && this.warpMayRun();
     this.idle = 0;
+    if (this.thrustOn) this.wake(2);
   }
 
   warping(): boolean {
@@ -1980,8 +1987,8 @@ export class GalaxyView {
   };
 
   private onMove = (e: PointerEvent): void => {
-    this.wake();
     if (!this.pointers.has(e.pointerId)) return;
+    this.wake();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
@@ -2051,7 +2058,6 @@ export class GalaxyView {
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
-    this.wake();
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (this.mode === 'region' && !e.repeat) {
       if (e.code === 'ArrowUp' || e.code === 'KeyW') {
@@ -2065,23 +2071,36 @@ export class GalaxyView {
         return;
       }
     }
-    const fly =
-      e.code === 'KeyA' ||
-      e.code === 'KeyD' ||
-      e.code === 'KeyQ' ||
-      e.code === 'KeyE' ||
-      e.code === 'Space' ||
-      e.code === 'KeyC' ||
-      e.code === 'ArrowLeft' ||
-      e.code === 'ArrowRight';
-    if (fly && this.mode === 'region') e.preventDefault();
-    this.keys.add(e.code);
+    if (this.isSteerKey(e.code)) {
+      this.wake();
+      if (this.mode === 'region') e.preventDefault();
+      this.keys.add(e.code);
+    }
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
-    this.wake();
+    if (!this.keys.has(e.code) && !this.isSteerKey(e.code)) return;
     this.keys.delete(e.code);
+    this.wake();
   };
+
+  private isSteerKey(code: string): boolean {
+    return (
+      code === 'KeyA' ||
+      code === 'KeyD' ||
+      code === 'KeyQ' ||
+      code === 'KeyE' ||
+      code === 'Space' ||
+      code === 'KeyC' ||
+      code === 'ArrowLeft' ||
+      code === 'ArrowRight'
+    );
+  }
+
+  private steerHeld(): boolean {
+    for (const c of this.keys) if (this.isSteerKey(c)) return true;
+    return false;
+  }
 
   /** Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop. */
   private cruise(dt: number): void {
@@ -2291,13 +2310,20 @@ export class GalaxyView {
   private restIn = 90;
   private lastPose = { x: NaN, y: 0, z: 0, yaw: 0, pitch: 0 };
 
-  /** Keep the loop rendering for at least n more frames. */
+  /** Keep the loop rendering for at least n more frames.
+   *  Resting stops rAF entirely — wake is the only restart. */
   private wake(n = 45): void {
     this.restIn = Math.max(this.restIn, n);
+    if (this.disposed || !this.active || this.raf) return;
+    this.lastT = performance.now();
+    this.raf = requestAnimationFrame(this.frame);
   }
 
   private frame = (): void => {
-    if (this.disposed || !this.active) return;
+    if (this.disposed || !this.active) {
+      this.raf = 0;
+      return;
+    }
     const f0 = performance.now();
     // Rewire every material whenever the baked volume changes —
     // the one path that covers boot mint, cache hit, and rebuild.
@@ -2311,31 +2337,32 @@ export class GalaxyView {
     this.idle += dt;
     this.cruise(dt);
     this.steerArc(dt);
-    this.applyCam();
-    // Motion is the universal wake: input, warp, damping, and
-    // settling all end as pose drift. Everything else that can
+    // Motion is the universal wake: input, warp, and settling
+    // all end as pose drift. Hover, a parked Home pick, and a
+    // spinning focus ring are not motion — those used to keep
+    // the catalog remarching forever. Everything else that can
     // change a pixel calls wake() explicitly.
     const p = this.lastPose;
     const moved =
       Math.abs(p.x - this.arcCenter.x) > 1e-9 ||
       Math.abs(p.y - this.arcCenter.y) > 1e-9 ||
       Math.abs(p.z - this.arcCenter.z) > 1e-9 ||
-      Math.abs(p.yaw - this.theta) > 1e-9 ||
-      Math.abs(p.pitch - this.phi) > 1e-9;
+      Math.abs(p.yaw - this.arcYaw) > 1e-9 ||
+      Math.abs(p.pitch - this.arcPitch) > 1e-9;
     if (moved || !Number.isFinite(p.x)) {
       p.x = this.arcCenter.x;
       p.y = this.arcCenter.y;
       p.z = this.arcCenter.z;
-      p.yaw = this.theta;
-      p.pitch = this.phi;
+      p.yaw = this.arcYaw;
+      p.pitch = this.arcPitch;
+      this.applyCam();
       this.wake(30);
     }
-    if (this.thrustOn) this.wake(2);
-    // A visible selection keeps its ring spinning.
-    if (this.selected) this.wake(1);
+    if (this.thrustOn || this.steerHeld()) this.wake(2);
     if (this.restIn <= 0) {
       this.perf.tick(performance.now() - f0, false);
-      this.raf = requestAnimationFrame(this.frame);
+      this.perf.markRest();
+      this.raf = 0;
       return;
     }
     this.restIn--;
