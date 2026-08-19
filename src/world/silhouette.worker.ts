@@ -9,7 +9,6 @@ import {
   mintSkyClouds,
   mintSilhouetteCloud,
   mintNebulaCloud,
-  type HarvestGates,
   type HarvestSpan,
 } from './sectors';
 import type { StarCloud } from './sectors';
@@ -26,19 +25,6 @@ function applyKnobs(knobs: Record<string, number> | undefined): void {
       u[k] = v;
     }
   }
-}
-
-function harvestGates(knobs: Record<string, number> | undefined): HarvestGates {
-  const num = (k: string, d: number) => {
-    const v = knobs?.[k];
-    return typeof v === 'number' && Number.isFinite(v) ? v : d;
-  };
-  return {
-    massMsun: num('GALAXY_SILHOUETTE_M', UNIVERSE.GALAXY_SILHOUETTE_M),
-    lumLsun: num('GALAXY_SILHOUETTE_L', UNIVERSE.GALAXY_SILHOUETTE_L),
-    giantMsun: num('GALAXY_SILHOUETTE_GIANT_M', UNIVERSE.GALAXY_SILHOUETTE_GIANT_M),
-    giantLsun: num('GALAXY_SILHOUETTE_GIANT_L', UNIVERSE.GALAXY_SILHOUETTE_GIANT_L),
-  };
 }
 
 type CloudPayload = {
@@ -103,7 +89,6 @@ self.onmessage = (
   const seed = e.data.seed;
   const wantStars = e.data.stars !== false;
   const wantNebulae = e.data.nebulae === true;
-  const gates = harvestGates(e.data.knobs);
   const span: HarvestSpan | undefined =
     e.data.ir0 !== undefined ||
     e.data.ir1 !== undefined ||
@@ -117,13 +102,13 @@ self.onmessage = (
   let stars: StarCloud | null = null;
   let nebulae: StarCloud | null = null;
   if (wantStars && wantNebulae) {
-    const both = mintSkyClouds(seed, onRing, gates, span);
+    const both = mintSkyClouds(seed, onRing, span);
     stars = both.stars;
     nebulae = both.nebulae;
   } else if (wantNebulae) {
     nebulae = mintNebulaCloud(seed, onRing, span);
   } else {
-    stars = mintSilhouetteCloud(seed, onRing, gates, span);
+    stars = mintSilhouetteCloud(seed, onRing, span);
   }
   const starPack = stars ? packCloud(stars) : null;
   const nebPack = nebulae ? packCloud(nebulae) : null;

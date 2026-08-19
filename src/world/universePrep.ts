@@ -25,7 +25,6 @@ import {
   nebulaCloud,
   rebakeDustCache,
   silhouetteCloud,
-  type HarvestGates,
   type HarvestSpan,
   type StarCloud,
 } from './sectors';
@@ -157,10 +156,7 @@ function cloudFromPayload(m: CloudPayload): StarCloud {
 /** Harvest laws the worker must copy onto its own UNIVERSE. */
 function harvestWorkerKnobs(): Record<string, number> {
   return {
-    GALAXY_SILHOUETTE_L: UNIVERSE.GALAXY_SILHOUETTE_L,
-    GALAXY_SILHOUETTE_M: UNIVERSE.GALAXY_SILHOUETTE_M,
-    GALAXY_SILHOUETTE_GIANT_M: UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
-    GALAXY_SILHOUETTE_GIANT_L: UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
+    GALAXY_SAMPLE_N: UNIVERSE.GALAXY_SAMPLE_N,
   };
 }
 
@@ -175,25 +171,15 @@ function nebulaWorkerKnobs(): Record<string, number> {
   };
 }
 
-function gatesFromKnobs(knobs: Record<string, number>): HarvestGates {
-  return {
-    massMsun: knobs.GALAXY_SILHOUETTE_M ?? UNIVERSE.GALAXY_SILHOUETTE_M,
-    lumLsun: knobs.GALAXY_SILHOUETTE_L ?? UNIVERSE.GALAXY_SILHOUETTE_L,
-    giantMsun: knobs.GALAXY_SILHOUETTE_GIANT_M ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
-    giantLsun: knobs.GALAXY_SILHOUETTE_GIANT_L ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
-  };
-}
-
 function mintSync(
   seed: string,
   opts: { stars: boolean; nebulae: boolean; knobs: Record<string, number> },
   onRing: (done: number, total: number) => void,
   span?: HarvestSpan,
 ): { stars: StarCloud | null; nebulae: StarCloud | null } {
-  const gates = gatesFromKnobs(opts.knobs);
-  if (opts.stars && opts.nebulae) return mintSkyClouds(seed, onRing, gates, span);
+  if (opts.stars && opts.nebulae) return mintSkyClouds(seed, onRing, span);
   return {
-    stars: opts.stars ? mintSilhouetteCloud(seed, onRing, gates, span) : null,
+    stars: opts.stars ? mintSilhouetteCloud(seed, onRing, span) : null,
     nebulae: opts.nebulae ? mintNebulaCloud(seed, onRing, span) : null,
   };
 }

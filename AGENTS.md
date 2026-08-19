@@ -173,10 +173,17 @@ list. The **galaxy explorer** is how you discover. The Hubble-glow
 integral (an unresolved mass-model march) is retired — too
 artificial and too slow; the shape of the galaxy is the harvest
 itself plus the nebulae and the dust lanes.
-The explorer shows the harvest: one magnitude-limited survey —
-every living star above `SILHOUETTE_M` and `SILHOUETTE_L`
-(~10⁵ stars; the count is those floors' outcome, not a cap)
-plus the showpiece nebulae.
+The explorer shows the harvest: one UNIFORM SAMPLE of the whole
+population (`GALAXY_SAMPLE_N`, ~250k of ~10⁹) — a deterministic
+systematic stride over each cell's IMF-stratified slots, so the
+sample mirrors the galaxy's true proportions: mostly M dwarfs,
+sun-like stars in their share, giants where mass is old,
+remnants, the rare living O/B. No brightness floor — the old
+magnitude-limited survey was 97% B stars (brightness and
+temperature are one axis on the main sequence, so the sky was
+monochrome). The walk counts the exact population first (one
+hash pass), so the sample count lands on `GALAXY_SAMPLE_N`
+within the stride. Nebulae stay their own catalog.
 The shape sample and the `HARVEST_ALL` million-pin photograph
 are retired. A later survey will
 resolve the faint neighbours of a camp. Set course loads a
@@ -186,10 +193,11 @@ visits only** (overlays, camera, labels). We do
   (`prepareUniverse`) behind the HTML “Preparing the universe”
   splash — not a React overlay, so Strict Mode remounts cannot
   flash it twice. The walk is `objectAt` in bulk: the same
-  addresses, not a random subsample. Cells that cannot host a
-  living survey star (old bulge / bar / halo for the B-star
-  tail; no thin gas for nebulae) are skipped by the clock, not
-  by a different IMF. Height is finished only on keepers.
+  addresses via one deterministic stride — hash the address,
+  never `Math.random`. The star sample visits every occupied
+  cell (halo, thick disk, and bulge are population, not
+  clutter); only nebula walks skip bins with no young thin
+  gas. Height is finished only on keepers.
   Spokes shard across workers (every worker sees the core);
   the packed
   photograph lands in IndexedDB keyed by `VITE_BUILD_ID`
@@ -281,12 +289,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `<progress>` — Pages CSP is `style-src 'self'`, so a
   fill’s `element.style` never paints. App boot
   mints three catalogs once (`prepareUniverse`): the
-  magnitude-limited star harvest (`buildSilhouetteCloud` —
-  the hot living tail above `SILHOUETTE_L` / `SILHOUETTE_M`,
-  plus the old-clock giant branch (`SILHOUETTE_GIANT_M` …
-  that mass, keep `SILHOUETTE_GIANT_L`). Those K giants are
-  the Hubble bump: they sit where the mass is old, not a
-  painted core. Count is the floors' outcome, not a cap),
+  uniform star sample (`buildSilhouetteCloud` — one row per
+  population/`GALAXY_SAMPLE_N` slots, IMF-proportional by
+  construction; the giants of the Hubble bump sit where the
+  mass is old because that is where old slots are, not a
+  painted core. One knob: Sample size, 100k–1M),
   the nebula catalog (`remintNebulaCache` — H II plus PN /
   SNR above `SILHOUETTE_NEB_GAIN`; `NEBULA_M` is that walk's
   IMF gate; host id is still `packId`), and dust as

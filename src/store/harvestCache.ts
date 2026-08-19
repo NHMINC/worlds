@@ -44,15 +44,7 @@ export function harvestCacheKey(
 ): string {
   const build = skyBuildId();
   if (kind === 'stars') {
-    return [
-      build,
-      seed,
-      's',
-      knob(knobs, 'GALAXY_SILHOUETTE_M', 0),
-      knob(knobs, 'GALAXY_SILHOUETTE_L', 0),
-      knob(knobs, 'GALAXY_SILHOUETTE_GIANT_M', 0),
-      knob(knobs, 'GALAXY_SILHOUETTE_GIANT_L', 0),
-    ].join('|');
+    return [build, seed, 's', knob(knobs, 'GALAXY_SAMPLE_N', 0)].join('|');
   }
   return [
     build,

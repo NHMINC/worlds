@@ -50,7 +50,7 @@ function rngFor(seed: string, ...parts: Array<string | number>): () => number {
   return mulberry32(xmur3(`galaxy:${seed}:${parts.join(':')}`)());
 }
 
-function u01(seed: string, ...parts: Array<string | number>): number {
+export function u01(seed: string, ...parts: Array<string | number>): number {
   return rngFor(seed, ...parts)();
 }
 

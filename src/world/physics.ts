@@ -555,14 +555,15 @@ export const UNIVERSE = {
   /**
    * Distant harvest (region dive). The flyable ball does
    * not change. Outside it, the rest of the disk is one law:
-   * a magnitude-limited survey — living stars above SILHOUETTE_L
-   * (late-B and hotter, WR; SILHOUETTE_M is the IMF slot
-   * gate that keeps the hot walk cheap) plus the old-clock
-   * giant branch (SILHOUETTE_GIANT_M … M, keep GIANT_L). Those
-   * K giants are the Hubble bump: they concentrate where the
-   * mass is old (bulge / bar / thick / inner thin), not a
-   * painted core. The count is an outcome of those floors,
-   * not a cap. Nebulae
+   * a UNIFORM SAMPLE of the whole population. One row per
+   * (GALAXY_POPULATION / GALAXY_SAMPLE_N) occupied slots,
+   * systematic over the IMF-stratified slot index with a
+   * hashed per-cell offset — so the harvest mirrors the true
+   * proportions: mostly M dwarfs, sun-like in their share,
+   * giants where mass is old, remnants, and the rare living
+   * O/B. No brightness floor (a magnitude-limited survey was
+   * 97% B stars — brightness and temperature are one axis on
+   * the main sequence, so the sky was monochrome). Nebulae
    * are their own catalog (NEBULA_M + SILHOUETTE_NEB_GAIN),
    * rebaked like dust, not reminted with the stars. Dust is
    * not a harvest row. The fog is the dense tail of the
@@ -602,29 +603,13 @@ export const UNIVERSE = {
    * then I/(1+I) so hue survives. Optical approximations,
    * like AIR_LINE. Not pickable.
    */
-  GALAXY_SILHOUETTE_M: 3.89,
-  /** Backdrop stars: present-day L / L☉. Brightness is this continuous
-   *  luminosity, not a magnitude bin. 162 L☉ is the MS light of the
-   *  3.89 M☉ late-B floor (L ≈ 1.4 M^3.5) — the depth at which the
-   *  survey holds ~10⁵ stars. SILHOUETTE_M is the IMF walk/keep
-   *  cut; SILHOUETTE_L is the luminosity keep. Both change the
-   *  census. Count is the floors' outcome, not a cap. Stars are
-   *  the cheap citizens (a small Gaussian, vertex-only cost); the
-   *  count knob that matters for the GPU is envelopes, not this. */
-  GALAXY_SILHOUETTE_L: 162,
-  /**
-   * Old-clock giant branch. The hot survey never walks this IMF
-   * (M ≲ 1.3 dies as a remnant before the bulge is old). The
-   * harvester adds a second slice: slots in [GIANT_M, SILHOUETTE_M)
-   * that are on the giant/subgiant clock, kept at GIANT_L
-   * (low-mass RGB is ~16–56 L☉ — they fail the 162 L☉ hot floor).
-   * Colour is Teff. The hot tail itself is a thin-disk walk —
-   * bulge / bar / halo age floors sit above those lifetimes, so
-   * those cells are not re-read. Rebuild the harvest; star ids
-   * do not move.
-   */
-  GALAXY_SILHOUETTE_GIANT_M: 0.94,
-  GALAXY_SILHOUETTE_GIANT_L: 18,
+  /** Harvest sample size. The walk keeps one slot per
+   *  (POPULATION / SAMPLE_N) — a deterministic systematic stride
+   *  over each cell's IMF-stratified slots, so the sample follows
+   *  the population's true proportions at any size. The count is
+   *  the law's outcome (± the stride), not a hard cap. Bigger
+   *  samples cost a proportionally longer remint. */
+  GALAXY_SAMPLE_N: 250_000,
   /** Nebula catalog: IMF floor (M☉) for the PN / SNR walk.
    *  H II (m ≥ 8 in a cloud) is always walked. 3.89 matches the
    *  survey mass floor, so the first look is the shells that

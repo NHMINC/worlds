@@ -43,6 +43,7 @@ import {
   imfQuantile,
   slotRangeForMass,
   slotsInCell,
+  u01,
   type GalPos,
   type GalaxyObject,
 } from './galaxy';
@@ -298,72 +299,22 @@ function giantWindow(massZams: number): number {
   return Math.min(0.8, tMs * (massZams <= 2 ? 0.15 : massZams < 8 ? 0.08 : UNIVERSE.WR_TAIL));
 }
 
-/** Live survey gates. The worker posts these so a remint cannot
- *  silently walk the shipped floors. */
-export type HarvestGates = {
-  /** IMF cut (M☉). Slots below this are not walked or shown. */
-  massMsun: number;
-  /** Present-day luminosity cut (L☉). */
-  lumLsun: number;
-  /** Old-clock giant-branch IMF floor (M☉). */
-  giantMsun?: number;
-  /** Giant / subgiant luminosity keep (L☉). */
-  giantLsun?: number;
-};
-
-export function harvestGatesFromUniverse(): HarvestGates {
-  return {
-    massMsun: UNIVERSE.GALAXY_SILHOUETTE_M,
-    lumLsun: UNIVERSE.GALAXY_SILHOUETTE_L,
-    giantMsun: UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
-    giantLsun: UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
-  };
-}
-
-type ResolvedHarvestGates = {
-  massMsun: number;
-  lumLsun: number;
-  giantMsun: number;
-  giantLsun: number;
-};
-
-function harvestGatesResolved(gates: HarvestGates): ResolvedHarvestGates {
-  return {
-    massMsun: gates.massMsun,
-    lumLsun: gates.lumLsun,
-    giantMsun: gates.giantMsun ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_M,
-    giantLsun: gates.giantLsun ?? UNIVERSE.GALAXY_SILHOUETTE_GIANT_L,
-  };
-}
-
-/**
- * IMF floor for the star walk. Survey mass floor is this cut —
- * raising it used to no-op because the walk sat at min(M, invert(L))
- * and invert(162 L☉) is already 3.89 M☉.
- */
-export function harvestWalkMass(gates: HarvestGates = harvestGatesFromUniverse()): number {
-  return Math.max(UNIVERSE.IMF_MIN, gates.massMsun);
-}
-
 type ClockGate = Pick<SlotClock, 'massZams' | 'ageGyr' | 'inCloud'>;
 
-/** Cheap clock gate: evolve only slots that can be luminous stars. */
-function maybeClockRow(b: ClockGate, massFloor: number): boolean {
+/** Region-ball sketch floor (M☉): slots above it get the full
+ *  clock so nearby luminous stars wear their real phase; below
+ *  it the cheap MS sketch is indistinguishable at ball scale.
+ *  A local render economy, not a survey — the harvest samples
+ *  the whole IMF. */
+const REGION_EVOLVE_M = 3.89;
+
+/** Cheap clock gate: full-evolve only slots that can be luminous now. */
+function maybeClockRow(b: ClockGate): boolean {
   const m = b.massZams;
-  if (m < massFloor) return false;
+  if (m < REGION_EVOLVE_M) return false;
   const tMs = msLifetime(m);
   if (b.ageGyr < tMs) return true;
   return b.ageGyr < tMs + giantWindow(m);
-}
-
-/** Old-clock RGB: below the hot floor, only the giant window shines. */
-function maybeGiantRow(b: ClockGate, giantFloor: number, hotFloor: number): boolean {
-  const m = b.massZams;
-  if (m < giantFloor || m >= hotFloor) return false;
-  const tMs = msLifetime(m);
-  const post = b.ageGyr - tMs;
-  // Early RGB only — the toy clock cools to M later; the Hubble bump is K.
-  return post >= 0 && post < giantWindow(m) * 0.28;
 }
 
 /** Cheap clock gate: evolve only slots that can wear a nebula. */
@@ -381,15 +332,6 @@ function maybeNebulaRow(b: ClockGate): boolean {
   if (b.ageGyr < tMs) return false;
   const deadFor = b.ageGyr - tMs - giantWindow(m);
   return deadFor < Math.max(UNIVERSE.PN_GYR, UNIVERSE.SNR_GYR) + 1e-9;
-}
-
-function isLuminousPhase(phase: string, mk: string | null, L: number): boolean {
-  if (phase === 'wolf_rayet' || phase === 'carbon_star' || phase === 'giant' || phase === 'supergiant') {
-    return true;
-  }
-  if (mk === 'O' || mk === 'B') return true;
-  if (mk === 'A' && L >= 20) return true;
-  return L >= 25;
 }
 
 function writeRow(
@@ -497,7 +439,7 @@ function writeFromBirth(
   alive: boolean,
   forceCheap = false,
 ): void {
-  if (!forceCheap && maybeClockRow(b, harvestWalkMass())) {
+  if (!forceCheap && maybeClockRow(b)) {
     writeEvolved(cell, slot, i, c, b, sketchEvolve(b));
     return;
   }
@@ -559,24 +501,6 @@ function nebulaGain(ev: ReturnType<typeof evolve>, id: number): number {
     carbon: ev.carbon,
     feh: ev.feh,
   }).gain;
-}
-
-function keepSilhouettePhase(ev: ReturnType<typeof evolve>, gates: HarvestGates | ResolvedHarvestGates): boolean {
-  if (ev.phase === 'white_dwarf' || ev.phase === 'neutron_star' || ev.phase === 'pulsar' || ev.phase === 'black_hole') {
-    return false;
-  }
-  const g = harvestGatesResolved(gates);
-  const onGiant =
-    ev.phase === 'giant' || ev.phase === 'subgiant' || ev.phase === 'carbon_star';
-  if (onGiant && ev.massZams < g.massMsun) {
-    return (
-      ev.massZams >= g.giantMsun &&
-      ev.luminosity >= g.giantLsun &&
-      ev.teff >= 3800
-    );
-  }
-  if (ev.massZams < g.massMsun) return false;
-  return isLuminousPhase(ev.phase, ev.mk, ev.luminosity) && ev.luminosity >= g.lumLsun;
 }
 
 function keepNebulaPhase(ev: ReturnType<typeof evolve>, id: number): boolean {
@@ -649,7 +573,7 @@ export function buildRegionCloud(seed: string, x: number, y: number, z: number, 
     // star you are on does not vanish.
     let s0 = Math.floor(regionImfFloor(d) * f);
     if (d <= slotScatterKpc() + r) {
-      s0 = Math.min(s0, Math.floor(imfQuantile(UNIVERSE.GALAXY_SILHOUETTE_M) * f));
+      s0 = Math.min(s0, Math.floor(imfQuantile(REGION_EVOLVE_M) * f));
     }
     slot0[i] = s0;
     cap += f - s0;
@@ -810,10 +734,9 @@ export function mergeStarClouds(parts: StarCloud[]): StarCloud {
 export function mintSilhouetteCloud(
   seed: string,
   onRing?: (done: number, total: number) => void,
-  gates?: HarvestGates,
   span?: HarvestSpan,
 ): StarCloud {
-  return mintHarvestCloud(seed, performance.now(), onRing, gates, span);
+  return mintHarvestCloud(seed, performance.now(), onRing, span);
 }
 
 /**
@@ -823,20 +746,18 @@ export function mintSilhouetteCloud(
 export function mintSkyClouds(
   seed: string,
   onRing?: (done: number, total: number) => void,
-  gates?: HarvestGates,
   span?: HarvestSpan,
 ): { stars: StarCloud; nebulae: StarCloud } {
-  return walkSkyClouds(seed, performance.now(), onRing, true, true, gates, span);
+  return walkSkyClouds(seed, performance.now(), onRing, true, true, span);
 }
 
 function mintHarvestCloud(
   seed: string,
   t0: number,
   onRing?: (done: number, total: number) => void,
-  gates?: HarvestGates,
   span?: HarvestSpan,
 ): StarCloud {
-  return walkSkyClouds(seed, t0, onRing, true, false, gates, span).stars;
+  return walkSkyClouds(seed, t0, onRing, true, false, span).stars;
 }
 
 /**
@@ -850,8 +771,7 @@ export function mintNebulaCloud(
   onRing?: (done: number, total: number) => void,
   span?: HarvestSpan,
 ): StarCloud {
-  return walkSkyClouds(seed, performance.now(), onRing, false, true, harvestGatesFromUniverse(), span)
-    .nebulae;
+  return walkSkyClouds(seed, performance.now(), onRing, false, true, span).nebulae;
 }
 
 /** Forget and walk the nebula catalog under current UNIVERSE. */
@@ -875,10 +795,8 @@ function walkSkyClouds(
   onRing: ((done: number, total: number) => void) | undefined,
   wantStars: boolean,
   wantNebulae: boolean,
-  gates: HarvestGates = harvestGatesFromUniverse(),
   span?: HarvestSpan,
 ): { stars: StarCloud; nebulae: StarCloud } {
-  const g = harvestGatesResolved(gates);
   const { GALAXY_NR: nr, GALAXY_NTH: nth, GALAXY_NZ: nz, GALAXY_R_MAX: rMax, GALAXY_N_K: nK } =
     UNIVERSE;
   const ir0 = Math.max(0, Math.floor(span?.ir0 ?? 0));
@@ -886,17 +804,36 @@ function walkSkyClouds(
   const itLo = Math.max(0, Math.floor(span?.it0 ?? 0));
   const itHi = Math.min(nth, Math.ceil(span?.it1 ?? nth));
   const zExtent = UNIVERSE.GALAXY_Z_THICK * 4;
-  const starM = harvestWalkMass(g);
-  const giantM = Math.min(g.giantMsun, starM);
+  // UNIFORM SAMPLE: one row per sampleStep occupied slots. The
+  // IMF is stratified by slot index, so a systematic stride over
+  // slots (hashed per-cell offset) IS an IMF-proportional sample
+  // — the harvest mirrors the population's true proportions:
+  // mostly M dwarfs, sun-like in their share, giants where mass
+  // is old, remnants, the rare living O/B. No brightness floor —
+  // the magnitude-limited survey was 97% B stars (brightness and
+  // temperature are one axis on the main sequence).
+  // Exact population for this seed and knobs — one cheap hash
+  // pass (no births), so the sample count lands on SAMPLE_N
+  // within the stride instead of drifting with calibration.
+  let totalSlots = 0;
+  if (wantStars) {
+    for (let ir = 0; ir < nr; ir++) {
+      for (let iz = 0; iz < nz; iz++) {
+        for (let it = 0; it < nth; it++) {
+          totalSlots += slotsInCell(seed, ir * nth * nz + it * nz + iz);
+        }
+      }
+    }
+  }
+  const sampleStep = Math.max(1, totalSlots / Math.max(1, UNIVERSE.GALAXY_SAMPLE_N));
+  const spanFrac = (Math.max(1, itHi - itLo) / Math.max(1, nth)) *
+    (Math.max(1, ir1 - ir0) / Math.max(1, nr));
   const uNeb = imfQuantile(nebulaWalkFloor());
-  const uStar = imfQuantile(starM);
-  const uGiant = imfQuantile(giantM);
-  const uGiantHi = imfQuantile(Math.min(starM, 1.28));
-  const uHot = wantStars ? uStar : wantNebulae ? uNeb : 1;
-  const liveFrac = Math.max(1e-6, 1 - uHot);
-  const giantFrac = Math.max(0, uGiantHi - uGiant);
+  const nebFrac = Math.max(1e-6, 1 - uNeb);
   const nebFloor = nebulaWalkFloor();
-  let stars = allocCloud(wantStars ? 280_000 : 1);
+  let stars = allocCloud(
+    wantStars ? Math.ceil(UNIVERSE.GALAXY_SAMPLE_N * spanFrac * 1.25) + 8192 : 1,
+  );
   let nebulae = allocCloud(wantNebulae ? 16_384 : 1);
   let ns = 0;
   let nn = 0;
@@ -906,61 +843,38 @@ function walkSkyClouds(
     for (let iz = 0; iz < nz; iz++) {
       const z = ((iz + 0.5) / nz - 0.5) * 2 * zExtent;
       const ceil = thinDensityCeil(R, z) * vol * nK;
-      // Core extra-visit is the giant-branch door: thin ceil is low
-      // on the box/peanut, but old mass still owes K giants.
-      if (ceil * liveFrac < 0.2 && !(wantStars && R < 3.2 && Math.abs(z) < 0.85)) continue;
+      // Nebula-only walks skip bins with no young thin gas. The
+      // uniform star sample visits every occupied bin — halo,
+      // thick disk, and bulge are population, not clutter.
+      if (!wantStars && ceil * nebFrac < 0.2) continue;
       for (let it = itLo; it < itHi; it++) {
         const cell = ir * nth * nz + it * nz + iz;
-        const mid = cellCenter(cell);
-        const parts = densityParts(mid);
-        const old = parts.bulge + parts.bar;
-        const giantExpect = old * vol * nK * giantFrac * 0.07;
-        // Living B stars are a thin-disk clock. Bulge / bar / halo
-        // age floors sit above tMs of the survey tail — walking
-        // those cells is reading the same dead addresses.
-        const walkHot = parts.thin * vol * nK * liveFrac >= 0.2;
-        const walkGiant = wantStars && giantExpect >= 3.5;
-        // H II and leftover PN/SNR also need a young thin host.
-        // Old spheroid ages are past the nebula window.
-        const walkNeb = wantNebulae && parts.thin > 0;
-        if (!walkHot && !walkGiant && !walkNeb) continue;
         const filled = slotsInCell(seed, cell);
         if (filled <= 0) continue;
-        const sHot = Math.floor(uHot * filled);
-        const sGiant = Math.floor(uGiant * filled);
-        const sGiantHi = Math.floor(uGiantHi * filled);
-        const sNeb = walkNeb ? Math.floor(uNeb * filled) : sHot;
-        if (walkGiant) {
-          for (let slot = sGiant; slot < sGiantHi; slot++) {
-            const mass = slotZams(seed, cell, slot, filled);
-            if (mass < giantM || mass >= starM) continue;
-            const tMs = msLifetime(mass);
-            if (tMs > UNIVERSE.GALAXY_AGE_GYR || tMs + giantWindow(mass) < 6.5) continue;
+        if (wantStars) {
+          for (let u = u01(seed, 'sample', cell) * sampleStep; u < filled; u += sampleStep) {
+            const slot = Math.floor(u);
             const clock = slotBirthClock(seed, cell, slot, filled);
-            if (!maybeGiantRow(clock, giantM, starM)) continue;
             const ev = sketchEvolve(clock);
-            if (!keepSilhouettePhase(ev, g)) continue;
             const birth = finishSlotBirth(clock);
             if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
             writeEvolved(cell, slot, ns++, stars, birth, ev, true);
           }
         }
-        const sTail = Math.min(sHot, sNeb);
-        if (walkHot || walkNeb) {
-          for (let slot = sTail; slot < filled; slot++) {
+        if (wantNebulae) {
+          // H II and leftover PN/SNR need a young thin host. Old
+          // spheroid ages are past the nebula window.
+          const parts = densityParts(cellCenter(cell));
+          if (parts.thin <= 0) continue;
+          const sNeb = Math.floor(uNeb * filled);
+          for (let slot = sNeb; slot < filled; slot++) {
             const mass = slotZams(seed, cell, slot, filled);
-            if (mass < starM && !(walkNeb && mass >= nebFloor)) continue;
+            if (mass < nebFloor) continue;
             const clock = slotBirthClock(seed, cell, slot, filled);
-            const keepHot = wantStars && walkHot && maybeClockRow(clock, starM);
-            const neb = walkNeb && maybeNebulaRow(clock);
-            if (!keepHot && !neb) continue;
+            if (!maybeNebulaRow(clock)) continue;
             const ev = sketchEvolve(clock);
             const birth = finishSlotBirth(clock);
-            if (keepHot && keepSilhouettePhase(ev, g)) {
-              if (ns >= stars.ids.length) stars = ensureCloudCap(stars, ns, ns + 16_384);
-              writeEvolved(cell, slot, ns++, stars, birth, ev, true);
-            }
-            if (neb && keepNebulaPhase(ev, packId(cell, slot))) {
+            if (keepNebulaPhase(ev, packId(cell, slot))) {
               if (nn >= nebulae.ids.length) nebulae = ensureCloudCap(nebulae, nn, nn + 4_096);
               writeEvolved(cell, slot, nn++, nebulae, birth, ev);
             }
