@@ -7,7 +7,6 @@
  */
 import { UNIVERSE } from '../world/physics';
 import {
-  HARVEST_PSF_TAIL,
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
@@ -310,18 +309,6 @@ export const LIVE_KNOBS: LiveKnob[] = [
     max: 1,
     step: 0.01,
     read: () => HARVEST_SHINE_L_P,
-  },
-  {
-    id: 'glowWings',
-    label: 'Star glow',
-    group: 'starlight',
-    hint: 'coloured halo energy around bright stars',
-    about: 'Lorentzian wing energy of the eye PSF — the halo a bright star wears, carried at full colour. Luminosity a saturated photocentre cannot show lives here: blue fire around O stars and nurseries, golden haze over the bulge. Raising it also grows the sprite room for wings. Next frame.',
-    uniform: 'uPsfTail',
-    min: 0.05,
-    max: 1.2,
-    step: 0.01,
-    read: () => HARVEST_PSF_TAIL,
   },
   {
     id: 'super',

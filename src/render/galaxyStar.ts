@@ -95,9 +95,11 @@ export const HARVEST_PIN_CORE = 0.85;
  * identical dots); at 0.1 the faint half vanished. L_P is the
  * STEEPNESS of the scale; the luminous tail saturates and keeps
  * differentiating through halo reach. Star shine / Magnitude
- * contrast are these two laws, live.
+ * contrast are these two laws, live. (Star glow is retired —
+ * wing energy read as a second brightness slider; the PSF tail
+ * is a law again.)
  */
-export const HARVEST_SHINE_GAIN = 0.5;
+export const HARVEST_SHINE_GAIN = 0.8;
 export const HARVEST_SHINE_L_P = 0.48;
 export const HARVEST_SHINE_DIST_REF = 8;
 export const HARVEST_SHINE_DIST_P = 0.5;
