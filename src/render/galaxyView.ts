@@ -951,11 +951,16 @@ export class GalaxyView {
   }
 
   /**
-   * Two passes per layer, one shared fragment: stars add light
-   * straight into the photograph; emission nebulae SCREEN so
-   * shells do not stack to a white bar among themselves. A
-   * stacked star column saturates to white like film. Dust has
-   * no pass: both vertex shaders fold sightline extinction in.
+   * Two passes per layer, one shared fragment. Stars MAX into the
+   * photograph — a pixel is the brightest source covering it,
+   * light does not stack. Additive summing was the blue-star
+   * killer: the harvest is ~97% blue B stars, but any two
+   * overlapping blue halos summed to white per channel, so hue
+   * died wherever stars overlapped (almost everywhere). Under
+   * MAX, overlap keeps the colour and whiteout is impossible by
+   * construction; density reads as coverage, not accumulation.
+   * Emission nebulae keep SCREEN so shells glow and saturate.
+   * Dust has no pass: both vertex shaders fold extinction in.
    */
   private makeCloudMaterial(
     vertexShader: string,
@@ -971,7 +976,8 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: nebula ? THREE.CustomBlending : THREE.AdditiveBlending,
+      blending: THREE.CustomBlending,
+      blendEquation: nebula ? THREE.AddEquation : THREE.MaxEquation,
       blendSrc: nebula ? THREE.OneMinusDstColorFactor : THREE.OneFactor,
       blendDst: THREE.OneFactor,
       toneMapped: false,
@@ -1135,7 +1141,9 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: THREE.AdditiveBlending,
+      // Same MAX law as the stars: light does not stack.
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.MaxEquation,
       blendSrc: THREE.OneFactor,
       blendDst: THREE.OneFactor,
       toneMapped: false,
@@ -1188,7 +1196,9 @@ export class GalaxyView {
       transparent: true,
       depthWrite: false,
       depthTest: false,
-      blending: THREE.AdditiveBlending,
+      // Same MAX law as the stars: light does not stack.
+      blending: THREE.CustomBlending,
+      blendEquation: THREE.MaxEquation,
       blendSrc: THREE.OneFactor,
       blendDst: THREE.OneFactor,
       toneMapped: false,

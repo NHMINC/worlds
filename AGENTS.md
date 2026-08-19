@@ -306,10 +306,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (Gaussian core + Lorentzian tail — the same glare shape as
   the in-system sun). Magnitude lifts the wings with no
   bright-end cap; it does not stamp a larger disc. Pins add
-  straight into the canvas — a stacked column saturates to
-  white like film (the HDR knee pass is retired; it only
-  dimmed the whole galaxy; the super-sun extra-I patch is
-  retired too — the magnitude law owns the whole scale).
+  straight into the canvas under MAX compositing — a pixel is
+  the brightest source covering it; light does not stack.
+  (Additive summing was the blue-star killer: the harvest is
+  ~97% blue B stars, but two overlapping blue halos summed to
+  white per channel. Under MAX, overlap keeps the colour,
+  whiteout is impossible by construction, and density reads as
+  coverage. The HDR knee pass and the super-sun extra-I patch
+  are retired — the magnitude law owns the whole scale.)
   Colour is
   HUE-PRESERVING: hue is a channel ratio, so the painted
   photocentre caps where its strongest channel saturates — a

@@ -10,7 +10,6 @@ import {
   HARVEST_SHINE_DIST_P,
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
-  HARVEST_SHINE_SAT,
 } from '../render/galaxyStar';
 
 export type EngineerGroupId = 'cosmic' | 'dust' | 'harvest' | 'starlight' | 'nebulae';
@@ -284,18 +283,6 @@ export const LIVE_KNOBS: LiveKnob[] = [
     max: 1,
     step: 0.01,
     read: () => HARVEST_SHINE_DIST_P,
-  },
-  {
-    id: 'colour',
-    label: 'Star colour',
-    group: 'starlight',
-    hint: 'spectral depth: 1 = raw blackbody, higher = richer',
-    about: 'Spectral gamma on the photosphere colour, pin and glow alike: a power on the channels under the dominant one, so hue deepens without shifting — O stars go true blue, the giant branch rich gold. 1 is the pale raw blackbody; below 1 washes toward white. Next frame.',
-    uniform: 'uShineSat',
-    min: 0.4,
-    max: 6,
-    step: 0.05,
-    read: () => HARVEST_SHINE_SAT,
   },
   {
     id: 'starMag',
