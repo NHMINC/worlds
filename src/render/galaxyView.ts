@@ -1968,9 +1968,8 @@ export class GalaxyView {
   }
 
   /**
-   * Course-lock arrival: the photosphere replaces the harvest pin at
-   * STAR_REVEAL_PX, or sooner if float32 catalog positions would hop.
-   * Same-frame hide + attach. No systemAt worlds on this path.
+   * Sphere entry: the photosphere replaces the harvest pin the
+   * same frame. The pin cannot draw the approach. No systemAt.
    */
   private updateHostArrival(now: number): void {
     this.updateArriveSubject();
@@ -1986,21 +1985,11 @@ export class GalaxyView {
     const dx = cart.x - this.arcCenter.x;
     const dy = cart.y - this.arcCenter.y;
     const dz = cart.z - this.arcCenter.z;
-    const dist = Math.hypot(dx, dy, dz);
-    const pxPer = this.pxPerRad();
-    const starPx =
-      ((Math.max(1e-8, lock.star.radius) * UNIVERSE.RSUN_KM * KM_TO_KPC) / Math.max(dist, 1e-16)) *
-      pxPer;
-    const hop = dist <= UNIVERSE.ARRIVE_PIN_KPC;
-    const starOn = starPx >= UNIVERSE.STAR_REVEAL_PX || hop;
     if (this.hostStarId !== lock.id && (this.hostRoot || this.hostStar)) this.detachHost();
-    // Attach when the disk would be 3 px (or float32 would hop).
-    // Once it is an object, keep it — looking around is not leaving.
-    if (!this.hostStar && starOn) this.attachHostFurnace(lock);
-    if (!this.hostStar) {
-      this.applyCam();
-      return;
-    }
+    // The sphere is the object of interest: the pin cannot draw
+    // the approach (it stays a point, then hops). Swap the frame
+    // we enter. Looking around is not leaving.
+    if (!this.hostStar) this.attachHostFurnace(lock);
 
     const root = this.hostRoot;
     if (root) root.position.set(dx, dy, dz);
@@ -2380,8 +2369,10 @@ export class GalaxyView {
     let v = UNIVERSE.GALAXY_WARP;
     const course = this.courseObj;
     const range = UNIVERSE.ARRIVE_RANGE_KPC;
+    const limitAt = (d: number): number =>
+      Math.min(UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP, UNIVERSE.ARRIVE_K * Math.max(d, 1e-16));
     if (this.hostObj) {
-      v *= UNIVERSE.ARRIVE_WARP;
+      v = limitAt(this.arriveDist(this.hostObj));
     } else if (course) {
       const d = this.arriveDist(course);
       const c = galToCart(course.pos);
@@ -2389,7 +2380,7 @@ export class GalaxyView {
         (c.x - this.arcCenter.x) * this.arcFwd.x +
         (c.y - this.arcCenter.y) * this.arcFwd.y +
         (c.z - this.arcCenter.z) * this.arcFwd.z;
-      if (tCa > 0 && d - v * dt <= range) v *= UNIVERSE.ARRIVE_WARP;
+      if (tCa > 0 && d - UNIVERSE.GALAXY_WARP * dt <= range) v = limitAt(d);
     }
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;

@@ -347,15 +347,18 @@ export const UNIVERSE = {
    * stick back. The 1 ly sphere is sticky: warp is ARRIVE_WARP
    * (1/1000) of GALAXY_WARP while you are inside it — a speed
    * limit, not a teleport — and a new target cannot be chosen
-   * until you fly out. The harvest
-   * pin swaps for the photosphere at STAR_REVEAL_PX (and as soon as
-   * float32 catalog positions would hop, ARRIVE_PIN_KPC). Warp
-   * latches Stop when the disk covers ARRIVE_FILL of the vertical
-   * field. It does not open a system.
+   * until you fly out. The photosphere replaces the pin when the
+   * sphere is entered — the harvest pin cannot draw the approach
+   * (a point, then float32 hops). Inside the sphere speed is also
+   * capped at ARRIVE_K · d so the last stretch (when the disk is
+   * actually a few pixels) lasts seconds, not one 1/1000-warp
+   * frame. Warp latches Stop when the disk covers ARRIVE_FILL of
+   * the vertical field. It does not open a system.
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
   ARRIVE_WARP: 0.001,
+  ARRIVE_K: 1.2,
   ARRIVE_FILL: 0.22,
   ARRIVE_RANGE_LY: 1,
   /** The 1 ly fence in catalog units. 1 kpc = 3261.56 ly. */

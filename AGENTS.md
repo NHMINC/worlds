@@ -107,16 +107,14 @@ toy — Godus blocks on a real-sized globe.
   (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
   reads Course Locked; a look drag hands the stick back. On a
   locked course warp stays warp — full rate, then `ARRIVE_WARP`
-  (1/1000) inside the object's 1 ly sphere (a speed limit: if
-  this step would enter the sphere the limit already applies;
-  sticky — fly out before a new target or full warp). Stop at
-  the fill park. No teleport. The harvest pin
-  swaps for the photosphere at `STAR_REVEAL_PX` (or at
-  `ARRIVE_PIN_KPC` when float32 catalog positions would hop);
-  once that object is up it stays until we fly out of its
-  1 ly sphere — a look drag only releases the heading;
-  warp latches Stop when the disk covers `ARRIVE_FILL` of the
-  vertical field. The close star draws as a second AU-scale depth
+  (1/1000) inside the object's 1 ly sphere, and `ARRIVE_K · d`
+  so the disk-growth stretch lasts seconds. The photosphere
+  replaces the pin when the sphere is entered (the pin cannot
+  draw the approach). Sticky — fly out before a new target or
+  full warp. Stop at the fill park. The object stays until we
+  fly out of its 1 ly sphere — a look drag only releases the
+  heading. Warp latches Stop when the disk covers `ARRIVE_FILL`
+  of the vertical field. The close star draws as a second AU-scale depth
   pass over the live galaxy — the sky never bakes, blanks, or
   switches environment, and the controls never change. It does
   not open a system; landing on a world
