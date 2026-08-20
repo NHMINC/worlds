@@ -362,11 +362,11 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Sphere of influence',
     group: 'approach',
     hint: 'how far the host bubble reaches (ly)',
-    about: 'Fixed fence around the host star — speed limit, sticky lock, furnace, and galaxy dim all use this radius. Not object-size: a supergiant and an M dwarf share the same bubble. 0.2 ly is ~12,600 AU; every system in the bottle (planets inside 30 AU) still fits. Next frame.',
+    about: 'Fixed fence around the host star — speed limit, sticky lock, furnace, and galaxy dim all use this radius. Not object-size: a supergiant and an M dwarf share the same bubble. 0.1 ly is ~6,300 AU; the slider runs 0.01–0.5 ly (~630–31,600 AU). Even the floor still swallows every system in the bottle (planets inside 30 AU). Next frame.',
     uniform: 'uArriveRange',
-    min: 0.05,
-    max: 2,
-    step: 0.05,
+    min: 0.01,
+    max: 0.5,
+    step: 0.01,
     read: () => UNIVERSE.ARRIVE_RANGE_LY,
     write: (v) => {
       UNIVERSE.ARRIVE_RANGE_LY = v;
