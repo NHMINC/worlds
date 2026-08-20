@@ -2134,16 +2134,18 @@ export class GalaxyView {
 
   /**
    * Approach / leave speed. Full warp beyond ARRIVE_BRAKE_LY.
-   * On the shell and inside, v = ARRIVE_K · d (meets the fence
-   * limit). d >= brake was still full warp — the next frame
-   * then clipped onto the fence and froze. Same curve both ways.
+   * Inbound, the shell itself is already on the curve (d > brake
+   * is warp; d == brake is not — that dump froze on the fence).
+   * Outbound, the shell is warp again so leaving is not pinned
+   * to brake − d.
    */
   private closeSpeed(d: number): number {
     const warp = UNIVERSE.GALAXY_WARP;
     const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
     const fence = UNIVERSE.ARRIVE_RANGE_KPC;
     if (d <= fence) return this.sphereSpeed(d);
-    if (d > brake) return warp;
+    const past = this.astern ? d >= brake : d > brake;
+    if (past) return warp;
     const vFence = this.sphereSpeed(fence);
     return Math.min(warp, vFence * (d / Math.max(fence, 1e-16)));
   }
@@ -2554,10 +2556,10 @@ export class GalaxyView {
         return;
       }
     }
-    // A full-rate frame is larger than the brake. Land just
-    // inside it so the next frame is already on the curve —
-    // do not clip a warp step onto the 0.01 ly fence (that
-    // was the abrupt stop, then ten seconds of crawl before dim).
+    // Inbound only: a full-rate frame is larger than the brake.
+    // Land just inside so the next frame is on the curve.
+    // Do not clip outbound to brake − d — that pins you to the
+    // shell at full relight and never hands warp back.
     if (sub) {
       const d = this.arriveDist(sub);
       const c = galToCart(sub.pos);
@@ -2569,8 +2571,6 @@ export class GalaxyView {
       const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
       if (closing > 0 && d > brake) {
         step = Math.min(step, d - brake * (1 - 1e-6));
-      } else if (closing < 0 && d < brake) {
-        step = Math.min(step, Math.max(0, brake - d));
       }
     }
     this.moveBubble(this.arcFwd.x * sign * step, this.arcFwd.y * sign * step, this.arcFwd.z * sign * step);
