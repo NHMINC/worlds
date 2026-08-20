@@ -133,9 +133,12 @@ toy — Godus blocks on a real-sized globe.
   Leave the fence and it is 1. That is the
   only galaxy light in the bubble
   (looking out, other pins, nebulae, later night sides). The
-  host furnace is not multiplied. It does
-  not open a system; landing on a world
-  waits for the solar-system step; short nebula phases are toy-stretched
+  host furnace is not multiplied. Worlds of
+  that host (tier-0 planets, moons, Kepler
+  orbits) draw in the same AU-scale pass —
+  they live in the sphere, not a second
+  sky. Landing on a world still waits;
+  short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
   on as laws. Clouds are not a painted deck; aerosol opacity lives
@@ -264,8 +267,9 @@ visits only** (overlays, camera, labels). We do
   again. An empty save does not write a camp: it queries nearby
   solar-circle hosts for a living world (`discoverHabitable`) and
   opens the region looking at that star. Set course no longer
-  writes a visit — until the solar-system step lands, worlds open
-  only from existing saves. Changing the grid renumbers `starId`;
+  writes a visit — the host pass draws the worlds; landing
+  and save rows still wait. Worlds open from existing saves
+  until then. Changing the grid renumbers `starId`;
   old visits from the 7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
