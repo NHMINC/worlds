@@ -256,6 +256,7 @@ export function cosmicStarVert(extinctChunk: string): string {
   attribute vec3 aColor;
   attribute float aShine;
   uniform float uStarGain;
+  uniform float uSkyDim;
   uniform float uPinCanvas;
   uniform vec3 uCenter;
   uniform vec3 uWhiteRef;
@@ -275,7 +276,7 @@ export function cosmicStarVert(extinctChunk: string): string {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
     }
-    vI = aShine * uStarGain;
+    vI = aShine * uStarGain * uSkyDim;
     // sRGB → linear, white-balanced; extinction is linear light.
     vColor = (pow(max(aColor, 0.0), vec3(2.2)) / max(uWhiteRef, vec3(1e-3)))
       * extinctLook(uCenter, dir);
@@ -331,6 +332,7 @@ export function cosmicSmudgeVert(): string {
   attribute float aSeed;
   attribute float aCrisp;
   uniform float uCosmicGain;
+  uniform float uSkyDim;
   uniform float uCosmicSize;
   uniform float uPxPerRad;
   varying vec3 vColor;
@@ -358,7 +360,7 @@ export function cosmicSmudgeVert(): string {
       gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
       return;
     }
-    vI = aShine * uCosmicGain;
+    vI = aShine * uCosmicGain * uSkyDim;
     vColor = aColor;
     vIncl = clamp(aAspect, 0.0, 1.0);
     vAngle = aAngle;

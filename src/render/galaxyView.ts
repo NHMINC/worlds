@@ -294,6 +294,7 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform float uPsfB;
   uniform float uPsfThresh;
   uniform float uShineLGain;
+  uniform float uSkyDim;
   uniform float uShineLP;
   uniform float uShineDistRef;
   uniform float uShineDistP;
@@ -341,7 +342,7 @@ const SILHOUETTE_VERT = /* glsl */ `
       float ang = max(aSize, 0.005) * uScale / d;
       float floorPx = uNebulaPx * uPixel;
       gl_PointSize = clamp(2.0 * ang * uPxPerRad, floorPx, 512.0);
-      vVis = aVis;
+      vVis = aVis * uSkyDim;
       vCenterView = mv.xyz;
       vRadiusView = max(aSize, 0.005) * uScale;
       vCenterCat = position;
@@ -359,6 +360,10 @@ const SILHOUETTE_VERT = /* glsl */ `
       // overexposure law into white-gold: the Hubble bulge from
       // the density field, not a painted core.
       shine *= 1.0 + uDensGain * clamp(aVis, 0.0, 1.0);
+      // Survey light: 1 in open catalog space, ARRIVE_SKY_GAIN
+      // at the host. The photosphere is a second pass and
+      // never sees this.
+      shine *= uSkyDim;
       float num = uPsfTail * shine / max(uPsfThresh, 1e-5) - uPsfA;
       float rCss = sqrt(max(0.0, num / max(uPsfB, 1e-5)));
       float css = max(1.0, 1.0 + 2.0 * rCss);
@@ -950,6 +955,7 @@ export class GalaxyView {
       uPsfB: { value: HARVEST_PSF_B },
       uPsfThresh: { value: HARVEST_PSF_THRESH },
       uShineLGain: { value: HARVEST_SHINE_GAIN },
+      uSkyDim: { value: 1 },
       uShineLP: { value: HARVEST_SHINE_L_P },
       uShineDistRef: { value: HARVEST_SHINE_DIST_REF },
       uShineDistP: { value: HARVEST_SHINE_DIST_P },
@@ -1200,6 +1206,7 @@ export class GalaxyView {
       fragmentShader: cosmicSmudgeFrag(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
       uniforms: {
         uCosmicGain: { value: UNIVERSE.COSMIC_GAIN },
+        uSkyDim: { value: 1 },
         uCosmicSize: { value: UNIVERSE.COSMIC_SIZE },
         uPxPerRad: { value: this.pxPerRad() },
         uCenter: { value: new THREE.Vector3() },
@@ -1256,6 +1263,7 @@ export class GalaxyView {
       fragmentShader: cosmicStarFrag(),
       uniforms: {
         uStarGain: { value: UNIVERSE.COSMIC_STAR_GAIN },
+        uSkyDim: { value: 1 },
         uPinCanvas: { value: COSMIC_STAR_PIN },
         uPinCore: { value: COSMIC_STAR_PIN_CORE },
         uCenter: { value: new THREE.Vector3() },
@@ -1391,14 +1399,31 @@ export class GalaxyView {
     }
   }
 
+  /**
+   * Survey gain. 1 in open catalog space. Inside a host sphere
+   * it falls as t² from 1 at the 1 ly fence to ARRIVE_SKY_GAIN
+   * at the star. The furnace is a second pass and is not dimmed.
+   */
+  private skyDim(): number {
+    const host = this.hostObj;
+    if (!host) return 1;
+    const R = UNIVERSE.ARRIVE_RANGE_KPC;
+    if (R <= 0) return 1;
+    const t = Math.max(0, Math.min(1, 1 - this.arriveDist(host) / R));
+    const g = UNIVERSE.ARRIVE_SKY_GAIN;
+    return 1 + (g - 1) * t * t;
+  }
+
   /** Catalog positions stay on the GPU; only the bubble centre moves. */
   private pushMagUniforms(): void {
     const cx = this.arcCenter.x;
     const cy = this.arcCenter.y;
     const cz = this.arcCenter.z;
+    const dim = this.skyDim();
     for (const mat of this.cloudMats()) {
       if (mat.uniforms.uCenter) mat.uniforms.uCenter.value.set(cx, cy, cz);
       if (mat.uniforms.uScale) mat.uniforms.uScale.value = 1;
+      if (mat.uniforms.uSkyDim) mat.uniforms.uSkyDim.value = dim;
     }
   }
 
@@ -2713,6 +2738,12 @@ export class GalaxyView {
     this.hereRing.rotation.z = t * -0.22;
 
     this.updateHostArrival(now);
+    // Attach can land on this frame — write the survey dim after
+    // the host is known so the first in-sphere draw is already dark.
+    const dim = this.skyDim();
+    for (const mat of this.cloudMats()) {
+      if (mat.uniforms.uSkyDim) mat.uniforms.uSkyDim.value = dim;
+    }
 
     // One scene, one pass, straight to the canvas: the void is
     // black (vacuum emits nothing), self-extincted background

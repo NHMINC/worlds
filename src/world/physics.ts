@@ -356,7 +356,10 @@ export const UNIVERSE = {
    * capped at ARRIVE_K · d so the last stretch (when the disk is
    * actually a few pixels) lasts seconds, not one 1/1000-warp
    * frame. Warp latches Stop when the disk covers ARRIVE_FILL of
-   * the vertical field. It does not open a system.
+   * the vertical field. The survey photograph (enhanced light
+   * for flying the disk) falls to ARRIVE_SKY_GAIN inside the
+   * sphere so looking out is dark; the host furnace is not
+   * dimmed. It does not open a system.
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
@@ -368,6 +371,16 @@ export const UNIVERSE = {
   get ARRIVE_RANGE_KPC(): number {
     return this.ARRIVE_RANGE_LY / 3261.56;
   },
+  /**
+   * The harvest / nebula / cosmic photograph is enhanced light —
+   * enough to fly the disk. Inside the 1 ly sphere that survey
+   * is off: gain falls as t² from 1 at the fence to this floor
+   * at the star (t = 1 − d / ARRIVE_RANGE). The host furnace
+   * is real starlight and is not multiplied. Night on a world
+   * is the same idea once bodies land: no survey fill.
+   * Pitch-black is never fun, so the floor is a whisper, not 0.
+   */
+  ARRIVE_SKY_GAIN: 0.03,
   /**
    * Harvest pins are absolute kpc in float32. Around the solar
    * circle the ULP is ~200 AU; inside this distance the pin hops

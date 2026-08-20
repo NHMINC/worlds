@@ -116,7 +116,11 @@ toy — Godus blocks on a real-sized globe.
   heading. Warp latches Stop when the disk covers `ARRIVE_FILL`
   of the vertical field. The close star draws as a second AU-scale depth
   pass over the live galaxy — the sky never bakes, blanks, or
-  switches environment, and the controls never change. It does
+  switches environment, and the controls never change. The
+  harvest / nebula / cosmic photograph is enhanced survey light
+  for flying the disk; inside the 1 ly sphere that gain falls
+  as t² to `ARRIVE_SKY_GAIN` so looking out (and later a night
+  side) is dark. The host furnace is not multiplied. It does
   not open a system; landing on a world
   waits for the solar-system step; short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
@@ -472,7 +476,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   1 ly sphere (fixed, not object-size) every move is under
   `ARRIVE_WARP` / `ARRIVE_K · d` (sticky — fly out before a new
   target or full warp). A locked course stops at the
-  `ARRIVE_FILL` park. Stars you are not aiming at never
+  `ARRIVE_FILL` park. The survey photograph dims to
+  `ARRIVE_SKY_GAIN` inside that sphere (enhanced light off;
+  the furnace stays). Stars you are not aiming at never
   slow the ship.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
