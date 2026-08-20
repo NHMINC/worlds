@@ -730,6 +730,8 @@ export class GalaxyView {
   private hostOuterAu = 1;
   /** Star id while parked at the attached system's rim, else null. */
   private arrivedId: number | null = null;
+  /** Pending slow-clock wake while the parked system barely moves. */
+  private hostWakeTimer = 0;
   private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
   private readonly tmpV = new THREE.Vector3();
   private readonly tmpV2 = new THREE.Vector3();
@@ -1732,6 +1734,10 @@ export class GalaxyView {
   dispose(): void {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
+    if (this.hostWakeTimer) {
+      window.clearTimeout(this.hostWakeTimer);
+      this.hostWakeTimer = 0;
+    }
     this.canvas.removeEventListener('pointerdown', this.onDown);
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('pointerup', this.onUp);
@@ -1879,6 +1885,10 @@ export class GalaxyView {
 
   private detachHost(): void {
     this.arrivedId = null;
+    if (this.hostWakeTimer) {
+      window.clearTimeout(this.hostWakeTimer);
+      this.hostWakeTimer = 0;
+    }
     this.detachHostFurnace();
     this.detachHostSystem();
     if (this.hostRoot) {
@@ -2196,7 +2206,37 @@ export class GalaxyView {
       this.hostStar.update(camLocal, tSys, new THREE.Vector3(1, 1, 1));
     }
     this.applyCam();
-    this.wake(2);
+    // Rest-aware clock: poses are closed-form f(t), so the loop only
+    // owes a frame when something would visibly move. Hot while the
+    // fastest body crosses pixels per second (time lapse) or the
+    // photosphere is large enough to granulate; a slow timer while
+    // it crawls; fully cold when parked at 1:1 — a wake catches up
+    // exactly, no simulation drifts.
+    const rate = this.hostPxRate(dist, pxPer);
+    if (starPx > 8 || rate > 2) this.wake(2);
+    else this.scheduleHostWake(1 / Math.max(rate, 1e-9));
+  }
+
+  /** Fastest apparent motion of the attached system (px/s at the eye). */
+  private hostPxRate(dist: number, pxPer: number): number {
+    let rate = 0;
+    for (const rt of this.hostBodies.values()) {
+      const b = rt.spec;
+      const rKm = b.parent ? b.orbitRadius : b.orbitRadius * UNIVERSE.AU_KM;
+      const w = ((2 * Math.PI) / Math.max(1, b.orbitPeriod)) * UNIVERSE.TIME_SCALE;
+      rate = Math.max(rate, (w * rKm * KM_TO_KPC * pxPer) / Math.max(dist, 1e-16));
+    }
+    return rate;
+  }
+
+  /** One wake when ~a pixel of orbital drift has accrued (10 min cap
+   * — a heartbeat so a long-parked sky stays honest for ~no heat). */
+  private scheduleHostWake(sec: number): void {
+    if (this.hostWakeTimer) return;
+    this.hostWakeTimer = window.setTimeout(() => {
+      this.hostWakeTimer = 0;
+      this.wake(2);
+    }, Math.min(sec, 600) * 1000);
   }
 
   /**
