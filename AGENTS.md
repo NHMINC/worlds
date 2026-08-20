@@ -110,7 +110,10 @@ toy — Godus blocks on a real-sized globe.
   a planet. The autopilot stays locked and eases to rest at a **safe
   exposure** (`ARRIVE_FLUX`: hold where the star's eye flux is a set
   multiple of habitable light, `ARRIVE_R_MIN` radii floor for
-  remnants): the sun a real furnace up close, the planets on their
+  remnants) — park is computed from the lock on the first frame
+  (never from a host that has not attached yet), the step is
+  clamped so the bubble cannot cross the park, and a toward-flip
+  cannot release full warp: the sun a real furnace up close, the planets on their
   rings. Parked, the **system map** (the same map the engine uses)
   offers the worlds; picking one opens the engine in orbit of that
   body. A parked system does not keep the loop hot: poses are

@@ -730,6 +730,8 @@ export class GalaxyView {
   private hostOuterAu = 1;
   /** Star id while parked at the attached system's rim, else null. */
   private arrivedId: number | null = null;
+  /** Set course is in flight — clamp to the lock until we park or abort. */
+  private arriving = false;
   /** Pending slow-clock wake while the parked system barely moves. */
   private hostWakeTimer = 0;
   private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
@@ -1757,6 +1759,7 @@ export class GalaxyView {
 
   private resetThrust(): void {
     this.thrustOn = false;
+    this.arriving = false;
     this.thrustSpeed = 0;
   }
 
@@ -1764,16 +1767,16 @@ export class GalaxyView {
     return Math.hypot(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
   }
 
-  /** Approach park radius (kpc): the safe-exposure hold by the star
-   * (fixed eye flux, floored outside the corona for remnants). */
-  private parkKpc(): number {
-    if (!this.hostSpec) return 0;
-    const s = this.hostSpec.star;
+  /** Approach park radius (kpc) for a lock. Uses the catalog star so
+   * the hold exists from the first set-course frame — waiting for
+   * hostSpec made park=0, the approach aimed at the photosphere, and
+   * a toward-flip released full warp past the star. */
+  private parkKpc(lock: GalaxyObject): number {
+    const L = Math.max(lock.star.luminosity, 1e-8);
+    const Rkm = Math.max(1e-8, lock.star.radius) * UNIVERSE.RSUN_KM;
     const dFlux =
-      UNIVERSE.A_HAB *
-      UNIVERSE.AU_KM *
-      Math.sqrt(Math.max(s.luminosity, 1e-8) / UNIVERSE.ARRIVE_FLUX);
-    return Math.max(dFlux, s.radius * UNIVERSE.ARRIVE_R_MIN) * KM_TO_KPC;
+      UNIVERSE.A_HAB * UNIVERSE.AU_KM * Math.sqrt(L / UNIVERSE.ARRIVE_FLUX);
+    return Math.max(dFlux, Rkm * UNIVERSE.ARRIVE_R_MIN) * KM_TO_KPC;
   }
 
   /** Warp may run inside the fence, or past it only while flying inward. */
@@ -1790,6 +1793,7 @@ export class GalaxyView {
   setWarp(on: boolean): void {
     if (this.mode !== 'region') return;
     this.thrustOn = on && this.warpMayRun();
+    if (!this.thrustOn) this.arriving = false;
     this.idle = 0;
     if (this.thrustOn) this.wake(2);
   }
@@ -1809,6 +1813,7 @@ export class GalaxyView {
     const dz = c.z - this.arcCenter.z;
     if (Math.hypot(dx, dy, dz) > 1e-12) this.aimAt(dx, dy, dz);
     this.applyCam();
+    this.arriving = true;
     this.setWarp(true);
   }
 
@@ -2201,7 +2206,7 @@ export class GalaxyView {
     if (root) root.position.set(dx, dy, dz);
 
     // Parked: inside a modest margin of the rim the map is offered.
-    const park = this.parkKpc();
+    const park = this.parkKpc(lock);
     this.arrivedId = this.hostSpec && park > 0 && dist <= park * 1.25 ? lock.id : null;
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
@@ -2577,14 +2582,34 @@ export class GalaxyView {
     return false;
   }
 
+  /** Snap the bubble onto the lock's safe-exposure sphere, looking in. */
+  private holdPark(lock: GalaxyObject, park: number): void {
+    const c = galToCart(lock.pos);
+    this.orientArc();
+    this.arcCenter.set(
+      c.x - this.arcFwd.x * park,
+      c.y - this.arcFwd.y * park,
+      c.z - this.arcFwd.z * park,
+    );
+    this.mintAt.copy(this.arcCenter);
+    this.thrustOn = false;
+    this.arriving = false;
+    this.thrustSpeed = 0;
+    this.applyCam();
+  }
+
   /** Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop. */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
       this.thrustOn = false;
+      this.arriving = false;
       this.thrustSpeed = 0;
       return;
     }
-    if (this.thrustOn && !this.warpMayRun()) this.thrustOn = false;
+    if (this.thrustOn && !this.warpMayRun()) {
+      this.thrustOn = false;
+      this.arriving = false;
+    }
     this.orientArc();
     let v = UNIVERSE.GALAXY_WARP;
     const lock = this.selected ?? this.focusObj;
@@ -2594,27 +2619,38 @@ export class GalaxyView {
       const dy = c.y - this.arcCenter.y;
       const dz = c.z - this.arcCenter.z;
       const d = Math.hypot(dx, dy, dz);
-      let toward = d > 1e-12
+      const park = this.parkKpc(lock);
+      let toward = d > 1e-20
         ? (dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z) / d
         : 1;
-      // Autopilot: while warping broadly inward and the player is not
-      // steering, hold the nose exactly on the lock. Without this a
-      // mid-flight drag lets the approach cone decay and the clamp
-      // silently stops applying — full warp past the star, no park.
-      // Pointing away (toward ≤ 0) is a deliberate escape: no re-aim.
-      if (this.thrustOn && toward > 0 && !this.dragging && !this.steerHeld()) {
+      // Set-course autopilot: hold the nose on the lock until we park.
+      // A toward-flip used to drop the clamp and fire full warp past
+      // the star — that was the "stops, disengages, warps past" bug.
+      // Pointing away (>90°) without arriving is a deliberate escape.
+      if (this.arriving && toward <= 0 && !this.dragging && !this.steerHeld()) {
+        this.aimAt(dx, dy, dz);
+        this.orientArc();
+        toward = 1;
+      } else if (this.thrustOn && toward > 0 && !this.dragging && !this.steerHeld()) {
         this.aimAt(dx, dy, dz);
         this.orientArc();
         toward = 1;
       }
-      if (toward > 0.55) {
-        // Ease onto the safe-exposure park, not the photosphere: the
-        // stop is the park radius, so v → 0 as the star fills the view.
-        const park = this.parkKpc();
-        const remain = Math.max(0, d - park);
-        v = Math.min(v, UNIVERSE.ARRIVE_K * Math.max(remain, 1e-14));
-        // Parked — the approach is over; let the latch go quietly.
-        if (park > 0 && remain <= park * 0.05) this.thrustOn = false;
+      if (this.arriving && toward <= 0 && (this.dragging || this.steerHeld())) {
+        this.arriving = false;
+      }
+      const onApproach = this.arriving || toward > 0.55;
+      if (onApproach && park > 0) {
+        const remain = d - park;
+        if (remain <= park * 0.05) {
+          this.holdPark(lock, park);
+          return;
+        }
+        v = Math.min(v, UNIVERSE.ARRIVE_K * remain);
+        const step = Math.min(v * dt, remain);
+        this.thrustSpeed = v;
+        this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
+        return;
       }
     }
     this.thrustSpeed = this.thrustOn ? v : 0;
