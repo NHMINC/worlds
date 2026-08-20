@@ -348,6 +348,14 @@ export function buildTerraceGeometry(
 
 // ---------------------------------------------------------------- materials
 
+/** 0..1 celestial phase → closed orbit in noise space (physics.waveClock). */
+const WAVE_DRIFT_GLSL = /* glsl */ `
+vec3 wdrift(float a, float b, float c, float r) {
+  float tau = uTime * 6.28318530718 * uWaveTempo;
+  return r * vec3(sin(tau * a), cos(tau * b), sin(tau * c));
+}
+`;
+
 const TERRAIN_VERT = /* glsl */ `
 attribute float aLevel;
 attribute float aFetch;
@@ -421,6 +429,7 @@ float vnoise(vec3 p) {
         mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
     f.z);
 }
+${WAVE_DRIFT_GLSL}
 
 void main() {
   // Mirror pass only (engine reflection camera): a reflection contains
@@ -498,7 +507,7 @@ void main() {
   float off = vnoise(vPos * uWarpFreq * 0.35 + vec3(1.7, 8.3, 5.9));
   float pxPos = fwidth(vPos.x) + fwidth(vPos.y) + fwidth(vPos.z);
   float att = 1.0 - smoothstep(0.3, 1.2, pxPos * uWarpFreq);
-  float lap = mix(0.5, vnoise(vPos * uWarpFreq * 1.6 + vec3(uTime * 0.25, uTime * -0.18, 3.1)), att);
+  float lap = mix(0.5, vnoise(vPos * uWarpFreq * 1.6 + vec3(0.0, 0.0, 3.1) + wdrift(0.83, -0.60, 0.35, 1.0)), att);
   // Swell energy: the body's sea state (wind + tide) scaled by basin
   // fetch — floored, not zeroed: a pond still laps baby ripples at its
   // rim, while the ocean shore takes the full sea.
@@ -543,9 +552,9 @@ void main() {
   // whole ocean (this exact bug shipped twice). So one omega per body;
   // coasts fall out of lockstep through a static offset field (off, slant)
   // plus this slowly MORPHING drift — half a cycle at most, forever.
-  float drift = 0.5 * vnoise(vPos * uWarpFreq * 0.18 + vec3(9.1, 4.4, 6.7) + uTime * 0.009);
+  float drift = 0.5 * vnoise(vPos * uWarpFreq * 0.18 + vec3(9.1, 4.4, 6.7) + wdrift(0.16, 0.13, 0.11, 0.35));
   float slant = 0.25 * (vnoise(vPos * uWarpFreq * 0.9 + vec3(2.9, 7.2, 11.4)) - 0.5);
-  float omega = uWaveTempo * 0.055;
+  float omega = uWaveTempo;
 
   float dPos = max(depth, 0.0);
   float A = energy * 0.8 / pow(max(dPos, 0.25), 0.25);   // Green's law
@@ -569,16 +578,16 @@ void main() {
               * mix(1.5, 0.85, smoothstep(0.4, 1.1, uWaveTempo));
   float phS = fract(off + slant + drift + uTime * omega - 0.88 - 0.4 * ashore / max(runup, 0.05));
   float rush = smoothstep(0.0, 0.16, phS) * (1.0 - smoothstep(0.22, 0.85, phS));
-  float churn = vnoise(vPos * uWarpFreq * 5.2 + vec3(uTime * 0.65, -uTime * 0.5, 4.4))
-              * vnoise(vPos * uWarpFreq * 8.1 + vec3(-uTime * 0.45, uTime * 0.6, 9.3));
+  float churn = vnoise(vPos * uWarpFreq * 5.2 + vec3(0.0, 0.0, 4.4) + wdrift(1.3, 1.0, 0.55, 1.2))
+              * vnoise(vPos * uWarpFreq * 8.1 + vec3(0.0, 0.0, 9.3) + wdrift(-0.90, 1.2, 0.40, 1.2));
   float grain = smoothstep(0.24, 0.48, churn);
   float lobe = 0.28 + 0.72 * smoothstep(0.30, 0.70,
       vnoise(vPos * uWarpFreq * 0.42 + vec3(4.1, 9.7, 2.3)));
   float sheet = beach * rush * lobe * exp(-ashore / max(runup, 0.05))
               * (1.0 - smoothstep(0.5, 1.1, ashore)) * reachGate;
   float rim = smoothstep(0.05, 0.20, sheet) * (1.0 - smoothstep(0.36, 0.66, sheet));
-  float laceA = vnoise(vPos * uWarpFreq * 6.4 + vec3(uTime * 0.40, 2.2, 8.1));
-  float laceB = vnoise(vPos * uWarpFreq * 11.0 + vec3(-uTime * 0.35, 7.4, 1.6));
+  float laceA = vnoise(vPos * uWarpFreq * 6.4 + vec3(0.0, 2.2, 8.1) + wdrift(0.80, 0.35, 0.22, 1.0));
+  float laceB = vnoise(vPos * uWarpFreq * 11.0 + vec3(0.0, 7.4, 1.6) + wdrift(-0.70, 0.28, 0.18, 1.0));
   float web = smoothstep(0.10, 0.28, sheet) * (1.0 - rim)
             * mix(0.10, 0.88, smoothstep(0.30, 0.58, laceA) * smoothstep(0.26, 0.52, laceB));
   float wash = rim * 1.08 + web * 0.72;
@@ -799,7 +808,8 @@ void main() {
  *    elongated in the sun–camera plane (Earth-from-orbit), tight as a
  *    mirror when the sea is still. Applied after air, extinction only.
  * Fine ripples hand over to a planetary-scale field at far zoom so the sea
- * keeps moving from any distance without aliasing into shimmer.
+ * keeps moving from any distance. Both fields walk a closed orbit on the
+ * celestial phase — Unix-scale t in the hash was the orbit shimmer.
  */
 const WATER_FRAG = /* glsl */ `
 precision highp float;
@@ -871,13 +881,13 @@ float vnoise(vec3 p) {
         mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
     f.z);
 }
+${WAVE_DRIFT_GLSL}
 
 void main() {
   vec3 n0 = normalize(vNormal);
   vec3 t1 = normalize(cross(n0, abs(n0.y) > 0.9 ? vec3(1, 0, 0) : vec3(0, 1, 0)));
   vec3 t2 = cross(n0, t1);
 
-  float t = uTime * uWaveTempo;
   vec3 p = vPos * uWaveFreq;
   // A dead-calm sea keeps a whisper of motion (thermal slosh); wind and
   // tide bring the rest, through the cosmic volume knob.
@@ -889,11 +899,11 @@ void main() {
   float att = 1.0 - smoothstep(0.3, 1.2, px);
 
   // Fine ripple pair (close zoom) and planetary pair (far zoom).
-  float n1 = vnoise(p * 0.55 + vec3(t * 0.30, t * 0.22, -t * 0.16));
-  float n2 = vnoise(p * 0.85 + vec3(-t * 0.20, 4.7 + t * 0.13, t * 0.26));
+  float n1 = vnoise(p * 0.55 + wdrift(1.00, 0.73, -0.53, ${UNIVERSE.WAVE_WALK}));
+  float n2 = vnoise(p * 0.85 + vec3(0.0, 4.7, 0.0) + wdrift(-0.67, 0.43, 0.87, ${UNIVERSE.WAVE_WALK}));
   vec3 q = vPos * (uWaveFreq * 0.10);
-  float m1 = vnoise(q + vec3(t * 0.12, t * 0.09, -t * 0.07));
-  float m2 = vnoise(q * 1.6 + vec3(-t * 0.08, 3.1, t * 0.11));
+  float m1 = vnoise(q + wdrift(0.40, 0.30, -0.23, ${UNIVERSE.WAVE_WALK}));
+  float m2 = vnoise(q * 1.6 + vec3(0.0, 3.1, 0.0) + wdrift(-0.27, 0.20, 0.37, ${UNIVERSE.WAVE_WALK}));
 
   // Cel depth bands: quantize the fresnel gradient into flat tones, with the
   // ripple noise wobbling the band boundaries so they visibly swim.
@@ -1096,7 +1106,7 @@ void main() {
       float dPos = max(colW, 0.0);
       float A = energy * 0.8 / pow(max(dPos, 0.25), 0.25);
       float brk = smoothstep(0.0, 0.5, A - 0.6 * dPos);
-      float omega = uWaveTempo * 0.055;
+      float omega = uWaveTempo;
       float off = vnoise(vPos * uWaveFreq * 0.35 + vec3(1.7, 8.3, 5.9));
       float ph = fract(2.2 * sqrt(dPos) + off + uTime * omega);
       float crest = smoothstep(0.62, 0.82, ph) * (1.0 - smoothstep(0.90, 1.0, ph));

@@ -2313,16 +2313,15 @@ export class Engine {
       // moonless ones hold still (tideAmp is 0). Phase offset per body so
       // sibling worlds don't inhale together.
       const tideLv = rt.tideAmp > 0
-        ? rt.tideAmp * Math.sin(shaderT * UNIVERSE.WAVE_TIDE + rt.spec.orbitPhase)
+        ? rt.tideAmp * Math.sin(tSys * UNIVERSE.WAVE_TIDE + rt.spec.orbitPhase)
         : 0;
       for (const assets of [rt.tier1, rt.tier2]) {
         if (!assets) continue;
         (assets.terrainMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
         assets.terrainMat.uniforms.uSunIrr.value = sunIrr;
         assets.terrainMat.uniforms.uSunLum.value = sunLum;
-        // Terrain time drives only the shoreline surf; it and the sea share
-        // one quarter-speed clock so waves and wash stay in step.
-        assets.terrainMat.uniforms.uTime.value = shaderT * 0.25;
+        // One celestial phase: shoreline surf and the sea share waveClock.
+        assets.terrainMat.uniforms.uTime.value = shaderT;
         if (rt.tideAmp > 0) {
           assets.terrainMat.uniforms.uWaterLevel.value = rt.waterLevel + tideLv;
           assets.water?.scale.setScalar(1 + tideLv * rt.step);
@@ -2341,7 +2340,7 @@ export class Engine {
           (assets.waterMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
           assets.waterMat.uniforms.uSunIrr.value = sunIrr;
           assets.waterMat.uniforms.uSunLum.value = sunLum;
-          assets.waterMat.uniforms.uTime.value = shaderT * 0.25;
+          assets.waterMat.uniforms.uTime.value = shaderT;
           (assets.waterMat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);
           assets.waterMat.uniforms.uTorch.value = torch;
           if (torch > 0) {

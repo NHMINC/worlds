@@ -327,14 +327,16 @@ export const UNIVERSE = {
 
   /**
    * Wave / foam / render-tide sit on that same celestial t. CLOCK is
-   * shader-seconds per universe second — the old wall-clock * 40 — so
-   * TIME_SCALE=1 looks as it did and a lapse speeds the sea with the
-   * sky. WRAP is float32 phase, not a second clock: Unix * CLOCK has
-   * no fractional bits in a GPU float. Tide is sin(shaderT * TIDE).
+   * the sea's cycle rate (Hz at tempo=1) — the old surf 10 × 0.055 —
+   * so TIME_SCALE=1 keeps the beach period and a lapse speeds the sea
+   * with the sky. waveClock returns a 0..1 phase (float64); shaders
+   * walk a closed orbit of radius WALK in noise space so the hash
+   * never sees Unix-scale t (that was the orbit shimmer). Tide is
+   * sin(tSys · TIDE) in JS — not a wrapped shader tick.
    */
-  WAVE_CLOCK: 40,
-  WAVE_WRAP: 8e4,
-  WAVE_TIDE: 0.003,
+  WAVE_CLOCK: 0.55,
+  WAVE_WALK: 2,
+  WAVE_TIDE: 0.12,
 
   /**
    * Approach: v = min(GALAXY_WARP, ARRIVE_K · dist). The locked host
@@ -1783,11 +1785,10 @@ export function waveSlope(energy: number): { along: number; across: number } {
   return { along, across: along * UNIVERSE.WAVE_SLOPE_ANISO };
 }
 
-/** Wave / foam / tide phase on celestial t. Wrap is float32, not a second clock. */
+/** Sea phase on celestial t: 0..1, float64. The GPU walks a closed orbit. */
 export function waveClock(tSys: number): number {
   const u = tSys * UNIVERSE.WAVE_CLOCK;
-  const w = UNIVERSE.WAVE_WRAP;
-  return ((u % w) + w) % w;
+  return u - Math.floor(u);
 }
 
 // ------------------------------------------------------------------ classification
