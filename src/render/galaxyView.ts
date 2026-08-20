@@ -766,9 +766,12 @@ export class GalaxyView {
 
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown, { passive: false });
-    canvas.addEventListener('pointermove', this.onMove);
-    canvas.addEventListener('pointerup', this.onUp);
-    canvas.addEventListener('pointercancel', this.onUp);
+    // Move / up on the window so a drag that leaves the canvas (onto
+    // the engineer bar, the plate, the browser chrome) still ends.
+    // A leaked pointer left the look in pinch mode: size === 2, no rotate.
+    window.addEventListener('pointermove', this.onMove);
+    window.addEventListener('pointerup', this.onUp);
+    window.addEventListener('pointercancel', this.onUp);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', this.onKeyDown);
@@ -1499,7 +1502,7 @@ export class GalaxyView {
   /** Ease the nose onto the course star and keep it there. */
   private holdCourse(dt: number): void {
     const c = this.courseObj;
-    if (!c || this.mode !== 'region') return;
+    if (!c || this.mode !== 'region' || this.dragging) return;
     const p = galToCart(c.pos);
     const dx = p.x - this.arcCenter.x;
     const dy = p.y - this.arcCenter.y;
@@ -1821,9 +1824,9 @@ export class GalaxyView {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.canvas.removeEventListener('pointerdown', this.onDown);
-    this.canvas.removeEventListener('pointermove', this.onMove);
-    this.canvas.removeEventListener('pointerup', this.onUp);
-    this.canvas.removeEventListener('pointercancel', this.onUp);
+    window.removeEventListener('pointermove', this.onMove);
+    window.removeEventListener('pointerup', this.onUp);
+    window.removeEventListener('pointercancel', this.onUp);
     this.canvas.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -2268,6 +2271,12 @@ export class GalaxyView {
   private onDown = (e: PointerEvent): void => {
     this.wake();
     e.preventDefault();
+    // A mouse is one pointer. A leftover id (drag ended on the engineer
+    // chrome without an up on the canvas) must not look like a pinch.
+    if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
+      this.pointers.clear();
+      this.pinch0 = 0;
+    }
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
