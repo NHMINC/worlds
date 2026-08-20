@@ -599,6 +599,8 @@ export interface GalaxyFrame {
   warp: boolean;
   /** Luminous-tail backdrop points currently on the GPU (0 if not minted). */
   backdrop: number;
+  /** Star id when parked at an attached system's rim, else null. */
+  arrived: number | null;
 }
 
 export interface RegionSelection {
@@ -726,6 +728,8 @@ export class GalaxyView {
   private hostRockGeo: THREE.SphereGeometry | null = null;
   private hostLight: THREE.PointLight | null = null;
   private hostOuterAu = 1;
+  /** Star id while parked at the attached system's rim, else null. */
+  private arrivedId: number | null = null;
   private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
   private readonly tmpV = new THREE.Vector3();
   private readonly tmpV2 = new THREE.Vector3();
@@ -1439,6 +1443,22 @@ export class GalaxyView {
     return this.selected;
   }
 
+  /** The attached system while parked at its rim — the map's moment. */
+  arrivedSystem(): { starId: number; spec: SystemSpec } | null {
+    if (this.arrivedId == null || !this.hostSpec) return null;
+    return { starId: this.arrivedId, spec: this.hostSpec };
+  }
+
+  /** Live map angle of an attached body (same convention as the engine). */
+  hostBodyMapAngle(bodyId: string): number {
+    const rt = this.hostBodies.get(bodyId);
+    if (!rt) return 0;
+    const parent = rt.spec.parent ? this.hostBodies.get(rt.spec.parent) : null;
+    const px = parent?.pos.x ?? 0;
+    const py = parent?.pos.y ?? 0;
+    return Math.atan2(rt.pos.y - py, rt.pos.x - px);
+  }
+
   beaconCount(): number {
     const n = this.shownCount();
     return n > 0 ? n : this.objects.length;
@@ -1738,6 +1758,12 @@ export class GalaxyView {
     return Math.hypot(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
   }
 
+  /** Approach park radius (kpc): the system rim, scaled off the outer orbit. */
+  private parkKpc(): number {
+    if (!this.hostSpec) return 0;
+    return this.hostOuterAu * UNIVERSE.ARRIVE_PARK * UNIVERSE.AU_KM * KM_TO_KPC;
+  }
+
   /** Warp may run inside the fence, or past it only while flying inward. */
   private warpMayRun(): boolean {
     const r = this.bubbleR();
@@ -1852,6 +1878,7 @@ export class GalaxyView {
   }
 
   private detachHost(): void {
+    this.arrivedId = null;
     this.detachHostFurnace();
     this.detachHostSystem();
     if (this.hostRoot) {
@@ -2103,6 +2130,7 @@ export class GalaxyView {
   private updateHostArrival(now: number): void {
     const lock = this.hostLock();
     if (!lock) {
+      this.arrivedId = null;
       if (this.hostRoot || this.hostStar) {
         this.detachHost();
         this.applyCam();
@@ -2123,11 +2151,19 @@ export class GalaxyView {
     const sysOn = this.hostSpec
       ? sysPx >= UNIVERSE.SYSTEM_REVEAL_PX * 0.6
       : sysPx >= UNIVERSE.SYSTEM_REVEAL_PX;
-    const starOn = this.hostStar
-      ? starPx >= UNIVERSE.STAR_REVEAL_PX * 0.6
-      : starPx >= UNIVERSE.STAR_REVEAL_PX;
+    // The sun rides the system reveal: the moment the harvest pin is
+    // baked out of the sky, the furnace (whose glare PSF carries the
+    // unresolved range) must already be there — otherwise the whole
+    // approach from the rim inward has no star. STAR_REVEAL_PX still
+    // gates the bare-furnace case.
+    const starOn =
+      sysOn ||
+      (this.hostStar
+        ? starPx >= UNIVERSE.STAR_REVEAL_PX * 0.6
+        : starPx >= UNIVERSE.STAR_REVEAL_PX);
 
     if (!sysOn && !starOn) {
+      this.arrivedId = null;
       if (this.hostRoot || this.hostStar) {
         this.detachHost();
         this.applyCam();
@@ -2147,6 +2183,10 @@ export class GalaxyView {
 
     const root = this.hostRoot;
     if (root) root.position.set(dx, dy, dz);
+
+    // Parked: inside a modest margin of the rim the map is offered.
+    const park = this.parkKpc();
+    this.arrivedId = this.hostSpec && park > 0 && dist <= park * 1.25 ? lock.id : null;
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     if (this.hostSpec) this.updateHostBodies(tSys, this.hostSpec.star.luminosity);
@@ -2511,7 +2551,15 @@ export class GalaxyView {
       const toward = d > 1e-12
         ? (dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z) / d
         : 1;
-      if (toward > 0.55) v = Math.min(v, UNIVERSE.ARRIVE_K * Math.max(d, 1e-14));
+      if (toward > 0.55) {
+        // Ease onto the system rim, not the photosphere: the stop is
+        // the park radius, so v → 0 as the whole system fills the view.
+        const park = this.parkKpc();
+        const remain = Math.max(0, d - park);
+        v = Math.min(v, UNIVERSE.ARRIVE_K * Math.max(remain, 1e-14));
+        // Parked — the approach is over; let the latch go quietly.
+        if (park > 0 && remain <= park * 0.05) this.thrustOn = false;
+      }
     }
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
@@ -2822,6 +2870,7 @@ export class GalaxyView {
       focus: this.focusHud,
       warp: this.thrustOn,
       backdrop: this.shownCount(),
+      arrived: this.arrivedId,
     });
     this.raf = requestAnimationFrame(this.frame);
   };

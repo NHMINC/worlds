@@ -354,6 +354,10 @@ export const UNIVERSE = {
   SYSTEM_REVEAL_PX: 3,
   /** Outer-a used for the system angular test (AU). The rim, not a stretch. */
   SYSTEM_REVEAL_A: 30,
+  /** Approach park radius as a multiple of the system's outer orbit.
+   * The autopilot eases to rest here — the whole system in view, the
+   * map to pick a world — never onto a planet. */
+  ARRIVE_PARK: 1.6,
 
   /**
    * The shared galaxy. One seed, one SBbc (grand-design barred spiral).

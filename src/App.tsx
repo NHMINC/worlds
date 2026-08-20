@@ -222,7 +222,7 @@ export default function App() {
     hideUniverseSplash();
   }
 
-  async function openSystem(id: string, engineArg?: Engine): Promise<void> {
+  async function openSystem(id: string, engineArg?: Engine, bodyId?: string): Promise<void> {
     const engine = engineArg ?? engineRef.current;
     if (!engine) return;
     const s = await db.systems.get(id);
@@ -246,7 +246,7 @@ export default function App() {
       overrides.set(t.bodyId, o);
     }
     overridesRef.current = overrides;
-    engine.loadSystem(sysSpec, { cam: s.cam, overrides });
+    engine.loadSystem(sysSpec, { cam: s.cam, overrides, body: bodyId });
     setSystem(s);
     setSpec(sysSpec);
     setBodyStates(new Map(bs.map((b) => [b.bodyId, b])));
@@ -301,6 +301,20 @@ export default function App() {
     const meta = newSystemMeta(spec0.star.name, spec0.seed, { starId: obj.id, galaxySeed: gSeed });
     await db.systems.add(meta);
     setSystems((await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null));
+  }
+
+  /** From the explorer's system map, parked at the rim: orbit that world. */
+  async function handleEnterOrbit(starId: number, bodyId: string): Promise<void> {
+    const gSeed = UNIVERSE.CANONICAL_SEED;
+    let meta = systems.find((s) => s.starId === starId && (s.galaxySeed ?? gSeed) === gSeed);
+    if (!meta) {
+      const spec0 = systemAt(gSeed, starId);
+      meta = newSystemMeta(spec0.star.name, spec0.seed, { starId, galaxySeed: gSeed });
+      await db.systems.add(meta);
+      setSystems((await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null));
+    }
+    await openSystem(meta.id, undefined, bodyId);
+    setGalaxyOpen(false);
   }
 
   useEffect(() => {
@@ -433,7 +447,7 @@ export default function App() {
       name: bodyDisplayName(b.id),
       color: cssColor(b.meanColor),
       kind: b.kind,
-      radius: b.radius,
+      radius: b.radius / UNIVERSE.REARTH_KM,
       ring: b.kind === 'gas' && Boolean(b.gas?.ring),
       moons: (spec?.bodies ?? [])
         .filter((m) => m.parent === b.id)
@@ -481,6 +495,7 @@ export default function App() {
         canClose={system != null}
         active={galaxyOpen}
         onSetCourse={(o) => void handleSetCourse(o)}
+        onEnterOrbit={(starId, bodyId) => void handleEnterOrbit(starId, bodyId)}
         onClose={() => setGalaxyOpen(false)}
       />
 
