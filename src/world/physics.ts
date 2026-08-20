@@ -344,9 +344,10 @@ export const UNIVERSE = {
    * Course lock. The reticle plate only names an object inside
    * AIM_RANGE_KPC (a neighbourhood, not the far disk). Set course
    * is a heading hold at ARRIVE_HOLD (1/s); a look drag hands the
-   * stick back. Warp stays warp: full GALAXY_WARP, then ARRIVE_WARP
-   * of that rate inside ARRIVE_RANGE_LY. A quarter-warp frame is
-   * still several ly — cruise substeps onto the park. The harvest
+   * stick back. The 1 ly sphere is sticky: warp is ARRIVE_WARP of
+   * GALAXY_WARP while you are inside it, and a new target cannot
+   * be chosen until you fly out. A quarter-warp frame is still
+   * several ly — cruise substeps onto the park. The harvest
    * pin swaps for the photosphere at STAR_REVEAL_PX (and as soon as
    * float32 catalog positions would hop, ARRIVE_PIN_KPC). Warp
    * latches Stop when the disk covers ARRIVE_FILL of the vertical

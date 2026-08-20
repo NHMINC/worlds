@@ -1424,6 +1424,9 @@ export class GalaxyView {
    */
   setCourse(obj: GalaxyObject): void {
     if (this.mode !== 'region') return;
+    // Inside a host sphere you cannot pick a different target —
+    // leave the 1 ly first.
+    if (this.hostObj && this.hostObj.id !== obj.id) return;
     this.courseObj = obj;
     const brief = this.briefFor(obj);
     const st = obj.star;
@@ -2125,7 +2128,9 @@ export class GalaxyView {
   private pick(cx: number, cy: number): void {
     this.setRay(cx, cy);
     const picked = this.pickCloud(cx, cy);
-    if (picked) this.select(picked);
+    if (!picked) return;
+    if (this.hostObj && picked.id !== this.hostObj.id) return;
+    this.select(picked);
   }
 
   /** Here and visited samples — always pickable, even if faint. */
@@ -2376,10 +2381,9 @@ export class GalaxyView {
 
   /**
    * Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop.
-   * On a locked course, inside 1 ly the rate is ARRIVE_WARP of
-   * GALAXY_WARP (still warp). A quarter-warp frame is several ly —
-   * we substep onto the fill park and latch Stop. No course: full
-   * unclamped warp.
+   * Inside a host's 1 ly sphere the rate is ARRIVE_WARP of
+   * GALAXY_WARP — sticky until you fly out. A quarter-warp frame is
+   * several ly; on a locked course we substep onto the fill park.
    */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
@@ -2392,9 +2396,9 @@ export class GalaxyView {
     this.updateArriveSubject();
     let v = UNIVERSE.GALAXY_WARP;
     const course = this.courseObj;
-    if (course && this.arriveDist(course) <= UNIVERSE.ARRIVE_RANGE_KPC) {
-      v *= UNIVERSE.ARRIVE_WARP;
-    }
+    // The 1 ly sphere is sticky: quarter-warp until you fly out,
+    // whether or not a heading is held.
+    if (this.hostObj) v *= UNIVERSE.ARRIVE_WARP;
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
     const step = this.thrustSpeed * dt;
@@ -2513,6 +2517,7 @@ export class GalaxyView {
         if (d2 < 1e-12) continue;
         const dist = Math.sqrt(d2);
         if (dist > UNIVERSE.AIM_RANGE_KPC) continue;
+        if (this.hostObj && ids[i] !== this.hostObj.id) continue;
         const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
         if (!aimLocks(lum[i], dist, dim)) continue;
         grown++;

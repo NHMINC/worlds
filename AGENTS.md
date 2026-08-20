@@ -107,8 +107,9 @@ toy — Godus blocks on a real-sized globe.
   (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
   reads Course Locked; a look drag hands the stick back. On a
   locked course warp stays warp — full rate, then `ARRIVE_WARP`
-  (0.25) inside `ARRIVE_RANGE_LY`; a quarter-warp frame is still
-  several ly, so cruise substeps onto the park. The harvest pin
+  (0.25) inside the object's 1 ly sphere (sticky: you must fly
+  out before a new target or full warp); a quarter-warp frame is
+  still several ly, so cruise substeps onto the park. The harvest pin
   swaps for the photosphere at `STAR_REVEAL_PX` (or at
   `ARRIVE_PIN_KPC` when float32 catalog positions would hop);
   once that object is up it stays until we fly out of its
@@ -468,10 +469,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Drag looks. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
-  `AIM_RANGE_KPC`. Set course holds the heading; inside 1 ly
-  warp is `ARRIVE_WARP` of the cruise (still warp) and substeps
-  onto the `ARRIVE_FILL` park. Stars you are not aiming at never
-  slow the ship.
+  `AIM_RANGE_KPC`. Set course holds the heading. Inside a host's
+  1 ly sphere warp is `ARRIVE_WARP` of the cruise (sticky — fly
+  out before a new target or full warp) and a locked course
+  substeps onto the `ARRIVE_FILL` park. Stars you are not aiming
+  at never slow the ship.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
