@@ -402,6 +402,14 @@ export const UNIVERSE = {
    */
   ARRIVE_SKY_GAIN: 0.08,
   /**
+   * Host-pass orbit rings. The old system viewer used ~0.1 on a
+   * black void; that is glass on the dimmed harvest. These are
+   * wayfinding, not emission — readable ellipses against the
+   * photograph. Moons a step quieter.
+   */
+  HOST_ORBIT: 0.7,
+  HOST_ORBIT_MOON: 0.42,
+  /**
    * Harvest pins are absolute kpc in float32. Around the solar
    * circle the ULP is ~200 AU; inside this distance the pin hops
    * and the furnace must already be the star.

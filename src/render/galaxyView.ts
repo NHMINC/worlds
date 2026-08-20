@@ -2197,12 +2197,14 @@ export class GalaxyView {
       const orbitLine = new THREE.LineLoop(
         lineGeo,
         new THREE.LineBasicMaterial({
-          color: 0x8fa8cc,
+          color: 0xd4e4f8,
           transparent: true,
-          opacity: b.parent ? 0.08 : 0.11,
+          opacity: b.parent ? UNIVERSE.HOST_ORBIT_MOON : UNIVERSE.HOST_ORBIT,
+          depthTest: false,
           depthWrite: false,
         }),
       );
+      orbitLine.renderOrder = 20;
       root.add(orbitLine);
 
       const rt: HostBodyRT = {
