@@ -217,9 +217,7 @@ function dustDebugOn(): boolean {
 const FOCUS_PARK = 0.35;
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
-/** Pixels before a look takes the stick (and drops the course). */
-const DRAG_SLOP = 10;
-/** Tap, not a drag — pick the star under the pointer. */
+/** Tap vs a look: pick if the captured pointer never really moved. */
 const TAP_SLOP = 22;
 
 export type GalaxyMode = 'region';
@@ -697,6 +695,8 @@ export class GalaxyView {
   private panBtn = 0;
 
   private dragging = false;
+  /** True once this captured pointer actually moved — a look, not a click. */
+  private looking = false;
   private lastX = 0;
   private lastY = 0;
   private moved = 0;
@@ -770,12 +770,10 @@ export class GalaxyView {
 
     canvas.style.touchAction = 'none';
     canvas.addEventListener('pointerdown', this.onDown, { passive: false });
-    // Move / up on the window so a drag that leaves the canvas (onto
-    // the engineer bar, the plate, the browser chrome) still ends.
-    // A leaked pointer left the look in pinch mode: size === 2, no rotate.
-    window.addEventListener('pointermove', this.onMove);
-    window.addEventListener('pointerup', this.onUp);
-    window.addEventListener('pointercancel', this.onUp);
+    canvas.addEventListener('pointermove', this.onMove);
+    canvas.addEventListener('pointerup', this.onUp);
+    canvas.addEventListener('pointercancel', this.onUp);
+    canvas.addEventListener('lostpointercapture', this.onLostCapture);
     canvas.addEventListener('wheel', this.onWheel, { passive: false });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     window.addEventListener('keydown', this.onKeyDown);
@@ -1506,9 +1504,7 @@ export class GalaxyView {
   /** Ease the nose onto the course star and keep it there. */
   private holdCourse(dt: number): void {
     const c = this.courseObj;
-    if (!c || this.mode !== 'region') return;
-    // A click on the canvas is not a look. Only a real drag owns the stick.
-    if (this.dragging && this.moved >= DRAG_SLOP) return;
+    if (!c || this.mode !== 'region' || this.looking) return;
     const p = galToCart(c.pos);
     const dx = p.x - this.arcCenter.x;
     const dy = p.y - this.arcCenter.y;
@@ -1830,9 +1826,10 @@ export class GalaxyView {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.canvas.removeEventListener('pointerdown', this.onDown);
-    window.removeEventListener('pointermove', this.onMove);
-    window.removeEventListener('pointerup', this.onUp);
-    window.removeEventListener('pointercancel', this.onUp);
+    this.canvas.removeEventListener('pointermove', this.onMove);
+    this.canvas.removeEventListener('pointerup', this.onUp);
+    this.canvas.removeEventListener('pointercancel', this.onUp);
+    this.canvas.removeEventListener('lostpointercapture', this.onLostCapture);
     this.canvas.removeEventListener('wheel', this.onWheel);
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
@@ -2277,43 +2274,32 @@ export class GalaxyView {
   private onDown = (e: PointerEvent): void => {
     this.wake();
     e.preventDefault();
-    // A mouse is one pointer. A leftover id (drag ended on the engineer
-    // chrome without an up on the canvas) must not look like a pinch.
-    if (e.pointerType === 'mouse' || e.pointerType === 'pen') {
-      this.pointers.clear();
-      this.pinch0 = 0;
-    }
     try {
       this.canvas.setPointerCapture(e.pointerId);
     } catch {
-      // Synthetic events may carry an unknown pointerId; capture is optional.
+      // Capture is how a drag that leaves the canvas stays real input.
     }
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     this.panBtn = e.button;
     if (this.pointers.size === 1) {
-      // A fresh single-finger touch is the ONLY way back into rotation
-      // after a pinch (see onUp).
       this.dragging = true;
+      this.looking = false;
       this.lastX = e.clientX;
       this.lastY = e.clientY;
       this.moved = 0;
       this.idle = 0;
     } else if (this.pointers.size === 2) {
       this.dragging = false;
+      this.looking = false;
       const pts = [...this.pointers.values()];
       this.pinch0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
     }
   };
 
   private onMove = (e: PointerEvent): void => {
+    // Only a pointer we captured on down. Hover and UI clicks never land here.
     if (!this.pointers.has(e.pointerId)) return;
-    // Hover after a leaked mouse down is not a look. Drop the stale id
-    // so a later click is a fresh single pointer, not a pinch.
-    if ((e.pointerType === 'mouse' || e.pointerType === 'pen') && e.buttons === 0) {
-      this.pointers.delete(e.pointerId);
-      if (this.pointers.size === 0) this.dragging = false;
-      return;
-    }
+    if ((e.pointerType === 'mouse' || e.pointerType === 'pen') && e.buttons === 0) return;
     this.wake();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
@@ -2329,8 +2315,14 @@ export class GalaxyView {
       return;
     }
     if (!this.dragging) return;
-    const dx = e.clientX - this.lastX;
-    const dy = e.clientY - this.lastY;
+    // This event's movement (capture keeps it real off-canvas).
+    let dx = e.movementX;
+    let dy = e.movementY;
+    if (dx === 0 && dy === 0) {
+      dx = e.clientX - this.lastX;
+      dy = e.clientY - this.lastY;
+    }
+    if (dx === 0 && dy === 0) return;
     this.lastX = e.clientX;
     this.lastY = e.clientY;
     this.moved += Math.hypot(dx, dy);
@@ -2341,8 +2333,7 @@ export class GalaxyView {
       return;
     }
     if (this.mode === 'region') {
-      // Click / jitter must not drop the course. A real look does.
-      if (this.moved < DRAG_SLOP) return;
+      this.looking = true;
       this.clearCourse();
       this.arcYaw -= dx * 0.005;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
@@ -2366,20 +2357,23 @@ export class GalaxyView {
   }
 
   private onUp = (e: PointerEvent): void => {
-    // Window-level up also sees Set course / Warp. Those never
-    // started on the canvas — do not pick or drop the course.
     if (!this.pointers.has(e.pointerId)) return;
     this.wake();
-    this.pointers.delete(e.pointerId);
+    const tap = this.dragging && !this.looking && this.moved < TAP_SLOP;
+    this.endPointer(e.pointerId);
+    if (tap) this.pick(e.clientX, e.clientY);
+  };
+
+  private onLostCapture = (e: PointerEvent): void => {
+    if (!this.pointers.has(e.pointerId)) return;
+    this.endPointer(e.pointerId);
+  };
+
+  private endPointer(id: number): void {
+    this.pointers.delete(id);
     if (this.pointers.size < 2) this.pinch0 = 0;
-    if (this.pointers.size === 0) {
-      if (this.dragging && this.moved < TAP_SLOP) this.pick(e.clientX, e.clientY);
-      this.dragging = false;
-    } else {
-      // One pinch finger lifted: the survivor is NOT a drag. Rotation
-      // resumes only with a fresh single-finger touch.
-      this.dragging = false;
-    }
+    this.dragging = false;
+    this.looking = false;
   };
 
   private onWheel = (e: WheelEvent): void => {
