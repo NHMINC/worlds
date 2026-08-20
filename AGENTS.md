@@ -109,10 +109,11 @@ toy — Godus blocks on a real-sized globe.
   locked course warp stays warp until `ARRIVE_BRAKE_LY` (50 ly),
   then `ARRIVE_K · d` so a warp frame cannot skip the sphere
   and the fence is already at the speed limit. Inside the
-  0.01 ly sphere `ARRIVE_WARP` also caps. The same curve
-  leaving — full warp again at 50 ly. Dim is the same 50 ly
-  → park span as the brake (locked course, not only after
-  the host attaches). The
+  0.01 ly sphere `ARRIVE_WARP` also caps. Astern keeps that
+  sphere limit only — no brake, no shell landing; outside
+  is full warp. Dim follows the 50 ly brake ahead (locked
+  course); astern is the host sphere, then full survey
+  light. The
   photosphere
   replaces the pin when the sphere is entered (the pin cannot
   draw the approach). Sticky — fly out before a new target or
@@ -126,7 +127,7 @@ toy — Godus blocks on a real-sized globe.
   for flying the disk; from the 50 ly brake that gain falls
   linearly with distance to `ARRIVE_SKY_GAIN` at the fill park —
   a dark-sky Earth night, a bit clearer.
-  Leaving is the reverse. That is the
+  Astern relights at the sphere fence. That is the
   only galaxy light in the bubble
   (looking out, other pins, nebulae, later night sides). The
   host furnace is not multiplied. It does
@@ -493,7 +494,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `ARRIVE_BRAKE_LY` (50 ly) a locked course is under
   `ARRIVE_K · d` so the 0.01 ly sphere (engineer 0.001–0.01 ly)
   cannot be skipped and the fence is already at the speed
-  limit — same curve leaving. Inside, `ARRIVE_WARP` also
+  limit. Astern is the sphere limit only, then full warp.
+  Inside, `ARRIVE_WARP` also
   caps (sticky — fly out before a new target or full warp).
   A locked course stops at the
   `ARRIVE_FILL` park. The survey photograph is a distance

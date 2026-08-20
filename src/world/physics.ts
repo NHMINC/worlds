@@ -355,15 +355,15 @@ export const UNIVERSE = {
    * (a point, then float32 hops). From ARRIVE_BRAKE_LY (50 ly)
    * in, speed falls as ARRIVE_K · d so a warp frame cannot skip
    * the sphere; at the fence that is already the speed limit.
-   * The same curve in reverse on the way out — full warp again
-   * at 50 ly. Inside, ARRIVE_WARP also caps. Dim uses the same
-   * 50 ly → park span as the brake (a locked course, not only
-   * once the host attaches). Warp latches Stop when the disk
-   * covers ARRIVE_FILL of the vertical field. The survey
-   * photograph (enhanced light for flying the disk) falls
-   * linearly with distance from 1 at the 50 ly brake to
-   * ARRIVE_SKY_GAIN at the fill park — a dark-sky Earth
-   * night, a bit clearer. Leaving is the reverse. That is the
+   * Astern keeps the sphere limit only — no 50 ly brake, no
+   * landing on a shell; outside the fence is full warp. Dim
+   * follows the brake on the way in (locked course); on the
+   * way out it is the host sphere, then full survey light.
+   * Warp latches Stop when the disk covers ARRIVE_FILL of the
+   * vertical field. The survey photograph (enhanced light for
+   * flying the disk) falls linearly with distance from 1 at
+   * the 50 ly brake to ARRIVE_SKY_GAIN at the fill park — a
+   * dark-sky Earth night, a bit clearer. That is the
    * only galaxy light in the bubble: looking out, and every
    * other object (pins, nebulae, later worlds). The host
    * furnace is not dimmed. It does not open a system.
@@ -379,9 +379,10 @@ export const UNIVERSE = {
     return this.ARRIVE_RANGE_LY / 3261.56;
   },
   /**
-   * Where the approach brake begins. Full GALAXY_WARP outside;
-   * inside this radius v = ARRIVE_K · d (meets the sphere
-   * speed limit at the fence). Same curve leaving.
+   * Where the approach brake begins. Ahead only. Full
+   * GALAXY_WARP outside; inside this radius v = ARRIVE_K · d
+   * (meets the sphere speed limit at the fence). Astern
+   * ignores this — sphere limit, then warp.
    */
   ARRIVE_BRAKE_LY: 50,
   get ARRIVE_BRAKE_KPC(): number {
@@ -392,7 +393,8 @@ export const UNIVERSE = {
    * cosmic photograph is enhanced so you can fly the disk; that
    * fill would make night impossible. Gain is a distance law,
    * not a timed fade: 1 at ARRIVE_BRAKE_LY, this floor at the
-   * fill park, linear in between. Leaving is the reverse.
+   * fill park, linear in between (ahead). Astern is the host
+   * sphere, then 1.
    * The floor is a dark-sky Earth night, a little clearer —
    * the band is readable, not a flood. Every object in the
    * bubble (other pins, nebulae, later worlds) only gets this

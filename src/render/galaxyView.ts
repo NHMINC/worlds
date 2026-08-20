@@ -1425,16 +1425,18 @@ export class GalaxyView {
   }
 
   /**
-   * Survey gain. Same subject and radius as the brake: 1 at
-   * ARRIVE_BRAKE_LY (and outside), ARRIVE_SKY_GAIN at the fill
-   * park, linear in between. A locked course dims before the
-   * host attaches — waiting for the fence was the 10 s gap.
-   * The furnace is a second pass and is not dimmed.
+   * Survey gain. Ahead: 1 at ARRIVE_BRAKE_LY, ARRIVE_SKY_GAIN
+   * at park, linear — a locked course dims with the brake.
+   * Astern: only the host sphere (fence → park). Outside the
+   * fence the photograph is full; leave does not walk the
+   * 50 ly brake. The furnace is a second pass and is not dimmed.
    */
   private skyDim(): number {
-    const obj = this.closeSubject();
+    const obj = this.astern ? this.hostObj : this.closeSubject();
     if (!obj) return 1;
-    const outer = Math.max(UNIVERSE.ARRIVE_BRAKE_KPC, UNIVERSE.ARRIVE_RANGE_KPC);
+    const outer = this.astern
+      ? UNIVERSE.ARRIVE_RANGE_KPC
+      : Math.max(UNIVERSE.ARRIVE_BRAKE_KPC, UNIVERSE.ARRIVE_RANGE_KPC);
     if (outer <= 0) return 1;
     const g = UNIVERSE.ARRIVE_SKY_GAIN;
     const park = this.parkKpc(obj);
@@ -2133,19 +2135,18 @@ export class GalaxyView {
   }
 
   /**
-   * Approach / leave speed. Full warp beyond ARRIVE_BRAKE_LY.
-   * Inbound, the shell itself is already on the curve (d > brake
-   * is warp; d == brake is not — that dump froze on the fence).
-   * Outbound, the shell is warp again so leaving is not pinned
-   * to brake − d.
+   * Speed. The sphere is a limit both ways. Ahead also brakes
+   * from ARRIVE_BRAKE_LY so a warp frame cannot skip the fence.
+   * Astern does not: outside the sphere is full warp — no step
+   * up, no landing on a shell.
    */
   private closeSpeed(d: number): number {
     const warp = UNIVERSE.GALAXY_WARP;
-    const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
     const fence = UNIVERSE.ARRIVE_RANGE_KPC;
     if (d <= fence) return this.sphereSpeed(d);
-    const past = this.astern ? d >= brake : d > brake;
-    if (past) return warp;
+    if (this.astern) return warp;
+    const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
+    if (d > brake) return warp;
     const vFence = this.sphereSpeed(fence);
     return Math.min(warp, vFence * (d / Math.max(fence, 1e-16)));
   }
@@ -2509,12 +2510,11 @@ export class GalaxyView {
   /**
    * Latched warp: W / Warp is a fixed catalog rate in the current
    * gear; S / Stop is stop. When stopped, ↑ sets ahead and warps,
-   * ↓ sets astern and warps. From ARRIVE_BRAKE_LY a locked course
-   * falls as ARRIVE_K · d so the fence is already at the speed
-   * limit — no dump onto the shell, no skip through it. The same
-   * curve leaving. Dim starts at the same 50 ly brake. Ahead
-   * Stops at the
-   * fill park. Astern never parks.
+   * ↓ sets astern and warps. Ahead: from ARRIVE_BRAKE_LY a locked
+   * course falls as ARRIVE_K · d so the fence is already at the
+   * speed limit. Astern: sphere limit only, then full warp —
+   * no brake, no shell landing. Ahead Stops at the fill park.
+   * Astern never parks.
    */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
@@ -2556,18 +2556,17 @@ export class GalaxyView {
         return;
       }
     }
-    // Inbound only: a full-rate frame is larger than the brake.
+    // Ahead only: a full-rate frame is larger than the brake.
     // Land just inside so the next frame is on the curve.
-    // Do not clip outbound to brake − d — that pins you to the
-    // shell at full relight and never hands warp back.
-    if (sub) {
+    // Astern does not land on a shell — jumping the fence
+    // on the way out is fine.
+    if (!this.astern && sub) {
       const d = this.arriveDist(sub);
       const c = galToCart(sub.pos);
       const closing =
-        ((c.x - this.arcCenter.x) * this.arcFwd.x +
-          (c.y - this.arcCenter.y) * this.arcFwd.y +
-          (c.z - this.arcCenter.z) * this.arcFwd.z) *
-        sign;
+        (c.x - this.arcCenter.x) * this.arcFwd.x +
+        (c.y - this.arcCenter.y) * this.arcFwd.y +
+        (c.z - this.arcCenter.z) * this.arcFwd.z;
       const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
       if (closing > 0 && d > brake) {
         step = Math.min(step, d - brake * (1 - 1e-6));
