@@ -437,7 +437,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Park fill',
     group: 'approach',
     hint: 'how much of the view the disk covers at Stop',
-    about: 'On a locked course, warp latches Stop when the photosphere covers this fraction of the vertical field. Size law, not the sphere. Next frame.',
+    about: 'On a locked course, warp latches Stop when the photosphere covers this fraction of the shorter field (width in portrait, height in landscape). Size law, not the sphere. Next frame.',
     uniform: 'uArriveFill',
     min: 0.08,
     max: 0.5,

@@ -2750,7 +2750,13 @@ export class GalaxyView {
     return false;
   }
 
-  /** Catalog distance at which the object's disk covers ARRIVE_FILL of the vertical FOV. */
+  /**
+   * Catalog distance at which the object's disk covers ARRIVE_FILL
+   * of the shorter field — min(vertical, horizontal) FOV. Portrait
+   * uses the width so the photosphere does not eat the screen;
+   * landscape keeps the old vertical fill. One law, the aspect
+   * is the orientation.
+   */
   private parkKpc(obj: GalaxyObject): number {
     // Remnants are point-sized (pulsar ~1e-5 R☉). Fill-park on that
     // radius is ~1e-15 kpc — closer than holdCourse will aim, so
@@ -2758,8 +2764,10 @@ export class GalaxyView {
     // compact object still has a reachable park.
     const Rsun = Math.max(0.01, obj.star.radius);
     const R = Rsun * UNIVERSE.RSUN_KM * KM_TO_KPC;
-    const fov = (this.camera.fov * Math.PI) / 180;
-    const half = 0.5 * UNIVERSE.ARRIVE_FILL * fov;
+    const vFov = (this.camera.fov * Math.PI) / 180;
+    const aspect = Math.max(1e-6, this.camera.aspect);
+    const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * aspect);
+    const half = 0.5 * UNIVERSE.ARRIVE_FILL * Math.min(vFov, hFov);
     return R / Math.max(1e-8, Math.tan(half));
   }
 

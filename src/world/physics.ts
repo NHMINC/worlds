@@ -364,7 +364,8 @@ export const UNIVERSE = {
    * lock, gear, or fly-around. Camera, ship, planet, pin: same
    * sample. The 50 ly gears stay at full survey light. Warp
    * latches Stop when the disk covers ARRIVE_FILL of the
-   * vertical field. The host furnace is not dimmed. Worlds
+   * shorter field (min of vertical and horizontal FOV —
+   * portrait uses the width). The host furnace is not dimmed. Worlds
    * of that host draw in the same AU-scale pass. It does
    * not open the old system viewer.
    */

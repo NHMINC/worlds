@@ -123,7 +123,9 @@ toy — Godus blocks on a real-sized globe.
   full warp. Stop at the fill park. The object stays until we
   fly out of its 0.01 ly sphere — a look drag only releases the
   heading. Warp latches Stop when the disk covers `ARRIVE_FILL`
-  of the vertical field. The close star draws as a second AU-scale depth
+  of the shorter field (min of vertical and horizontal FOV —
+  portrait uses the width so the photosphere does not eat the
+  screen). The close star draws as a second AU-scale depth
   pass over the live galaxy — the sky never bakes, blanks, or
   switches environment, and the controls never change. The
   harvest / nebula / cosmic photograph is enhanced survey light
