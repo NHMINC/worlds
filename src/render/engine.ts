@@ -13,7 +13,7 @@ import { makeSkyShellMaterials } from './atmosphere';
 import { makeGasGiant } from './gasGiant';
 import { makeStar, type StarView } from './star';
 import type { BodySpec, SystemSpec } from '../world/systemgen';
-import { effectivePhysics, homeBodyId, lockedToStar } from '../world/systemgen';
+import { effectivePhysics, homeBodyId, keplerPlane, lockedToStar } from '../world/systemgen';
 import type { BodyPhysics } from '../world/physics';
 import type { BiomeId, SavedCamera } from '../world/types';
 
@@ -1011,21 +1011,7 @@ export class Engine {
     if (!this.system) return;
     for (const rt of this.bodies.values()) {
       const b = rt.spec;
-      let xo: number;
-      let yo: number;
-      if (b.ecc > 0) {
-        const M = b.orbitPhase + (2 * Math.PI * t) / b.orbitPeriod;
-        let E = M + b.ecc * Math.sin(M);
-        for (let i = 0; i < 3; i++) {
-          E -= (E - b.ecc * Math.sin(E) - M) / (1 - b.ecc * Math.cos(E));
-        }
-        xo = b.orbitRadius * (Math.cos(E) - b.ecc);
-        yo = b.orbitRadius * Math.sqrt(1 - b.ecc * b.ecc) * Math.sin(E);
-      } else {
-        const oa = b.orbitPhase + (2 * Math.PI * t) / b.orbitPeriod;
-        xo = Math.cos(oa) * b.orbitRadius;
-        yo = Math.sin(oa) * b.orbitRadius;
-      }
+      const { xo, yo } = keplerPlane(b.orbitRadius, b.orbitPeriod, b.orbitPhase, b.ecc, t);
 
       if (b.parent) {
         const parent = this.bodies.get(b.parent)!;

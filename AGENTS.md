@@ -103,8 +103,10 @@ toy — Godus blocks on a real-sized globe.
   by fiat; we do not integrate an N-body galaxy for 10 Gyr (Milky Way
   density field + IMF + closed-form stellar clock instead); interstellar
   travel is a lock plus `v = min(GALAXY_WARP, ARRIVE_K · dist)`, not a
-  real light-year cruise; the photosphere replaces the harvest pin when
-  it covers `STAR_REVEAL_PX`; short nebula phases are toy-stretched
+  real light-year cruise; the outer orbit attaches `systemAt` when it
+  covers `SYSTEM_REVEAL_PX` (Kepler `f(spec, t)`, tier-0 globes); the
+  photosphere replaces the harvest pin at `STAR_REVEAL_PX`; set course
+  still opens orbit / surface until one viewer; short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
   on as laws. Clouds are not a painted deck; aerosol opacity lives

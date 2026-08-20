@@ -10,7 +10,7 @@
  * Home parks on the loaded star; Back restores the previous pose.
  */
 import * as THREE from 'three';
-import { UNIVERSE } from '../world/physics';
+import { UNIVERSE, starIrradiance, starIrradianceDisplay } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
@@ -35,7 +35,7 @@ import {
   glowRadiusKpc,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
-import { systemAt } from '../world/systemgen';
+import { keplerPlane, systemAt, type BodySpec, type SystemSpec } from '../world/systemgen';
 import {
   silhouetteCloud,
   nebulaCloud,
@@ -48,6 +48,7 @@ import {
 import { SHAPE_GLSL } from '../world/skyShape';
 import type { DustVolume } from '../world/dustVolume';
 import { PerfMeter } from './perfHud';
+import { makeGasGiant } from './gasGiant';
 import { makeStar, type StarView } from './star';
 import { starSpecFromState } from '../world/systemgen';
 import { prepareUniverse } from '../world/universePrep';
@@ -222,6 +223,21 @@ const ZOOM_PINCH_POW = 0.7;
 export type GalaxyMode = 'region';
 export type GalaxyFilter = 'all' | 'hot' | 'sunlike' | 'cool' | 'remnant' | 'nebula' | 'halo' | 'arm';
 export type GalaxyPreset = 'face' | 'edge' | 'home' | 'back';
+
+/** Catalog kpc per kilometre — host meshes live in km under this scale. */
+const KM_TO_KPC = 1 / UNIVERSE.KPC_KM;
+
+interface HostBody {
+  spec: BodySpec;
+  group: THREE.Group;
+  gasMat: THREE.ShaderMaterial | null;
+  orbitLine: THREE.LineLoop | null;
+  orbX: THREE.Vector3;
+  orbY: THREE.Vector3;
+  tiltQ: THREE.Quaternion;
+  pos: THREE.Vector3;
+  spinQ: THREE.Quaternion;
+}
 
 interface BubblePose {
   x: number;
@@ -703,6 +719,17 @@ export class GalaxyView {
   private hostStar: StarView | null = null;
   private hostStarId = -1;
   private hostCube: THREE.WebGLCubeRenderTarget | null = null;
+  /** Local km frame at the locked host, scaled into catalog kpc. */
+  private hostRoot: THREE.Group | null = null;
+  private hostSpec: SystemSpec | null = null;
+  private hostBodies = new Map<string, HostBody>();
+  private hostRockGeo: THREE.SphereGeometry | null = null;
+  private hostLight: THREE.PointLight | null = null;
+  private hostOuterAu = 1;
+  private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
+  private readonly tmpV = new THREE.Vector3();
+  private readonly tmpV2 = new THREE.Vector3();
+  private readonly tmpQ = new THREE.Quaternion();
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -1782,11 +1809,18 @@ export class GalaxyView {
         c.y - this.arcCenter.y,
         c.z - this.arcCenter.z,
       );
-      this.camera.near = Math.min(0.001, Math.max(1e-14, d * 0.04));
+      if (this.hostRoot) {
+        const aKpc = this.hostOuterAu * UNIVERSE.AU_KM * KM_TO_KPC;
+        this.camera.near = Math.max(1e-18, Math.min(d * 0.02, aKpc * 0.01));
+        this.camera.far = Math.max(d * 8, aKpc * 40, 1e-8);
+      } else {
+        this.camera.near = Math.min(0.001, Math.max(1e-14, d * 0.04));
+        this.camera.far = regionCamFar();
+      }
     } else {
       this.camera.near = 0.001;
+      this.camera.far = regionCamFar();
     }
-    this.camera.far = regionCamFar();
     this.camera.updateProjectionMatrix();
     this.pushMagUniforms();
   }
@@ -1796,10 +1830,15 @@ export class GalaxyView {
   }
 
   private detachHostStar(): void {
-    if (this.hostStar) {
-      this.scene.remove(this.hostStar.group);
-      this.hostStar.dispose();
-      this.hostStar = null;
+    this.detachHost();
+  }
+
+  private detachHost(): void {
+    this.detachHostFurnace();
+    this.detachHostSystem();
+    if (this.hostRoot) {
+      this.scene.remove(this.hostRoot);
+      this.hostRoot = null;
     }
     this.hostStarId = -1;
     if (this.hostCube) {
@@ -1814,6 +1853,50 @@ export class GalaxyView {
     this.applyStarVis();
   }
 
+  private detachHostFurnace(): void {
+    if (!this.hostStar) return;
+    this.hostRoot?.remove(this.hostStar.group);
+    this.hostStar.dispose();
+    this.hostStar = null;
+  }
+
+  private detachHostSystem(): void {
+    for (const rt of this.hostBodies.values()) {
+      rt.group.removeFromParent();
+      rt.group.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.geometry && mesh.geometry !== this.hostRockGeo) mesh.geometry.dispose();
+        const mat = mesh.material;
+        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+        else if (mat) (mat as THREE.Material).dispose();
+      });
+      if (rt.orbitLine) {
+        rt.orbitLine.removeFromParent();
+        rt.orbitLine.geometry.dispose();
+        (rt.orbitLine.material as THREE.Material).dispose();
+      }
+    }
+    this.hostBodies.clear();
+    this.hostSpec = null;
+    if (this.hostLight) {
+      this.hostLight.removeFromParent();
+      this.hostLight = null;
+    }
+    this.hostRockGeo?.dispose();
+    this.hostRockGeo = null;
+    this.hostOuterAu = 1;
+  }
+
+  private ensureHostRoot(): THREE.Group {
+    if (this.hostRoot) return this.hostRoot;
+    const root = new THREE.Group();
+    root.scale.setScalar(KM_TO_KPC);
+    root.add(new THREE.AmbientLight(0x30384a, 0.22));
+    this.scene.add(root);
+    this.hostRoot = root;
+    return root;
+  }
+
   private hideHarvestId(id: number): void {
     if (!this.starVis || !this.cloud) return;
     const arr = this.starVis.array as Float32Array;
@@ -1826,7 +1909,7 @@ export class GalaxyView {
   }
 
   private bakeHostSky(): void {
-    if (this.hostStar) this.hostStar.group.visible = false;
+    if (this.hostRoot) this.hostRoot.visible = false;
     const rt = this.hostCube ?? new THREE.WebGLCubeRenderTarget(256);
     this.hostCube = rt;
     const cubeCam = new THREE.CubeCamera(0.02, regionCamFar(), rt);
@@ -1836,14 +1919,176 @@ export class GalaxyView {
     if (this.silEmisPts) this.silEmisPts.visible = false;
     if (this.cosmicStarPts) this.cosmicStarPts.visible = false;
     if (this.cosmicSmudgePts) this.cosmicSmudgePts.visible = false;
-    if (this.hostStar) this.hostStar.group.visible = true;
+    if (this.hostRoot) this.hostRoot.visible = true;
   }
 
-  /** Photosphere replaces the harvest pin once it covers STAR_REVEAL_PX. */
-  private updateHostStar(now: number): void {
+  private attachHostFurnace(lock: GalaxyObject): void {
+    this.detachHostFurnace();
+    const spec = this.hostSpec?.star ?? starSpecFromState(lock.star, () => 0.5);
+    this.hostStar = makeStar(spec);
+    this.ensureHostRoot().add(this.hostStar.group);
+    if (this.hostLight) this.hostStar.light.intensity = 0;
+    this.hostStarId = lock.id;
+    this.hideHarvestId(lock.id);
+    this.bakeHostSky();
+  }
+
+  private attachHostSystem(lock: GalaxyObject): void {
+    this.detachHostSystem();
+    const spec = systemAt(this.seed, lock.id);
+    this.hostSpec = spec;
+    this.hostOuterAu = Math.max(
+      1,
+      ...spec.bodies.filter((b) => !b.parent).map((b) => b.orbitRadius),
+    );
+    const root = this.ensureHostRoot();
+    const dRef = UNIVERSE.A_HAB * UNIVERSE.AU_KM;
+    this.hostLight = new THREE.PointLight(
+      new THREE.Color(spec.star.lightColor),
+      2.5 * dRef * dRef * spec.star.luminosity,
+      0,
+      2,
+    );
+    root.add(this.hostLight);
+    this.hostRockGeo = new THREE.SphereGeometry(1, 28, 18);
+    for (const b of spec.bodies) {
+      const group = new THREE.Group();
+      group.scale.setScalar(b.radius);
+      let gasMat: THREE.ShaderMaterial | null = null;
+      if (b.kind === 'gas' && b.gas) {
+        const gg = makeGasGiant(b.gas);
+        group.add(gg.group);
+        gasMat = gg.material;
+      } else {
+        group.add(
+          new THREE.Mesh(
+            this.hostRockGeo,
+            new THREE.MeshLambertMaterial({ color: new THREE.Color(...b.meanColor) }),
+          ),
+        );
+      }
+      root.add(group);
+
+      const orbX = new THREE.Vector3(1, 0, 0);
+      const orbY = new THREE.Vector3(0, 1, 0);
+      let tiltQ = new THREE.Quaternion();
+      if (b.parent) {
+        const parent = this.hostBodies.get(b.parent);
+        if (parent) {
+          tiltQ = parent.tiltQ.clone();
+          orbX.applyQuaternion(tiltQ);
+          orbY.applyQuaternion(tiltQ);
+        }
+      } else if (b.obliquity > 0 || b.node || b.inc || b.peri) {
+        const m = new THREE.Matrix4()
+          .makeRotationZ(b.node)
+          .multiply(new THREE.Matrix4().makeRotationX(b.inc))
+          .multiply(new THREE.Matrix4().makeRotationZ(b.peri));
+        orbX.applyMatrix4(m);
+        orbY.applyMatrix4(m);
+        if (b.obliquity > 0) {
+          tiltQ.setFromAxisAngle(
+            new THREE.Vector3(Math.cos(b.axialAz), Math.sin(b.axialAz), 0),
+            b.obliquity,
+          );
+        }
+      }
+
+      const segs = 96;
+      const pts = new Float32Array(segs * 3);
+      const dispR = b.parent ? b.orbitRadius : b.orbitRadius * UNIVERSE.AU_KM;
+      const semiMinor = dispR * Math.sqrt(1 - b.ecc * b.ecc);
+      for (let i = 0; i < segs; i++) {
+        const E = (i / segs) * 2 * Math.PI;
+        const xo = dispR * (Math.cos(E) - b.ecc);
+        const yo = semiMinor * Math.sin(E);
+        pts[i * 3] = orbX.x * xo + orbY.x * yo;
+        pts[i * 3 + 1] = orbX.y * xo + orbY.y * yo;
+        pts[i * 3 + 2] = orbX.z * xo + orbY.z * yo;
+      }
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+      const orbitLine = new THREE.LineLoop(
+        lineGeo,
+        new THREE.LineBasicMaterial({
+          color: 0x8fa8cc,
+          transparent: true,
+          opacity: b.parent ? 0.08 : 0.11,
+          depthWrite: false,
+        }),
+      );
+      root.add(orbitLine);
+
+      this.hostBodies.set(b.id, {
+        spec: b,
+        group,
+        gasMat,
+        orbitLine,
+        orbX,
+        orbY,
+        tiltQ,
+        pos: new THREE.Vector3(),
+        spinQ: new THREE.Quaternion(),
+      });
+    }
+    this.hideHarvestId(lock.id);
+    this.bakeHostSky();
+  }
+
+  private updateHostBodies(tSys: number, L: number): void {
+    for (const rt of this.hostBodies.values()) {
+      const b = rt.spec;
+      const { xo, yo } = keplerPlane(b.orbitRadius, b.orbitPeriod, b.orbitPhase, b.ecc, tSys);
+      if (b.parent) {
+        const parent = this.hostBodies.get(b.parent);
+        if (!parent) continue;
+        rt.pos.set(
+          parent.pos.x + rt.orbX.x * xo + rt.orbY.x * yo,
+          parent.pos.y + rt.orbX.y * xo + rt.orbY.y * yo,
+          parent.pos.z + rt.orbX.z * xo + rt.orbY.z * yo,
+        );
+        rt.orbitLine?.position.copy(parent.pos);
+      } else {
+        rt.pos.set(
+          (rt.orbX.x * xo + rt.orbY.x * yo) * UNIVERSE.AU_KM,
+          (rt.orbX.y * xo + rt.orbY.y * yo) * UNIVERSE.AU_KM,
+          (rt.orbX.z * xo + rt.orbY.z * yo) * UNIVERSE.AU_KM,
+        );
+      }
+      if (b.tidallyLocked) {
+        const parent = b.parent ? this.hostBodies.get(b.parent) : null;
+        if (parent) this.tmpV2.copy(parent.pos).sub(rt.pos);
+        else this.tmpV2.copy(rt.pos).negate();
+        this.tmpV2.applyQuaternion(this.tmpQ.copy(rt.tiltQ).conjugate());
+        const spin = Math.atan2(this.tmpV2.y, this.tmpV2.x);
+        rt.spinQ.setFromAxisAngle(this.tmpV.set(0, 0, 1), spin);
+      } else {
+        rt.spinQ.setFromAxisAngle(this.tmpV.set(0, 0, 1), (2 * Math.PI * tSys) / b.spinPeriod);
+      }
+      rt.spinQ.premultiply(rt.tiltQ);
+      rt.group.position.copy(rt.pos);
+      rt.group.quaternion.copy(rt.spinQ);
+      if (rt.gasMat) {
+        const aPhys = Math.max(rt.pos.length() / UNIVERSE.AU_KM, 0.02);
+        const qInv = this.tmpQ.copy(rt.spinQ).conjugate();
+        this.tmpV.copy(rt.pos).multiplyScalar(-1).normalize().applyQuaternion(qInv);
+        (rt.gasMat.uniforms.uLightDir.value as THREE.Vector3).copy(this.tmpV);
+        rt.gasMat.uniforms.uSunIrr.value = starIrradianceDisplay(starIrradiance(L, aPhys));
+      }
+    }
+  }
+
+  /**
+   * Angular-size arrival: outer-a attaches systemAt (tier-0 + Kepler),
+   * then the photosphere replaces the harvest pin. One celestial t.
+   */
+  private updateHostArrival(now: number): void {
     const lock = this.hostLock();
     if (!lock) {
-      if (this.hostStar) this.detachHostStar();
+      if (this.hostRoot || this.hostStar) {
+        this.detachHost();
+        this.applyCam();
+      }
       return;
     }
     const cart = galToCart(lock.pos);
@@ -1851,26 +2096,48 @@ export class GalaxyView {
     const dy = cart.y - this.arcCenter.y;
     const dz = cart.z - this.arcCenter.z;
     const dist = Math.hypot(dx, dy, dz);
-    const Rkpc = Math.max(1e-8, lock.star.radius) * UNIVERSE.RSUN_KM / UNIVERSE.KPC_KM;
-    const px = (Rkpc / Math.max(dist, 1e-16)) * this.pxPerRad();
-    if (px < UNIVERSE.STAR_REVEAL_PX) {
-      if (this.hostStar) this.detachHostStar();
+    const pxPer = this.pxPerRad();
+    const starPx =
+      ((Math.max(1e-8, lock.star.radius) * UNIVERSE.RSUN_KM * KM_TO_KPC) / Math.max(dist, 1e-16)) *
+      pxPer;
+    const sysPx =
+      ((UNIVERSE.SYSTEM_REVEAL_A * UNIVERSE.AU_KM * KM_TO_KPC) / Math.max(dist, 1e-16)) * pxPer;
+    const sysOn = this.hostSpec
+      ? sysPx >= UNIVERSE.SYSTEM_REVEAL_PX * 0.6
+      : sysPx >= UNIVERSE.SYSTEM_REVEAL_PX;
+    const starOn = this.hostStar
+      ? starPx >= UNIVERSE.STAR_REVEAL_PX * 0.6
+      : starPx >= UNIVERSE.STAR_REVEAL_PX;
+
+    if (!sysOn && !starOn) {
+      if (this.hostRoot || this.hostStar) {
+        this.detachHost();
+        this.applyCam();
+      }
       return;
     }
-    if (this.hostStarId !== lock.id || !this.hostStar) {
-      this.detachHostStar();
-      const spec = starSpecFromState(lock.star, () => 0.5);
-      this.hostStar = makeStar(spec);
-      this.hostStar.group.scale.setScalar(1 / UNIVERSE.KPC_KM);
-      this.scene.add(this.hostStar.group);
+    if (this.hostStarId !== lock.id && (this.hostRoot || this.hostStar)) this.detachHost();
+
+    if (sysOn && !this.hostSpec) {
+      this.attachHostSystem(lock);
       this.hostStarId = lock.id;
-      this.hideHarvestId(lock.id);
-      this.bakeHostSky();
     }
-    this.hostStar.group.position.set(dx, dy, dz);
-    const camLocal = new THREE.Vector3();
-    this.hostStar.group.worldToLocal(camLocal.copy(this.camera.position));
-    this.hostStar.update(camLocal, now * 0.001, new THREE.Vector3(1, 1, 1));
+    if (!sysOn && this.hostSpec) this.detachHostSystem();
+
+    if (starOn && !this.hostStar) this.attachHostFurnace(lock);
+    if (!starOn && this.hostStar) this.detachHostFurnace();
+
+    const root = this.hostRoot;
+    if (root) root.position.set(dx, dy, dz);
+
+    const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
+    if (this.hostSpec) this.updateHostBodies(tSys, this.hostSpec.star.luminosity);
+    if (this.hostStar && root) {
+      const camLocal = new THREE.Vector3();
+      this.hostStar.group.worldToLocal(camLocal.copy(this.camera.position));
+      this.hostStar.update(camLocal, tSys, new THREE.Vector3(1, 1, 1));
+    }
+    this.applyCam();
     this.wake(2);
   }
 
@@ -2513,7 +2780,7 @@ export class GalaxyView {
     this.pickRing.rotation.z = t * 0.35;
     this.hereRing.rotation.z = t * -0.22;
 
-    this.updateHostStar(now);
+    this.updateHostArrival(now);
 
     // One scene, one pass, straight to the canvas: the void is
     // black (vacuum emits nothing), self-extincted background

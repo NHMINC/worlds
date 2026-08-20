@@ -343,9 +343,15 @@ export const UNIVERSE = {
   /**
    * Approach: v = min(GALAXY_WARP, ARRIVE_K · dist). The locked host
    * becomes a furnace when its photosphere exceeds STAR_REVEAL_PX.
+   * The system (outer planet a) attaches at SYSTEM_REVEAL_PX — same
+   * angular-size test, Kepler as f(spec, t). Set course still owns
+   * orbit / surface until one viewer.
    */
   ARRIVE_K: 0.35,
   STAR_REVEAL_PX: 3,
+  SYSTEM_REVEAL_PX: 3,
+  /** Outer-a used for the system angular test (AU). The rim, not a stretch. */
+  SYSTEM_REVEAL_A: 30,
 
   /**
    * The shared galaxy. One seed, one SBbc (grand-design barred spiral).

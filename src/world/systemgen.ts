@@ -180,6 +180,30 @@ function keplerMoonSec(aKm: number, parentMassKg: number): number {
   return 2 * Math.PI * Math.sqrt((a * a * a) / mu);
 }
 
+/** In-plane Kepler pose (AU for planets, km for moons). One law, two viewers. */
+export function keplerPlane(
+  orbitRadius: number,
+  orbitPeriod: number,
+  orbitPhase: number,
+  ecc: number,
+  t: number,
+): { xo: number; yo: number } {
+  const P = Math.max(1e-6, orbitPeriod);
+  if (ecc > 0) {
+    const M = orbitPhase + (2 * Math.PI * t) / P;
+    let E = M + ecc * Math.sin(M);
+    for (let i = 0; i < 3; i++) {
+      E -= (E - ecc * Math.sin(E) - M) / (1 - ecc * Math.cos(E));
+    }
+    return {
+      xo: orbitRadius * (Math.cos(E) - ecc),
+      yo: orbitRadius * Math.sqrt(1 - ecc * ecc) * Math.sin(E),
+    };
+  }
+  const oa = orbitPhase + (2 * Math.PI * t) / P;
+  return { xo: Math.cos(oa) * orbitRadius, yo: Math.sin(oa) * orbitRadius };
+}
+
 // ---------------------------------------------------------------- generator
 
 /** Private-bottle star dice. Stream must stay bit-identical for a given seed. */
