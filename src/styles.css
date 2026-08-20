@@ -1152,6 +1152,10 @@ body,
   letter-spacing: 0.04em;
   cursor: pointer;
 }
+i.gx-plate-go {
+  display: inline-block;
+  cursor: default;
+}
 
 .galaxy-bottom.is-eng {
   left: 16px;

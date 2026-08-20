@@ -10,7 +10,7 @@
  * Home parks on the loaded star; Back restores the previous pose.
  */
 import * as THREE from 'three';
-import { UNIVERSE, starIrradiance, starIrradianceDisplay } from '../world/physics';
+import { UNIVERSE } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
@@ -35,7 +35,7 @@ import {
   glowRadiusKpc,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
-import { keplerPlane, systemAt, type BodySpec, type SystemSpec } from '../world/systemgen';
+import { systemAt, starSpecFromState } from '../world/systemgen';
 import {
   silhouetteCloud,
   nebulaCloud,
@@ -48,9 +48,7 @@ import {
 import { SHAPE_GLSL } from '../world/skyShape';
 import type { DustVolume } from '../world/dustVolume';
 import { PerfMeter } from './perfHud';
-import { makeGasGiant } from './gasGiant';
 import { makeStar, type StarView } from './star';
-import { starSpecFromState } from '../world/systemgen';
 import { prepareUniverse } from '../world/universePrep';
 import {
   COSMIC_STAR_PIN,
@@ -226,18 +224,6 @@ export type GalaxyPreset = 'face' | 'edge' | 'home' | 'back';
 
 /** Catalog kpc per kilometre — host meshes live in km under this scale. */
 const KM_TO_KPC = 1 / UNIVERSE.KPC_KM;
-
-interface HostBody {
-  spec: BodySpec;
-  group: THREE.Group;
-  gasMat: THREE.ShaderMaterial | null;
-  orbitLine: THREE.LineLoop | null;
-  orbX: THREE.Vector3;
-  orbY: THREE.Vector3;
-  tiltQ: THREE.Quaternion;
-  pos: THREE.Vector3;
-  spinQ: THREE.Quaternion;
-}
 
 interface BubblePose {
   x: number;
@@ -595,6 +581,8 @@ export interface GalaxyFrame {
   population: number;
   /** Most-centred star in the sight, when close enough. */
   focus: GalaxyFocus | null;
+  /** Held Set-course star (plate stays on it). */
+  course: GalaxyFocus | null;
   /** True while warp is latched on (Stop). */
   warp: boolean;
   /** Luminous-tail backdrop points currently on the GPU (0 if not minted). */
@@ -717,11 +705,10 @@ export class GalaxyView {
   /**
    * Set course = a heading hold: keep the nose on this star while
    * flying. A look drag releases it (the pilot has the stick); a
-   * teleport (enterRegion) releases it; it completes at closest
-   * approach inside the light-year bubble.
+   * teleport (enterRegion) releases it. Warp parks at ARRIVE_FILL.
    */
   private courseObj: GalaxyObject | null = null;
-  private coursePrevD = Infinity;
+  private courseHud: GalaxyFocus | null = null;
   /**
    * Close-approach subject. Latched when the course, reticle, or
    * selected star comes inside ARRIVE_RANGE_LY; released when the
@@ -739,15 +726,8 @@ export class GalaxyView {
   private readonly hostScene = new THREE.Scene();
   /** Local km frame at the locked host, scaled into catalog kpc. */
   private hostRoot: THREE.Group | null = null;
-  private hostSpec: SystemSpec | null = null;
-  private hostBodies = new Map<string, HostBody>();
-  private hostRockGeo: THREE.SphereGeometry | null = null;
-  private hostLight: THREE.PointLight | null = null;
   private hostOuterAu = 1;
   private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
-  private readonly tmpV = new THREE.Vector3();
-  private readonly tmpV2 = new THREE.Vector3();
-  private readonly tmpQ = new THREE.Quaternion();
 
   constructor(
     canvas: HTMLCanvasElement,
@@ -855,6 +835,7 @@ export class GalaxyView {
     this.objects = [];
     this.resetThrust();
     this.courseObj = null;
+    this.courseHud = null;
 
     this.arcPos.set(0, 0, 0);
     const glen = Math.hypot(x, z);
@@ -1437,19 +1418,37 @@ export class GalaxyView {
 
   /**
    * Set course: hold the heading on a star. The nose eases onto the
-   * target at ARRIVE_HOLD and stays there while flying — warp, the
-   * fence, and the flythrough are unchanged laws. A look drag hands
-   * the stick back; the hold completes at closest approach.
+   * target at ARRIVE_HOLD and stays there while flying. A look drag
+   * hands the stick back. Warp parks when the disk fills the view.
    */
   setCourse(obj: GalaxyObject): void {
     if (this.mode !== 'region') return;
     this.courseObj = obj;
-    this.coursePrevD = Infinity;
+    const brief = this.briefFor(obj);
+    const st = obj.star;
+    this.courseHud = {
+      id: obj.id,
+      name: brief.name,
+      cls: classifyStar(st),
+      phase: st.phase.replace(/_/g, ' '),
+      planets: brief.planets,
+      moons: brief.moons,
+      life: brief.life,
+      dark: st.phase.includes('dwarf') || st.luminosity < 0.05,
+      x: 0.5,
+      y: 0.5,
+      dist: this.arriveDist(obj),
+    };
     this.select(null);
     this.wake();
   }
 
-  /** Ease the nose onto the course star; release at closest approach. */
+  private clearCourse(): void {
+    this.courseObj = null;
+    this.courseHud = null;
+  }
+
+  /** Ease the nose onto the course star and keep it there. */
   private holdCourse(dt: number): void {
     const c = this.courseObj;
     if (!c || this.mode !== 'region') return;
@@ -1459,16 +1458,7 @@ export class GalaxyView {
     const dz = p.z - this.arcCenter.z;
     const d = Math.hypot(dx, dy, dz);
     if (d < 1e-15) return;
-    // Course complete at closest approach inside the light-year
-    // bubble — dead-centre and a near miss both count as arrival,
-    // and the hold must not swing the nose backwards after the pass.
-    if (d <= UNIVERSE.ARRIVE_RANGE_KPC) {
-      if (d > this.coursePrevD) {
-        this.courseObj = null;
-        return;
-      }
-      this.coursePrevD = d;
-    }
+    if (this.courseHud) this.courseHud.dist = d;
     const tgtYaw = Math.atan2(dx, dz);
     const tgtPitch = THREE.MathUtils.clamp(
       Math.asin(THREE.MathUtils.clamp(dy / d, -1, 1)),
@@ -1896,25 +1886,9 @@ export class GalaxyView {
     );
   }
 
-  /**
-   * Keep or acquire the close-approach subject. Retained while the
-   * camera stays inside its light-year bubble; acquired only from
-   * the crosshair (reticle focus, falling back to the tapped
-   * selection). No subject means no clamp and no attach — warp
-   * between the stars is never slowed by a star you are not aiming at.
-   */
+  /** Course lock is the only close-approach subject. */
   private updateArriveSubject(): void {
-    const range = UNIVERSE.ARRIVE_RANGE_KPC;
-    if (this.hostObj) {
-      if (this.arriveDist(this.hostObj) <= range) return;
-      this.hostObj = null;
-    }
-    for (const cand of [this.courseObj, this.focusObj, this.selected]) {
-      if (cand && this.arriveDist(cand) <= range) {
-        this.hostObj = cand;
-        return;
-      }
-    }
+    this.hostObj = this.courseObj;
   }
 
   private detachHostStar(): void {
@@ -1924,12 +1898,12 @@ export class GalaxyView {
 
   private detachHost(): void {
     this.detachHostFurnace();
-    this.detachHostSystem();
     if (this.hostRoot) {
       this.hostScene.remove(this.hostRoot);
       this.hostRoot = null;
     }
     this.hostStarId = -1;
+    this.hostOuterAu = 1;
   }
 
   private detachHostFurnace(): void {
@@ -1939,33 +1913,6 @@ export class GalaxyView {
     this.hostStar = null;
     // The photosphere is gone: the harvest pin is the star again.
     this.applyStarVis();
-  }
-
-  private detachHostSystem(): void {
-    for (const rt of this.hostBodies.values()) {
-      rt.group.removeFromParent();
-      rt.group.traverse((o) => {
-        const mesh = o as THREE.Mesh;
-        if (mesh.geometry && mesh.geometry !== this.hostRockGeo) mesh.geometry.dispose();
-        const mat = mesh.material;
-        if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
-        else if (mat) (mat as THREE.Material).dispose();
-      });
-      if (rt.orbitLine) {
-        rt.orbitLine.removeFromParent();
-        rt.orbitLine.geometry.dispose();
-        (rt.orbitLine.material as THREE.Material).dispose();
-      }
-    }
-    this.hostBodies.clear();
-    this.hostSpec = null;
-    if (this.hostLight) {
-      this.hostLight.removeFromParent();
-      this.hostLight = null;
-    }
-    this.hostRockGeo?.dispose();
-    this.hostRockGeo = null;
-    this.hostOuterAu = 1;
   }
 
   private ensureHostRoot(): THREE.Group {
@@ -1991,164 +1938,19 @@ export class GalaxyView {
 
   private attachHostFurnace(lock: GalaxyObject): void {
     this.detachHostFurnace();
-    const spec = this.hostSpec?.star ?? starSpecFromState(lock.star, () => 0.5);
+    const spec = starSpecFromState(lock.star, () => 0.5);
     this.hostStar = makeStar(spec);
     this.ensureHostRoot().add(this.hostStar.group);
-    if (this.hostLight) this.hostStar.light.intensity = 0;
+    this.hostStar.light.intensity = 0;
     this.hostStarId = lock.id;
     // The photosphere replaces the pin — the rest of the sky stays live.
     this.hideHarvestId(lock.id);
   }
 
-  private attachHostSystem(lock: GalaxyObject): void {
-    this.detachHostSystem();
-    const spec = systemAt(this.seed, lock.id);
-    this.hostSpec = spec;
-    this.hostOuterAu = Math.max(
-      1,
-      ...spec.bodies.filter((b) => !b.parent).map((b) => b.orbitRadius),
-    );
-    const root = this.ensureHostRoot();
-    const dRef = UNIVERSE.A_HAB * UNIVERSE.AU_KM;
-    this.hostLight = new THREE.PointLight(
-      new THREE.Color(spec.star.lightColor),
-      2.5 * dRef * dRef * spec.star.luminosity,
-      0,
-      2,
-    );
-    root.add(this.hostLight);
-    this.hostRockGeo = new THREE.SphereGeometry(1, 28, 18);
-    for (const b of spec.bodies) {
-      const group = new THREE.Group();
-      group.scale.setScalar(b.radius);
-      let gasMat: THREE.ShaderMaterial | null = null;
-      if (b.kind === 'gas' && b.gas) {
-        const gg = makeGasGiant(b.gas);
-        group.add(gg.group);
-        gasMat = gg.material;
-      } else {
-        group.add(
-          new THREE.Mesh(
-            this.hostRockGeo,
-            new THREE.MeshLambertMaterial({ color: new THREE.Color(...b.meanColor) }),
-          ),
-        );
-      }
-      root.add(group);
-
-      const orbX = new THREE.Vector3(1, 0, 0);
-      const orbY = new THREE.Vector3(0, 1, 0);
-      let tiltQ = new THREE.Quaternion();
-      if (b.parent) {
-        const parent = this.hostBodies.get(b.parent);
-        if (parent) {
-          tiltQ = parent.tiltQ.clone();
-          orbX.applyQuaternion(tiltQ);
-          orbY.applyQuaternion(tiltQ);
-        }
-      } else if (b.obliquity > 0 || b.node || b.inc || b.peri) {
-        const m = new THREE.Matrix4()
-          .makeRotationZ(b.node)
-          .multiply(new THREE.Matrix4().makeRotationX(b.inc))
-          .multiply(new THREE.Matrix4().makeRotationZ(b.peri));
-        orbX.applyMatrix4(m);
-        orbY.applyMatrix4(m);
-        if (b.obliquity > 0) {
-          tiltQ.setFromAxisAngle(
-            new THREE.Vector3(Math.cos(b.axialAz), Math.sin(b.axialAz), 0),
-            b.obliquity,
-          );
-        }
-      }
-
-      const segs = 96;
-      const pts = new Float32Array(segs * 3);
-      const dispR = b.parent ? b.orbitRadius : b.orbitRadius * UNIVERSE.AU_KM;
-      const semiMinor = dispR * Math.sqrt(1 - b.ecc * b.ecc);
-      for (let i = 0; i < segs; i++) {
-        const E = (i / segs) * 2 * Math.PI;
-        const xo = dispR * (Math.cos(E) - b.ecc);
-        const yo = semiMinor * Math.sin(E);
-        pts[i * 3] = orbX.x * xo + orbY.x * yo;
-        pts[i * 3 + 1] = orbX.y * xo + orbY.y * yo;
-        pts[i * 3 + 2] = orbX.z * xo + orbY.z * yo;
-      }
-      const lineGeo = new THREE.BufferGeometry();
-      lineGeo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
-      const orbitLine = new THREE.LineLoop(
-        lineGeo,
-        new THREE.LineBasicMaterial({
-          color: 0x8fa8cc,
-          transparent: true,
-          opacity: b.parent ? 0.08 : 0.11,
-          depthWrite: false,
-        }),
-      );
-      root.add(orbitLine);
-
-      this.hostBodies.set(b.id, {
-        spec: b,
-        group,
-        gasMat,
-        orbitLine,
-        orbX,
-        orbY,
-        tiltQ,
-        pos: new THREE.Vector3(),
-        spinQ: new THREE.Quaternion(),
-      });
-    }
-    // The pin stays until the photosphere replaces it (attachHostFurnace):
-    // between the system reveal and the star reveal the star is still
-    // the pin, and the sky around it never blanks.
-  }
-
-  private updateHostBodies(tSys: number, L: number): void {
-    for (const rt of this.hostBodies.values()) {
-      const b = rt.spec;
-      const { xo, yo } = keplerPlane(b.orbitRadius, b.orbitPeriod, b.orbitPhase, b.ecc, tSys);
-      if (b.parent) {
-        const parent = this.hostBodies.get(b.parent);
-        if (!parent) continue;
-        rt.pos.set(
-          parent.pos.x + rt.orbX.x * xo + rt.orbY.x * yo,
-          parent.pos.y + rt.orbX.y * xo + rt.orbY.y * yo,
-          parent.pos.z + rt.orbX.z * xo + rt.orbY.z * yo,
-        );
-        rt.orbitLine?.position.copy(parent.pos);
-      } else {
-        rt.pos.set(
-          (rt.orbX.x * xo + rt.orbY.x * yo) * UNIVERSE.AU_KM,
-          (rt.orbX.y * xo + rt.orbY.y * yo) * UNIVERSE.AU_KM,
-          (rt.orbX.z * xo + rt.orbY.z * yo) * UNIVERSE.AU_KM,
-        );
-      }
-      if (b.tidallyLocked) {
-        const parent = b.parent ? this.hostBodies.get(b.parent) : null;
-        if (parent) this.tmpV2.copy(parent.pos).sub(rt.pos);
-        else this.tmpV2.copy(rt.pos).negate();
-        this.tmpV2.applyQuaternion(this.tmpQ.copy(rt.tiltQ).conjugate());
-        const spin = Math.atan2(this.tmpV2.y, this.tmpV2.x);
-        rt.spinQ.setFromAxisAngle(this.tmpV.set(0, 0, 1), spin);
-      } else {
-        rt.spinQ.setFromAxisAngle(this.tmpV.set(0, 0, 1), (2 * Math.PI * tSys) / b.spinPeriod);
-      }
-      rt.spinQ.premultiply(rt.tiltQ);
-      rt.group.position.copy(rt.pos);
-      rt.group.quaternion.copy(rt.spinQ);
-      if (rt.gasMat) {
-        const aPhys = Math.max(rt.pos.length() / UNIVERSE.AU_KM, 0.02);
-        const qInv = this.tmpQ.copy(rt.spinQ).conjugate();
-        this.tmpV.copy(rt.pos).multiplyScalar(-1).normalize().applyQuaternion(qInv);
-        (rt.gasMat.uniforms.uLightDir.value as THREE.Vector3).copy(this.tmpV);
-        rt.gasMat.uniforms.uSunIrr.value = starIrradianceDisplay(starIrradiance(L, aPhys));
-      }
-    }
-  }
-
   /**
-   * Angular-size arrival: outer-a attaches systemAt (tier-0 + Kepler),
-   * then the photosphere replaces the harvest pin. One celestial t.
+   * Course-lock arrival: the photosphere replaces the harvest pin at
+   * STAR_REVEAL_PX, or sooner if float32 catalog positions would hop.
+   * Same-frame hide + attach. No systemAt worlds on this path.
    */
   private updateHostArrival(now: number): void {
     this.updateArriveSubject();
@@ -2169,16 +1971,12 @@ export class GalaxyView {
     const starPx =
       ((Math.max(1e-8, lock.star.radius) * UNIVERSE.RSUN_KM * KM_TO_KPC) / Math.max(dist, 1e-16)) *
       pxPer;
-    const sysPx =
-      ((UNIVERSE.SYSTEM_REVEAL_A * UNIVERSE.AU_KM * KM_TO_KPC) / Math.max(dist, 1e-16)) * pxPer;
-    const sysOn = this.hostSpec
-      ? sysPx >= UNIVERSE.SYSTEM_REVEAL_PX * 0.6
-      : sysPx >= UNIVERSE.SYSTEM_REVEAL_PX;
+    const hop = dist <= UNIVERSE.ARRIVE_PIN_KPC;
     const starOn = this.hostStar
-      ? starPx >= UNIVERSE.STAR_REVEAL_PX * 0.6
-      : starPx >= UNIVERSE.STAR_REVEAL_PX;
+      ? starPx >= UNIVERSE.STAR_REVEAL_PX * 0.6 || hop
+      : starPx >= UNIVERSE.STAR_REVEAL_PX || hop;
 
-    if (!sysOn && !starOn) {
+    if (!starOn) {
       if (this.hostRoot || this.hostStar) {
         this.detachHost();
         this.applyCam();
@@ -2186,21 +1984,12 @@ export class GalaxyView {
       return;
     }
     if (this.hostStarId !== lock.id && (this.hostRoot || this.hostStar)) this.detachHost();
-
-    if (sysOn && !this.hostSpec) {
-      this.attachHostSystem(lock);
-      this.hostStarId = lock.id;
-    }
-    if (!sysOn && this.hostSpec) this.detachHostSystem();
-
-    if (starOn && !this.hostStar) this.attachHostFurnace(lock);
-    if (!starOn && this.hostStar) this.detachHostFurnace();
+    if (!this.hostStar) this.attachHostFurnace(lock);
 
     const root = this.hostRoot;
     if (root) root.position.set(dx, dy, dz);
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
-    if (this.hostSpec) this.updateHostBodies(tSys, this.hostSpec.star.luminosity);
     if (root) root.updateMatrixWorld(true);
     if (this.hostStar && root) {
       const camLocal = new THREE.Vector3();
@@ -2457,7 +2246,7 @@ export class GalaxyView {
     }
     if (this.mode === 'region') {
       // A look drag is the pilot taking the stick: the course hold lets go.
-      this.courseObj = null;
+      this.clearCourse();
       this.arcYaw -= dx * 0.005;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
       this.applyCam();
@@ -2545,19 +2334,39 @@ export class GalaxyView {
     return false;
   }
 
-  /** Soft core (kpc): a few stellar radii so v stays finite through the photosphere. */
-  private arriveSoftKpc(obj: GalaxyObject): number {
-    return (
-      UNIVERSE.ARRIVE_SOFT * Math.max(1e-8, obj.star.radius) * UNIVERSE.RSUN_KM * KM_TO_KPC
-    );
+  /** Catalog distance at which the object's disk covers ARRIVE_FILL of the vertical FOV. */
+  private parkKpc(obj: GalaxyObject): number {
+    const R = Math.max(1e-8, obj.star.radius) * UNIVERSE.RSUN_KM * KM_TO_KPC;
+    const fov = (this.camera.fov * Math.PI) / 180;
+    const half = 0.5 * UNIVERSE.ARRIVE_FILL * fov;
+    return R / Math.max(1e-8, Math.tan(half));
+  }
+
+  private moveTowardPark(obj: GalaxyObject, along: number): boolean {
+    const park = this.parkKpc(obj);
+    const d = this.arriveDist(obj);
+    if (d <= park) {
+      this.setWarp(false);
+      return true;
+    }
+    if (along < d - park) return false;
+    const c = galToCart(obj.pos);
+    const dx = c.x - this.arcCenter.x;
+    const dy = c.y - this.arcCenter.y;
+    const dz = c.z - this.arcCenter.z;
+    const remain = d - park;
+    const inv = 1 / d;
+    this.moveBubble(dx * inv * remain, dy * inv * remain, dz * inv * remain);
+    this.setWarp(false);
+    return true;
   }
 
   /**
    * Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop.
-   * Inside a subject's light-year bubble the ship runs
-   * v = ARRIVE_K · (d + soft) — constant perceptual zoom in, finite
-   * through the core, exponential climb back out. Everywhere else
-   * warp is unclamped.
+   * On a locked course, inside 1 ly the rate is ARRIVE_WARP of
+   * GALAXY_WARP (still warp). A quarter-warp frame is several ly —
+   * we substep onto the fill park and latch Stop. No course: full
+   * unclamped warp.
    */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
@@ -2569,50 +2378,37 @@ export class GalaxyView {
     this.orientArc();
     this.updateArriveSubject();
     let v = UNIVERSE.GALAXY_WARP;
-    const subj = this.hostObj;
-    if (subj) {
-      v = Math.min(
-        v,
-        UNIVERSE.ARRIVE_K * (this.arriveDist(subj) + this.arriveSoftKpc(subj)),
-      );
+    const course = this.courseObj;
+    if (course && this.arriveDist(course) <= UNIVERSE.ARRIVE_RANGE_KPC) {
+      v *= UNIVERSE.ARRIVE_WARP;
     }
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
     const step = this.thrustSpeed * dt;
-    if (!subj) {
-      // Fence crossing: one warp frame is ~20 ly, far wider than the
-      // bubble, so an aimed star must be entered by substep — warp
-      // up to the fence, latch, and spend the rest of the frame at
-      // the clamped rate — or the frame jumps clean past the star.
-      const cand = this.courseObj ?? this.focusObj ?? this.selected;
-      if (cand) {
-        const range = UNIVERSE.ARRIVE_RANGE_KPC;
-        const c = galToCart(cand.pos);
-        const dx = c.x - this.arcCenter.x;
-        const dy = c.y - this.arcCenter.y;
-        const dz = c.z - this.arcCenter.z;
-        const d = Math.hypot(dx, dy, dz);
-        const tCa = dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z;
-        const miss2 = d * d - tCa * tCa;
-        if (d > range && tCa > 0 && miss2 < range * range) {
-          const tEnter = tCa - Math.sqrt(range * range - miss2);
-          if (tEnter <= step) {
-            this.moveBubble(
-              this.arcFwd.x * tEnter,
-              this.arcFwd.y * tEnter,
-              this.arcFwd.z * tEnter,
-            );
-            this.hostObj = cand;
-            const vIn = UNIVERSE.ARRIVE_K * (range + this.arriveSoftKpc(cand));
-            this.thrustSpeed = vIn;
-            const left = Math.max(0, dt - tEnter / v) * vIn;
-            this.moveBubble(
-              this.arcFwd.x * left,
-              this.arcFwd.y * left,
-              this.arcFwd.z * left,
-            );
-            return;
-          }
+    if (course && this.moveTowardPark(course, step)) return;
+    if (course && this.arriveDist(course) > UNIVERSE.ARRIVE_RANGE_KPC) {
+      const range = UNIVERSE.ARRIVE_RANGE_KPC;
+      const c = galToCart(course.pos);
+      const dx = c.x - this.arcCenter.x;
+      const dy = c.y - this.arcCenter.y;
+      const dz = c.z - this.arcCenter.z;
+      const d = Math.hypot(dx, dy, dz);
+      const tCa = dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z;
+      const miss2 = d * d - tCa * tCa;
+      if (tCa > 0 && miss2 < range * range) {
+        const tEnter = tCa - Math.sqrt(range * range - miss2);
+        if (tEnter <= step) {
+          this.moveBubble(
+            this.arcFwd.x * tEnter,
+            this.arcFwd.y * tEnter,
+            this.arcFwd.z * tEnter,
+          );
+          const vIn = UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP;
+          this.thrustSpeed = vIn;
+          const left = Math.max(0, dt - tEnter / v) * vIn;
+          if (this.moveTowardPark(course, left)) return;
+          this.moveBubble(this.arcFwd.x * left, this.arcFwd.y * left, this.arcFwd.z * left);
+          return;
         }
       }
     }
@@ -2703,6 +2499,7 @@ export class GalaxyView {
         const d2 = dx * dx + dy * dy + dz * dz;
         if (d2 < 1e-12) continue;
         const dist = Math.sqrt(d2);
+        if (dist > UNIVERSE.AIM_RANGE_KPC) continue;
         const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
         if (!aimLocks(lum[i], dist, dim)) continue;
         grown++;
@@ -2941,6 +2738,7 @@ export class GalaxyView {
       sector: this.regionLabel,
       population: this.sectorPop,
       focus: this.focusHud,
+      course: this.courseHud,
       warp: this.thrustOn,
       backdrop: this.shownCount(),
     });

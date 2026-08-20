@@ -341,34 +341,33 @@ export const UNIVERSE = {
   WAVE_TIDE: 0.12,
 
   /**
-   * Close approach is crosshair + range, not a galaxy speed law.
-   * The reticle star (or the selected star) inside ARRIVE_RANGE_LY
-   * latches as the subject; warp drops out at that fence and the
-   * ship runs v = ARRIVE_K · (d + ARRIVE_SOFT · R★). v ∝ d is a
-   * constant perceptual zoom (the disk swells at a steady rate);
-   * the soft core (a few stellar radii) keeps v finite through the
-   * photosphere so a flythrough ends on the far side, not in a
-   * Zeno stall. Between the stars warp is never clamped — a star
-   * you are not aiming at cannot slow you. The photosphere replaces
-   * the harvest pin at STAR_REVEAL_PX; the system (outer planet a)
-   * attaches at SYSTEM_REVEAL_PX — same angular-size test, Kepler
-   * as f(spec, t). Set course is a heading hold: ease the nose onto
-   * the picked star at ARRIVE_HOLD (1/s) and keep it there; a look
-   * drag hands the stick back, and the hold completes at closest
-   * approach. It does not open a system.
+   * Course lock. The reticle plate only names an object inside
+   * AIM_RANGE_KPC (a neighbourhood, not the far disk). Set course
+   * is a heading hold at ARRIVE_HOLD (1/s); a look drag hands the
+   * stick back. Warp stays warp: full GALAXY_WARP, then ARRIVE_WARP
+   * of that rate inside ARRIVE_RANGE_LY. A quarter-warp frame is
+   * still several ly — cruise substeps onto the park. The harvest
+   * pin swaps for the photosphere at STAR_REVEAL_PX (and as soon as
+   * float32 catalog positions would hop, ARRIVE_PIN_KPC). Warp
+   * latches Stop when the disk covers ARRIVE_FILL of the vertical
+   * field. It does not open a system.
    */
-  ARRIVE_K: 1.2,
-  ARRIVE_SOFT: 4,
+  AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
+  ARRIVE_WARP: 0.25,
+  ARRIVE_FILL: 0.22,
   ARRIVE_RANGE_LY: 1,
-  /** The fence in catalog units. 1 kpc = 3261.56 ly. */
+  /** The 1 ly fence in catalog units. 1 kpc = 3261.56 ly. */
   get ARRIVE_RANGE_KPC(): number {
     return this.ARRIVE_RANGE_LY / 3261.56;
   },
+  /**
+   * Harvest pins are absolute kpc in float32. Around the solar
+   * circle the ULP is ~200 AU; inside this distance the pin hops
+   * and the furnace must already be the star.
+   */
+  ARRIVE_PIN_KPC: 1e-5,
   STAR_REVEAL_PX: 3,
-  SYSTEM_REVEAL_PX: 3,
-  /** Outer-a used for the system angular test (AU). The rim, not a stretch. */
-  SYSTEM_REVEAL_A: 30,
 
   /**
    * The shared galaxy. One seed, one SBbc (grand-design barred spiral).

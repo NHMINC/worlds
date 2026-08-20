@@ -63,6 +63,7 @@ export function GalaxyExplorer(props: Props) {
     sector: null,
     population: 0,
     focus: null,
+    course: null,
     warp: false,
     backdrop: 0,
   });
@@ -94,6 +95,7 @@ export function GalaxyExplorer(props: Props) {
               prev.sector !== f.sector ||
               prev.warp !== f.warp ||
               prev.backdrop !== f.backdrop ||
+              prev.course?.id !== f.course?.id ||
               prev.focus?.id !== f.focus?.id ||
               (f.focus != null &&
                 (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
@@ -303,27 +305,34 @@ export function GalaxyExplorer(props: Props) {
             {frame.warp ? 'Stop' : 'Warp'}
           </button>
         )}
-        {inRegion && !engineer && frame.focus && (
+        {inRegion && !engineer && (frame.course || frame.focus) && (
           <div className="gx-plate">
-            <b>{frame.focus.name}</b>
+            <b>{(frame.course ?? frame.focus)!.name}</b>
             <em>
-              {frame.focus.cls} · {frame.focus.phase}
+              {(frame.course ?? frame.focus)!.cls} · {(frame.course ?? frame.focus)!.phase}
             </em>
             <i>
-              {frame.focus.planets} planet{frame.focus.planets === 1 ? '' : 's'}
-              {frame.focus.moons ? ` · ${frame.focus.moons} moon${frame.focus.moons === 1 ? '' : 's'}` : ''}
-              {frame.focus.life ? ' · life' : ''}
+              {(frame.course ?? frame.focus)!.planets} planet
+              {(frame.course ?? frame.focus)!.planets === 1 ? '' : 's'}
+              {(frame.course ?? frame.focus)!.moons
+                ? ` · ${(frame.course ?? frame.focus)!.moons} moon${(frame.course ?? frame.focus)!.moons === 1 ? '' : 's'}`
+                : ''}
+              {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
             </i>
-            <button
-              type="button"
-              className="gx-plate-go"
-              onClick={() => {
-                const o = viewRef.current?.focusedObject();
-                if (o) viewRef.current?.setCourse(o);
-              }}
-            >
-              Set course
-            </button>
+            {frame.course ? (
+              <i className="gx-plate-go">Course Locked</i>
+            ) : (
+              <button
+                type="button"
+                className="gx-plate-go"
+                onClick={() => {
+                  const o = viewRef.current?.focusedObject();
+                  if (o) viewRef.current?.setCourse(o);
+                }}
+              >
+                Set course
+              </button>
+            )}
           </div>
         )}
       </div>

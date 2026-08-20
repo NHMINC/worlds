@@ -102,22 +102,20 @@ toy — Godus blocks on a real-sized globe.
   spin-aligned dipole on every body (a compass works); orbits are stable
   by fiat; we do not integrate an N-body galaxy for 10 Gyr (Milky Way
   density field + IMF + closed-form stellar clock instead); interstellar
-  travel is warp at `GALAXY_WARP`, never clamped between the stars —
-  close approach is crosshair + range, not a galaxy speed law: the
-  reticle (or selected) star inside `ARRIVE_RANGE_LY` latches as the
-  subject and warp drops out at that fence into
-  `v = ARRIVE_K · (d + ARRIVE_SOFT · R★)` (v ∝ d is a steady
-  perceptual zoom; the soft core keeps a flythrough finite, out the
-  far side, not a Zeno stall); the outer orbit attaches `systemAt`
-  when it covers `SYSTEM_REVEAL_PX` (Kepler `f(spec, t)`, tier-0
-  globes); the photosphere replaces the harvest pin at
-  `STAR_REVEAL_PX`; the close star and its worlds draw as a second
-  AU-scale depth pass over the live galaxy — the sky never bakes,
-  blanks, or switches environment, and the controls never change;
-  set course is a heading hold (`ARRIVE_HOLD`):
-  it eases the nose onto the picked star and keeps it there — a
-  look drag hands the stick back, and the hold completes at
-  closest approach. It does not open a system; landing on a world
+  travel is warp at `GALAXY_WARP`, never clamped between the stars.
+  The reticle plate only names an object inside `AIM_RANGE_KPC`
+  (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
+  reads Course Locked; a look drag hands the stick back. On a
+  locked course warp stays warp — full rate, then `ARRIVE_WARP`
+  (0.25) inside `ARRIVE_RANGE_LY`; a quarter-warp frame is still
+  several ly, so cruise substeps onto the park. The harvest pin
+  swaps for the photosphere at `STAR_REVEAL_PX` (or at
+  `ARRIVE_PIN_KPC` when float32 catalog positions would hop);
+  warp latches Stop when the disk covers `ARRIVE_FILL` of the
+  vertical field. The close star draws as a second AU-scale depth
+  pass over the live galaxy — the sky never bakes, blanks, or
+  switches environment, and the controls never change. It does
+  not open a system; landing on a world
   waits for the solar-system step; short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -467,11 +465,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   quietly unless the nose points inward. A tap, not a hold.
   Drag looks. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
-  single-finger touch. A/D still slide. Warping at a star on the
-  crosshair drops out of warp at its `ARRIVE_RANGE_LY` fence
-  (entered by substep — a warp frame is wider than the bubble)
-  and rides `ARRIVE_K` in, through, and back out; leaving the
-  bubble restores full warp. Stars you are not aiming at never
+  single-finger touch.   A/D still slide. The sight plate only locks an object inside
+  `AIM_RANGE_KPC`. Set course holds the heading; inside 1 ly
+  warp is `ARRIVE_WARP` of the cruise (still warp) and substeps
+  onto the `ARRIVE_FILL` park. Stars you are not aiming at never
   slow the ship.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
