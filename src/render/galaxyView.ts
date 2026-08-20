@@ -1880,11 +1880,16 @@ export class GalaxyView {
   }
 
   /** Ahead / astern. Only while stopped — a running warp keeps the gear. */
-  toggleGear(): void {
+  setGear(astern: boolean): void {
     if (this.mode !== 'region' || this.thrustOn) return;
-    this.astern = !this.astern;
+    if (this.astern === astern) return;
+    this.astern = astern;
     this.idle = 0;
     this.wake();
+  }
+
+  toggleGear(): void {
+    this.setGear(!this.astern);
   }
 
   warping(): boolean {
@@ -2403,12 +2408,27 @@ export class GalaxyView {
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (this.mode === 'region' && !e.repeat) {
-      if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+      if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        if (!this.thrustOn) this.setGear(false);
+        this.setWarp(true);
+        return;
+      }
+      if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        if (this.thrustOn) this.setWarp(false);
+        else {
+          this.setGear(true);
+          this.setWarp(true);
+        }
+        return;
+      }
+      if (e.code === 'KeyW') {
         e.preventDefault();
         this.setWarp(true);
         return;
       }
-      if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+      if (e.code === 'KeyS') {
         e.preventDefault();
         this.setWarp(false);
         return;
@@ -2459,9 +2479,10 @@ export class GalaxyView {
   }
 
   /**
-   * Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop.
-   * The helm gear (only while stopped) flips the sign: astern runs
-   * opposite the nose so you can back off a park. Inside a host's
+   * Latched warp: W / Warp is a fixed catalog rate in the current
+   * gear; S / Stop is stop. When stopped, ↑ sets ahead and warps,
+   * ↓ sets astern and warps. The helm gear flips the sign: astern
+   * runs opposite the nose so you can back off a park. Inside a host's
    * ARRIVE_RANGE_LY sphere the rate is ARRIVE_WARP of GALAXY_WARP —
    * a speed limit, sticky until you fly out. If this step would
    * enter the sphere, the limit already applies (or a warp frame

@@ -471,11 +471,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   The in-system night shell (`buildStars`) is still unseeded and
   must retire so ground and explorer agree.
 - **Explorer gestures.** The camera stays at the bubble centre.
-  Fly is a **latched warp**: ↑ / W (or the **Warp** button)
-  holds a fixed catalog rate; ↓ / S / **Stop** is stop.
-  When stopped, a smaller helm bubble overlapping Warp
-  toggles **ahead** (up arrow) and **astern** (down arrow);
-  Warp then runs in that gear so you can back off a park.
+  Fly is a **latched warp**: W (or the **Warp** button)
+  holds a fixed catalog rate in the current gear; S / **Stop**
+  is stop. When stopped, ↑ sets **ahead** and latches warp;
+  ↓ sets **astern** and latches warp. While thrusting, ↓ is
+  stop. A smaller helm bubble overlapping Warp also toggles
+  ahead / astern when stopped so you can back off a park.
   Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
   quietly unless that gear points inward. A tap, not a hold.
   Drag looks. After a pinch, the surviving
