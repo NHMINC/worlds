@@ -223,6 +223,10 @@ export function GalaxyExplorer(props: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, [mapOpen]);
 
+  useEffect(() => {
+    if (frame.hostId == null) setMapOpen(false);
+  }, [frame.hostId]);
+
   function openKnob(id: string): void {
     const live = liveKnob(id);
     if (live) {
@@ -331,13 +335,7 @@ export function GalaxyExplorer(props: Props) {
   const spec = live ?? rebuild;
   const isDefault = Boolean(spec && atDefault(spec, knobVal));
   const editing = Boolean(spec);
-  const chartId =
-    frame.hostId ??
-    frame.course?.id ??
-    selected?.id ??
-    frame.focus?.id ??
-    props.hereStarId ??
-    null;
+  const chartId = frame.hostId;
   const chartSpec = useMemo(() => {
     if (chartId == null) return null;
     try {
@@ -488,13 +486,12 @@ export function GalaxyExplorer(props: Props) {
             )}
           </div>
           )}
-          {!editing && (
+          {!editing && chartSpec && (
             <button
               type="button"
               className={`gx-chip gx-icon${mapOpen ? ' active' : ''}`}
               aria-label="System chart"
               title="System chart"
-              disabled={!chartSpec}
               onClick={() => {
                 setMenu(null);
                 setMapOpen((open) => !open);

@@ -323,8 +323,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - **The explorer is the harvest, not a magnifier ball.**
   The **system chart** (orbits icon next to Cosmic engineer)
   is the same rank-spaced orbits-and-moons schematic as the
-  world viewer, zoomable, for the host / course / here star.
-  A tap does not fly yet. **Cosmic engineer** (explorer top bar) is a dropdown of
+  world viewer, zoomable. It appears only inside a host
+  sphere. A tap does not fly yet. **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, approach, nebulae). Sections stay
   collapsed until opened, and stay open when you pick a

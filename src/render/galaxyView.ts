@@ -1762,9 +1762,9 @@ export class GalaxyView {
     return this.focusObj;
   }
 
-  /** System the explorer chart names: host, else course, else reticle, else here. */
+  /** Host in the 0.01 ly sphere — the explorer chart’s only subject. */
   chartObject(): GalaxyObject | null {
-    return this.hostObj ?? this.courseObj ?? this.focusObj ?? this.selected ?? this.hereObj;
+    return this.hostObj;
   }
 
   /** Refresh sight uniforms — smoke / tests. */
