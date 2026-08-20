@@ -1403,7 +1403,7 @@ export class GalaxyView {
 
   /**
    * Survey gain. 1 in open catalog space. Inside a host sphere
-   * it falls as t² from 1 at the 1 ly fence to ARRIVE_SKY_GAIN
+   * it falls as t² from 1 at the 0.5 ly fence to ARRIVE_SKY_GAIN
    * at the star — dark-sky Earth, a bit clearer; the only
    * galaxy light on anything in the bubble. The furnace is a
    * second pass and is not dimmed.
@@ -1456,7 +1456,7 @@ export class GalaxyView {
   setCourse(obj: GalaxyObject): void {
     if (this.mode !== 'region') return;
     // Inside a host sphere you cannot pick a different target —
-    // leave the 1 ly first.
+    // leave the 0.5 ly first.
     if (this.hostObj && this.hostObj.id !== obj.id) return;
     this.courseObj = obj;
     const brief = this.briefFor(obj);
@@ -1923,7 +1923,7 @@ export class GalaxyView {
 
   /**
    * The close star is a place, not a heading. Once we are inside
-   * its 1 ly sphere (or it has already become the furnace), keep
+   * its 0.5 ly sphere (or it has already become the furnace), keep
    * it until we fly away. Course lock and look-drag only steer;
    * they do not own the object.
    */
@@ -2074,7 +2074,7 @@ export class GalaxyView {
    * viewpoint slides. The GPU holds the harvest — the vertex shader
    * subtracts uCenter. No membership walk.
    */
-  /** Speed inside the 1 ly sphere: min(1/1000 warp, ARRIVE_K · d). */
+  /** Speed inside the 0.5 ly sphere: min(1/1000 warp, ARRIVE_K · d). */
   private sphereSpeed(d: number): number {
     return Math.min(
       UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP,
@@ -2405,7 +2405,7 @@ export class GalaxyView {
 
   /**
    * Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop.
-   * Inside a host's 1 ly sphere the rate is ARRIVE_WARP (1/1000) of
+   * Inside a host's 0.5 ly sphere the rate is ARRIVE_WARP (1/1000) of
    * GALAXY_WARP — a speed limit, sticky until you fly out. If this
    * step would enter the sphere, the limit already applies (or a
    * warp frame skips it). On a locked course, Stop at the fill park
