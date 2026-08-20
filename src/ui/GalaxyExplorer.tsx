@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
-import { classifyStar } from '../world/stellar';
-import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
 import {
@@ -59,7 +57,6 @@ export function GalaxyExplorer(props: Props) {
   readyRef.current = props.onReady;
   const active = props.active !== false;
   const [ready, setReady] = useState(false);
-  const [selected, setSelected] = useState<GalaxyObject | null>(null);
   const [engineer, setEngineer] = useState<string | null>(null);
   const [knobVal, setKnobVal] = useState(0);
   const [knobDirty, setKnobDirty] = useState(false);
@@ -101,7 +98,7 @@ export function GalaxyExplorer(props: Props) {
         canvas,
         seed,
         {
-          onSelect: setSelected,
+          onSelect: () => {},
           onFrame: (f) => {
             setFrame((prev) =>
               prev.mode !== f.mode ||
@@ -307,8 +304,6 @@ export function GalaxyExplorer(props: Props) {
     }
   }
 
-  const st = selected?.star;
-  const cls = st ? classifyStar(st) : '';
   const inRegion = frame.mode === 'region';
   const live = engineer ? liveKnob(engineer) : undefined;
   const rebuild = engineer ? rebuildKnob(engineer) : undefined;
@@ -583,42 +578,6 @@ export function GalaxyExplorer(props: Props) {
             )}
           </div>
         </footer>
-      )}
-
-      {selected && st && !editing && (
-        <aside className="galaxy-dossier">
-          <div className="gd-head">
-            <div className="gd-kicker">
-              {selected.pop} {selected.inArm ? '· arm' : ''}
-              {props.visitedStarIds?.includes(selected.id) ? ' · visited' : ''}
-            </div>
-            <button
-              type="button"
-              className="gd-x"
-              aria-label="Close star detail"
-              onClick={() => viewRef.current?.dismiss()}
-            >
-              ×
-            </button>
-          </div>
-          <div className="gd-class">{cls}</div>
-          <div className="gd-phase">{st.phase.replace(/_/g, ' ')}</div>
-          <dl className="gd-grid">
-            <div><dt>R</dt><dd>{selected.pos.R.toFixed(2)} kpc</dd></div>
-            <div><dt>z</dt><dd>{selected.pos.z.toFixed(2)} kpc</dd></div>
-            <div><dt>Age</dt><dd>{st.ageGyr.toFixed(2)} Gyr</dd></div>
-            <div><dt>Mass</dt><dd>{st.mass.toFixed(2)} M☉</dd></div>
-            <div><dt>L</dt><dd>{st.luminosity < 0.01 ? st.luminosity.toExponential(1) : st.luminosity.toFixed(2)} L☉</dd></div>
-            <div><dt>Teff</dt><dd>{st.teff > 0 ? `${Math.round(st.teff)} K` : '—'}</dd></div>
-            <div><dt>[Fe/H]</dt><dd>{st.feh >= 0 ? '+' : ''}{st.feh.toFixed(2)}</dd></div>
-            <div><dt>C/O</dt><dd>{st.carbon.toFixed(2)}</dd></div>
-          </dl>
-          {st.nebula !== 'none' && <div className="gd-nebula">{st.nebula === 'hii' ? 'H II region' : st.nebula === 'planetary' ? 'Planetary nebula' : 'Supernova remnant'}</div>}
-          <div className="gd-id">#{selected.id}</div>
-          <button className="gd-go" onClick={() => viewRef.current?.setCourse(selected)}>
-            Set course
-          </button>
-        </aside>
       )}
 
     </div>
