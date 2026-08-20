@@ -180,9 +180,11 @@ export const UNIVERSE = {
   /**
    * The "interesting universe" bias, a decreed delivery rule: comets stock
    * the temperate band with extra water (peak mass fraction added at the
-   * habitable temperature).
+   * habitable temperature). 0.12 at the peak is the onion's designed
+   * shoreline (sea01 ≈ 0.5, waterline 13.4) — timid stock left living
+   * worlds on the dry shelf and looked like a different planet.
    */
-  HAB_WATER: 0.05,
+  HAB_WATER: 0.12,
 
   /** Life odds where liquid water, warmth and pressure align. */
   LIFE_ODDS: 0.8,
