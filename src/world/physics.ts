@@ -322,8 +322,19 @@ export const UNIVERSE = {
 
   /** Observer rate: wall seconds → system seconds. Default 1 is a real
    * day and a real year. Raise it to time-lapse the same closed form
-   * (pose, season, night). Wave/foam keep their own cosmetic clock. */
+   * (pose, season, night, waves). */
   TIME_SCALE: 1,
+
+  /**
+   * Wave / foam / render-tide sit on that same celestial t. CLOCK is
+   * shader-seconds per universe second — the old wall-clock * 40 — so
+   * TIME_SCALE=1 looks as it did and a lapse speeds the sea with the
+   * sky. WRAP is float32 phase, not a second clock: Unix * CLOCK has
+   * no fractional bits in a GPU float. Tide is sin(shaderT * TIDE).
+   */
+  WAVE_CLOCK: 40,
+  WAVE_WRAP: 8e4,
+  WAVE_TIDE: 0.003,
 
   /**
    * Approach: v = min(GALAXY_WARP, ARRIVE_K · dist). The locked host
@@ -1770,6 +1781,13 @@ export function waveSlope(energy: number): { along: number; across: number } {
     UNIVERSE.WAVE_SLOPE_CALM +
     (UNIVERSE.WAVE_SLOPE_WIND - UNIVERSE.WAVE_SLOPE_CALM) * clamp01(energy);
   return { along, across: along * UNIVERSE.WAVE_SLOPE_ANISO };
+}
+
+/** Wave / foam / tide phase on celestial t. Wrap is float32, not a second clock. */
+export function waveClock(tSys: number): number {
+  const u = tSys * UNIVERSE.WAVE_CLOCK;
+  const w = UNIVERSE.WAVE_WRAP;
+  return ((u % w) + w) % w;
 }
 
 // ------------------------------------------------------------------ classification

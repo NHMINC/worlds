@@ -495,11 +495,12 @@ you will debug a stale engine class. The app lives at
   seed would change, and keep old behaviour for systems pinned to a
   previous version.
 
-Time: orbits, spins, and day/night are `f(spec, t)` with `t` Unix
-seconds at rate `TIME_SCALE` (default 1 — a real day, a real year).
-Raise the observer rate to time-lapse the same law. The galaxy age is
-a constant; stellar phase does not tick during play. No hidden
-simulation step. A star’s catalog phase is `evolve(mass, age, Z)`.
+Time: orbits, spins, day/night, and the sea (waves, foam, render-tide)
+are `f(spec, t)` with `t` Unix seconds at rate `TIME_SCALE` (default 1
+— a real day, a real year). Raise the observer rate to time-lapse the
+same law. The galaxy age is a constant; stellar phase does not tick
+during play. No hidden simulation step. A star’s catalog phase is
+`evolve(mass, age, Z)`.
 
 **Music** is progressive house as a law. `src/audio/theory.ts` is the
 score: ~124 BPM, four-on-the-floor, a 4-chord loop held for bars at a

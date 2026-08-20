@@ -5,7 +5,7 @@ import {
 } from '../world/toygen';
 import { paletteFor, SPACE_COLOR } from '../world/toyPalette';
 import {
-  UNIVERSE, airExtinction, hazeSpec, seaState, tidalForcing,
+  UNIVERSE, airExtinction, hazeSpec, seaState, tidalForcing, waveClock,
   starIrradiance, starIrradianceDisplay,
 } from '../world/physics';
 import { TerraceJob, makeTerrainMaterial, makeWaterMaterial, skinLevel, terrace, warpPoint } from './terraceMesh';
@@ -2132,8 +2132,9 @@ export class Engine {
 
     // Per-body lighting and shader clocks. The sun sits at the origin, so a
     // body's light direction is just its position, seen from its own
-    // spinning frame — the terminator sweeps as each world turns.
-    const shaderT = (now / 1000) * 40;
+    // spinning frame — the terminator sweeps as each world turns. Waves,
+    // foam, and the render-only tide use the same celestial t as pose.
+    const shaderT = waveClock(tSys);
 
     // The water's mirror world: from the ground, park the reflection camera
     // at the eye's image point beneath the sea surface (mirror across the
@@ -2312,7 +2313,7 @@ export class Engine {
       // moonless ones hold still (tideAmp is 0). Phase offset per body so
       // sibling worlds don't inhale together.
       const tideLv = rt.tideAmp > 0
-        ? rt.tideAmp * Math.sin(shaderT * 0.003 + rt.spec.orbitPhase)
+        ? rt.tideAmp * Math.sin(shaderT * UNIVERSE.WAVE_TIDE + rt.spec.orbitPhase)
         : 0;
       for (const assets of [rt.tier1, rt.tier2]) {
         if (!assets) continue;
@@ -2387,8 +2388,7 @@ export class Engine {
       }
     }
 
-    const starT = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
-    this.starView?.update(this.camera.position, starT, this.tmpAirT);
+    this.starView?.update(this.camera.position, tSys, this.tmpAirT);
 
     this.renderer.render(this.scene, this.camera);
     this.callbacks.onFrame(this.getView());

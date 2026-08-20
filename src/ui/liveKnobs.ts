@@ -268,7 +268,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Time lapse',
     group: 'starlight',
     hint: 'observer rate: 0 is 1:1, 6 is a million×',
-    about: 'Wall seconds → system seconds as 10^this. 0 is a real day and a real year. Raise it to watch seasons and orbits on the same closed-form clock — pose, night, and season are f(spec, t), not a simulation step. Waves keep their own tick. Next frame.',
+    about: 'Wall seconds → system seconds as 10^this. 0 is a real day and a real year. Raise it to watch seasons, orbits, and the sea on the same closed-form clock — pose, night, season, and waves are f(spec, t), not a simulation step. Next frame.',
     uniform: 'uTimeLapse',
     min: 0,
     max: 6,
