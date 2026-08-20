@@ -15,13 +15,20 @@ import {
   HARVEST_WHITE_K,
 } from '../render/galaxyStar';
 
-export type EngineerGroupId = 'cosmic' | 'dust' | 'harvest' | 'starlight' | 'nebulae';
+export type EngineerGroupId =
+  | 'cosmic'
+  | 'dust'
+  | 'harvest'
+  | 'starlight'
+  | 'approach'
+  | 'nebulae';
 
 export const ENGINEER_GROUPS: Array<{ id: EngineerGroupId; label: string }> = [
   { id: 'cosmic', label: 'Cosmic background' },
   { id: 'dust', label: 'Galactic dust' },
   { id: 'harvest', label: 'Harvest survey' },
   { id: 'starlight', label: 'Starlight' },
+  { id: 'approach', label: 'Approach' },
   { id: 'nebulae', label: 'Nebulae' },
 ];
 
@@ -349,6 +356,126 @@ export const LIVE_KNOBS: LiveKnob[] = [
     max: 1,
     step: 0.01,
     read: () => HARVEST_SHINE_L_P,
+  },
+  {
+    id: 'arriveRange',
+    label: 'Sphere of influence',
+    group: 'approach',
+    hint: 'how far the host bubble reaches (ly)',
+    about: 'Fixed fence around the host star — speed limit, sticky lock, furnace, and galaxy dim all use this radius. Not object-size: a supergiant and an M dwarf share the same bubble. 0.2 ly is ~12,600 AU; every system in the bottle (planets inside 30 AU) still fits. Next frame.',
+    uniform: 'uArriveRange',
+    min: 0.05,
+    max: 2,
+    step: 0.05,
+    read: () => UNIVERSE.ARRIVE_RANGE_LY,
+    write: (v) => {
+      UNIVERSE.ARRIVE_RANGE_LY = v;
+    },
+  },
+  {
+    id: 'arriveSky',
+    label: 'Galaxy dim',
+    group: 'approach',
+    hint: 'how bright the survey stays at the star',
+    about: 'Inside the sphere the enhanced photograph falls as t² to this floor. 0.08 is a dark-sky Earth night, a bit clearer — the only galaxy light on anything in the bubble. 0 is pitch black. The host furnace is not multiplied. Next frame.',
+    uniform: 'uArriveSky',
+    min: 0,
+    max: 0.4,
+    step: 0.005,
+    read: () => UNIVERSE.ARRIVE_SKY_GAIN,
+    write: (v) => {
+      UNIVERSE.ARRIVE_SKY_GAIN = v;
+    },
+  },
+  {
+    id: 'arriveWarp',
+    label: 'Approach warp',
+    group: 'approach',
+    hint: 'speed inside the sphere, as a fraction of disk warp',
+    about: 'Every move inside the host bubble (warp, WASD, strafe, zoom) is this fraction of GALAXY_WARP, and also capped at Close crawl × distance. 0.001 is one-thousandth — a full-warp frame would skip the sphere. Next frame.',
+    uniform: 'uArriveWarp',
+    min: 0.0002,
+    max: 0.02,
+    step: 0.0002,
+    read: () => UNIVERSE.ARRIVE_WARP,
+    write: (v) => {
+      UNIVERSE.ARRIVE_WARP = v;
+    },
+  },
+  {
+    id: 'arriveK',
+    label: 'Close crawl',
+    group: 'approach',
+    hint: 'v ≤ this × distance on the last stretch',
+    about: 'Inside the sphere, speed is also capped at this × catalog distance so the disk-growth stretch lasts seconds, not one approach-warp frame. Higher arrives faster. Next frame.',
+    uniform: 'uArriveK',
+    min: 0.3,
+    max: 4,
+    step: 0.05,
+    read: () => UNIVERSE.ARRIVE_K,
+    write: (v) => {
+      UNIVERSE.ARRIVE_K = v;
+    },
+  },
+  {
+    id: 'arriveFill',
+    label: 'Park fill',
+    group: 'approach',
+    hint: 'how much of the view the disk covers at Stop',
+    about: 'On a locked course, warp latches Stop when the photosphere covers this fraction of the vertical field. Size law, not the sphere. Next frame.',
+    uniform: 'uArriveFill',
+    min: 0.08,
+    max: 0.5,
+    step: 0.01,
+    read: () => UNIVERSE.ARRIVE_FILL,
+    write: (v) => {
+      UNIVERSE.ARRIVE_FILL = v;
+    },
+  },
+  {
+    id: 'arriveHold',
+    label: 'Heading hold',
+    group: 'approach',
+    hint: 'how fast the nose eases onto the course (1/s)',
+    about: 'Set course eases the nose onto the star at this rate and keeps it there while flying. A look drag hands the stick back. Next frame.',
+    uniform: 'uArriveHold',
+    min: 0.5,
+    max: 8,
+    step: 0.1,
+    read: () => UNIVERSE.ARRIVE_HOLD,
+    write: (v) => {
+      UNIVERSE.ARRIVE_HOLD = v;
+    },
+  },
+  {
+    id: 'aimRange',
+    label: 'Reticle range',
+    group: 'approach',
+    hint: 'how far the sight plate will name a star (kpc)',
+    about: 'The plate only locks an object inside this neighbourhood — not the far disk. Set course still needs you to leave a host sphere before a new target. Next frame.',
+    uniform: 'uAimRange',
+    min: 0.2,
+    max: 4,
+    step: 0.05,
+    read: () => UNIVERSE.AIM_RANGE_KPC,
+    write: (v) => {
+      UNIVERSE.AIM_RANGE_KPC = v;
+    },
+  },
+  {
+    id: 'warpCross',
+    label: 'Disk warp',
+    group: 'approach',
+    hint: 'seconds rim-to-rim across the disk',
+    about: 'Latched warp: diameter of the disk in this many seconds. Lower is a faster cruise between the stars. Inside a host sphere, Approach warp still owns the speed. Next frame.',
+    uniform: 'uWarpCross',
+    min: 20,
+    max: 180,
+    step: 1,
+    read: () => UNIVERSE.GALAXY_WARP_CROSS_S,
+    write: (v) => {
+      UNIVERSE.GALAXY_WARP_CROSS_S = v;
+    },
   },
 ];
 
