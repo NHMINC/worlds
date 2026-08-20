@@ -732,6 +732,8 @@ export class GalaxyView {
   private readonly hostScene = new THREE.Scene();
   /** Local km frame at the locked host, scaled into catalog kpc. */
   private hostRoot: THREE.Group | null = null;
+  /** Galaxy fill on objects in the bubble — ARRIVE_SKY_GAIN, not a flood. */
+  private hostFill: THREE.AmbientLight | null = null;
   private hostOuterAu = 1;
   private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
 
@@ -1402,7 +1404,9 @@ export class GalaxyView {
   /**
    * Survey gain. 1 in open catalog space. Inside a host sphere
    * it falls as t² from 1 at the 1 ly fence to ARRIVE_SKY_GAIN
-   * at the star. The furnace is a second pass and is not dimmed.
+   * at the star — dark-sky Earth, a bit clearer; the only
+   * galaxy light on anything in the bubble. The furnace is a
+   * second pass and is not dimmed.
    */
   private skyDim(): number {
     const host = this.hostObj;
@@ -1425,6 +1429,7 @@ export class GalaxyView {
       if (mat.uniforms.uScale) mat.uniforms.uScale.value = 1;
       if (mat.uniforms.uSkyDim) mat.uniforms.uSkyDim.value = dim;
     }
+    if (this.hostFill) this.hostFill.intensity = dim;
   }
 
 
@@ -1949,6 +1954,7 @@ export class GalaxyView {
       this.hostRoot = null;
     }
     this.hostStarId = -1;
+    this.hostFill = null;
     this.hostOuterAu = 1;
   }
 
@@ -1965,7 +1971,11 @@ export class GalaxyView {
     if (this.hostRoot) return this.hostRoot;
     const root = new THREE.Group();
     root.scale.setScalar(KM_TO_KPC);
-    root.add(new THREE.AmbientLight(0x30384a, 0.22));
+    // Same law as the photograph: a small galaxy fill, not a 0.22 flood
+    // that would make night impossible once worlds land.
+    const fill = new THREE.AmbientLight(0x9aa8c4, UNIVERSE.ARRIVE_SKY_GAIN);
+    root.add(fill);
+    this.hostFill = fill;
     this.hostScene.add(root);
     this.hostRoot = root;
     return root;
@@ -2744,6 +2754,7 @@ export class GalaxyView {
     for (const mat of this.cloudMats()) {
       if (mat.uniforms.uSkyDim) mat.uniforms.uSkyDim.value = dim;
     }
+    if (this.hostFill) this.hostFill.intensity = dim;
 
     // One scene, one pass, straight to the canvas: the void is
     // black (vacuum emits nothing), self-extincted background

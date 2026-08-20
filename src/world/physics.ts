@@ -358,8 +358,10 @@ export const UNIVERSE = {
    * frame. Warp latches Stop when the disk covers ARRIVE_FILL of
    * the vertical field. The survey photograph (enhanced light
    * for flying the disk) falls to ARRIVE_SKY_GAIN inside the
-   * sphere so looking out is dark; the host furnace is not
-   * dimmed. It does not open a system.
+   * sphere — a dark-sky Earth night, a bit clearer. That is
+   * the only galaxy light in the bubble: looking out, and
+   * every other object (pins, nebulae, later worlds). The
+   * host furnace is not dimmed. It does not open a system.
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
@@ -372,15 +374,17 @@ export const UNIVERSE = {
     return this.ARRIVE_RANGE_LY / 3261.56;
   },
   /**
-   * The harvest / nebula / cosmic photograph is enhanced light —
-   * enough to fly the disk. Inside the 1 ly sphere that survey
-   * is off: gain falls as t² from 1 at the fence to this floor
-   * at the star (t = 1 − d / ARRIVE_RANGE). The host furnace
-   * is real starlight and is not multiplied. Night on a world
-   * is the same idea once bodies land: no survey fill.
-   * Pitch-black is never fun, so the floor is a whisper, not 0.
+   * Galaxy light inside the 1 ly sphere. The harvest / nebula /
+   * cosmic photograph is enhanced so you can fly the disk; that
+   * fill would make night impossible. Inside the fence gain
+   * falls as t² from 1 at the rim to this floor at the star
+   * (t = 1 − d / ARRIVE_RANGE). The floor is a dark-sky Earth
+   * night, a little clearer — the band is readable, not a
+   * flood. Every object in the bubble (other pins, nebulae,
+   * later worlds) only gets this much galaxy light. The host
+   * furnace is real starlight and is not multiplied.
    */
-  ARRIVE_SKY_GAIN: 0.03,
+  ARRIVE_SKY_GAIN: 0.08,
   /**
    * Harvest pins are absolute kpc in float32. Around the solar
    * circle the ULP is ~200 AU; inside this distance the pin hops
