@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { ViewState } from '../render/engine';
 
 /**
  * The system map: a top-down schematic of the whole star system. Orbits are
@@ -18,7 +19,7 @@ export interface MapPlanet {
   name: string;
   color: string;
   kind: 'rocky' | 'gas';
-  /** Radius in Earth radii, mapped to dot size. */
+  /** GL radius, mapped to dot size. */
   radius: number;
   ring: boolean;
   moons: MapMoon[];
@@ -29,8 +30,7 @@ interface Props {
   starColor: string;
   planets: MapPlanet[];
   currentBodyId: string;
-  /** Per-frame tick (engine or explorer) driving the live drift. */
-  subscribe: (fn: () => void) => () => void;
+  subscribe: (fn: (v: ViewState) => void) => () => void;
   angleOf: (id: string) => number;
   onTravel: (id: string) => void;
   onClose: () => void;

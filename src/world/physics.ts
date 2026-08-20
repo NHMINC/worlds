@@ -344,28 +344,14 @@ export const UNIVERSE = {
    * Approach: v = min(GALAXY_WARP, ARRIVE_K · dist). The locked host
    * becomes a furnace when its photosphere exceeds STAR_REVEAL_PX.
    * The system (outer planet a) attaches at SYSTEM_REVEAL_PX — same
-   * angular-size test, Kepler as f(spec, t). Set course locks and
-   * starts that approach. Orbit / surface stay on the engine until
-   * one viewer (a saved camera is a camp; a visit with no cam is
-   * the course).
+   * angular-size test, Kepler as f(spec, t). Set course still owns
+   * orbit / surface until one viewer.
    */
-  /** Approach e-fold rate (1/s): remaining distance halves every
-   * ln2/ARRIVE_K seconds, so any course — 2 kpc or 20 pc — lands in
-   * ~e-folds/ARRIVE_K seconds. 0.35 was a minute-long crawl. */
-  ARRIVE_K: 1.2,
+  ARRIVE_K: 0.35,
   STAR_REVEAL_PX: 3,
   SYSTEM_REVEAL_PX: 3,
   /** Outer-a used for the system angular test (AU). The rim, not a stretch. */
   SYSTEM_REVEAL_A: 30,
-  /** Set course parks at a SAFE EXPOSURE, not a fixed radius: hold
-   * where the star's eye flux is this multiple of habitable-zone
-   * light (d = A_HAB · sqrt(L / ARRIVE_FLUX)). One law scales every
-   * class — a dim red dwarf lets you in close, a luminous giant
-   * holds you far — and the sun always reads as a furnace up close.
-   * ARRIVE_R_MIN floors the park in star radii so remnants (tiny R,
-   * tiny L) never park the camera inside the corona. */
-  ARRIVE_FLUX: 4,
-  ARRIVE_R_MIN: 30,
 
   /**
    * The shared galaxy. One seed, one SBbc (grand-design barred spiral).

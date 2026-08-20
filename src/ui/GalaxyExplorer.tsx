@@ -3,7 +3,6 @@ import { UNIVERSE } from '../world/physics';
 import { classifyStar } from '../world/stellar';
 import type { GalaxyObject } from '../world/galaxy';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
-import { SystemMap, type MapPlanet } from './SystemMap';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
 import {
   ENGINEER_GROUPS,
@@ -31,8 +30,6 @@ interface Props {
   /** False while the explorer is kept warm but hidden. */
   active?: boolean;
   onSetCourse: (obj: GalaxyObject) => void;
-  /** Parked at the rim, a world picked on the system map: orbit it. */
-  onEnterOrbit: (starId: number, bodyId: string) => void;
   onClose: () => void;
   onReady?: () => void;
 }
@@ -42,13 +39,8 @@ export function GalaxyExplorer(props: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<GalaxyView | null>(null);
-  const goRef = useRef<(o: GalaxyObject) => void>(props.onSetCourse);
-
-  function beginCourse(o: GalaxyObject): void {
-    viewRef.current?.setCourse(o);
-    props.onSetCourse(o);
-  }
-  goRef.current = beginCourse;
+  const goRef = useRef(props.onSetCourse);
+  goRef.current = props.onSetCourse;
   const hereRef = useRef(props.hereStarId ?? null);
   hereRef.current = props.hereStarId ?? null;
   const readyRef = useRef(props.onReady);
@@ -63,8 +55,6 @@ export function GalaxyExplorer(props: Props) {
   const [rebuilding, setRebuilding] = useState<null | RebuildScope>(null);
   const [rebuildFrac, setRebuildFrac] = useState(0);
   const [rebuildLabel, setRebuildLabel] = useState('');
-  const [sysMapOpen, setSysMapOpen] = useState(false);
-  const frameSubs = useRef(new Set<() => void>());
   const [frame, setFrame] = useState<GalaxyFrame>({
     mode: 'region',
     theta: 0,
@@ -78,7 +68,6 @@ export function GalaxyExplorer(props: Props) {
     focus: null,
     warp: false,
     backdrop: 0,
-    arrived: null,
   });
 
   useEffect(() => {
@@ -98,7 +87,6 @@ export function GalaxyExplorer(props: Props) {
           onSelect: setSelected,
           onGo: (obj) => goRef.current(obj),
           onFrame: (f) => {
-            for (const fn of frameSubs.current) fn();
             setFrame((prev) =>
               prev.mode !== f.mode ||
               Math.abs(prev.radius - f.radius) > 0.08 ||
@@ -110,7 +98,6 @@ export function GalaxyExplorer(props: Props) {
               prev.sector !== f.sector ||
               prev.warp !== f.warp ||
               prev.backdrop !== f.backdrop ||
-              prev.arrived !== f.arrived ||
               prev.focus?.id !== f.focus?.id ||
               (f.focus != null &&
                 (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
@@ -279,30 +266,6 @@ export function GalaxyExplorer(props: Props) {
     }
   }
 
-  // Parked at the rim: hand the same system map the engine uses.
-  useEffect(() => {
-    if (frame.arrived == null) setSysMapOpen(false);
-  }, [frame.arrived]);
-
-  const arrived = frame.arrived != null ? (viewRef.current?.arrivedSystem() ?? null) : null;
-  const rgbCss = (c: readonly number[]): string =>
-    `rgb(${c.map((x) => Math.round(x * 255)).join(',')})`;
-  const arrivedPlanets: MapPlanet[] = arrived
-    ? arrived.spec.bodies
-        .filter((b) => !b.parent)
-        .map((b) => ({
-          id: b.id,
-          name: b.name,
-          color: rgbCss(b.meanColor),
-          kind: b.kind,
-          radius: b.radius / UNIVERSE.REARTH_KM,
-          ring: b.kind === 'gas' && Boolean(b.gas?.ring),
-          moons: arrived.spec.bodies
-            .filter((m) => m.parent === b.id)
-            .map((m) => ({ id: m.id, name: m.name, color: rgbCss(m.meanColor) })),
-        }))
-    : [];
-
   const st = selected?.star;
   const cls = st ? classifyStar(st) : '';
   const inRegion = frame.mode === 'region';
@@ -344,20 +307,7 @@ export function GalaxyExplorer(props: Props) {
             {frame.warp ? 'Stop' : 'Warp'}
           </button>
         )}
-        {inRegion && !engineer && arrived && (
-          <div className="gx-plate">
-            <b>{arrived.spec.star.name}</b>
-            <em>holding by the star · safe exposure</em>
-            <i>
-              {arrivedPlanets.length} planet{arrivedPlanets.length === 1 ? '' : 's'} · pick a
-              world to orbit
-            </i>
-            <button type="button" className="gx-plate-go" onClick={() => setSysMapOpen(true)}>
-              System map
-            </button>
-          </div>
-        )}
-        {inRegion && !engineer && !arrived && frame.focus && (
+        {inRegion && !engineer && frame.focus && (
           <div className="gx-plate">
             <b>{frame.focus.name}</b>
             <em>
@@ -373,7 +323,7 @@ export function GalaxyExplorer(props: Props) {
               className="gx-plate-go"
               onClick={() => {
                 const o = viewRef.current?.focusedObject();
-                if (o) beginCourse(o);
+                if (o) props.onSetCourse(o);
               }}
             >
               Set course
@@ -381,24 +331,6 @@ export function GalaxyExplorer(props: Props) {
           </div>
         )}
       </div>
-
-      {sysMapOpen && arrived && (
-        <SystemMap
-          starName={arrived.spec.star.name}
-          starColor={arrived.spec.star.color}
-          planets={arrivedPlanets}
-          currentBodyId=""
-          subscribe={(fn) => {
-            frameSubs.current.add(fn);
-            return () => {
-              frameSubs.current.delete(fn);
-            };
-          }}
-          angleOf={(id) => viewRef.current?.hostBodyMapAngle(id) ?? 0}
-          onTravel={(id) => props.onEnterOrbit(arrived.starId, id)}
-          onClose={() => setSysMapOpen(false)}
-        />
-      )}
 
       <header className="galaxy-top">
         <div className="galaxy-brand">
@@ -451,7 +383,7 @@ export function GalaxyExplorer(props: Props) {
           </dl>
           {st.nebula !== 'none' && <div className="gd-nebula">{st.nebula === 'hii' ? 'H II region' : st.nebula === 'planetary' ? 'Planetary nebula' : 'Supernova remnant'}</div>}
           <div className="gd-id">#{selected.id}</div>
-          <button className="gd-go" onClick={() => beginCourse(selected)}>
+          <button className="gd-go" onClick={() => props.onSetCourse(selected)}>
             Set course
           </button>
         </aside>

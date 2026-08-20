@@ -211,18 +211,11 @@ export default function App() {
     await prep;
     const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
     const target = list.find((s) => s.id === lastId) ?? list[0];
-    // A visit with a saved camera is a camp. Set course writes the
-    // visit with no cam — resume that as the explorer approach, not
-    // a teleport onto homeBodyId.
-    if (target?.cam) await openSystem(target.id, engine);
-    else {
-      if (target?.starId != null) setLookStarId(target.starId);
-      setGalaxyOpen(true);
-    }
+    if (target) await openSystem(target.id, engine);
     hideUniverseSplash();
   }
 
-  async function openSystem(id: string, engineArg?: Engine, bodyId?: string): Promise<void> {
+  async function openSystem(id: string, engineArg?: Engine): Promise<void> {
     const engine = engineArg ?? engineRef.current;
     if (!engine) return;
     const s = await db.systems.get(id);
@@ -246,7 +239,7 @@ export default function App() {
       overrides.set(t.bodyId, o);
     }
     overridesRef.current = overrides;
-    engine.loadSystem(sysSpec, { cam: s.cam, overrides, body: bodyId });
+    engine.loadSystem(sysSpec, { cam: s.cam, overrides });
     setSystem(s);
     setSpec(sysSpec);
     setBodyStates(new Map(bs.map((b) => [b.bodyId, b])));
@@ -287,33 +280,18 @@ export default function App() {
   }
 
   async function handleSetCourse(obj: GalaxyObject): Promise<void> {
-    // Set course is the first visit and the approach — lock + warp
-    // in the explorer. Opening the engine here used to drop you on
-    // homeBodyId. Land / Return still owns a saved camp.
     const gSeed = UNIVERSE.CANONICAL_SEED;
     const existing = systems.find((s) => s.starId === obj.id && (s.galaxySeed ?? gSeed) === gSeed);
     if (existing) {
-      await touchSystem(existing.id);
-      setSystems((await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive));
+      await openSystem(existing.id);
+      setGalaxyOpen(false);
       return;
     }
     const spec0 = systemAt(gSeed, obj.id);
     const meta = newSystemMeta(spec0.star.name, spec0.seed, { starId: obj.id, galaxySeed: gSeed });
     await db.systems.add(meta);
     setSystems((await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null));
-  }
-
-  /** From the explorer's system map, parked at the rim: orbit that world. */
-  async function handleEnterOrbit(starId: number, bodyId: string): Promise<void> {
-    const gSeed = UNIVERSE.CANONICAL_SEED;
-    let meta = systems.find((s) => s.starId === starId && (s.galaxySeed ?? gSeed) === gSeed);
-    if (!meta) {
-      const spec0 = systemAt(gSeed, starId);
-      meta = newSystemMeta(spec0.star.name, spec0.seed, { starId, galaxySeed: gSeed });
-      await db.systems.add(meta);
-      setSystems((await db.systems.orderBy('updatedAt').reverse().toArray()).filter((s) => s.starId != null));
-    }
-    await openSystem(meta.id, undefined, bodyId);
+    await openSystem(meta.id);
     setGalaxyOpen(false);
   }
 
@@ -447,7 +425,7 @@ export default function App() {
       name: bodyDisplayName(b.id),
       color: cssColor(b.meanColor),
       kind: b.kind,
-      radius: b.radius / UNIVERSE.REARTH_KM,
+      radius: b.radius,
       ring: b.kind === 'gas' && Boolean(b.gas?.ring),
       moons: (spec?.bodies ?? [])
         .filter((m) => m.parent === b.id)
@@ -495,7 +473,6 @@ export default function App() {
         canClose={system != null}
         active={galaxyOpen}
         onSetCourse={(o) => void handleSetCourse(o)}
-        onEnterOrbit={(starId, bodyId) => void handleEnterOrbit(starId, bodyId)}
         onClose={() => setGalaxyOpen(false)}
       />
 

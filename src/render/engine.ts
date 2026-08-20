@@ -375,7 +375,7 @@ export class Engine {
 
   loadSystem(
     spec: SystemSpec,
-    state: { cam?: SavedCamera; overrides?: Map<string, BodyOverrides>; body?: string },
+    state: { cam?: SavedCamera; overrides?: Map<string, BodyOverrides> },
   ): void {
     // Tear down the previous system.
     for (const rt of this.bodies.values()) this.disposeBody(rt);
@@ -496,19 +496,9 @@ export class Engine {
     }
     this.updateBodyPoses((this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE);
 
-    // Restore the camera, or open in orbit around the home world. An
-    // explicit body (the system-map pick on arrival) outranks the camp.
+    // Restore the camera, or open in orbit around the home world.
     const cam = state.cam;
-    const pick = state.body && this.bodies.has(state.body) ? state.body : null;
-    if (pick) {
-      this.mode = 'orbit';
-      this.orbitBodyId = pick;
-      this.orbitStyle = 'station';
-      this.orient.copy(this.defaultOrient());
-      this.prepareBodyData(this.bodies.get(pick)!);
-      this.h = this.hTarget = this.hPlanet();
-      this.prevSpinQ.copy(this.bodies.get(pick)!.spinQ);
-    } else if (cam?.mode === 'flight') {
+    if (cam?.mode === 'flight') {
       this.mode = 'flight';
       this.fPos.fromArray(cam.pos);
       this.fQuat.fromArray(cam.q).normalize();
