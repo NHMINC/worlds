@@ -341,13 +341,26 @@ export const UNIVERSE = {
   WAVE_TIDE: 0.12,
 
   /**
-   * Approach: v = min(GALAXY_WARP, ARRIVE_K · dist). The locked host
-   * becomes a furnace when its photosphere exceeds STAR_REVEAL_PX.
-   * The system (outer planet a) attaches at SYSTEM_REVEAL_PX — same
-   * angular-size test, Kepler as f(spec, t). Set course still owns
-   * orbit / surface until one viewer.
+   * Close approach is crosshair + range, not a galaxy speed law.
+   * The reticle star (or the selected star) inside ARRIVE_RANGE_LY
+   * latches as the subject; warp drops out at that fence and the
+   * ship runs v = ARRIVE_K · (d + ARRIVE_SOFT · R★). v ∝ d is a
+   * constant perceptual zoom (the disk swells at a steady rate);
+   * the soft core (a few stellar radii) keeps v finite through the
+   * photosphere so a flythrough ends on the far side, not in a
+   * Zeno stall. Between the stars warp is never clamped — a star
+   * you are not aiming at cannot slow you. The photosphere replaces
+   * the harvest pin at STAR_REVEAL_PX; the system (outer planet a)
+   * attaches at SYSTEM_REVEAL_PX — same angular-size test, Kepler
+   * as f(spec, t). Set course still owns orbit / surface.
    */
-  ARRIVE_K: 0.35,
+  ARRIVE_K: 1.2,
+  ARRIVE_SOFT: 4,
+  ARRIVE_RANGE_LY: 1,
+  /** The fence in catalog units. 1 kpc = 3261.56 ly. */
+  get ARRIVE_RANGE_KPC(): number {
+    return this.ARRIVE_RANGE_LY / 3261.56;
+  },
   STAR_REVEAL_PX: 3,
   SYSTEM_REVEAL_PX: 3,
   /** Outer-a used for the system angular test (AU). The rim, not a stretch. */

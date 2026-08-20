@@ -716,6 +716,13 @@ export class GalaxyView {
 
   private filter: GalaxyFilter = 'all';
   private selected: GalaxyObject | null = null;
+  /**
+   * Close-approach subject. Latched when the reticle star (or the
+   * selected star) comes inside ARRIVE_RANGE_LY; released when the
+   * camera leaves that bubble. Latching, not re-testing the reticle,
+   * because a full-screen star cannot stay on a 0.028 rad crosshair.
+   */
+  private hostObj: GalaxyObject | null = null;
   private hostStar: StarView | null = null;
   private hostStarId = -1;
   private hostCube: THREE.WebGLCubeRenderTarget | null = null;
@@ -1801,14 +1808,9 @@ export class GalaxyView {
     this.camera.lookAt(this.arcLook);
     this.theta = this.arcYaw;
     this.phi = Math.PI / 2 - this.arcPitch;
-    const lock = this.selected ?? this.focusObj;
+    const lock = this.hostObj;
     if (lock) {
-      const c = galToCart(lock.pos);
-      const d = Math.hypot(
-        c.x - this.arcCenter.x,
-        c.y - this.arcCenter.y,
-        c.z - this.arcCenter.z,
-      );
+      const d = this.arriveDist(lock);
       if (this.hostRoot) {
         const aKpc = this.hostOuterAu * UNIVERSE.AU_KM * KM_TO_KPC;
         this.camera.near = Math.max(1e-18, Math.min(d * 0.02, aKpc * 0.01));
@@ -1825,11 +1827,38 @@ export class GalaxyView {
     this.pushMagUniforms();
   }
 
-  private hostLock(): GalaxyObject | null {
-    return this.selected ?? this.focusObj;
+  private arriveDist(obj: GalaxyObject): number {
+    const c = galToCart(obj.pos);
+    return Math.hypot(
+      c.x - this.arcCenter.x,
+      c.y - this.arcCenter.y,
+      c.z - this.arcCenter.z,
+    );
+  }
+
+  /**
+   * Keep or acquire the close-approach subject. Retained while the
+   * camera stays inside its light-year bubble; acquired only from
+   * the crosshair (reticle focus, falling back to the tapped
+   * selection). No subject means no clamp and no attach — warp
+   * between the stars is never slowed by a star you are not aiming at.
+   */
+  private updateArriveSubject(): void {
+    const range = UNIVERSE.ARRIVE_RANGE_KPC;
+    if (this.hostObj) {
+      if (this.arriveDist(this.hostObj) <= range) return;
+      this.hostObj = null;
+    }
+    for (const cand of [this.focusObj, this.selected]) {
+      if (cand && this.arriveDist(cand) <= range) {
+        this.hostObj = cand;
+        return;
+      }
+    }
   }
 
   private detachHostStar(): void {
+    this.hostObj = null;
     this.detachHost();
   }
 
@@ -2083,7 +2112,8 @@ export class GalaxyView {
    * then the photosphere replaces the harvest pin. One celestial t.
    */
   private updateHostArrival(now: number): void {
-    const lock = this.hostLock();
+    this.updateArriveSubject();
+    const lock = this.hostObj;
     if (!lock) {
       if (this.hostRoot || this.hostStar) {
         this.detachHost();
@@ -2473,7 +2503,20 @@ export class GalaxyView {
     return false;
   }
 
-  /** Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop. */
+  /** Soft core (kpc): a few stellar radii so v stays finite through the photosphere. */
+  private arriveSoftKpc(obj: GalaxyObject): number {
+    return (
+      UNIVERSE.ARRIVE_SOFT * Math.max(1e-8, obj.star.radius) * UNIVERSE.RSUN_KM * KM_TO_KPC
+    );
+  }
+
+  /**
+   * Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop.
+   * Inside a subject's light-year bubble the ship runs
+   * v = ARRIVE_K · (d + soft) — constant perceptual zoom in, finite
+   * through the core, exponential climb back out. Everywhere else
+   * warp is unclamped.
+   */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
       this.thrustOn = false;
@@ -2482,22 +2525,55 @@ export class GalaxyView {
     }
     if (this.thrustOn && !this.warpMayRun()) this.thrustOn = false;
     this.orientArc();
+    this.updateArriveSubject();
     let v = UNIVERSE.GALAXY_WARP;
-    const lock = this.selected ?? this.focusObj;
-    if (lock) {
-      const c = galToCart(lock.pos);
-      const dx = c.x - this.arcCenter.x;
-      const dy = c.y - this.arcCenter.y;
-      const dz = c.z - this.arcCenter.z;
-      const d = Math.hypot(dx, dy, dz);
-      const toward = d > 1e-12
-        ? (dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z) / d
-        : 1;
-      if (toward > 0.55) v = Math.min(v, UNIVERSE.ARRIVE_K * Math.max(d, 1e-14));
+    const subj = this.hostObj;
+    if (subj) {
+      v = Math.min(
+        v,
+        UNIVERSE.ARRIVE_K * (this.arriveDist(subj) + this.arriveSoftKpc(subj)),
+      );
     }
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
     const step = this.thrustSpeed * dt;
+    if (!subj) {
+      // Fence crossing: one warp frame is ~20 ly, far wider than the
+      // bubble, so an aimed star must be entered by substep — warp
+      // up to the fence, latch, and spend the rest of the frame at
+      // the clamped rate — or the frame jumps clean past the star.
+      const cand = this.focusObj ?? this.selected;
+      if (cand) {
+        const range = UNIVERSE.ARRIVE_RANGE_KPC;
+        const c = galToCart(cand.pos);
+        const dx = c.x - this.arcCenter.x;
+        const dy = c.y - this.arcCenter.y;
+        const dz = c.z - this.arcCenter.z;
+        const d = Math.hypot(dx, dy, dz);
+        const tCa = dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z;
+        const miss2 = d * d - tCa * tCa;
+        if (d > range && tCa > 0 && miss2 < range * range) {
+          const tEnter = tCa - Math.sqrt(range * range - miss2);
+          if (tEnter <= step) {
+            this.moveBubble(
+              this.arcFwd.x * tEnter,
+              this.arcFwd.y * tEnter,
+              this.arcFwd.z * tEnter,
+            );
+            this.hostObj = cand;
+            const vIn = UNIVERSE.ARRIVE_K * (range + this.arriveSoftKpc(cand));
+            this.thrustSpeed = vIn;
+            const left = Math.max(0, dt - tEnter / v) * vIn;
+            this.moveBubble(
+              this.arcFwd.x * left,
+              this.arcFwd.y * left,
+              this.arcFwd.z * left,
+            );
+            return;
+          }
+        }
+      }
+    }
     this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
   }
 

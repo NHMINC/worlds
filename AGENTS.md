@@ -102,10 +102,16 @@ toy — Godus blocks on a real-sized globe.
   spin-aligned dipole on every body (a compass works); orbits are stable
   by fiat; we do not integrate an N-body galaxy for 10 Gyr (Milky Way
   density field + IMF + closed-form stellar clock instead); interstellar
-  travel is a lock plus `v = min(GALAXY_WARP, ARRIVE_K · dist)`, not a
-  real light-year cruise; the outer orbit attaches `systemAt` when it
-  covers `SYSTEM_REVEAL_PX` (Kepler `f(spec, t)`, tier-0 globes); the
-  photosphere replaces the harvest pin at `STAR_REVEAL_PX`; set course
+  travel is warp at `GALAXY_WARP`, never clamped between the stars —
+  close approach is crosshair + range, not a galaxy speed law: the
+  reticle (or selected) star inside `ARRIVE_RANGE_LY` latches as the
+  subject and warp drops out at that fence into
+  `v = ARRIVE_K · (d + ARRIVE_SOFT · R★)` (v ∝ d is a steady
+  perceptual zoom; the soft core keeps a flythrough finite, out the
+  far side, not a Zeno stall); the outer orbit attaches `systemAt`
+  when it covers `SYSTEM_REVEAL_PX` (Kepler `f(spec, t)`, tier-0
+  globes); the photosphere replaces the harvest pin at
+  `STAR_REVEAL_PX`; set course
   still opens orbit / surface until one viewer; short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -453,7 +459,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   quietly unless the nose points inward. A tap, not a hold.
   Drag looks. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
-  single-finger touch. A/D still slide.
+  single-finger touch. A/D still slide. Warping at a star on the
+  crosshair drops out of warp at its `ARRIVE_RANGE_LY` fence
+  (entered by substep — a warp frame is wider than the bubble)
+  and rides `ARRIVE_K` in, through, and back out; leaving the
+  bubble restores full warp. Stars you are not aiming at never
+  slow the ship.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper
