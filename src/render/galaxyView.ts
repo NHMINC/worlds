@@ -731,7 +731,12 @@ export class GalaxyView {
   private hostObj: GalaxyObject | null = null;
   private hostStar: StarView | null = null;
   private hostStarId = -1;
-  private hostCube: THREE.WebGLCubeRenderTarget | null = null;
+  /**
+   * The close star draws in its own depth pass over the live galaxy
+   * — same camera pose, AU-scale near/far — so the sky never bakes,
+   * blanks, or switches environment. One universe, two depth windows.
+   */
+  private readonly hostScene = new THREE.Scene();
   /** Local km frame at the locked host, scaled into catalog kpc. */
   private hostRoot: THREE.Group | null = null;
   private hostSpec: SystemSpec | null = null;
@@ -1866,17 +1871,14 @@ export class GalaxyView {
     this.camera.lookAt(this.arcLook);
     this.theta = this.arcYaw;
     this.phi = Math.PI / 2 - this.arcPitch;
+    // The main pass always keeps the whole galaxy: near follows the
+    // subject in (its pin must not clip), far stays the disk. The
+    // furnace and worlds draw in a second AU-scale depth pass on top.
     const lock = this.hostObj;
     if (lock) {
       const d = this.arriveDist(lock);
-      if (this.hostRoot) {
-        const aKpc = this.hostOuterAu * UNIVERSE.AU_KM * KM_TO_KPC;
-        this.camera.near = Math.max(1e-18, Math.min(d * 0.02, aKpc * 0.01));
-        this.camera.far = Math.max(d * 8, aKpc * 40, 1e-8);
-      } else {
-        this.camera.near = Math.min(0.001, Math.max(1e-14, d * 0.04));
-        this.camera.far = regionCamFar();
-      }
+      this.camera.near = Math.min(0.001, Math.max(1e-14, d * 0.04));
+      this.camera.far = regionCamFar();
     } else {
       this.camera.near = 0.001;
       this.camera.far = regionCamFar();
@@ -1924,20 +1926,10 @@ export class GalaxyView {
     this.detachHostFurnace();
     this.detachHostSystem();
     if (this.hostRoot) {
-      this.scene.remove(this.hostRoot);
+      this.hostScene.remove(this.hostRoot);
       this.hostRoot = null;
     }
     this.hostStarId = -1;
-    if (this.hostCube) {
-      this.hostCube.dispose();
-      this.hostCube = null;
-    }
-    if (this.silPts) this.silPts.visible = true;
-    if (this.silEmisPts) this.silEmisPts.visible = true;
-    if (this.cosmicStarPts) this.cosmicStarPts.visible = true;
-    if (this.cosmicSmudgePts) this.cosmicSmudgePts.visible = true;
-    this.scene.background = null;
-    this.applyStarVis();
   }
 
   private detachHostFurnace(): void {
@@ -1945,6 +1937,8 @@ export class GalaxyView {
     this.hostRoot?.remove(this.hostStar.group);
     this.hostStar.dispose();
     this.hostStar = null;
+    // The photosphere is gone: the harvest pin is the star again.
+    this.applyStarVis();
   }
 
   private detachHostSystem(): void {
@@ -1979,7 +1973,7 @@ export class GalaxyView {
     const root = new THREE.Group();
     root.scale.setScalar(KM_TO_KPC);
     root.add(new THREE.AmbientLight(0x30384a, 0.22));
-    this.scene.add(root);
+    this.hostScene.add(root);
     this.hostRoot = root;
     return root;
   }
@@ -1995,20 +1989,6 @@ export class GalaxyView {
     this.starVis.needsUpdate = true;
   }
 
-  private bakeHostSky(): void {
-    if (this.hostRoot) this.hostRoot.visible = false;
-    const rt = this.hostCube ?? new THREE.WebGLCubeRenderTarget(256);
-    this.hostCube = rt;
-    const cubeCam = new THREE.CubeCamera(0.02, regionCamFar(), rt);
-    cubeCam.update(this.renderer, this.scene);
-    this.scene.background = rt.texture;
-    if (this.silPts) this.silPts.visible = false;
-    if (this.silEmisPts) this.silEmisPts.visible = false;
-    if (this.cosmicStarPts) this.cosmicStarPts.visible = false;
-    if (this.cosmicSmudgePts) this.cosmicSmudgePts.visible = false;
-    if (this.hostRoot) this.hostRoot.visible = true;
-  }
-
   private attachHostFurnace(lock: GalaxyObject): void {
     this.detachHostFurnace();
     const spec = this.hostSpec?.star ?? starSpecFromState(lock.star, () => 0.5);
@@ -2016,8 +1996,8 @@ export class GalaxyView {
     this.ensureHostRoot().add(this.hostStar.group);
     if (this.hostLight) this.hostStar.light.intensity = 0;
     this.hostStarId = lock.id;
+    // The photosphere replaces the pin — the rest of the sky stays live.
     this.hideHarvestId(lock.id);
-    this.bakeHostSky();
   }
 
   private attachHostSystem(lock: GalaxyObject): void {
@@ -2118,8 +2098,9 @@ export class GalaxyView {
         spinQ: new THREE.Quaternion(),
       });
     }
-    this.hideHarvestId(lock.id);
-    this.bakeHostSky();
+    // The pin stays until the photosphere replaces it (attachHostFurnace):
+    // between the system reveal and the star reveal the star is still
+    // the pin, and the sky around it never blanks.
   }
 
   private updateHostBodies(tSys: number, L: number): void {
@@ -2220,6 +2201,7 @@ export class GalaxyView {
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     if (this.hostSpec) this.updateHostBodies(tSys, this.hostSpec.star.luminosity);
+    if (root) root.updateMatrixWorld(true);
     if (this.hostStar && root) {
       const camLocal = new THREE.Vector3();
       this.hostStar.group.worldToLocal(camLocal.copy(this.camera.position));
@@ -2926,6 +2908,26 @@ export class GalaxyView {
     this.renderer.setRenderTarget(null);
     this.perf.beginDraw();
     this.renderer.render(this.scene, this.camera);
+    if (this.hostRoot && this.hostObj) {
+      // Close-approach pass: same camera pose, AU-scale depth window,
+      // drawn over the live galaxy. The star is IN the galaxy — the
+      // sky never bakes, blanks, or switches environment; the depth
+      // buffer is simply re-cleared for the near geometry.
+      const d = this.arriveDist(this.hostObj);
+      const aKpc = this.hostOuterAu * UNIVERSE.AU_KM * KM_TO_KPC;
+      const near0 = this.camera.near;
+      const far0 = this.camera.far;
+      this.camera.near = Math.max(1e-18, Math.min(d * 0.02, aKpc * 0.01));
+      this.camera.far = Math.max(d * 8, aKpc * 40, 1e-8);
+      this.camera.updateProjectionMatrix();
+      this.renderer.autoClear = false;
+      this.renderer.clearDepth();
+      this.renderer.render(this.hostScene, this.camera);
+      this.renderer.autoClear = true;
+      this.camera.near = near0;
+      this.camera.far = far0;
+      this.camera.updateProjectionMatrix();
+    }
     this.perf.endDraw();
     this.perf.tick(performance.now() - f0, true);
     this.callbacks.onFrame?.({

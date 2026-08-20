@@ -111,7 +111,10 @@ toy — Godus blocks on a real-sized globe.
   far side, not a Zeno stall); the outer orbit attaches `systemAt`
   when it covers `SYSTEM_REVEAL_PX` (Kepler `f(spec, t)`, tier-0
   globes); the photosphere replaces the harvest pin at
-  `STAR_REVEAL_PX`; set course is a heading hold (`ARRIVE_HOLD`):
+  `STAR_REVEAL_PX`; the close star and its worlds draw as a second
+  AU-scale depth pass over the live galaxy — the sky never bakes,
+  blanks, or switches environment, and the controls never change;
+  set course is a heading hold (`ARRIVE_HOLD`):
   it eases the nose onto the picked star and keeps it there — a
   look drag hands the stick back, and the hold completes at
   closest approach. It does not open a system; landing on a world
