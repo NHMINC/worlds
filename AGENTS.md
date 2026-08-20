@@ -111,7 +111,10 @@ toy — Godus blocks on a real-sized globe.
   (`ARRIVE_PARK` × outer orbit): the star ahead, the planets on their
   rings. Parked, the **system map** (the same map the engine uses)
   offers the worlds; picking one opens the engine in orbit of that
-  body. Orbit / surface stay on the engine until one viewer;
+  body. A parked system does not keep the loop hot: poses are
+  closed-form f(t), so the wake cadence is the fastest body's
+  apparent motion (hot under time lapse, a slow heartbeat at 1:1 —
+  the explorer still idles cold). Orbit / surface stay on the engine until one viewer;
   short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
