@@ -106,9 +106,12 @@ toy — Godus blocks on a real-sized globe.
   The reticle plate only names an object inside `AIM_RANGE_KPC`
   (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
   reads Course Locked; a look drag hands the stick back. On a
-  locked course warp stays warp — full rate, then `ARRIVE_WARP`
-  (1/1000) inside the object's 0.01 ly sphere, and `ARRIVE_K · d`
-  so the disk-growth stretch lasts seconds. The photosphere
+  locked course warp stays warp — full rate until the fence
+  (a warp frame lands on it; it does not crawl the last many
+  ly), then `ARRIVE_WARP` (1/1000) inside the object's 0.01 ly
+  sphere, and `ARRIVE_K · d` so the disk-growth stretch lasts
+  seconds. Leaving hands full warp back at the same fence. The
+  photosphere
   replaces the pin when the sphere is entered (the pin cannot
   draw the approach). Sticky — fly out before a new target or
   full warp. Stop at the fill park. The object stays until we

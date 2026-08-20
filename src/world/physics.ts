@@ -355,8 +355,12 @@ export const UNIVERSE = {
    * (a point, then float32 hops). Inside the sphere speed is also
    * capped at ARRIVE_K · d so the last stretch (when the disk is
    * actually a few pixels) lasts seconds, not one 1/1000-warp
-   * frame. Warp latches Stop when the disk covers ARRIVE_FILL of
-   * the vertical field. The survey photograph (enhanced light
+   * frame. A full-rate warp step is larger than the sphere, so
+   * a step that would enter lands on the fence — the crawl and
+   * the dim start together inside. Leaving hands warp back the
+   * same instant the fence is crossed. Warp latches Stop when
+   * the disk covers ARRIVE_FILL of
+   * the vertical field. The survey photograph (enhanced light)
    * for flying the disk) falls linearly with distance from 1
    * at the fence to ARRIVE_SKY_GAIN at the fill park — a
    * dark-sky Earth night, a bit clearer. Leaving the sphere
