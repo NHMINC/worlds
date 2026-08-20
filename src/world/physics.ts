@@ -344,8 +344,10 @@ export const UNIVERSE = {
    * Approach: v = min(GALAXY_WARP, ARRIVE_K · dist). The locked host
    * becomes a furnace when its photosphere exceeds STAR_REVEAL_PX.
    * The system (outer planet a) attaches at SYSTEM_REVEAL_PX — same
-   * angular-size test, Kepler as f(spec, t). Set course still owns
-   * orbit / surface until one viewer.
+   * angular-size test, Kepler as f(spec, t). Set course locks and
+   * starts that approach. Orbit / surface stay on the engine until
+   * one viewer (a saved camera is a camp; a visit with no cam is
+   * the course).
    */
   ARRIVE_K: 0.35,
   STAR_REVEAL_PX: 3,

@@ -39,8 +39,13 @@ export function GalaxyExplorer(props: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<GalaxyView | null>(null);
-  const goRef = useRef(props.onSetCourse);
-  goRef.current = props.onSetCourse;
+  const goRef = useRef<(o: GalaxyObject) => void>(props.onSetCourse);
+
+  function beginCourse(o: GalaxyObject): void {
+    viewRef.current?.setCourse(o);
+    props.onSetCourse(o);
+  }
+  goRef.current = beginCourse;
   const hereRef = useRef(props.hereStarId ?? null);
   hereRef.current = props.hereStarId ?? null;
   const readyRef = useRef(props.onReady);
@@ -323,7 +328,7 @@ export function GalaxyExplorer(props: Props) {
               className="gx-plate-go"
               onClick={() => {
                 const o = viewRef.current?.focusedObject();
-                if (o) props.onSetCourse(o);
+                if (o) beginCourse(o);
               }}
             >
               Set course
@@ -383,7 +388,7 @@ export function GalaxyExplorer(props: Props) {
           </dl>
           {st.nebula !== 'none' && <div className="gd-nebula">{st.nebula === 'hii' ? 'H II region' : st.nebula === 'planetary' ? 'Planetary nebula' : 'Supernova remnant'}</div>}
           <div className="gd-id">#{selected.id}</div>
-          <button className="gd-go" onClick={() => props.onSetCourse(selected)}>
+          <button className="gd-go" onClick={() => beginCourse(selected)}>
             Set course
           </button>
         </aside>

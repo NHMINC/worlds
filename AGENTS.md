@@ -106,7 +106,9 @@ toy — Godus blocks on a real-sized globe.
   real light-year cruise; the outer orbit attaches `systemAt` when it
   covers `SYSTEM_REVEAL_PX` (Kepler `f(spec, t)`, tier-0 globes); the
   photosphere replaces the harvest pin at `STAR_REVEAL_PX`; set course
-  still opens orbit / surface until one viewer; short nebula phases are toy-stretched
+  locks the host and starts that approach — it does not teleport onto
+  a planet; orbit / surface stay on the engine until one viewer;
+  short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
   on as laws. Clouds are not a painted deck; aerosol opacity lives
@@ -209,9 +211,11 @@ first (one hash pass), so the count lands near
 their own catalog.
 The shape sample and the `HARVEST_ALL` million-pin photograph
 are retired. A later survey will
-resolve the faint neighbours of a camp. Set course loads a
-picked harvest star (or the here / POI focus). We **store
-visits only** (overlays, camera, labels). We do
+resolve the faint neighbours of a camp. Set course locks a
+picked harvest star (or the here / POI focus) and starts the
+approach in the explorer. We **store visits only** (overlays,
+camera, labels). A visit with no camera is the course; a saved
+camera is a camp (Return / boot resume). We do
   not mint systems.   App boot mints the whole-disk backdrop once
   (`prepareUniverse`) behind the HTML “Preparing the universe”
   splash — not a React overlay, so Strict Mode remounts cannot
@@ -234,7 +238,7 @@ visits only** (overlays, camera, labels). We do
   again. An empty save does not write a camp: it queries nearby
   solar-circle hosts for a living world (`discoverHabitable`) and
   opens the region looking at that star. Set course is the first
-  visit. Changing the grid renumbers `starId`; old visits from the
+  visit and the approach — not a drop onto `homeBodyId`. Changing the grid renumbers `starId`; old visits from the
   7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
@@ -325,8 +329,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   not this sky. “Here” (the
   loaded star, else `homeStar`) is a **focus highlight** parked
   in front of the camera; visited samples can mark other points
-  of interest. The explorer canvas stays alive after Return /
-  set course; only the splash is once-per-load. An empty save
+  of interest. The explorer canvas stays alive after Return;
+  set course never hides it. Only the splash is once-per-load. An empty save
   opens the same way on a discovered living host. The camera
   sits at the viewpoint centre. Gestures **slide** through
   catalog space (1:1, no `VIEW_R` stretch).   Harvest stars are

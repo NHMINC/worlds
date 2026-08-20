@@ -1756,6 +1756,24 @@ export class GalaxyView {
     if (this.thrustOn) this.wake(2);
   }
 
+  /**
+   * Set course: lock this harvest star and start the approach
+   * (`v = min(GALAXY_WARP, ARRIVE_K · dist)`). Does not park or
+   * leave the explorer — the engine is a later land, not this verb.
+   */
+  setCourse(obj: GalaxyObject): void {
+    if (this.mode !== 'region') return;
+    this.overview = false;
+    this.select(obj);
+    const c = galToCart(obj.pos);
+    const dx = c.x - this.arcCenter.x;
+    const dy = c.y - this.arcCenter.y;
+    const dz = c.z - this.arcCenter.z;
+    if (Math.hypot(dx, dy, dz) > 1e-12) this.aimAt(dx, dy, dz);
+    this.applyCam();
+    this.setWarp(true);
+  }
+
   warping(): boolean {
     return this.thrustOn;
   }
