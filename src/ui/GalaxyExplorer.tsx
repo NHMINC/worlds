@@ -29,7 +29,6 @@ interface Props {
   canClose?: boolean;
   /** False while the explorer is kept warm but hidden. */
   active?: boolean;
-  onSetCourse: (obj: GalaxyObject) => void;
   onClose: () => void;
   onReady?: () => void;
 }
@@ -39,8 +38,6 @@ export function GalaxyExplorer(props: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<GalaxyView | null>(null);
-  const goRef = useRef(props.onSetCourse);
-  goRef.current = props.onSetCourse;
   const hereRef = useRef(props.hereStarId ?? null);
   hereRef.current = props.hereStarId ?? null;
   const readyRef = useRef(props.onReady);
@@ -85,7 +82,6 @@ export function GalaxyExplorer(props: Props) {
         seed,
         {
           onSelect: setSelected,
-          onGo: (obj) => goRef.current(obj),
           onFrame: (f) => {
             setFrame((prev) =>
               prev.mode !== f.mode ||
@@ -323,7 +319,7 @@ export function GalaxyExplorer(props: Props) {
               className="gx-plate-go"
               onClick={() => {
                 const o = viewRef.current?.focusedObject();
-                if (o) props.onSetCourse(o);
+                if (o) viewRef.current?.setCourse(o);
               }}
             >
               Set course
@@ -383,7 +379,7 @@ export function GalaxyExplorer(props: Props) {
           </dl>
           {st.nebula !== 'none' && <div className="gd-nebula">{st.nebula === 'hii' ? 'H II region' : st.nebula === 'planetary' ? 'Planetary nebula' : 'Supernova remnant'}</div>}
           <div className="gd-id">#{selected.id}</div>
-          <button className="gd-go" onClick={() => props.onSetCourse(selected)}>
+          <button className="gd-go" onClick={() => viewRef.current?.setCourse(selected)}>
             Set course
           </button>
         </aside>

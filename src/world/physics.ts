@@ -352,10 +352,14 @@ export const UNIVERSE = {
    * you are not aiming at cannot slow you. The photosphere replaces
    * the harvest pin at STAR_REVEAL_PX; the system (outer planet a)
    * attaches at SYSTEM_REVEAL_PX — same angular-size test, Kepler
-   * as f(spec, t). Set course still owns orbit / surface.
+   * as f(spec, t). Set course is a heading hold: ease the nose onto
+   * the picked star at ARRIVE_HOLD (1/s) and keep it there; a look
+   * drag hands the stick back, and the hold completes at closest
+   * approach. It does not open a system.
    */
   ARRIVE_K: 1.2,
   ARRIVE_SOFT: 4,
+  ARRIVE_HOLD: 3,
   ARRIVE_RANGE_LY: 1,
   /** The fence in catalog units. 1 kpc = 3261.56 ly. */
   get ARRIVE_RANGE_KPC(): number {

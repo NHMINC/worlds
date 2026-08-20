@@ -611,8 +611,6 @@ export interface RegionSelection {
 
 interface Callbacks {
   onSelect: (obj: GalaxyObject | null) => void;
-  /** Set course from the sight plate. */
-  onGo?: (obj: GalaxyObject) => void;
   onFrame?: (f: GalaxyFrame) => void;
 }
 
@@ -717,8 +715,16 @@ export class GalaxyView {
   private filter: GalaxyFilter = 'all';
   private selected: GalaxyObject | null = null;
   /**
-   * Close-approach subject. Latched when the reticle star (or the
-   * selected star) comes inside ARRIVE_RANGE_LY; released when the
+   * Set course = a heading hold: keep the nose on this star while
+   * flying. A look drag releases it (the pilot has the stick); a
+   * teleport (enterRegion) releases it; it completes at closest
+   * approach inside the light-year bubble.
+   */
+  private courseObj: GalaxyObject | null = null;
+  private coursePrevD = Infinity;
+  /**
+   * Close-approach subject. Latched when the course, reticle, or
+   * selected star comes inside ARRIVE_RANGE_LY; released when the
    * camera leaves that bubble. Latching, not re-testing the reticle,
    * because a full-screen star cannot stay on a 0.028 rad crosshair.
    */
@@ -843,6 +849,7 @@ export class GalaxyView {
     this.regionLabel = regionName(x, y, z);
     this.objects = [];
     this.resetThrust();
+    this.courseObj = null;
 
     this.arcPos.set(0, 0, 0);
     const glen = Math.hypot(x, z);
@@ -1423,6 +1430,57 @@ export class GalaxyView {
     this.select(null);
   }
 
+  /**
+   * Set course: hold the heading on a star. The nose eases onto the
+   * target at ARRIVE_HOLD and stays there while flying — warp, the
+   * fence, and the flythrough are unchanged laws. A look drag hands
+   * the stick back; the hold completes at closest approach.
+   */
+  setCourse(obj: GalaxyObject): void {
+    if (this.mode !== 'region') return;
+    this.courseObj = obj;
+    this.coursePrevD = Infinity;
+    this.select(null);
+    this.wake();
+  }
+
+  /** Ease the nose onto the course star; release at closest approach. */
+  private holdCourse(dt: number): void {
+    const c = this.courseObj;
+    if (!c || this.mode !== 'region') return;
+    const p = galToCart(c.pos);
+    const dx = p.x - this.arcCenter.x;
+    const dy = p.y - this.arcCenter.y;
+    const dz = p.z - this.arcCenter.z;
+    const d = Math.hypot(dx, dy, dz);
+    if (d < 1e-15) return;
+    // Course complete at closest approach inside the light-year
+    // bubble — dead-centre and a near miss both count as arrival,
+    // and the hold must not swing the nose backwards after the pass.
+    if (d <= UNIVERSE.ARRIVE_RANGE_KPC) {
+      if (d > this.coursePrevD) {
+        this.courseObj = null;
+        return;
+      }
+      this.coursePrevD = d;
+    }
+    const tgtYaw = Math.atan2(dx, dz);
+    const tgtPitch = THREE.MathUtils.clamp(
+      Math.asin(THREE.MathUtils.clamp(dy / d, -1, 1)),
+      -1.45,
+      1.45,
+    );
+    let dYaw = tgtYaw - this.arcYaw;
+    dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+    const dPitch = tgtPitch - this.arcPitch;
+    if (Math.abs(dYaw) + Math.abs(dPitch) < 1e-7) return;
+    const k = 1 - Math.exp(-UNIVERSE.ARRIVE_HOLD * dt);
+    this.arcYaw += dYaw * k;
+    this.arcPitch += dPitch * k;
+    this.applyCam();
+    this.wake();
+  }
+
   canPick(): boolean {
     return this.mode === 'region';
   }
@@ -1849,7 +1907,7 @@ export class GalaxyView {
       if (this.arriveDist(this.hostObj) <= range) return;
       this.hostObj = null;
     }
-    for (const cand of [this.focusObj, this.selected]) {
+    for (const cand of [this.courseObj, this.focusObj, this.selected]) {
       if (cand && this.arriveDist(cand) <= range) {
         this.hostObj = cand;
         return;
@@ -2416,6 +2474,8 @@ export class GalaxyView {
       return;
     }
     if (this.mode === 'region') {
+      // A look drag is the pilot taking the stick: the course hold lets go.
+      this.courseObj = null;
       this.arcYaw -= dx * 0.005;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
       this.applyCam();
@@ -2542,7 +2602,7 @@ export class GalaxyView {
       // bubble, so an aimed star must be entered by substep — warp
       // up to the fence, latch, and spend the rest of the frame at
       // the clamped rate — or the frame jumps clean past the star.
-      const cand = this.focusObj ?? this.selected;
+      const cand = this.courseObj ?? this.focusObj ?? this.selected;
       if (cand) {
         const range = UNIVERSE.ARRIVE_RANGE_KPC;
         const c = galToCart(cand.pos);
@@ -2795,6 +2855,7 @@ export class GalaxyView {
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
     this.idle += dt;
+    this.holdCourse(dt);
     this.cruise(dt);
     this.steerArc(dt);
     // Motion is the universal wake: input, warp, and settling

@@ -111,8 +111,11 @@ toy — Godus blocks on a real-sized globe.
   far side, not a Zeno stall); the outer orbit attaches `systemAt`
   when it covers `SYSTEM_REVEAL_PX` (Kepler `f(spec, t)`, tier-0
   globes); the photosphere replaces the harvest pin at
-  `STAR_REVEAL_PX`; set course
-  still opens orbit / surface until one viewer; short nebula phases are toy-stretched
+  `STAR_REVEAL_PX`; set course is a heading hold (`ARRIVE_HOLD`):
+  it eases the nose onto the picked star and keeps it there — a
+  look drag hands the stick back, and the hold completes at
+  closest approach. It does not open a system; landing on a world
+  waits for the solar-system step; short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
   on as laws. Clouds are not a painted deck; aerosol opacity lives
@@ -215,8 +218,9 @@ first (one hash pass), so the count lands near
 their own catalog.
 The shape sample and the `HARVEST_ALL` million-pin photograph
 are retired. A later survey will
-resolve the faint neighbours of a camp. Set course loads a
-picked harvest star (or the here / POI focus). We **store
+resolve the faint neighbours of a camp. Set course holds the
+heading on a picked star — flying there is the warp + close-
+approach laws; it no longer loads a system. We **store
 visits only** (overlays, camera, labels). We do
   not mint systems.   App boot mints the whole-disk backdrop once
   (`prepareUniverse`) behind the HTML “Preparing the universe”
@@ -239,9 +243,10 @@ visits only** (overlays, camera, labels). We do
   world) so opening the map does not remint or show the splash
   again. An empty save does not write a camp: it queries nearby
   solar-circle hosts for a living world (`discoverHabitable`) and
-  opens the region looking at that star. Set course is the first
-  visit. Changing the grid renumbers `starId`; old visits from the
-  7k-sample era are void.
+  opens the region looking at that star. Set course no longer
+  writes a visit — until the solar-system step lands, worlds open
+  only from existing saves. Changing the grid renumbers `starId`;
+  old visits from the 7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
 
