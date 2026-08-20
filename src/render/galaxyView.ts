@@ -217,6 +217,10 @@ function dustDebugOn(): boolean {
 const FOCUS_PARK = 0.35;
 const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
+/** Pixels before a look takes the stick (and drops the course). */
+const DRAG_SLOP = 10;
+/** Tap, not a drag — pick the star under the pointer. */
+const TAP_SLOP = 22;
 
 export type GalaxyMode = 'region';
 export type GalaxyFilter = 'all' | 'hot' | 'sunlike' | 'cool' | 'remnant' | 'nebula' | 'halo' | 'arm';
@@ -1502,7 +1506,9 @@ export class GalaxyView {
   /** Ease the nose onto the course star and keep it there. */
   private holdCourse(dt: number): void {
     const c = this.courseObj;
-    if (!c || this.mode !== 'region' || this.dragging) return;
+    if (!c || this.mode !== 'region') return;
+    // A click on the canvas is not a look. Only a real drag owns the stick.
+    if (this.dragging && this.moved >= DRAG_SLOP) return;
     const p = galToCart(c.pos);
     const dx = p.x - this.arcCenter.x;
     const dy = p.y - this.arcCenter.y;
@@ -2301,6 +2307,13 @@ export class GalaxyView {
 
   private onMove = (e: PointerEvent): void => {
     if (!this.pointers.has(e.pointerId)) return;
+    // Hover after a leaked mouse down is not a look. Drop the stale id
+    // so a later click is a fresh single pointer, not a pinch.
+    if ((e.pointerType === 'mouse' || e.pointerType === 'pen') && e.buttons === 0) {
+      this.pointers.delete(e.pointerId);
+      if (this.pointers.size === 0) this.dragging = false;
+      return;
+    }
     this.wake();
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (this.pointers.size === 2) {
@@ -2328,7 +2341,8 @@ export class GalaxyView {
       return;
     }
     if (this.mode === 'region') {
-      // A look drag is the pilot taking the stick: the course hold lets go.
+      // Click / jitter must not drop the course. A real look does.
+      if (this.moved < DRAG_SLOP) return;
       this.clearCourse();
       this.arcYaw -= dx * 0.005;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
@@ -2352,11 +2366,14 @@ export class GalaxyView {
   }
 
   private onUp = (e: PointerEvent): void => {
+    // Window-level up also sees Set course / Warp. Those never
+    // started on the canvas — do not pick or drop the course.
+    if (!this.pointers.has(e.pointerId)) return;
     this.wake();
     this.pointers.delete(e.pointerId);
     if (this.pointers.size < 2) this.pinch0 = 0;
     if (this.pointers.size === 0) {
-      if (this.dragging && this.moved < 22) this.pick(e.clientX, e.clientY);
+      if (this.dragging && this.moved < TAP_SLOP) this.pick(e.clientX, e.clientY);
       this.dragging = false;
     } else {
       // One pinch finger lifted: the survivor is NOT a drag. Rotation
@@ -2419,7 +2436,12 @@ export class GalaxyView {
 
   /** Catalog distance at which the object's disk covers ARRIVE_FILL of the vertical FOV. */
   private parkKpc(obj: GalaxyObject): number {
-    const R = Math.max(1e-8, obj.star.radius) * UNIVERSE.RSUN_KM * KM_TO_KPC;
+    // Remnants are point-sized (pulsar ~1e-5 R☉). Fill-park on that
+    // radius is ~1e-15 kpc — closer than holdCourse will aim, so
+    // warp never Stops. Floor at a WD photosphere: one law, every
+    // compact object still has a reachable park.
+    const Rsun = Math.max(0.01, obj.star.radius);
+    const R = Rsun * UNIVERSE.RSUN_KM * KM_TO_KPC;
     const fov = (this.camera.fov * Math.PI) / 180;
     const half = 0.5 * UNIVERSE.ARRIVE_FILL * fov;
     return R / Math.max(1e-8, Math.tan(half));
