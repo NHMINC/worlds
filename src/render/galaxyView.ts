@@ -1425,21 +1425,22 @@ export class GalaxyView {
   }
 
   /**
-   * Survey gain. Distance, not a clock: 1 at the ARRIVE_RANGE_LY
-   * fence (and outside), ARRIVE_SKY_GAIN at the fill park, linear
-   * in between. Leaving the sphere is full survey light again.
+   * Survey gain. Same subject and radius as the brake: 1 at
+   * ARRIVE_BRAKE_LY (and outside), ARRIVE_SKY_GAIN at the fill
+   * park, linear in between. A locked course dims before the
+   * host attaches — waiting for the fence was the 10 s gap.
    * The furnace is a second pass and is not dimmed.
    */
   private skyDim(): number {
-    const host = this.hostObj;
-    if (!host) return 1;
-    const R = UNIVERSE.ARRIVE_RANGE_KPC;
-    if (R <= 0) return 1;
+    const obj = this.closeSubject();
+    if (!obj) return 1;
+    const outer = Math.max(UNIVERSE.ARRIVE_BRAKE_KPC, UNIVERSE.ARRIVE_RANGE_KPC);
+    if (outer <= 0) return 1;
     const g = UNIVERSE.ARRIVE_SKY_GAIN;
-    const park = this.parkKpc(host);
-    const span = R - park;
+    const park = this.parkKpc(obj);
+    const span = outer - park;
     if (span <= 1e-12) return g;
-    const t = Math.max(0, Math.min(1, (R - this.arriveDist(host)) / span));
+    const t = Math.max(0, Math.min(1, (outer - this.arriveDist(obj)) / span));
     return 1 + (g - 1) * t;
   }
 
@@ -2132,17 +2133,17 @@ export class GalaxyView {
   }
 
   /**
-   * Approach / leave speed. Full warp outside ARRIVE_BRAKE_LY.
-   * Inside that radius v scales with distance so the fence is
-   * already at sphereSpeed — a warp frame cannot skip the
-   * bubble. Same curve both ways. Dim still starts at the fence.
+   * Approach / leave speed. Full warp beyond ARRIVE_BRAKE_LY.
+   * On the shell and inside, v = ARRIVE_K · d (meets the fence
+   * limit). d >= brake was still full warp — the next frame
+   * then clipped onto the fence and froze. Same curve both ways.
    */
   private closeSpeed(d: number): number {
     const warp = UNIVERSE.GALAXY_WARP;
     const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
     const fence = UNIVERSE.ARRIVE_RANGE_KPC;
     if (d <= fence) return this.sphereSpeed(d);
-    if (d >= brake) return warp;
+    if (d > brake) return warp;
     const vFence = this.sphereSpeed(fence);
     return Math.min(warp, vFence * (d / Math.max(fence, 1e-16)));
   }
@@ -2509,7 +2510,8 @@ export class GalaxyView {
    * ↓ sets astern and warps. From ARRIVE_BRAKE_LY a locked course
    * falls as ARRIVE_K · d so the fence is already at the speed
    * limit — no dump onto the shell, no skip through it. The same
-   * curve leaving. Dim starts at the fence. Ahead Stops at the
+   * curve leaving. Dim starts at the same 1 ly brake. Ahead
+   * Stops at the
    * fill park. Astern never parks.
    */
   private cruise(dt: number): void {
@@ -2552,10 +2554,10 @@ export class GalaxyView {
         return;
       }
     }
-    // A full-rate frame is larger than the brake and the sphere.
-    // Land on the next shell along the close so leftover warp
-    // cannot skip the progressive (inbound 1 ly, then the fence;
-    // outbound the 1 ly hand-back).
+    // A full-rate frame is larger than the brake. Land just
+    // inside it so the next frame is already on the curve —
+    // do not clip a warp step onto the 0.01 ly fence (that
+    // was the abrupt stop, then ten seconds of crawl before dim).
     if (sub) {
       const d = this.arriveDist(sub);
       const c = galToCart(sub.pos);
@@ -2565,10 +2567,8 @@ export class GalaxyView {
           (c.z - this.arcCenter.z) * this.arcFwd.z) *
         sign;
       const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
-      const fence = UNIVERSE.ARRIVE_RANGE_KPC;
-      if (closing > 0) {
-        if (d > brake) step = Math.min(step, d - brake);
-        else if (d > fence) step = Math.min(step, d - fence);
+      if (closing > 0 && d > brake) {
+        step = Math.min(step, d - brake * (1 - 1e-6));
       } else if (closing < 0 && d < brake) {
         step = Math.min(step, Math.max(0, brake - d));
       }

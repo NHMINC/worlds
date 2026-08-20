@@ -356,13 +356,14 @@ export const UNIVERSE = {
    * in, speed falls as ARRIVE_K · d so a warp frame cannot skip
    * the sphere; at the fence that is already the speed limit.
    * The same curve in reverse on the way out — full warp again
-   * at 1 ly. Inside, ARRIVE_WARP also caps. Dim is still the
-   * fence→park distance law. Warp latches Stop when the disk
+   * at 1 ly. Inside, ARRIVE_WARP also caps. Dim uses the same
+   * 1 ly → park span as the brake (a locked course, not only
+   * once the host attaches). Warp latches Stop when the disk
    * covers ARRIVE_FILL of the vertical field. The survey
    * photograph (enhanced light for flying the disk) falls
-   * linearly with distance from 1 at the fence to ARRIVE_SKY_GAIN
-   * at the fill park — a dark-sky Earth night, a bit clearer.
-   * Leaving the sphere is full survey light again. That is the
+   * linearly with distance from 1 at the 1 ly brake to
+   * ARRIVE_SKY_GAIN at the fill park — a dark-sky Earth
+   * night, a bit clearer. Leaving is the reverse. That is the
    * only galaxy light in the bubble: looking out, and every
    * other object (pins, nebulae, later worlds). The host
    * furnace is not dimmed. It does not open a system.
@@ -387,11 +388,11 @@ export const UNIVERSE = {
     return this.ARRIVE_BRAKE_LY / 3261.56;
   },
   /**
-   * Galaxy light inside the 0.01 ly sphere. The harvest / nebula /
+   * Galaxy light from the 1 ly brake in. The harvest / nebula /
    * cosmic photograph is enhanced so you can fly the disk; that
    * fill would make night impossible. Gain is a distance law,
-   * not a timed fade: 1 at the rim, this floor at the fill
-   * park, linear in between. Leaving the sphere is 1 again.
+   * not a timed fade: 1 at ARRIVE_BRAKE_LY, this floor at the
+   * fill park, linear in between. Leaving is the reverse.
    * The floor is a dark-sky Earth night, a little clearer —
    * the band is readable, not a flood. Every object in the
    * bubble (other pins, nebulae, later worlds) only gets this
