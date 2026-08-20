@@ -119,10 +119,12 @@ export function GalaxyExplorer(props: Props) {
               prev.inView !== f.inView ||
               prev.backdrop !== f.backdrop ||
               prev.course?.id !== f.course?.id ||
+              prev.course?.bodyId !== f.course?.bodyId ||
               Math.abs((prev.course?.dist ?? -1) - (f.course?.dist ?? -1)) > 1e-12 ||
               Math.abs((prev.soiRemain ?? -1) - (f.soiRemain ?? -1)) > 1e-12 ||
               prev.hostId !== f.hostId ||
               prev.focus?.id !== f.focus?.id ||
+              prev.focus?.bodyId !== f.focus?.bodyId ||
               (f.focus != null &&
                 (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
                   Math.abs((prev.focus?.y ?? 0) - f.focus.y) > 2))
@@ -403,14 +405,23 @@ export function GalaxyExplorer(props: Props) {
             <em>
               {(frame.course ?? frame.focus)!.cls} · {(frame.course ?? frame.focus)!.phase}
             </em>
-            <i>
-              {(frame.course ?? frame.focus)!.planets} planet
-              {(frame.course ?? frame.focus)!.planets === 1 ? '' : 's'}
-              {(frame.course ?? frame.focus)!.moons
-                ? ` · ${(frame.course ?? frame.focus)!.moons} moon${(frame.course ?? frame.focus)!.moons === 1 ? '' : 's'}`
-                : ''}
-              {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
-            </i>
+            {(frame.course ?? frame.focus)!.bodyId ? (
+              <i>
+                {(frame.course ?? frame.focus)!.moons
+                  ? `${(frame.course ?? frame.focus)!.moons} moon${(frame.course ?? frame.focus)!.moons === 1 ? '' : 's'}`
+                  : (frame.course ?? frame.focus)!.phase}
+                {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
+              </i>
+            ) : (
+              <i>
+                {(frame.course ?? frame.focus)!.planets} planet
+                {(frame.course ?? frame.focus)!.planets === 1 ? '' : 's'}
+                {(frame.course ?? frame.focus)!.moons
+                  ? ` · ${(frame.course ?? frame.focus)!.moons} moon${(frame.course ?? frame.focus)!.moons === 1 ? '' : 's'}`
+                  : ''}
+                {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
+              </i>
+            )}
             {frame.course && (
               <i className="gx-plate-dist">{formatCatalogDist(frame.course.dist)}</i>
             )}
@@ -421,8 +432,14 @@ export function GalaxyExplorer(props: Props) {
                 type="button"
                 className="gx-plate-go"
                 onClick={() => {
-                  const o = viewRef.current?.focusedObject();
-                  if (o) viewRef.current?.setCourse(o);
+                  const view = viewRef.current;
+                  if (!view) return;
+                  const body = view.focusedBodyId();
+                  if (body) view.setCourseBody(body);
+                  else {
+                    const o = view.focusedObject();
+                    if (o) view.setCourse(o);
+                  }
                 }}
               >
                 Set course
@@ -638,8 +655,10 @@ export function GalaxyExplorer(props: Props) {
           starName={chartSpec.star.name}
           starColor={chartSpec.star.color}
           planets={chartPlanets}
+          currentBodyId={frame.course?.bodyId ?? frame.focus?.bodyId}
           angleOf={chartAngleOf}
           zoomable
+          onTravel={(id) => viewRef.current?.setCourseBody(id)}
           onClose={() => setMapOpen(false)}
         />
       )}

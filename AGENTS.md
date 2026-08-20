@@ -145,7 +145,15 @@ toy — Godus blocks on a real-sized globe.
   spin; planet `inc` / `node` stay relative
   to that frame). The old bottle never sat
   in the galaxy, so its XY was an accident,
-  not a law. Landing on a world still waits;
+  not a law. A world has its own fence
+  (`WORLD_RANGE_AU`) — same arrive family
+  (heading hold, half-warp gears from
+  `WORLD_BRAKE_AU`, Stop at `ARRIVE_FILL`
+  of that disk). Reticle and chart pick
+  the body; another world can be chosen
+  without leaving the host; another star
+  cannot. The ball stays a ball. Landing
+  on a world still waits;
   short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -353,8 +361,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   does. Remint / rebake knobs are amber. Live photograph
   knobs already sit on the GPU (smudge brightness and count,
   background-star brightness and count, extinction, shine,
-  nebula glow) — a slide is the next frame. Approach knobs
-  (sphere radius, galaxy dim, approach warp, close crawl,
+  nebula glow) — a slide is the next frame.   Approach knobs
+  (sphere radius, world sphere, world brake, galaxy dim, approach warp, close crawl,
   park fill, heading hold, reticle range, disk warp) write
   `UNIVERSE` live — a slide is the next frame, no remint.
   Rebuild knobs (survey
@@ -532,7 +540,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Inside, `ARRIVE_WARP` also
   caps (sticky — fly out before a new target or full warp).
   A locked course stops at the
-  `ARRIVE_FILL` park. The survey photograph is a place law
+  `ARRIVE_FILL` park. Inside a host, set
+  course on a world uses the same park on
+  that world's disk; gears run from
+  `WORLD_BRAKE_AU` down to `WORLD_RANGE_AU`
+  so the fence cannot be skipped. The survey photograph is a place law
   (`surveyGain`): full outside any sphere, `ARRIVE_SKY_GAIN`
   at the centre, linear in distance (dark-sky Earth, a bit
   clearer — the only galaxy light on anything in the bubble;

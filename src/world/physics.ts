@@ -368,6 +368,15 @@ export const UNIVERSE = {
    * portrait uses the width). The host furnace is not dimmed. Worlds
    * of that host draw in the same AU-scale pass. It does
    * not open the old system viewer.
+   * A world inside that bubble has its own fence
+   * (WORLD_RANGE_AU) — a place, not the radius.
+   * Same family: heading hold, half-warp gears from
+   * WORLD_BRAKE_AU so the fence cannot be skipped,
+   * Stop when that world's disk covers ARRIVE_FILL.
+   * Look drag releases the heading, not the world.
+   * Another world can be picked without leaving the
+   * host; another star cannot. Survey gain stays the
+   * host-sphere law. The ball stays a ball.
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
@@ -402,6 +411,26 @@ export const UNIVERSE = {
    * host furnace is real starlight and is not multiplied.
    */
   ARRIVE_SKY_GAIN: 0.08,
+  /**
+   * World fence inside the host sphere. A place, not the
+   * body's radius — park is the size law (ARRIVE_FILL).
+   * 0.02 AU is a few million km: the ball is already a
+   * disk, and the close-crawl still has room to stop.
+   */
+  WORLD_RANGE_AU: 0.02,
+  get WORLD_RANGE_KPC(): number {
+    return (this.WORLD_RANGE_AU * this.AU_KM) / this.KPC_KM;
+  },
+  /**
+   * Ahead only. Inside this radius of a coursed world,
+   * half of the host-sphere speed, held until a frame
+   * would hit WORLD_RANGE, then half again. Floor is
+   * the close crawl at the fence. Astern ignores this.
+   */
+  WORLD_BRAKE_AU: 2,
+  get WORLD_BRAKE_KPC(): number {
+    return (this.WORLD_BRAKE_AU * this.AU_KM) / this.KPC_KM;
+  },
   /**
    * Host-pass orbit rings. The old system viewer used ~0.1 on a
    * black void; that is glass on the dimmed harvest. These are

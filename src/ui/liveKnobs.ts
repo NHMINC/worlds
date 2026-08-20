@@ -437,7 +437,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Park fill',
     group: 'approach',
     hint: 'how much of the view the disk covers at Stop',
-    about: 'On a locked course, warp latches Stop when the photosphere covers this fraction of the shorter field (width in portrait, height in landscape). Size law, not the sphere. Next frame.',
+    about: 'On a locked course, warp latches Stop when the photosphere — or a coursed world disk — covers this fraction of the shorter field (width in portrait, height in landscape). Size law, not the sphere. Next frame.',
     uniform: 'uArriveFill',
     min: 0.08,
     max: 0.5,
@@ -452,7 +452,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Heading hold',
     group: 'approach',
     hint: 'how fast the nose eases onto the course (1/s)',
-    about: 'Set course eases the nose onto the star at this rate and keeps it there while flying. A look drag hands the stick back. Next frame.',
+    about: 'Set course eases the nose onto the star or world at this rate and keeps it there while flying. A look drag hands the stick back. Next frame.',
     uniform: 'uArriveHold',
     min: 0.5,
     max: 8,
@@ -467,7 +467,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Reticle range',
     group: 'approach',
     hint: 'how far the sight plate will name a star (kpc)',
-    about: 'The plate only locks an object inside this neighbourhood — not the far disk. Set course still needs you to leave a host sphere before a new target. Next frame.',
+    about: 'The plate only locks a star inside this neighbourhood — not the far disk. Inside a host, worlds are always in range. Set course to another star still needs you to leave the host sphere. Next frame.',
     uniform: 'uAimRange',
     min: 0.2,
     max: 4,
@@ -475,6 +475,36 @@ export const LIVE_KNOBS: LiveKnob[] = [
     read: () => UNIVERSE.AIM_RANGE_KPC,
     write: (v) => {
       UNIVERSE.AIM_RANGE_KPC = v;
+    },
+  },
+  {
+    id: 'worldRange',
+    label: 'World sphere',
+    group: 'approach',
+    hint: 'how far the world fence reaches (AU)',
+    about: 'Fixed fence around a coursed world inside the host bubble — speed limit and sticky lock. Not object-size: park is the fill law. 0.02 AU is a few million km. Next frame.',
+    uniform: 'uWorldRange',
+    min: 0.005,
+    max: 0.1,
+    step: 0.005,
+    read: () => UNIVERSE.WORLD_RANGE_AU,
+    write: (v) => {
+      UNIVERSE.WORLD_RANGE_AU = v;
+    },
+  },
+  {
+    id: 'worldBrake',
+    label: 'World brake',
+    group: 'approach',
+    hint: 'how far out the world gears begin (AU)',
+    about: 'Ahead only, and only on a world course. Outside this radius, cruise is Close crawl × distance to the world (capped by Approach warp). Inside it, half of that until a frame would hit the world fence, then half again. Astern does not use this. Next frame.',
+    uniform: 'uWorldBrake',
+    min: 0.2,
+    max: 15,
+    step: 0.2,
+    read: () => UNIVERSE.WORLD_BRAKE_AU,
+    write: (v) => {
+      UNIVERSE.WORLD_BRAKE_AU = v;
     },
   },
   {

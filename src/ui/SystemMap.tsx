@@ -9,7 +9,7 @@ import { keplerPlane, type SystemSpec } from '../world/systemgen';
  * a physical scale), but every body rides its live orbital angle, so the map
  * drifts in real time. In the world viewer, tap a world to fly there. In the
  * explorer the same chart is zoomable — pinch / wheel / drag — and a tap
- * does nothing yet.
+ * sets course on that world (heading hold, world fence, fill park).
  */
 
 export interface MapMoon {
@@ -318,7 +318,11 @@ export function SystemMap(props: Props) {
           </g>
         </svg>
         <p className="modal-note sysmap-note">
-          {zoomable ? 'Pinch or scroll to zoom. Drag to pan.' : 'Tap a world to fly there.'}
+          {zoomable
+            ? props.onTravel
+              ? 'Pinch or scroll to zoom. Drag to pan. Tap a world to set course.'
+              : 'Pinch or scroll to zoom. Drag to pan.'
+            : 'Tap a world to fly there.'}
         </p>
       </div>
     </div>

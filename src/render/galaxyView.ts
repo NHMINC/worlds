@@ -10,7 +10,7 @@
  * Home parks on the loaded star; Back restores the previous pose.
  */
 import * as THREE from 'three';
-import { UNIVERSE, starIrradiance, starIrradianceDisplay, surveyGain } from '../world/physics';
+import { UNIVERSE, classify, starIrradiance, starIrradianceDisplay, surveyGain } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
@@ -38,6 +38,7 @@ import { classifyStar } from '../world/stellar';
 import {
   eclipticPole,
   keplerPlane,
+  lockedToStar,
   starSpecFromState,
   systemAt,
   type BodySpec,
@@ -581,6 +582,8 @@ const STAR_FRAG = /* glsl */ `
 
 export interface GalaxyFocus {
   id: number;
+  /** Set when the plate names a world of that host. */
+  bodyId?: string;
   name: string;
   cls: string;
   phase: string;
@@ -754,6 +757,15 @@ export class GalaxyView {
    */
   private courseObj: GalaxyObject | null = null;
   private courseHud: GalaxyFocus | null = null;
+  /** World course inside the host sphere — heading, not the host. */
+  private courseBodyId: string | null = null;
+  /**
+   * Close-approach world. Latched inside WORLD_RANGE_AU; released
+   * when we fly out. Look drag drops the heading, not this place.
+   */
+  private worldId: string | null = null;
+  private focusBodyId: string | null = null;
+  private selectedBodyId: string | null = null;
   /**
    * Close-approach subject. Latched when the course, reticle, or
    * selected star comes inside ARRIVE_RANGE_LY; released when the
@@ -1555,9 +1567,10 @@ export class GalaxyView {
    */
   setCourse(obj: GalaxyObject): void {
     if (this.mode !== 'region') return;
-    // Inside a host sphere you cannot pick a different target —
-    // leave the host sphere first.
+    // Inside a host sphere you cannot pick a different star —
+    // leave the host sphere first. Worlds use setCourseBody.
     if (this.hostObj && this.hostObj.id !== obj.id) return;
+    this.courseBodyId = null;
     this.courseObj = obj;
     const brief = this.briefFor(obj);
     const st = obj.star;
@@ -1575,22 +1588,50 @@ export class GalaxyView {
       dist: this.arriveDist(obj),
     };
     this.select(null);
+    this.selectedBodyId = null;
+    this.wake();
+  }
+
+  /** Set course on a world of the current host. Chart and plate. */
+  setCourseBody(bodyId: string): void {
+    if (this.mode !== 'region' || !this.hostObj) return;
+    const rt = this.worldRt(bodyId);
+    if (!rt) return;
+    this.courseObj = null;
+    this.courseBodyId = bodyId;
+    this.selectedBodyId = bodyId;
+    this.courseHud = this.hudForBody(rt);
+    this.select(null);
     this.wake();
   }
 
   private clearCourse(): void {
     this.courseObj = null;
     this.courseHud = null;
+    this.courseBodyId = null;
   }
 
-  /** Ease the nose onto the course star and keep it there. */
+  /** Ease the nose onto the course star or world and keep it there. */
   private holdCourse(dt: number): void {
-    const c = this.courseObj;
-    if (!c || this.mode !== 'region' || this.looking) return;
-    const p = galToCart(c.pos);
-    const dx = p.x - this.arcCenter.x;
-    const dy = p.y - this.arcCenter.y;
-    const dz = p.z - this.arcCenter.z;
+    if (this.mode !== 'region' || this.looking) return;
+    let dx = 0;
+    let dy = 0;
+    let dz = 0;
+    if (this.courseBodyId) {
+      const rt = this.worldRt(this.courseBodyId);
+      if (!rt) return;
+      rt.group.getWorldPosition(this.hostTmp);
+      dx = this.hostTmp.x;
+      dy = this.hostTmp.y;
+      dz = this.hostTmp.z;
+    } else if (this.courseObj) {
+      const p = galToCart(this.courseObj.pos);
+      dx = p.x - this.arcCenter.x;
+      dy = p.y - this.arcCenter.y;
+      dz = p.z - this.arcCenter.z;
+    } else {
+      return;
+    }
     const d = Math.hypot(dx, dy, dz);
     if (d < 1e-15) return;
     if (this.courseHud) this.courseHud.dist = d;
@@ -1790,6 +1831,10 @@ export class GalaxyView {
 
   focusedObject(): GalaxyObject | null {
     return this.focusObj;
+  }
+
+  focusedBodyId(): string | null {
+    return this.focusBodyId;
   }
 
   /** Host in the 0.01 ly sphere — the explorer chart’s only subject. */
@@ -2045,6 +2090,40 @@ export class GalaxyView {
     );
   }
 
+  private worldRt(id: string | null | undefined): HostBodyRT | null {
+    if (!id) return null;
+    for (const rt of this.hostBodies) if (rt.spec.id === id) return rt;
+    return null;
+  }
+
+  /** Catalog kpc from the camera to a host-pass body. */
+  private bodyDist(rt: HostBodyRT): number {
+    rt.group.getWorldPosition(this.hostTmp);
+    return this.hostTmp.length();
+  }
+
+  private hudForBody(rt: HostBodyRT): GalaxyFocus {
+    const b = rt.spec;
+    let moons = 0;
+    if (this.hostSpec) {
+      for (const row of this.hostSpec.bodies) if (row.parent === b.id) moons++;
+    }
+    return {
+      id: this.hostObj?.id ?? 0,
+      bodyId: b.id,
+      name: b.name,
+      cls: classify(b.physics, lockedToStar(b)),
+      phase: b.parent ? 'moon' : b.kind === 'gas' ? 'giant' : 'planet',
+      planets: 0,
+      moons,
+      life: b.physics.life,
+      dark: false,
+      x: 0.5,
+      y: 0.5,
+      dist: this.bodyDist(rt),
+    };
+  }
+
   /**
    * The close star is a place, not a heading. Once we are inside
    * its ARRIVE_RANGE_LY sphere (or it has already become the furnace), keep
@@ -2066,12 +2145,42 @@ export class GalaxyView {
     }
   }
 
+  /**
+   * The close world is a place, not a heading. Latch inside
+   * WORLD_RANGE_AU; fly out to leave. Another world course
+   * may replace it — the host sphere stays.
+   */
+  private updateWorldSubject(): void {
+    const range = UNIVERSE.WORLD_RANGE_KPC;
+    if (!(range > 0) || !this.hostObj) {
+      this.worldId = null;
+      return;
+    }
+    if (this.worldId) {
+      const rt = this.worldRt(this.worldId);
+      if (rt && this.bodyDist(rt) <= range) return;
+      this.worldId = null;
+    }
+    for (const id of [this.courseBodyId, this.focusBodyId, this.selectedBodyId]) {
+      const rt = this.worldRt(id);
+      if (rt && this.bodyDist(rt) <= range) {
+        this.worldId = id;
+        return;
+      }
+    }
+  }
+
   private detachHostStar(): void {
     this.hostObj = null;
     this.detachHost();
   }
 
   private detachHost(): void {
+    this.worldId = null;
+    this.courseBodyId = null;
+    this.focusBodyId = null;
+    this.selectedBodyId = null;
+    if (this.courseHud?.bodyId) this.clearCourse();
     this.clearHostBodies();
     this.detachHostFurnace();
     if (this.hostRoot) {
@@ -2327,6 +2436,7 @@ export class GalaxyView {
    */
   private updateHostArrival(now: number): void {
     this.updateArriveSubject();
+    this.updateWorldSubject();
     const lock = this.hostObj;
     if (!lock) {
       if (this.hostRoot || this.hostStar) {
@@ -2409,12 +2519,18 @@ export class GalaxyView {
     return this.hostObj ?? this.courseObj;
   }
 
+  private closeWorld(): HostBodyRT | null {
+    return this.worldRt(this.worldId ?? this.courseBodyId);
+  }
+
   /**
    * Speed. The sphere is a limit both ways. Ahead, from
    * ARRIVE_BRAKE_LY: half of disk warp, held until one frame
    * would reach the fence, then half again — the longest
    * stretch at each gear, the fewest frames to the SOI.
    * Floor is the sphere limit. Astern: sphere, then full warp.
+   * A world course uses the same gears against WORLD_RANGE,
+   * capped by the host-sphere limit.
    */
   private closeSpeed(d: number, dt = this.lastDt): number {
     const warp = UNIVERSE.GALAXY_WARP;
@@ -2431,11 +2547,37 @@ export class GalaxyView {
     return Math.max(vLim, v);
   }
 
+  private worldCloseSpeed(d: number, dt = this.lastDt): number {
+    // Host-sphere ceiling, not the star's close-crawl: sitting on
+    // the photosphere park must not pin a world course to a crawl.
+    const vCeil = UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP;
+    const vCruise = Math.min(vCeil, this.sphereSpeed(d));
+    const fence = UNIVERSE.WORLD_RANGE_KPC;
+    if (d <= fence) return vCruise;
+    if (this.astern) return vCruise;
+    const brake = UNIVERSE.WORLD_BRAKE_KPC;
+    if (d > brake) return vCruise;
+    const vLim = this.sphereSpeed(fence);
+    const frame = Math.min(0.05, Math.max(dt, 1 / 120));
+    const remain = Math.max(d - fence, 0);
+    let v = vCruise * 0.5;
+    while (v > vLim && v * frame >= remain) v *= 0.5;
+    return Math.max(vLim, Math.min(vCruise, v));
+  }
+
+  private moveCap(dt = this.lastDt): number | null {
+    const world = this.closeWorld();
+    if (world) return this.worldCloseSpeed(this.bodyDist(world), dt);
+    const sub = this.closeSubject();
+    if (sub) return this.closeSpeed(this.arriveDist(sub), dt);
+    return null;
+  }
+
   private moveBubble(vx: number, vy: number, vz: number, _force = false): void {
     if (this.mode !== 'region') return;
-    const sub = this.closeSubject();
-    if (sub) {
-      const max = this.closeSpeed(this.arriveDist(sub)) * Math.max(this.lastDt, 1 / 120);
+    const maxV = this.moveCap();
+    if (maxV != null) {
+      const max = maxV * Math.max(this.lastDt, 1 / 120);
       const len = Math.hypot(vx, vy, vz);
       if (len > max) {
         const s = max / len;
@@ -2520,10 +2662,44 @@ export class GalaxyView {
 
   private pick(cx: number, cy: number): void {
     this.setRay(cx, cy);
+    if (this.hostObj) {
+      const body = this.pickBody(cx, cy);
+      if (body) {
+        this.selectedBodyId = body.spec.id;
+        this.focusBodyId = body.spec.id;
+        this.focusHud = this.hudForBody(body);
+        this.focusObj = this.hostObj;
+        this.select(null);
+        this.wake();
+        return;
+      }
+    }
     const picked = this.pickCloud(cx, cy);
     if (!picked) return;
     if (this.hostObj && picked.id !== this.hostObj.id) return;
+    this.selectedBodyId = null;
+    this.focusBodyId = null;
     this.select(picked);
+  }
+
+  /** Screen-nearest host body, same slop as a POI tap. */
+  private pickBody(cx: number, cy: number): HostBodyRT | null {
+    const rect = this.canvas.getBoundingClientRect();
+    let best: HostBodyRT | null = null;
+    let bestD = 28;
+    for (const rt of this.hostBodies) {
+      rt.group.getWorldPosition(this.hostTmp);
+      const v = this.hostTmp.project(this.camera);
+      if (v.z < -1.2 || v.z > 1.2) continue;
+      const px = rect.left + (v.x * 0.5 + 0.5) * rect.width;
+      const py = rect.top + (-v.y * 0.5 + 0.5) * rect.height;
+      const d = Math.hypot(px - cx, py - cy);
+      if (d < bestD) {
+        bestD = d;
+        best = rt;
+      }
+    }
+    return best;
   }
 
   /** Here and visited samples — always pickable, even if faint. */
@@ -2781,6 +2957,13 @@ export class GalaxyView {
    * landscape keeps the old vertical fill. One law, the aspect
    * is the orientation.
    */
+  private fillHalfAngle(): number {
+    const vFov = (this.camera.fov * Math.PI) / 180;
+    const aspect = Math.max(1e-6, this.camera.aspect);
+    const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * aspect);
+    return 0.5 * UNIVERSE.ARRIVE_FILL * Math.min(vFov, hFov);
+  }
+
   private parkKpc(obj: GalaxyObject): number {
     // Remnants are point-sized (pulsar ~1e-5 R☉). Fill-park on that
     // radius is ~1e-15 kpc — closer than holdCourse will aim, so
@@ -2788,11 +2971,12 @@ export class GalaxyView {
     // compact object still has a reachable park.
     const Rsun = Math.max(0.01, obj.star.radius);
     const R = Rsun * UNIVERSE.RSUN_KM * KM_TO_KPC;
-    const vFov = (this.camera.fov * Math.PI) / 180;
-    const aspect = Math.max(1e-6, this.camera.aspect);
-    const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * aspect);
-    const half = 0.5 * UNIVERSE.ARRIVE_FILL * Math.min(vFov, hFov);
-    return R / Math.max(1e-8, Math.tan(half));
+    return R / Math.max(1e-8, Math.tan(this.fillHalfAngle()));
+  }
+
+  private parkBodyKpc(b: BodySpec): number {
+    const R = Math.max(1, b.radius) * KM_TO_KPC;
+    return R / Math.max(1e-8, Math.tan(this.fillHalfAngle()));
   }
 
   /**
@@ -2813,14 +2997,39 @@ export class GalaxyView {
     if (this.thrustOn && !this.warpMayRun()) this.thrustOn = false;
     this.orientArc();
     this.updateArriveSubject();
+    this.updateWorldSubject();
     const sign = this.thrustSign();
     const course = this.courseObj;
-    const sub = this.closeSubject();
-    const v = sub ? this.closeSpeed(this.arriveDist(sub), dt) : UNIVERSE.GALAXY_WARP;
+    const world = this.courseBodyId ? this.worldRt(this.courseBodyId) : null;
+    const cap = this.moveCap(dt);
+    const v = cap ?? UNIVERSE.GALAXY_WARP;
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
     let step = this.thrustSpeed * dt;
-    if (this.hostObj && !this.astern && course) {
+    if (world && !this.astern) {
+      const d = this.bodyDist(world);
+      const park = this.parkBodyKpc(world.spec);
+      if (d <= park) {
+        this.setWarp(false);
+        return;
+      }
+      world.group.getWorldPosition(this.hostTmp);
+      const tCa =
+        this.hostTmp.x * this.arcFwd.x +
+        this.hostTmp.y * this.arcFwd.y +
+        this.hostTmp.z * this.arcFwd.z;
+      if (tCa > 0 && step >= d - park) {
+        const inv = 1 / d;
+        const remain = d - park;
+        this.moveBubble(
+          this.hostTmp.x * inv * remain,
+          this.hostTmp.y * inv * remain,
+          this.hostTmp.z * inv * remain,
+        );
+        this.setWarp(false);
+        return;
+      }
+    } else if (this.hostObj && !this.astern && course) {
       const d = this.arriveDist(course);
       const park = this.parkKpc(course);
       if (d <= park) {
@@ -2848,16 +3057,19 @@ export class GalaxyView {
     // Land just inside so the next frame is on the curve.
     // Astern does not land on a shell — jumping the fence
     // on the way out is fine.
-    if (!this.astern && sub) {
-      const d = this.arriveDist(sub);
-      const c = galToCart(sub.pos);
-      const closing =
-        (c.x - this.arcCenter.x) * this.arcFwd.x +
-        (c.y - this.arcCenter.y) * this.arcFwd.y +
-        (c.z - this.arcCenter.z) * this.arcFwd.z;
-      const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
-      if (closing > 0 && d > brake) {
-        step = Math.min(step, d - brake * (1 - 1e-6));
+    if (!this.astern && !world) {
+      const sub = this.closeSubject();
+      if (sub) {
+        const d = this.arriveDist(sub);
+        const c = galToCart(sub.pos);
+        const closing =
+          (c.x - this.arcCenter.x) * this.arcFwd.x +
+          (c.y - this.arcCenter.y) * this.arcFwd.y +
+          (c.z - this.arcCenter.z) * this.arcFwd.z;
+        const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
+        if (closing > 0 && d > brake) {
+          step = Math.min(step, d - brake * (1 - 1e-6));
+        }
       }
     }
     this.moveBubble(this.arcFwd.x * sign * step, this.arcFwd.y * sign * step, this.arcFwd.z * sign * step);
@@ -2932,6 +3144,33 @@ export class GalaxyView {
     let bestOff = 1;
     let bestDist = 0;
     let bestDim = false;
+    if (this.hostObj && this.hostBodies.length) {
+      let bestBody: HostBodyRT | null = null;
+      for (const rt of this.hostBodies) {
+        rt.group.getWorldPosition(this.hostTmp);
+        const dist = this.hostTmp.length();
+        if (dist < 1e-18) continue;
+        const inv = 1 / dist;
+        const dot = this.hostTmp.x * inv * lx + this.hostTmp.y * inv * ly + this.hostTmp.z * inv * lz;
+        if (dot < cosCone) continue;
+        grown++;
+        const off = 1 - dot;
+        if (off < bestOff) {
+          bestOff = off;
+          bestBody = rt;
+          bestDist = dist;
+        }
+      }
+      if (bestBody) {
+        this.grownCount = grown;
+        this.focusBodyId = bestBody.spec.id;
+        this.focusObj = this.hostObj;
+        this.focusHud = this.hudForBody(bestBody);
+        this.focusHud.dist = bestDist;
+        return;
+      }
+    }
+    this.focusBodyId = null;
     for (const cloud of [this.cloud, this.nebulae]) {
       if (!cloud) continue;
       const cat = cloud.pos;
@@ -3191,7 +3430,10 @@ export class GalaxyView {
     }
     this.perf.endDraw();
     this.perf.tick(performance.now() - f0, true);
-    if (this.courseHud && this.courseObj) {
+    if (this.courseHud && this.courseBodyId) {
+      const rt = this.worldRt(this.courseBodyId);
+      if (rt) this.courseHud.dist = this.bodyDist(rt);
+    } else if (this.courseHud && this.courseObj) {
       this.courseHud.dist = this.arriveDist(this.courseObj);
     }
     const soi = this.soiDist();
