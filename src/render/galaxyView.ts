@@ -2510,7 +2510,7 @@ export class GalaxyView {
    * ↓ sets astern and warps. From ARRIVE_BRAKE_LY a locked course
    * falls as ARRIVE_K · d so the fence is already at the speed
    * limit — no dump onto the shell, no skip through it. The same
-   * curve leaving. Dim starts at the same 1 ly brake. Ahead
+   * curve leaving. Dim starts at the same 50 ly brake. Ahead
    * Stops at the
    * fill park. Astern never parks.
    */

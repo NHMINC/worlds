@@ -106,11 +106,11 @@ toy — Godus blocks on a real-sized globe.
   The reticle plate only names an object inside `AIM_RANGE_KPC`
   (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
   reads Course Locked; a look drag hands the stick back. On a
-  locked course warp stays warp until `ARRIVE_BRAKE_LY` (1 ly),
+  locked course warp stays warp until `ARRIVE_BRAKE_LY` (50 ly),
   then `ARRIVE_K · d` so a warp frame cannot skip the sphere
   and the fence is already at the speed limit. Inside the
   0.01 ly sphere `ARRIVE_WARP` also caps. The same curve
-  leaving — full warp again at 1 ly. Dim is the same 1 ly
+  leaving — full warp again at 50 ly. Dim is the same 50 ly
   → park span as the brake (locked course, not only after
   the host attaches). The
   photosphere
@@ -123,7 +123,7 @@ toy — Godus blocks on a real-sized globe.
   pass over the live galaxy — the sky never bakes, blanks, or
   switches environment, and the controls never change. The
   harvest / nebula / cosmic photograph is enhanced survey light
-  for flying the disk; from the 1 ly brake that gain falls
+  for flying the disk; from the 50 ly brake that gain falls
   linearly with distance to `ARRIVE_SKY_GAIN` at the fill park —
   a dark-sky Earth night, a bit clearer.
   Leaving is the reverse. That is the
@@ -490,14 +490,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
   `AIM_RANGE_KPC`. Set course holds the heading. From
-  `ARRIVE_BRAKE_LY` (1 ly) a locked course is under
+  `ARRIVE_BRAKE_LY` (50 ly) a locked course is under
   `ARRIVE_K · d` so the 0.01 ly sphere (engineer 0.001–0.01 ly)
   cannot be skipped and the fence is already at the speed
   limit — same curve leaving. Inside, `ARRIVE_WARP` also
   caps (sticky — fly out before a new target or full warp).
   A locked course stops at the
   `ARRIVE_FILL` park. The survey photograph is a distance
-  law: full at the 1 ly brake, `ARRIVE_SKY_GAIN` at park,
+  law: full at the 50 ly brake, `ARRIVE_SKY_GAIN` at park,
   linear in between (dark-sky Earth, a bit clearer — the
   only galaxy light on anything in the bubble; the furnace
   stays).
