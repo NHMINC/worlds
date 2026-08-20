@@ -344,9 +344,12 @@ export const UNIVERSE = {
    * Course lock. The reticle plate only names an object inside
    * AIM_RANGE_KPC (a neighbourhood, not the far disk). Set course
    * is a heading hold at ARRIVE_HOLD (1/s); a look drag hands the
-   * stick back. The 1 ly sphere is sticky: warp is ARRIVE_WARP
+   * stick back. The sphere of influence is a fixed 1 ly
+   * (ARRIVE_RANGE_LY), not the object's radius — park distance
+   * is the size law. That sphere is sticky: warp is ARRIVE_WARP
    * (1/1000) of GALAXY_WARP while you are inside it — a speed
-   * limit, not a teleport — and a new target cannot be chosen
+   * limit on every move (warp, WASD, strafe, zoom), not a teleport —
+   * and a new target cannot be chosen
    * until you fly out. The photosphere replaces the pin when the
    * sphere is entered — the harvest pin cannot draw the approach
    * (a point, then float32 hops). Inside the sphere speed is also

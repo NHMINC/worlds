@@ -469,10 +469,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
   `AIM_RANGE_KPC`. Set course holds the heading. Inside a host's
-  1 ly sphere warp is `ARRIVE_WARP` (1/1000) of the cruise
-  (sticky — fly out before a new target or full warp). A locked
-  course stops at the `ARRIVE_FILL` park. Stars you are not
-  aiming at never slow the ship.
+  1 ly sphere (fixed, not object-size) every move is under
+  `ARRIVE_WARP` / `ARRIVE_K · d` (sticky — fly out before a new
+  target or full warp). A locked course stops at the
+  `ARRIVE_FILL` park. Stars you are not aiming at never
+  slow the ship.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper

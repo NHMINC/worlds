@@ -697,6 +697,7 @@ export class GalaxyView {
   private thrustSpeed = 0;
   private idle = 0;
   private lastT = performance.now();
+  private lastDt = 1 / 60;
   private viewW = 0;
   private viewH = 0;
 
@@ -2038,8 +2039,26 @@ export class GalaxyView {
    * viewpoint slides. The GPU holds the harvest — the vertex shader
    * subtracts uCenter. No membership walk.
    */
+  /** Speed inside the 1 ly sphere: min(1/1000 warp, ARRIVE_K · d). */
+  private sphereSpeed(d: number): number {
+    return Math.min(
+      UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP,
+      UNIVERSE.ARRIVE_K * Math.max(d, 1e-16),
+    );
+  }
+
   private moveBubble(vx: number, vy: number, vz: number, _force = false): void {
     if (this.mode !== 'region') return;
+    if (this.hostObj) {
+      const max = this.sphereSpeed(this.arriveDist(this.hostObj)) * Math.max(this.lastDt, 1 / 120);
+      const len = Math.hypot(vx, vy, vz);
+      if (len > max) {
+        const s = max / len;
+        vx *= s;
+        vy *= s;
+        vz *= s;
+      }
+    }
     this.arcCenter.x += vx;
     this.arcCenter.y += vy;
     this.arcCenter.z += vz;
@@ -2369,10 +2388,8 @@ export class GalaxyView {
     let v = UNIVERSE.GALAXY_WARP;
     const course = this.courseObj;
     const range = UNIVERSE.ARRIVE_RANGE_KPC;
-    const limitAt = (d: number): number =>
-      Math.min(UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP, UNIVERSE.ARRIVE_K * Math.max(d, 1e-16));
     if (this.hostObj) {
-      v = limitAt(this.arriveDist(this.hostObj));
+      v = this.sphereSpeed(this.arriveDist(this.hostObj));
     } else if (course) {
       const d = this.arriveDist(course);
       const c = galToCart(course.pos);
@@ -2380,7 +2397,7 @@ export class GalaxyView {
         (c.x - this.arcCenter.x) * this.arcFwd.x +
         (c.y - this.arcCenter.y) * this.arcFwd.y +
         (c.z - this.arcCenter.z) * this.arcFwd.z;
-      if (tCa > 0 && d - UNIVERSE.GALAXY_WARP * dt <= range) v = limitAt(d);
+      if (tCa > 0 && d - UNIVERSE.GALAXY_WARP * dt <= range) v = this.sphereSpeed(d);
     }
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
@@ -2631,6 +2648,7 @@ export class GalaxyView {
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
+    this.lastDt = dt;
     this.idle += dt;
     this.holdCourse(dt);
     this.cruise(dt);
