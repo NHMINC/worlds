@@ -1307,6 +1307,7 @@ export class GalaxyView {
     if (
       name === 'uTimeLapse' ||
       name === 'uArriveRange' ||
+      name === 'uArriveBrake' ||
       name === 'uArriveSky' ||
       name === 'uArriveWarp' ||
       name === 'uArriveK' ||
@@ -2125,10 +2126,32 @@ export class GalaxyView {
     );
   }
 
+  /** Course or host we are closing on / backing from. */
+  private closeSubject(): GalaxyObject | null {
+    return this.hostObj ?? this.courseObj;
+  }
+
+  /**
+   * Approach / leave speed. Full warp outside ARRIVE_BRAKE_LY.
+   * Inside that radius v scales with distance so the fence is
+   * already at sphereSpeed — a warp frame cannot skip the
+   * bubble. Same curve both ways. Dim still starts at the fence.
+   */
+  private closeSpeed(d: number): number {
+    const warp = UNIVERSE.GALAXY_WARP;
+    const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
+    const fence = UNIVERSE.ARRIVE_RANGE_KPC;
+    if (d <= fence) return this.sphereSpeed(d);
+    if (d >= brake) return warp;
+    const vFence = this.sphereSpeed(fence);
+    return Math.min(warp, vFence * (d / Math.max(fence, 1e-16)));
+  }
+
   private moveBubble(vx: number, vy: number, vz: number, _force = false): void {
     if (this.mode !== 'region') return;
-    if (this.hostObj) {
-      const max = this.sphereSpeed(this.arriveDist(this.hostObj)) * Math.max(this.lastDt, 1 / 120);
+    const sub = this.closeSubject();
+    if (sub) {
+      const max = this.closeSpeed(this.arriveDist(sub)) * Math.max(this.lastDt, 1 / 120);
       const len = Math.hypot(vx, vy, vz);
       if (len > max) {
         const s = max / len;
@@ -2483,15 +2506,11 @@ export class GalaxyView {
   /**
    * Latched warp: W / Warp is a fixed catalog rate in the current
    * gear; S / Stop is stop. When stopped, ↑ sets ahead and warps,
-   * ↓ sets astern and warps. The helm gear flips the sign: astern
-   * runs opposite the nose so you can back off a park. Inside a host's
-   * ARRIVE_RANGE_LY sphere the rate is ARRIVE_WARP of GALAXY_WARP —
-   * a speed limit, sticky until you fly out. A warp frame is
-   * many sphere-radii, so a step that would enter lands on the
-   * fence at full rate — the crawl and the dim start together
-   * inside, the same instant leaving hands warp back. Ahead on
-   * a locked course Stops at the fill park — no leftover-frame
-   * dump. Astern never parks.
+   * ↓ sets astern and warps. From ARRIVE_BRAKE_LY a locked course
+   * falls as ARRIVE_K · d so the fence is already at the speed
+   * limit — no dump onto the shell, no skip through it. The same
+   * curve leaving. Dim starts at the fence. Ahead Stops at the
+   * fill park. Astern never parks.
    */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
@@ -2504,16 +2523,11 @@ export class GalaxyView {
     this.updateArriveSubject();
     const sign = this.thrustSign();
     const course = this.courseObj;
-    const range = UNIVERSE.ARRIVE_RANGE_KPC;
-    const v = this.hostObj
-      ? this.sphereSpeed(this.arriveDist(this.hostObj))
-      : UNIVERSE.GALAXY_WARP;
+    const sub = this.closeSubject();
+    const v = sub ? this.closeSpeed(this.arriveDist(sub)) : UNIVERSE.GALAXY_WARP;
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
     let step = this.thrustSpeed * dt;
-    // Park only once we are already inside. A full-rate frame is
-    // larger than the sphere — treating it as "step past park"
-    // from the open disk would skip the fence, the dim, and the crawl.
     if (this.hostObj && !this.astern && course) {
       const d = this.arriveDist(course);
       const park = this.parkKpc(course);
@@ -2538,28 +2552,25 @@ export class GalaxyView {
         return;
       }
     }
-    // Full-rate warp is larger than the sphere. Land on the fence
-    // so the crawl / dim begin there — do not slow a frame early
-    // (that was a long bright pause on the way in, and leaving
-    // never did it).
-    if (!this.hostObj && course) {
-      const d = this.arriveDist(course);
-      const toFence = d - range;
-      const c = galToCart(course.pos);
-      const tCa =
+    // A full-rate frame is larger than the brake and the sphere.
+    // Land on the next shell along the close so leftover warp
+    // cannot skip the progressive (inbound 1 ly, then the fence;
+    // outbound the 1 ly hand-back).
+    if (sub) {
+      const d = this.arriveDist(sub);
+      const c = galToCart(sub.pos);
+      const closing =
         ((c.x - this.arcCenter.x) * this.arcFwd.x +
           (c.y - this.arcCenter.y) * this.arcFwd.y +
           (c.z - this.arcCenter.z) * this.arcFwd.z) *
         sign;
-      if (tCa > 0 && toFence > 0 && step >= toFence) {
-        const inv = 1 / d;
-        this.moveBubble(
-          (c.x - this.arcCenter.x) * inv * toFence,
-          (c.y - this.arcCenter.y) * inv * toFence,
-          (c.z - this.arcCenter.z) * inv * toFence,
-        );
-        this.updateArriveSubject();
-        return;
+      const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
+      const fence = UNIVERSE.ARRIVE_RANGE_KPC;
+      if (closing > 0) {
+        if (d > brake) step = Math.min(step, d - brake);
+        else if (d > fence) step = Math.min(step, d - fence);
+      } else if (closing < 0 && d < brake) {
+        step = Math.min(step, Math.max(0, brake - d));
       }
     }
     this.moveBubble(this.arcFwd.x * sign * step, this.arcFwd.y * sign * step, this.arcFwd.z * sign * step);

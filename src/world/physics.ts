@@ -352,22 +352,20 @@ export const UNIVERSE = {
    * and a new target cannot be chosen
    * until you fly out. The photosphere replaces the pin when the
    * sphere is entered — the harvest pin cannot draw the approach
-   * (a point, then float32 hops). Inside the sphere speed is also
-   * capped at ARRIVE_K · d so the last stretch (when the disk is
-   * actually a few pixels) lasts seconds, not one 1/1000-warp
-   * frame. A full-rate warp step is larger than the sphere, so
-   * a step that would enter lands on the fence — the crawl and
-   * the dim start together inside. Leaving hands warp back the
-   * same instant the fence is crossed. Warp latches Stop when
-   * the disk covers ARRIVE_FILL of
-   * the vertical field. The survey photograph (enhanced light)
-   * for flying the disk) falls linearly with distance from 1
-   * at the fence to ARRIVE_SKY_GAIN at the fill park — a
-   * dark-sky Earth night, a bit clearer. Leaving the sphere
-   * is full survey light again. That is the only galaxy
-   * light in the bubble: looking out, and every other object
-   * (pins, nebulae, later worlds). The host furnace is not
-   * dimmed. It does not open a system.
+   * (a point, then float32 hops). From ARRIVE_BRAKE_LY (1 ly)
+   * in, speed falls as ARRIVE_K · d so a warp frame cannot skip
+   * the sphere; at the fence that is already the speed limit.
+   * The same curve in reverse on the way out — full warp again
+   * at 1 ly. Inside, ARRIVE_WARP also caps. Dim is still the
+   * fence→park distance law. Warp latches Stop when the disk
+   * covers ARRIVE_FILL of the vertical field. The survey
+   * photograph (enhanced light for flying the disk) falls
+   * linearly with distance from 1 at the fence to ARRIVE_SKY_GAIN
+   * at the fill park — a dark-sky Earth night, a bit clearer.
+   * Leaving the sphere is full survey light again. That is the
+   * only galaxy light in the bubble: looking out, and every
+   * other object (pins, nebulae, later worlds). The host
+   * furnace is not dimmed. It does not open a system.
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
@@ -378,6 +376,15 @@ export const UNIVERSE = {
   /** The 0.01 ly fence in catalog units. 1 kpc = 3261.56 ly. */
   get ARRIVE_RANGE_KPC(): number {
     return this.ARRIVE_RANGE_LY / 3261.56;
+  },
+  /**
+   * Where the approach brake begins. Full GALAXY_WARP outside;
+   * inside this radius v = ARRIVE_K · d (meets the sphere
+   * speed limit at the fence). Same curve leaving.
+   */
+  ARRIVE_BRAKE_LY: 1,
+  get ARRIVE_BRAKE_KPC(): number {
+    return this.ARRIVE_BRAKE_LY / 3261.56;
   },
   /**
    * Galaxy light inside the 0.01 ly sphere. The harvest / nebula /

@@ -106,11 +106,12 @@ toy — Godus blocks on a real-sized globe.
   The reticle plate only names an object inside `AIM_RANGE_KPC`
   (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
   reads Course Locked; a look drag hands the stick back. On a
-  locked course warp stays warp — full rate until the fence
-  (a warp frame lands on it; it does not crawl the last many
-  ly), then `ARRIVE_WARP` (1/1000) inside the object's 0.01 ly
-  sphere, and `ARRIVE_K · d` so the disk-growth stretch lasts
-  seconds. Leaving hands full warp back at the same fence. The
+  locked course warp stays warp until `ARRIVE_BRAKE_LY` (1 ly),
+  then `ARRIVE_K · d` so a warp frame cannot skip the sphere
+  and the fence is already at the speed limit. Inside the
+  0.01 ly sphere `ARRIVE_WARP` also caps. The same curve
+  leaving — full warp again at 1 ly. Dim is the fence→park
+  distance law. The
   photosphere
   replaces the pin when the sphere is entered (the pin cannot
   draw the approach). Sticky — fly out before a new target or
@@ -487,11 +488,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Drag looks. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
-  `AIM_RANGE_KPC`. Set course holds the heading. Inside a host's
-  0.01 ly sphere (fixed, not object-size; engineer 0.001–0.01 ly)
-  every move is under
-  `ARRIVE_WARP` / `ARRIVE_K · d` (sticky — fly out before a new
-  target or full warp). A locked course stops at the
+  `AIM_RANGE_KPC`. Set course holds the heading. From
+  `ARRIVE_BRAKE_LY` (1 ly) a locked course is under
+  `ARRIVE_K · d` so the 0.01 ly sphere (engineer 0.001–0.01 ly)
+  cannot be skipped and the fence is already at the speed
+  limit — same curve leaving. Inside, `ARRIVE_WARP` also
+  caps (sticky — fly out before a new target or full warp).
+  A locked course stops at the
   `ARRIVE_FILL` park. The survey photograph is a distance
   law: full at the fence, `ARRIVE_SKY_GAIN` at park, linear
   in between (dark-sky Earth, a bit clearer — the only
