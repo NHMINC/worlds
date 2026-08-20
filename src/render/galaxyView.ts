@@ -10,7 +10,7 @@
  * Home parks on the loaded star; Back restores the previous pose.
  */
 import * as THREE from 'three';
-import { UNIVERSE, surveyGain } from '../world/physics';
+import { UNIVERSE, starIrradiance, starIrradianceDisplay, surveyGain } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
@@ -35,7 +35,14 @@ import {
   glowRadiusKpc,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
-import { systemAt, starSpecFromState } from '../world/systemgen';
+import {
+  keplerPlane,
+  starSpecFromState,
+  systemAt,
+  type BodySpec,
+  type SystemSpec,
+} from '../world/systemgen';
+import { makeGasGiant } from './gasGiant';
 import {
   silhouetteCloud,
   nebulaCloud,
@@ -226,6 +233,20 @@ export type GalaxyPreset = 'face' | 'edge' | 'home' | 'back';
 
 /** Catalog kpc per kilometre — host meshes live in km under this scale. */
 const KM_TO_KPC = 1 / UNIVERSE.KPC_KM;
+const AU_KM = UNIVERSE.AU_KM;
+
+/** Tier-0 world in the host pass — same Kepler pose as the engine. */
+interface HostBodyRT {
+  spec: BodySpec;
+  group: THREE.Group;
+  orbitLine: THREE.LineLoop;
+  gasMat: THREE.ShaderMaterial | null;
+  orbX: THREE.Vector3;
+  orbY: THREE.Vector3;
+  tiltQ: THREE.Quaternion;
+  pos: THREE.Vector3;
+  spinQ: THREE.Quaternion;
+}
 
 interface BubblePose {
   x: number;
@@ -752,6 +773,11 @@ export class GalaxyView {
   /** Galaxy fill on objects in the bubble — ARRIVE_SKY_GAIN, not a flood. */
   private hostFill: THREE.AmbientLight | null = null;
   private hostOuterAu = 1;
+  private hostSpec: SystemSpec | null = null;
+  private hostBodies: HostBodyRT[] = [];
+  private readonly hostTmp = new THREE.Vector3();
+  private readonly hostTmp2 = new THREE.Vector3();
+  private readonly hostTmpQ = new THREE.Quaternion();
   private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
 
   constructor(
@@ -2042,6 +2068,7 @@ export class GalaxyView {
   }
 
   private detachHost(): void {
+    this.clearHostBodies();
     this.detachHostFurnace();
     if (this.hostRoot) {
       this.hostScene.remove(this.hostRoot);
@@ -2088,18 +2115,192 @@ export class GalaxyView {
 
   private attachHostFurnace(lock: GalaxyObject): void {
     this.detachHostFurnace();
-    const spec = starSpecFromState(lock.star, () => 0.5);
-    this.hostStar = makeStar(spec);
+    this.clearHostBodies();
+    let star = starSpecFromState(lock.star, () => 0.5);
+    try {
+      this.hostSpec = systemAt(this.seed, lock.id);
+      star = this.hostSpec.star;
+    } catch {
+      this.hostSpec = null;
+    }
+    this.hostStar = makeStar(star);
     this.ensureHostRoot().add(this.hostStar.group);
-    this.hostStar.light.intensity = 0;
     this.hostStarId = lock.id;
     // The photosphere replaces the pin — the rest of the sky stays live.
     this.hideHarvestId(lock.id);
+    if (this.hostSpec) this.buildHostBodies(this.hostSpec);
+  }
+
+  /** Tier-0 balls + Kepler ellipses. Same pose law as the engine; no terrain. */
+  private buildHostBodies(spec: SystemSpec): void {
+    const root = this.ensureHostRoot();
+    const byId = new Map<string, HostBodyRT>();
+    let outer = 1;
+    for (const b of spec.bodies) {
+      if (!b.parent) outer = Math.max(outer, b.orbitRadius);
+      const group = new THREE.Group();
+      group.scale.setScalar(b.radius);
+      let gasMat: THREE.ShaderMaterial | null = null;
+      if (b.kind === 'gas' && b.gas) {
+        const gg = makeGasGiant(b.gas);
+        group.add(gg.group);
+        gasMat = gg.material;
+      } else {
+        group.add(
+          new THREE.Mesh(
+            new THREE.SphereGeometry(1, 28, 18),
+            new THREE.MeshLambertMaterial({ color: new THREE.Color(...b.meanColor) }),
+          ),
+        );
+      }
+      root.add(group);
+
+      const orbX = new THREE.Vector3(1, 0, 0);
+      const orbY = new THREE.Vector3(0, 1, 0);
+      let tiltQ = new THREE.Quaternion();
+      if (b.parent) {
+        const parent = byId.get(b.parent);
+        if (parent) {
+          tiltQ = parent.tiltQ.clone();
+          orbX.applyQuaternion(tiltQ);
+          orbY.applyQuaternion(tiltQ);
+        }
+      } else {
+        const m = new THREE.Matrix4()
+          .makeRotationZ(b.node)
+          .multiply(new THREE.Matrix4().makeRotationX(b.inc))
+          .multiply(new THREE.Matrix4().makeRotationZ(b.peri));
+        orbX.applyMatrix4(m);
+        orbY.applyMatrix4(m);
+        if (b.obliquity > 0) {
+          tiltQ.setFromAxisAngle(
+            new THREE.Vector3(Math.cos(b.axialAz), Math.sin(b.axialAz), 0),
+            b.obliquity,
+          );
+        }
+      }
+
+      const segs = 128;
+      const pts = new Float32Array(segs * 3);
+      const dispR = b.parent ? b.orbitRadius : b.orbitRadius * AU_KM;
+      const semiMinor = dispR * Math.sqrt(1 - b.ecc * b.ecc);
+      for (let i = 0; i < segs; i++) {
+        const E = (i / segs) * 2 * Math.PI;
+        const xo = dispR * (Math.cos(E) - b.ecc);
+        const yo = semiMinor * Math.sin(E);
+        pts[i * 3] = orbX.x * xo + orbY.x * yo;
+        pts[i * 3 + 1] = orbX.y * xo + orbY.y * yo;
+        pts[i * 3 + 2] = orbX.z * xo + orbY.z * yo;
+      }
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+      const orbitLine = new THREE.LineLoop(
+        lineGeo,
+        new THREE.LineBasicMaterial({
+          color: 0x8fa8cc,
+          transparent: true,
+          opacity: b.parent ? 0.08 : 0.11,
+          depthWrite: false,
+        }),
+      );
+      root.add(orbitLine);
+
+      const rt: HostBodyRT = {
+        spec: b,
+        group,
+        orbitLine,
+        gasMat,
+        orbX,
+        orbY,
+        tiltQ,
+        pos: new THREE.Vector3(),
+        spinQ: new THREE.Quaternion(),
+      };
+      byId.set(b.id, rt);
+      this.hostBodies.push(rt);
+    }
+    this.hostOuterAu = outer;
+  }
+
+  private clearHostBodies(): void {
+    const root = this.hostRoot;
+    for (const rt of this.hostBodies) {
+      root?.remove(rt.group);
+      root?.remove(rt.orbitLine);
+      rt.group.traverse((o) => {
+        const mesh = o as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        const mat = mesh.material;
+        if (Array.isArray(mat)) for (const m of mat) m.dispose();
+        else mat?.dispose();
+      });
+      rt.orbitLine.geometry.dispose();
+      (rt.orbitLine.material as THREE.Material).dispose();
+    }
+    this.hostBodies = [];
+    this.hostSpec = null;
+    this.hostOuterAu = 1;
+  }
+
+  private updateHostBodies(t: number): void {
+    const byId = new Map<string, HostBodyRT>();
+    for (const rt of this.hostBodies) byId.set(rt.spec.id, rt);
+    const L = this.hostSpec?.star.luminosity ?? 1;
+    for (const rt of this.hostBodies) {
+      const b = rt.spec;
+      const { xo, yo } = keplerPlane(b.orbitRadius, b.orbitPeriod, b.orbitPhase, b.ecc, t);
+      if (b.parent) {
+        const parent = byId.get(b.parent);
+        if (!parent) continue;
+        rt.pos.set(
+          parent.pos.x + rt.orbX.x * xo + rt.orbY.x * yo,
+          parent.pos.y + rt.orbX.y * xo + rt.orbY.y * yo,
+          parent.pos.z + rt.orbX.z * xo + rt.orbY.z * yo,
+        );
+        rt.orbitLine.position.copy(parent.pos);
+      } else {
+        rt.pos.set(
+          (rt.orbX.x * xo + rt.orbY.x * yo) * AU_KM,
+          (rt.orbX.y * xo + rt.orbY.y * yo) * AU_KM,
+          (rt.orbX.z * xo + rt.orbY.z * yo) * AU_KM,
+        );
+      }
+
+      if (b.tidallyLocked) {
+        const parent = b.parent ? byId.get(b.parent) : null;
+        if (parent) this.hostTmp2.copy(parent.pos).sub(rt.pos);
+        else this.hostTmp2.copy(rt.pos).negate();
+        this.hostTmp2.applyQuaternion(this.hostTmpQ.copy(rt.tiltQ).conjugate());
+        const spin = Math.atan2(this.hostTmp2.y, this.hostTmp2.x);
+        rt.spinQ.setFromAxisAngle(this.hostTmp.set(0, 0, 1), spin);
+      } else {
+        rt.spinQ.setFromAxisAngle(this.hostTmp.set(0, 0, 1), (2 * Math.PI * t) / b.spinPeriod);
+      }
+      rt.spinQ.premultiply(rt.tiltQ);
+      rt.group.position.copy(rt.pos);
+      rt.group.quaternion.copy(rt.spinQ);
+
+      if (rt.gasMat) {
+        const qInv = this.hostTmpQ.copy(rt.spinQ).conjugate();
+        const lightL = this.hostTmp.copy(rt.pos).multiplyScalar(-1).normalize().applyQuaternion(qInv);
+        (rt.gasMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
+        const aPhys = Math.max(rt.pos.length() / AU_KM, 0.02);
+        rt.gasMat.uniforms.uSunIrr.value = starIrradianceDisplay(starIrradiance(L, aPhys));
+      }
+    }
+    this.hostRoot?.updateMatrixWorld(true);
+    const cam = this.camera.position;
+    for (const rt of this.hostBodies) {
+      rt.group.getWorldPosition(this.hostTmp);
+      const dSurfKm = cam.distanceTo(this.hostTmp) / KM_TO_KPC - rt.spec.radius;
+      rt.orbitLine.visible = dSurfKm > rt.spec.radius * 3 + 2;
+    }
   }
 
   /**
    * Sphere entry: the photosphere replaces the harvest pin the
-   * same frame. The pin cannot draw the approach. No systemAt.
+   * same frame. The pin cannot draw the approach. Worlds of that
+   * host unfold in the same AU-scale pass.
    */
   private updateHostArrival(now: number): void {
     this.updateArriveSubject();
@@ -2125,6 +2326,7 @@ export class GalaxyView {
     if (root) root.position.set(dx, dy, dz);
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
+    this.updateHostBodies(tSys);
     if (root) root.updateMatrixWorld(true);
     if (this.hostStar && root) {
       const camLocal = new THREE.Vector3();
@@ -2932,10 +3134,17 @@ export class GalaxyView {
       // sky never bakes, blanks, or switches environment; the depth
       // buffer is simply re-cleared for the near geometry.
       const d = this.arriveDist(this.hostObj);
-      const aKpc = this.hostOuterAu * UNIVERSE.AU_KM * KM_TO_KPC;
+      const aKpc = this.hostOuterAu * AU_KM * KM_TO_KPC;
+      let near = Math.min(d * 0.02, aKpc * 0.01);
+      const cam = this.camera.position;
+      for (const rt of this.hostBodies) {
+        rt.group.getWorldPosition(this.hostTmp);
+        const surf = cam.distanceTo(this.hostTmp) - rt.spec.radius * KM_TO_KPC;
+        if (surf > 0) near = Math.min(near, surf * 0.35);
+      }
       const near0 = this.camera.near;
       const far0 = this.camera.far;
-      this.camera.near = Math.max(1e-18, Math.min(d * 0.02, aKpc * 0.01));
+      this.camera.near = Math.max(1e-18, near);
       this.camera.far = Math.max(d * 8, aKpc * 40, 1e-8);
       this.camera.updateProjectionMatrix();
       this.renderer.autoClear = false;
