@@ -1424,20 +1424,22 @@ export class GalaxyView {
   }
 
   /**
-   * Survey gain. 1 in open catalog space. Inside a host sphere
-   * it falls as t² from 1 at the ARRIVE_RANGE_LY fence to ARRIVE_SKY_GAIN
-   * at the star — dark-sky Earth, a bit clearer; the only
-   * galaxy light on anything in the bubble. The furnace is a
-   * second pass and is not dimmed.
+   * Survey gain. Distance, not a clock: 1 at the ARRIVE_RANGE_LY
+   * fence (and outside), ARRIVE_SKY_GAIN at the fill park, linear
+   * in between. Leaving the sphere is full survey light again.
+   * The furnace is a second pass and is not dimmed.
    */
   private skyDim(): number {
     const host = this.hostObj;
     if (!host) return 1;
     const R = UNIVERSE.ARRIVE_RANGE_KPC;
     if (R <= 0) return 1;
-    const t = Math.max(0, Math.min(1, 1 - this.arriveDist(host) / R));
     const g = UNIVERSE.ARRIVE_SKY_GAIN;
-    return 1 + (g - 1) * t * t;
+    const park = this.parkKpc(host);
+    const span = R - park;
+    if (span <= 1e-12) return g;
+    const t = Math.max(0, Math.min(1, (R - this.arriveDist(host)) / span));
+    return 1 + (g - 1) * t;
   }
 
   /** Catalog positions stay on the GPU; only the bubble centre moves. */

@@ -119,8 +119,10 @@ toy — Godus blocks on a real-sized globe.
   switches environment, and the controls never change. The
   harvest / nebula / cosmic photograph is enhanced survey light
   for flying the disk; inside the 0.1 ly sphere that gain falls
-  as t² to `ARRIVE_SKY_GAIN` — a dark-sky Earth night, a bit
-  clearer. That is the only galaxy light in the bubble
+  linearly with distance from 1 at the fence to `ARRIVE_SKY_GAIN`
+  at the fill park — a dark-sky Earth night, a bit clearer.
+  Leaving the sphere is full survey light again. That is the
+  only galaxy light in the bubble
   (looking out, other pins, nebulae, later night sides). The
   host furnace is not multiplied. It does
   not open a system; landing on a world
@@ -487,11 +489,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   every move is under
   `ARRIVE_WARP` / `ARRIVE_K · d` (sticky — fly out before a new
   target or full warp). A locked course stops at the
-  `ARRIVE_FILL` park. The survey photograph dims to
-  `ARRIVE_SKY_GAIN` inside that sphere (dark-sky Earth, a
-  bit clearer — the only galaxy light on anything in the
-  bubble; the furnace stays). Stars you are not aiming at never
-  slow the ship.
+  `ARRIVE_FILL` park. The survey photograph is a distance
+  law: full at the fence, `ARRIVE_SKY_GAIN` at park, linear
+  in between (dark-sky Earth, a bit clearer — the only
+  galaxy light on anything in the bubble; the furnace stays).
+  Stars you are not aiming at never slow the ship.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one
   high-res landscape. Everything else is the same laws sampled cheaper

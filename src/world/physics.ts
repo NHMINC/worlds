@@ -357,11 +357,13 @@ export const UNIVERSE = {
    * actually a few pixels) lasts seconds, not one 1/1000-warp
    * frame. Warp latches Stop when the disk covers ARRIVE_FILL of
    * the vertical field. The survey photograph (enhanced light
-   * for flying the disk) falls to ARRIVE_SKY_GAIN inside the
-   * sphere — a dark-sky Earth night, a bit clearer. That is
-   * the only galaxy light in the bubble: looking out, and
-   * every other object (pins, nebulae, later worlds). The
-   * host furnace is not dimmed. It does not open a system.
+   * for flying the disk) falls linearly with distance from 1
+   * at the fence to ARRIVE_SKY_GAIN at the fill park — a
+   * dark-sky Earth night, a bit clearer. Leaving the sphere
+   * is full survey light again. That is the only galaxy
+   * light in the bubble: looking out, and every other object
+   * (pins, nebulae, later worlds). The host furnace is not
+   * dimmed. It does not open a system.
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
@@ -376,13 +378,14 @@ export const UNIVERSE = {
   /**
    * Galaxy light inside the 0.1 ly sphere. The harvest / nebula /
    * cosmic photograph is enhanced so you can fly the disk; that
-   * fill would make night impossible. Inside the fence gain
-   * falls as t² from 1 at the rim to this floor at the star
-   * (t = 1 − d / ARRIVE_RANGE). The floor is a dark-sky Earth
-   * night, a little clearer — the band is readable, not a
-   * flood. Every object in the bubble (other pins, nebulae,
-   * later worlds) only gets this much galaxy light. The host
-   * furnace is real starlight and is not multiplied.
+   * fill would make night impossible. Gain is a distance law,
+   * not a timed fade: 1 at the rim, this floor at the fill
+   * park, linear in between. Leaving the sphere is 1 again.
+   * The floor is a dark-sky Earth night, a little clearer —
+   * the band is readable, not a flood. Every object in the
+   * bubble (other pins, nebulae, later worlds) only gets this
+   * much galaxy light. The host furnace is real starlight
+   * and is not multiplied.
    */
   ARRIVE_SKY_GAIN: 0.08,
   /**
