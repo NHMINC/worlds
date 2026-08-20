@@ -1425,18 +1425,17 @@ export class GalaxyView {
   }
 
   /**
-   * Survey gain. Ahead: 1 at ARRIVE_BRAKE_LY, ARRIVE_SKY_GAIN
-   * at park, linear — a locked course dims with the brake.
-   * Astern: only the host sphere (fence → park). Outside the
-   * fence the photograph is full; leave does not walk the
-   * 50 ly brake. The furnace is a second pass and is not dimmed.
+   * Survey gain. Full until the sphere speed limit
+   * (ARRIVE_RANGE), then ARRIVE_SKY_GAIN at park, linear.
+   * The 50 ly gears are still open catalog light; only the
+   * crawl inside the fence dims the photograph. Astern is
+   * the same span (host sphere → park). The furnace is a
+   * second pass and is not dimmed.
    */
   private skyDim(): number {
     const obj = this.astern ? this.hostObj : this.closeSubject();
     if (!obj) return 1;
-    const outer = this.astern
-      ? UNIVERSE.ARRIVE_RANGE_KPC
-      : Math.max(UNIVERSE.ARRIVE_BRAKE_KPC, UNIVERSE.ARRIVE_RANGE_KPC);
+    const outer = UNIVERSE.ARRIVE_RANGE_KPC;
     if (outer <= 0) return 1;
     const g = UNIVERSE.ARRIVE_SKY_GAIN;
     const park = this.parkKpc(obj);
@@ -2864,8 +2863,8 @@ export class GalaxyView {
     this.hereRing.rotation.z = t * -0.22;
 
     this.updateHostArrival(now);
-    // Attach can land on this frame — write the survey dim after
-    // the host is known so the first in-sphere draw is already dark.
+    // Attach can land on this frame — write the fence→park
+    // gain after the host is known so this draw matches.
     const dim = this.skyDim();
     for (const mat of this.cloudMats()) {
       if (mat.uniforms.uSkyDim) mat.uniforms.uSkyDim.value = dim;

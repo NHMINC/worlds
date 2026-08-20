@@ -359,16 +359,16 @@ export const UNIVERSE = {
    * floor is the sphere speed limit.
    * Astern keeps the sphere limit only — no 50 ly brake, no
    * landing on a shell; outside the fence is full warp. Dim
-   * follows the brake on the way in (locked course); on the
-   * way out it is the host sphere, then full survey light.
-   * Warp latches Stop when the disk covers ARRIVE_FILL of the
-   * vertical field. The survey photograph (enhanced light for
-   * flying the disk) falls linearly with distance from 1 at
-   * the 50 ly brake to ARRIVE_SKY_GAIN at the fill park — a
-   * dark-sky Earth night, a bit clearer. That is the
-   * only galaxy light in the bubble: looking out, and every
-   * other object (pins, nebulae, later worlds). The host
-   * furnace is not dimmed. It does not open a system.
+   * waits for that speed limit (the fence) both ways — the
+   * 50 ly gears stay at full survey light. Warp latches Stop
+   * when the disk covers ARRIVE_FILL of the vertical field.
+   * The survey photograph (enhanced light for flying the
+   * disk) falls linearly with distance from 1 at the sphere
+   * to ARRIVE_SKY_GAIN at the fill park — a dark-sky Earth
+   * night, a bit clearer. That is the only galaxy light in
+   * the bubble: looking out, and every other object (pins,
+   * nebulae, later worlds). The host furnace is not dimmed.
+   * It does not open a system.
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
@@ -391,12 +391,12 @@ export const UNIVERSE = {
     return this.ARRIVE_BRAKE_LY / 3261.56;
   },
   /**
-   * Galaxy light from the 50 ly brake in. The harvest / nebula /
-   * cosmic photograph is enhanced so you can fly the disk; that
-   * fill would make night impossible. Gain is a distance law,
-   * not a timed fade: 1 at ARRIVE_BRAKE_LY, this floor at the
-   * fill park, linear in between (ahead). Astern is the host
-   * sphere, then 1.
+   * Galaxy light from the sphere speed limit in. The harvest /
+   * nebula / cosmic photograph is enhanced so you can fly the
+   * disk; that fill would make night impossible. Gain is a
+   * distance law, not a timed fade: 1 at ARRIVE_RANGE, this
+   * floor at the fill park, linear in between. Same span
+   * astern. The 50 ly brake does not dim.
    * The floor is a dark-sky Earth night, a little clearer —
    * the band is readable, not a flood. Every object in the
    * bubble (other pins, nebulae, later worlds) only gets this
