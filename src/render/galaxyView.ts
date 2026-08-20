@@ -2360,30 +2360,13 @@ export class GalaxyView {
     return R / Math.max(1e-8, Math.tan(half));
   }
 
-  private moveTowardPark(obj: GalaxyObject, along: number): boolean {
-    const park = this.parkKpc(obj);
-    const d = this.arriveDist(obj);
-    if (d <= park) {
-      this.setWarp(false);
-      return true;
-    }
-    if (along < d - park) return false;
-    const c = galToCart(obj.pos);
-    const dx = c.x - this.arcCenter.x;
-    const dy = c.y - this.arcCenter.y;
-    const dz = c.z - this.arcCenter.z;
-    const remain = d - park;
-    const inv = 1 / d;
-    this.moveBubble(dx * inv * remain, dy * inv * remain, dz * inv * remain);
-    this.setWarp(false);
-    return true;
-  }
-
   /**
    * Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop.
-   * Inside a host's 1 ly sphere the rate is ARRIVE_WARP of
-   * GALAXY_WARP — sticky until you fly out. A quarter-warp frame is
-   * several ly; on a locked course we substep onto the fill park.
+   * Inside a host's 1 ly sphere the rate is ARRIVE_WARP (1/1000) of
+   * GALAXY_WARP — a speed limit, sticky until you fly out. If this
+   * step would enter the sphere, the limit already applies (or a
+   * warp frame skips it). On a locked course, Stop at the fill park
+   * — no teleport, no leftover-frame dump.
    */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
@@ -2396,37 +2379,43 @@ export class GalaxyView {
     this.updateArriveSubject();
     let v = UNIVERSE.GALAXY_WARP;
     const course = this.courseObj;
-    // The 1 ly sphere is sticky: quarter-warp until you fly out,
-    // whether or not a heading is held.
-    if (this.hostObj) v *= UNIVERSE.ARRIVE_WARP;
+    const range = UNIVERSE.ARRIVE_RANGE_KPC;
+    if (this.hostObj) {
+      v *= UNIVERSE.ARRIVE_WARP;
+    } else if (course) {
+      const d = this.arriveDist(course);
+      const c = galToCart(course.pos);
+      const tCa =
+        (c.x - this.arcCenter.x) * this.arcFwd.x +
+        (c.y - this.arcCenter.y) * this.arcFwd.y +
+        (c.z - this.arcCenter.z) * this.arcFwd.z;
+      if (tCa > 0 && d - v * dt <= range) v *= UNIVERSE.ARRIVE_WARP;
+    }
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
-    const step = this.thrustSpeed * dt;
-    if (course && this.moveTowardPark(course, step)) return;
-    if (course && this.arriveDist(course) > UNIVERSE.ARRIVE_RANGE_KPC) {
-      const range = UNIVERSE.ARRIVE_RANGE_KPC;
+    let step = this.thrustSpeed * dt;
+    if (course) {
+      const d = this.arriveDist(course);
+      const park = this.parkKpc(course);
+      if (d <= park) {
+        this.setWarp(false);
+        return;
+      }
       const c = galToCart(course.pos);
-      const dx = c.x - this.arcCenter.x;
-      const dy = c.y - this.arcCenter.y;
-      const dz = c.z - this.arcCenter.z;
-      const d = Math.hypot(dx, dy, dz);
-      const tCa = dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z;
-      const miss2 = d * d - tCa * tCa;
-      if (tCa > 0 && miss2 < range * range) {
-        const tEnter = tCa - Math.sqrt(range * range - miss2);
-        if (tEnter <= step) {
-          this.moveBubble(
-            this.arcFwd.x * tEnter,
-            this.arcFwd.y * tEnter,
-            this.arcFwd.z * tEnter,
-          );
-          const vIn = UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP;
-          this.thrustSpeed = vIn;
-          const left = Math.max(0, dt - tEnter / v) * vIn;
-          if (this.moveTowardPark(course, left)) return;
-          this.moveBubble(this.arcFwd.x * left, this.arcFwd.y * left, this.arcFwd.z * left);
-          return;
-        }
+      const tCa =
+        (c.x - this.arcCenter.x) * this.arcFwd.x +
+        (c.y - this.arcCenter.y) * this.arcFwd.y +
+        (c.z - this.arcCenter.z) * this.arcFwd.z;
+      if (tCa > 0 && step >= d - park) {
+        const inv = 1 / d;
+        const remain = d - park;
+        this.moveBubble(
+          (c.x - this.arcCenter.x) * inv * remain,
+          (c.y - this.arcCenter.y) * inv * remain,
+          (c.z - this.arcCenter.z) * inv * remain,
+        );
+        this.setWarp(false);
+        return;
       }
     }
     this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
