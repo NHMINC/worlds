@@ -1008,7 +1008,7 @@ body,
 
 .gx-hud-perf {
   right: calc(16px + env(safe-area-inset-right));
-  bottom: calc(116px + env(safe-area-inset-bottom));
+  bottom: calc(8px + env(safe-area-inset-bottom));
   color: rgba(159, 232, 169, 0.9);
 }
 
@@ -1021,7 +1021,7 @@ body,
 .gx-helm {
   position: absolute;
   right: calc(16px + env(safe-area-inset-right));
-  bottom: calc(16px + env(safe-area-inset-bottom));
+  bottom: calc(40px + env(safe-area-inset-bottom));
   z-index: 3;
   width: 88px;
   height: 88px;
