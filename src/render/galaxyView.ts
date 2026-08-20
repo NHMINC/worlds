@@ -1419,7 +1419,8 @@ export class GalaxyView {
   /**
    * Set course: hold the heading on a star. The nose eases onto the
    * target at ARRIVE_HOLD and stays there while flying. A look drag
-   * hands the stick back. Warp parks when the disk fills the view.
+   * hands the stick back — it does not remove the close star.
+   * Warp parks when the disk fills the view.
    */
   setCourse(obj: GalaxyObject): void {
     if (this.mode !== 'region') return;
@@ -1886,9 +1887,25 @@ export class GalaxyView {
     );
   }
 
-  /** Course lock is the only close-approach subject. */
+  /**
+   * The close star is a place, not a heading. Once we are inside
+   * its 1 ly sphere (or it has already become the furnace), keep
+   * it until we fly away. Course lock and look-drag only steer;
+   * they do not own the object.
+   */
   private updateArriveSubject(): void {
-    this.hostObj = this.courseObj;
+    const range = UNIVERSE.ARRIVE_RANGE_KPC;
+    if (this.hostObj) {
+      if (this.arriveDist(this.hostObj) <= range) return;
+      this.hostObj = null;
+      return;
+    }
+    for (const cand of [this.courseObj, this.focusObj, this.selected]) {
+      if (cand && this.arriveDist(cand) <= range) {
+        this.hostObj = cand;
+        return;
+      }
+    }
   }
 
   private detachHostStar(): void {
@@ -1972,19 +1989,15 @@ export class GalaxyView {
       ((Math.max(1e-8, lock.star.radius) * UNIVERSE.RSUN_KM * KM_TO_KPC) / Math.max(dist, 1e-16)) *
       pxPer;
     const hop = dist <= UNIVERSE.ARRIVE_PIN_KPC;
-    const starOn = this.hostStar
-      ? starPx >= UNIVERSE.STAR_REVEAL_PX * 0.6 || hop
-      : starPx >= UNIVERSE.STAR_REVEAL_PX || hop;
-
-    if (!starOn) {
-      if (this.hostRoot || this.hostStar) {
-        this.detachHost();
-        this.applyCam();
-      }
+    const starOn = starPx >= UNIVERSE.STAR_REVEAL_PX || hop;
+    if (this.hostStarId !== lock.id && (this.hostRoot || this.hostStar)) this.detachHost();
+    // Attach when the disk would be 3 px (or float32 would hop).
+    // Once it is an object, keep it — looking around is not leaving.
+    if (!this.hostStar && starOn) this.attachHostFurnace(lock);
+    if (!this.hostStar) {
+      this.applyCam();
       return;
     }
-    if (this.hostStarId !== lock.id && (this.hostRoot || this.hostStar)) this.detachHost();
-    if (!this.hostStar) this.attachHostFurnace(lock);
 
     const root = this.hostRoot;
     if (root) root.position.set(dx, dy, dz);

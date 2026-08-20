@@ -111,6 +111,8 @@ toy — Godus blocks on a real-sized globe.
   several ly, so cruise substeps onto the park. The harvest pin
   swaps for the photosphere at `STAR_REVEAL_PX` (or at
   `ARRIVE_PIN_KPC` when float32 catalog positions would hop);
+  once that object is up it stays until we fly out of its
+  1 ly sphere — a look drag only releases the heading;
   warp latches Stop when the disk covers `ARRIVE_FILL` of the
   vertical field. The close star draws as a second AU-scale depth
   pass over the live galaxy — the sky never bakes, blanks, or
