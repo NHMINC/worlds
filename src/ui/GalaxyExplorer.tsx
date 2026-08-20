@@ -14,12 +14,26 @@ import {
   type RebuildScope,
 } from './liveKnobs';
 
-const PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
+const VIEW_PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
   { id: 'edge', label: 'Edge-on' },
   { id: 'home', label: 'Home' },
-  { id: 'back', label: 'Back' },
 ];
+
+const LY_PER_KPC = 3261.56;
+
+/** Catalog kpc → AU / ly / kpc, matching the approach laws. */
+export function formatCatalogDist(kpc: number): string {
+  const d = Number.isFinite(kpc) && kpc > 0 ? kpc : 0;
+  if (d >= 0.1) return `${d >= 10 ? d.toFixed(1) : d.toFixed(2)} kpc`;
+  const ly = d * LY_PER_KPC;
+  if (ly >= 0.1) return `${ly >= 10 ? ly.toFixed(1) : ly.toFixed(2)} ly`;
+  const au = (d * UNIVERSE.KPC_KM) / UNIVERSE.AU_KM;
+  if (au >= 0.01) return `${au >= 10 ? au.toFixed(1) : au.toFixed(2)} AU`;
+  const km = d * UNIVERSE.KPC_KM;
+  if (km >= 1) return `${km >= 100 ? km.toFixed(0) : km.toFixed(1)} km`;
+  return `${Math.max(0, km * 1000).toFixed(0)} m`;
+}
 
 interface Props {
   galaxySeed?: string;
@@ -35,6 +49,7 @@ interface Props {
 
 export function GalaxyExplorer(props: Props) {
   const seed = props.galaxySeed ?? UNIVERSE.CANONICAL_SEED;
+  const rootRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const viewRef = useRef<GalaxyView | null>(null);
@@ -45,10 +60,11 @@ export function GalaxyExplorer(props: Props) {
   const active = props.active !== false;
   const [ready, setReady] = useState(false);
   const [selected, setSelected] = useState<GalaxyObject | null>(null);
-  const [engineer, setEngineer] = useState<null | 'pick' | string>(null);
+  const [engineer, setEngineer] = useState<string | null>(null);
   const [knobVal, setKnobVal] = useState(0);
   const [knobDirty, setKnobDirty] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [menu, setMenu] = useState<null | 'view' | 'engineer'>(null);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [rebuilding, setRebuilding] = useState<null | RebuildScope>(null);
   const [rebuildFrac, setRebuildFrac] = useState(0);
   const [rebuildLabel, setRebuildLabel] = useState('');
@@ -66,6 +82,8 @@ export function GalaxyExplorer(props: Props) {
     course: null,
     warp: false,
     astern: false,
+    inView: false,
+    soiRemain: null,
     backdrop: 0,
   });
 
@@ -96,8 +114,11 @@ export function GalaxyExplorer(props: Props) {
               prev.sector !== f.sector ||
               prev.warp !== f.warp ||
               prev.astern !== f.astern ||
+              prev.inView !== f.inView ||
               prev.backdrop !== f.backdrop ||
               prev.course?.id !== f.course?.id ||
+              Math.abs((prev.course?.dist ?? -1) - (f.course?.dist ?? -1)) > 1e-12 ||
+              Math.abs((prev.soiRemain ?? -1) - (f.soiRemain ?? -1)) > 1e-12 ||
               prev.focus?.id !== f.focus?.id ||
               (f.focus != null &&
                 (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
@@ -168,6 +189,24 @@ export function GalaxyExplorer(props: Props) {
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!menu) return;
+    const onDoc = (e: PointerEvent): void => {
+      const t = e.target as Node | null;
+      if (t && rootRef.current?.querySelector('.galaxy-top')?.contains(t)) return;
+      setMenu(null);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setMenu(null);
+    };
+    document.addEventListener('pointerdown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menu]);
+
   function openKnob(id: string): void {
     const live = liveKnob(id);
     if (live) {
@@ -200,30 +239,28 @@ export function GalaxyExplorer(props: Props) {
   }
 
   function pickSetting(id: string): void {
-    if (!id) {
-      setKnobDirty(false);
-      setEngineer('pick');
-      setMenuOpen(true);
-      return;
-    }
+    if (!id) return;
     openKnob(id);
-    setMenuOpen(false);
+    setMenu('engineer');
   }
 
   function cancelRebuild(): void {
-    const k = engineer && engineer !== 'pick' ? rebuildKnob(engineer) : undefined;
+    const k = engineer ? rebuildKnob(engineer) : undefined;
     setKnobDirty(false);
     if (k) setKnobVal(k.read());
   }
 
-  function closeEngineer(): void {
-    setKnobDirty(false);
-    setMenuOpen(false);
-    setEngineer(null);
+  function toggleGroup(id: string): void {
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
   function resetToDefault(): void {
-    if (!spec || !engineer || engineer === 'pick' || rebuilding) return;
+    if (!spec || !engineer || rebuilding) return;
     const v = knobDefault(spec);
     if (live) {
       setKnobVal(v);
@@ -246,7 +283,7 @@ export function GalaxyExplorer(props: Props) {
     setRebuildLabel(
       k.scope === 'harvest' ? 'Walking the disk…' : k.scope === 'nebula' ? 'Collecting nebulae…' : 'Baking the fog…',
     );
-    setMenuOpen(false);
+    setMenu(null);
     setRebuilding(k.scope);
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
     try {
@@ -269,13 +306,14 @@ export function GalaxyExplorer(props: Props) {
   const st = selected?.star;
   const cls = st ? classifyStar(st) : '';
   const inRegion = frame.mode === 'region';
-  const live = engineer && engineer !== 'pick' ? liveKnob(engineer) : undefined;
-  const rebuild = engineer && engineer !== 'pick' ? rebuildKnob(engineer) : undefined;
+  const live = engineer ? liveKnob(engineer) : undefined;
+  const rebuild = engineer ? rebuildKnob(engineer) : undefined;
   const spec = live ?? rebuild;
   const isDefault = Boolean(spec && atDefault(spec, knobVal));
 
   return (
     <div
+      ref={rootRef}
       className={`galaxy-explorer${active ? '' : ' is-dormant'}`}
       aria-hidden={!active}
       inert={!active ? true : undefined}
@@ -297,8 +335,8 @@ export function GalaxyExplorer(props: Props) {
             <em>{Math.round(rebuildFrac * 100)}%</em>
           </div>
         )}
-        {inRegion && !engineer && <div className="gx-pip" aria-hidden />}
-        {inRegion && !engineer && (
+        {inRegion && <div className="gx-pip" aria-hidden />}
+        {inRegion && (
           <div className="gx-helm">
             {!frame.warp && (
               <button
@@ -320,7 +358,7 @@ export function GalaxyExplorer(props: Props) {
             </button>
           </div>
         )}
-        {inRegion && !engineer && (frame.course || frame.focus) && (
+        {inRegion && (frame.course || frame.focus) && (
           <div className="gx-plate">
             <b>{(frame.course ?? frame.focus)!.name}</b>
             <em>
@@ -334,6 +372,9 @@ export function GalaxyExplorer(props: Props) {
                 : ''}
               {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
             </i>
+            {frame.course && (
+              <i className="gx-plate-dist">{formatCatalogDist(frame.course.dist)}</i>
+            )}
             {frame.course ? (
               <i className="gx-plate-go">Course Locked</i>
             ) : (
@@ -350,6 +391,16 @@ export function GalaxyExplorer(props: Props) {
             )}
           </div>
         )}
+        {perfText && (
+          <div className="gx-hud gx-hud-perf" aria-live="polite">
+            {perfText}
+          </div>
+        )}
+        {frame.soiRemain != null && (
+          <div className="gx-hud gx-hud-soi" aria-live="polite">
+            {formatCatalogDist(frame.soiRemain)} to exit sphere
+          </div>
+        )}
       </div>
 
       <header className="galaxy-top">
@@ -359,18 +410,155 @@ export function GalaxyExplorer(props: Props) {
             {`${frame.population.toLocaleString()} shown · ${UNIVERSE.GALAXY_POPULATION.toLocaleString()} possible`}
           </div>
         </div>
-        <div className="galaxy-presets">
-          {PRESETS.map((p) => (
-            <button key={p.id} className="gx-chip" onClick={() => viewRef.current?.setPreset(p.id)}>
-              {p.label}
+        <div className="galaxy-menus">
+          <div className={`gx-drop${menu === 'view' ? ' is-open' : ''}`}>
+            <button
+              type="button"
+              className={`gx-chip${menu === 'view' ? ' active' : ''}`}
+              aria-haspopup="menu"
+              aria-expanded={menu === 'view'}
+              onClick={() => setMenu((m) => (m === 'view' ? null : 'view'))}
+            >
+              View
             </button>
-          ))}
+            {menu === 'view' && (
+              <div className="gx-drop-menu" role="menu" aria-label="View">
+                {VIEW_PRESETS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    role="menuitem"
+                    className="gx-drop-item"
+                    onClick={() => {
+                      viewRef.current?.setPreset(p.id);
+                      setMenu(null);
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className={`gx-drop gx-drop-eng-wrap${menu === 'engineer' ? ' is-open' : ''}`}>
+            <button
+              type="button"
+              className={`gx-chip${menu === 'engineer' ? ' active' : ''}`}
+              aria-haspopup="menu"
+              aria-expanded={menu === 'engineer'}
+              disabled={Boolean(rebuilding)}
+              onClick={() => {
+                viewRef.current?.setWarp(false);
+                setMenu((m) => (m === 'engineer' ? null : 'engineer'));
+              }}
+            >
+              Cosmic engineer
+            </button>
+            {menu === 'engineer' && (
+              <div className="gx-drop-menu gx-drop-eng" role="menu" aria-label="Cosmic engineer">
+                {ENGINEER_GROUPS.map((g) => {
+                  const open = openGroups.has(g.id);
+                  return (
+                    <div key={g.id} className="gx-eng-group">
+                      <button
+                        type="button"
+                        className={`gx-eng-group-label${open ? ' is-open' : ''}`}
+                        aria-expanded={open}
+                        onClick={() => toggleGroup(g.id)}
+                      >
+                        {g.label}
+                      </button>
+                      {open &&
+                        knobsInGroup(g.id).map((k) => (
+                          <button
+                            key={k.id}
+                            type="button"
+                            role="menuitem"
+                            className={`gx-eng-item${k.remint ? ' is-rebuild' : ''}${engineer === k.id ? ' is-on' : ''}`}
+                            onClick={() => pickSetting(k.id)}
+                          >
+                            <b>{k.label}</b>
+                            <i>{k.hint}</i>
+                          </button>
+                        ))}
+                    </div>
+                  );
+                })}
+                {spec && (
+                  <>
+                    <p className="gx-eng-about">{spec.about}</p>
+                    <div className="gx-eng-slider">
+                      <input
+                        type="range"
+                        min={spec.min}
+                        max={spec.max}
+                        step={spec.step}
+                        value={knobVal}
+                        disabled={Boolean(rebuilding)}
+                        onChange={(e) => slideKnob(engineer!, Number(e.target.value))}
+                      />
+                      <em>
+                        {spec.step >= 1
+                          ? String(Math.round(knobVal))
+                          : knobVal.toFixed(
+                              spec.step >= 0.01 ? (knobVal >= 10 ? 1 : 2) : spec.step >= 0.001 ? 3 : 4,
+                            )}
+                      </em>
+                    </div>
+                    {(!isDefault || (rebuild && knobDirty)) && (
+                      <div className="gx-eng-actions">
+                        {!isDefault && (
+                          <button
+                            type="button"
+                            className="gx-chip gx-eng-reset"
+                            disabled={Boolean(rebuilding)}
+                            onClick={resetToDefault}
+                          >
+                            Reset to default
+                          </button>
+                        )}
+                        {rebuild && knobDirty && (
+                          <>
+                            <button
+                              type="button"
+                              className="gx-chip gx-eng-go"
+                              disabled={Boolean(rebuilding)}
+                              onClick={() => void confirmRebuild(engineer!)}
+                            >
+                              Rebuild
+                            </button>
+                            <button
+                              type="button"
+                              className="gx-chip"
+                              disabled={Boolean(rebuilding)}
+                              onClick={cancelRebuild}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          {frame.inView && (
+            <button
+              type="button"
+              className="gx-chip"
+              onClick={() => viewRef.current?.setPreset('back')}
+            >
+              Back
+            </button>
+          )}
+          {props.canClose !== false && (
+            <button className="gx-chip gx-close" onClick={props.onClose}>
+              Return
+            </button>
+          )}
         </div>
-        {props.canClose !== false && (
-          <button className="gx-chip gx-close" onClick={props.onClose}>
-            Return
-          </button>
-        )}
       </header>
 
       {selected && st && (
@@ -409,132 +597,6 @@ export function GalaxyExplorer(props: Props) {
         </aside>
       )}
 
-      <footer className={`galaxy-bottom${engineer ? ' is-eng' : ''}`}>
-        {engineer && (
-          <div className="gx-eng">
-            <div className="gx-eng-top">
-              <div className="gx-kicker">Cosmic engineer</div>
-              <button
-                type="button"
-                className="gx-chip gx-close"
-                disabled={Boolean(rebuilding)}
-                onClick={closeEngineer}
-              >
-                Close
-              </button>
-            </div>
-            <div className="gx-eng-pick">
-              <button
-                type="button"
-                className={`gx-eng-select${rebuild ? ' is-rebuild' : ''}${menuOpen ? ' is-open' : ''}`}
-                disabled={Boolean(rebuilding)}
-                aria-haspopup="listbox"
-                aria-expanded={menuOpen}
-                aria-label="Cosmic engineer setting"
-                onClick={() => setMenuOpen((open) => !open)}
-              >
-                {spec ? (
-                  <>
-                    <b>{spec.label}</b>
-                    <i>{spec.hint}</i>
-                  </>
-                ) : (
-                  <b>Choose a setting…</b>
-                )}
-              </button>
-              {menuOpen && (
-                <div className="gx-eng-menu" role="listbox" aria-label="Cosmic settings">
-                  {ENGINEER_GROUPS.map((g) => (
-                    <div key={g.id} className="gx-eng-group">
-                      <div className="gx-eng-group-label">{g.label}</div>
-                      {knobsInGroup(g.id).map((k) => (
-                        <button
-                          key={k.id}
-                          type="button"
-                          role="option"
-                          aria-selected={engineer === k.id}
-                          className={`gx-eng-item${k.remint ? ' is-rebuild' : ''}${engineer === k.id ? ' is-on' : ''}`}
-                          onClick={() => pickSetting(k.id)}
-                        >
-                          <b>{k.label}</b>
-                          <i>{k.hint}</i>
-                        </button>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            {spec && <p className="gx-eng-about">{spec.about}</p>}
-            {spec && engineer !== 'pick' && (
-              <div className="gx-eng-slider">
-                <input
-                  type="range"
-                  min={spec.min}
-                  max={spec.max}
-                  step={spec.step}
-                  value={knobVal}
-                  disabled={Boolean(rebuilding)}
-                  onChange={(e) => slideKnob(engineer, Number(e.target.value))}
-                />
-                <em>
-                  {spec.step >= 1
-                    ? String(Math.round(knobVal))
-                    : knobVal.toFixed(spec.step >= 0.01 ? (knobVal >= 10 ? 1 : 2) : spec.step >= 0.001 ? 3 : 4)}
-                </em>
-              </div>
-            )}
-            {spec && engineer !== 'pick' && (!isDefault || (rebuild && knobDirty)) && (
-              <div className="gx-eng-actions">
-                {!isDefault && (
-                  <button
-                    type="button"
-                    className="gx-chip gx-eng-reset"
-                    disabled={Boolean(rebuilding)}
-                    onClick={resetToDefault}
-                  >
-                    Reset to default
-                  </button>
-                )}
-                {rebuild && knobDirty && (
-                  <>
-                    <button
-                      type="button"
-                      className="gx-chip gx-eng-go"
-                      disabled={Boolean(rebuilding)}
-                      onClick={() => void confirmRebuild(engineer)}
-                    >
-                      Rebuild
-                    </button>
-                    <button
-                      type="button"
-                      className="gx-chip"
-                      disabled={Boolean(rebuilding)}
-                      onClick={cancelRebuild}
-                    >
-                      Cancel
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-        {!engineer && (
-          <button
-            type="button"
-            className="gx-chip"
-            onClick={() => {
-              viewRef.current?.setWarp(false);
-              setMenuOpen(true);
-              setEngineer('pick');
-            }}
-          >
-            Cosmic engineer
-          </button>
-        )}
-        {!engineer && perfText && <span className="gx-perf-inline">{perfText}</span>}
-      </footer>
     </div>
   );
 }

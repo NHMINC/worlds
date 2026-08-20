@@ -321,9 +321,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
 - **The explorer is the harvest, not a magnifier ball.**
-  **Cosmic engineer** (explorer bottom bar) is a dropdown of
+  **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
-  harvest survey, starlight, approach, nebulae). Each option states what the setting
+  harvest survey, starlight, approach, nebulae). Sections stay
+  collapsed until opened. Each option states what the setting
   does. Remint / rebake knobs are amber. Live photograph
   knobs already sit on the GPU (smudge brightness and count,
   background-star brightness and count, extinction, shine,
@@ -456,13 +457,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   reflect. Not harvest rows. A
   harvest star is visitable
   when you pick it; here / POIs are always pickable.
+  **View** (top bar) holds Face-on, Edge-on, and Home.
   **Face-on / Edge-on** slide the bubble so the disk diameter fills
   the screen (pole-on, or in the plane). Edge-on sits in the midplane
   — a lift turns the dust lane into a floor — and looks back at the
   origin. **Home** parks on the loaded star and pins that pose as
-  the Back bookmark. **Back** restores the
-  pose from before Face-on or Edge-on (or Home, if Home was tapped).
-  Switching Face-on ↔ Edge-on does not overwrite the bookmark.
+  the Back bookmark. **Back** is offered only while you are in a
+  Face-on / Edge-on view and restores the pose from before that
+  view. Switching Face-on ↔ Edge-on does not overwrite the bookmark.
   The old saucer chart is retired.
   Nothing queries or rebuilds the catalog per camera move — the
   old free-flight explorer's blink / cluster / stutter / re-roll
@@ -493,7 +495,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Drag looks. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
-  `AIM_RANGE_KPC`. Set course holds the heading. From
+  `AIM_RANGE_KPC`. Set course holds the heading; the plate
+  shows live distance in AU / ly / kpc. Inside a sphere
+  a corner overlay names the remaining distance to the fence.
+  From
   `ARRIVE_BRAKE_LY` (50 ly) a locked course is under
   half-warp gears so the 0.01 ly sphere (engineer 0.001–0.01 ly)
   cannot be skipped: hold each half until a frame would hit

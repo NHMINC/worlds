@@ -594,6 +594,13 @@ export interface GalaxyFrame {
   warp: boolean;
   /** True when the helm is set astern (warp runs opposite the nose). */
   astern: boolean;
+  /** Face-on / Edge-on canned view — Back is offered only then. */
+  inView: boolean;
+  /**
+   * Catalog kpc remaining to the sphere fence, or null
+   * outside every SOI. Place law — lock does not enter.
+   */
+  soiRemain: number | null;
   /** Luminous-tail backdrop points currently on the GPU (0 if not minted). */
   backdrop: number;
 }
@@ -2934,6 +2941,10 @@ export class GalaxyView {
     }
     this.perf.endDraw();
     this.perf.tick(performance.now() - f0, true);
+    if (this.courseHud && this.courseObj) {
+      this.courseHud.dist = this.arriveDist(this.courseObj);
+    }
+    const soi = this.soiDist();
     this.callbacks.onFrame?.({
       mode: this.mode,
       theta: this.theta,
@@ -2948,6 +2959,8 @@ export class GalaxyView {
       course: this.courseHud,
       warp: this.thrustOn,
       astern: this.astern,
+      inView: this.overview,
+      soiRemain: soi == null ? null : Math.max(0, UNIVERSE.ARRIVE_RANGE_KPC - soi),
       backdrop: this.shownCount(),
     });
     this.raf = requestAnimationFrame(this.frame);

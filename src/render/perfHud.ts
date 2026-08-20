@@ -2,8 +2,8 @@
  * Performance meter: rendered FPS, main-thread frame cost, and
  * GPU frame time via EXT_disjoint_timer_query_webgl2 where the
  * browser allows it (desktop Chrome does; iOS Safari does not —
- * it shows "n/a"). A pure collector: the explorer's bottom bar
- * reads `summary()` and renders it next to Cosmic engineer.
+ * it shows "n/a"). A pure collector: the explorer's corner
+ * overlay reads `summary()`.
  */
 type TimerExt = {
   TIME_ELAPSED_EXT: number;
