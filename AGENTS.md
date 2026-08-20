@@ -107,8 +107,9 @@ toy — Godus blocks on a real-sized globe.
   (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
   reads Course Locked; a look drag hands the stick back. On a
   locked course warp stays warp until `ARRIVE_BRAKE_LY` (50 ly),
-  then `ARRIVE_K · d` so a warp frame cannot skip the sphere
-  and the fence is already at the speed limit. Inside the
+  then half of disk warp until a frame would hit the fence,
+  then half again, down to the sphere speed limit — longest
+  time at each gear, fastest arrival without skipping. Inside the
   0.01 ly sphere `ARRIVE_WARP` also caps. Astern keeps that
   sphere limit only — no brake, no shell landing; outside
   is full warp. Dim follows the 50 ly brake ahead (locked
@@ -492,9 +493,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
   `AIM_RANGE_KPC`. Set course holds the heading. From
   `ARRIVE_BRAKE_LY` (50 ly) a locked course is under
-  `ARRIVE_K · d` so the 0.01 ly sphere (engineer 0.001–0.01 ly)
-  cannot be skipped and the fence is already at the speed
-  limit. Astern is the sphere limit only, then full warp.
+  half-warp gears so the 0.01 ly sphere (engineer 0.001–0.01 ly)
+  cannot be skipped: hold each half until a frame would hit
+  the fence, then half again, down to the speed limit. Astern
+  is the sphere limit only, then full warp.
   Inside, `ARRIVE_WARP` also
   caps (sticky — fly out before a new target or full warp).
   A locked course stops at the

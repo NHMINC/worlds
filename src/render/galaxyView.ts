@@ -2135,20 +2135,25 @@ export class GalaxyView {
   }
 
   /**
-   * Speed. The sphere is a limit both ways. Ahead also brakes
-   * from ARRIVE_BRAKE_LY so a warp frame cannot skip the fence.
-   * Astern does not: outside the sphere is full warp — no step
-   * up, no landing on a shell.
+   * Speed. The sphere is a limit both ways. Ahead, from
+   * ARRIVE_BRAKE_LY: half of disk warp, held until one frame
+   * would reach the fence, then half again — the longest
+   * stretch at each gear, the fewest frames to the SOI.
+   * Floor is the sphere limit. Astern: sphere, then full warp.
    */
-  private closeSpeed(d: number): number {
+  private closeSpeed(d: number, dt = this.lastDt): number {
     const warp = UNIVERSE.GALAXY_WARP;
     const fence = UNIVERSE.ARRIVE_RANGE_KPC;
     if (d <= fence) return this.sphereSpeed(d);
     if (this.astern) return warp;
     const brake = UNIVERSE.ARRIVE_BRAKE_KPC;
     if (d > brake) return warp;
-    const vFence = this.sphereSpeed(fence);
-    return Math.min(warp, vFence * (d / Math.max(fence, 1e-16)));
+    const vLim = this.sphereSpeed(fence);
+    const frame = Math.min(0.05, Math.max(dt, 1 / 120));
+    const remain = Math.max(d - fence, 0);
+    let v = warp * 0.5;
+    while (v > vLim && v * frame >= remain) v *= 0.5;
+    return Math.max(vLim, v);
   }
 
   private moveBubble(vx: number, vy: number, vz: number, _force = false): void {
@@ -2510,10 +2515,10 @@ export class GalaxyView {
   /**
    * Latched warp: W / Warp is a fixed catalog rate in the current
    * gear; S / Stop is stop. When stopped, ↑ sets ahead and warps,
-   * ↓ sets astern and warps. Ahead: from ARRIVE_BRAKE_LY a locked
-   * course falls as ARRIVE_K · d so the fence is already at the
-   * speed limit. Astern: sphere limit only, then full warp —
-   * no brake, no shell landing. Ahead Stops at the fill park.
+   * ↓ sets astern and warps. Ahead: from ARRIVE_BRAKE_LY, half
+   * disk warp until a frame would hit the fence, then half
+   * again, down to the sphere limit. Astern: sphere limit
+   * only, then full warp. Ahead Stops at the fill park.
    * Astern never parks.
    */
   private cruise(dt: number): void {
@@ -2528,7 +2533,7 @@ export class GalaxyView {
     const sign = this.thrustSign();
     const course = this.courseObj;
     const sub = this.closeSubject();
-    const v = sub ? this.closeSpeed(this.arriveDist(sub)) : UNIVERSE.GALAXY_WARP;
+    const v = sub ? this.closeSpeed(this.arriveDist(sub), dt) : UNIVERSE.GALAXY_WARP;
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
     let step = this.thrustSpeed * dt;

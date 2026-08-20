@@ -353,8 +353,10 @@ export const UNIVERSE = {
    * until you fly out. The photosphere replaces the pin when the
    * sphere is entered — the harvest pin cannot draw the approach
    * (a point, then float32 hops). From ARRIVE_BRAKE_LY (50 ly)
-   * in, speed falls as ARRIVE_K · d so a warp frame cannot skip
-   * the sphere; at the fence that is already the speed limit.
+   * in, speed is half of GALAXY_WARP, held until a frame would
+   * reach the fence, then half again — longest time at each
+   * gear, fastest arrival at the SOI without skipping it. The
+   * floor is the sphere speed limit.
    * Astern keeps the sphere limit only — no 50 ly brake, no
    * landing on a shell; outside the fence is full warp. Dim
    * follows the brake on the way in (locked course); on the
@@ -380,9 +382,9 @@ export const UNIVERSE = {
   },
   /**
    * Where the approach brake begins. Ahead only. Full
-   * GALAXY_WARP outside; inside this radius v = ARRIVE_K · d
-   * (meets the sphere speed limit at the fence). Astern
-   * ignores this — sphere limit, then warp.
+   * GALAXY_WARP outside; inside this radius, half warp for
+   * as long as a frame will not hit the fence, then half
+   * again, down to the sphere limit. Astern ignores this.
    */
   ARRIVE_BRAKE_LY: 50,
   get ARRIVE_BRAKE_KPC(): number {
