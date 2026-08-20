@@ -358,17 +358,14 @@ export const UNIVERSE = {
    * gear, fastest arrival at the SOI without skipping it. The
    * floor is the sphere speed limit.
    * Astern keeps the sphere limit only — no 50 ly brake, no
-   * landing on a shell; outside the fence is full warp. Dim
-   * waits for that speed limit (the fence) both ways — the
-   * 50 ly gears stay at full survey light. Warp latches Stop
-   * when the disk covers ARRIVE_FILL of the vertical field.
-   * The survey photograph (enhanced light for flying the
-   * disk) falls linearly with distance from 1 at the sphere
-   * to ARRIVE_SKY_GAIN at the fill park — a dark-sky Earth
-   * night, a bit clearer. That is the only galaxy light in
-   * the bubble: looking out, and every other object (pins,
-   * nebulae, later worlds). The host furnace is not dimmed.
-   * It does not open a system.
+   * landing on a shell; outside the fence is full warp. Survey
+   * gain is surveyGain(d): 1 outside the sphere, ARRIVE_SKY_GAIN
+   * at the centre, linear in distance — a place law, not a
+   * lock, gear, or fly-around. Camera, ship, planet, pin: same
+   * sample. The 50 ly gears stay at full survey light. Warp
+   * latches Stop when the disk covers ARRIVE_FILL of the
+   * vertical field. The host furnace is not dimmed. It does
+   * not open a system.
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
@@ -391,17 +388,16 @@ export const UNIVERSE = {
     return this.ARRIVE_BRAKE_LY / 3261.56;
   },
   /**
-   * Galaxy light from the sphere speed limit in. The harvest /
+   * Galaxy light inside a sphere of influence. The harvest /
    * nebula / cosmic photograph is enhanced so you can fly the
-   * disk; that fill would make night impossible. Gain is a
-   * distance law, not a timed fade: 1 at ARRIVE_RANGE, this
-   * floor at the fill park, linear in between. Same span
-   * astern. The 50 ly brake does not dim.
-   * The floor is a dark-sky Earth night, a little clearer —
-   * the band is readable, not a flood. Every object in the
-   * bubble (other pins, nebulae, later worlds) only gets this
-   * much galaxy light. The host furnace is real starlight
-   * and is not multiplied.
+   * disk; that fill would make night impossible. surveyGain(d)
+   * is the law: 1 at ARRIVE_RANGE, this floor at the centre,
+   * linear in catalog distance. Lock, helm gear, and look-
+   * around do not enter. Every occupant samples the same
+   * number (camera, later a planet or ship). The 50 ly brake
+   * does not dim. The floor is a dark-sky Earth night, a
+   * little clearer — the band is readable, not a flood. The
+   * host furnace is real starlight and is not multiplied.
    */
   ARRIVE_SKY_GAIN: 0.08,
   /**
@@ -1843,6 +1839,21 @@ export function starEyeFlux(L: number, d: number): number {
   const dRef = UNIVERSE.A_HAB * UNIVERSE.AU_KM;
   const r = Math.max(d, 1);
   return Math.max(0, L) * (dRef * dRef) / (r * r);
+}
+
+/**
+ * Survey photograph gain at catalog distance `d` from an SOI
+ * centre. 1 outside ARRIVE_RANGE; ARRIVE_SKY_GAIN at the
+ * centre; linear in between. A place law — lock, gear, and
+ * fly-around do not enter. Camera, ship, planet, pin: same
+ * sample of the same sphere.
+ */
+export function surveyGain(dKpc: number): number {
+  const R = UNIVERSE.ARRIVE_RANGE_KPC;
+  const g = UNIVERSE.ARRIVE_SKY_GAIN;
+  if (!(R > 0) || dKpc >= R) return 1;
+  if (dKpc <= 0) return g;
+  return g + (1 - g) * (dKpc / R);
 }
 
 export function waveSlope(energy: number): { along: number; across: number } {

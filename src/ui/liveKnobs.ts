@@ -392,7 +392,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Galaxy dim',
     group: 'approach',
     hint: 'how bright the survey stays at the star',
-    about: 'Distance, not a clock. Full survey light until the sphere speed limit (the 0.01 ly fence); this floor at the fill park, linear in between — both ways. The 50 ly half-warp gears do not dim. 0.08 is a dark-sky Earth night, a bit clearer — the only galaxy light on anything in the bubble. 0 is pitch black. The host furnace is not multiplied. Next frame.',
+    about: 'Place law inside any sphere of influence: 1 at the fence, this floor at the centre, linear in catalog distance. Camera, ship, planet, pin — same sample. Lock, helm gear, and look-around do not enter. The 50 ly gears do not dim. 0.08 is a dark-sky Earth night, a bit clearer. 0 is pitch black. The host furnace is not multiplied. Next frame.',
     uniform: 'uArriveSky',
     min: 0,
     max: 0.4,

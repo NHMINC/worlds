@@ -112,8 +112,10 @@ toy — Godus blocks on a real-sized globe.
   time at each gear, fastest arrival without skipping. Inside the
   0.01 ly sphere `ARRIVE_WARP` also caps. Astern keeps that
   sphere limit only — no brake, no shell landing; outside
-  is full warp. Dim waits for the sphere speed limit
-  (the fence) both ways — the 50 ly gears stay bright.
+  is full warp. Survey gain is `surveyGain(d)`: 1 outside
+  any sphere, `ARRIVE_SKY_GAIN` at the centre, linear in
+  distance. A place law — lock, gear, and fly-around do
+  not enter. The 50 ly gears stay bright.
   The
   photosphere
   replaces the pin when the sphere is entered (the pin cannot
@@ -125,10 +127,10 @@ toy — Godus blocks on a real-sized globe.
   pass over the live galaxy — the sky never bakes, blanks, or
   switches environment, and the controls never change. The
   harvest / nebula / cosmic photograph is enhanced survey light
-  for flying the disk; from the sphere speed limit that gain
-  falls linearly with distance to `ARRIVE_SKY_GAIN` at the fill
-  park — a dark-sky Earth night, a bit clearer.
-  Astern relights at the same fence. That is the
+  for flying the disk; inside a sphere that gain is
+  `surveyGain(d)` — `ARRIVE_SKY_GAIN` at the centre, 1 at
+  the fence, a dark-sky Earth night, a bit clearer.
+  Leave the fence and it is 1. That is the
   only galaxy light in the bubble
   (looking out, other pins, nebulae, later night sides). The
   host furnace is not multiplied. It does
@@ -500,11 +502,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Inside, `ARRIVE_WARP` also
   caps (sticky — fly out before a new target or full warp).
   A locked course stops at the
-  `ARRIVE_FILL` park. The survey photograph is a distance
-  law: full until the sphere speed limit, `ARRIVE_SKY_GAIN`
-  at park, linear in between (dark-sky Earth, a bit clearer —
-  the only galaxy light on anything in the bubble; the furnace
-  stays). The 50 ly gears do not dim.
+  `ARRIVE_FILL` park. The survey photograph is a place law
+  (`surveyGain`): full outside any sphere, `ARRIVE_SKY_GAIN`
+  at the centre, linear in distance (dark-sky Earth, a bit
+  clearer — the only galaxy light on anything in the bubble;
+  the furnace stays). Lock and helm do not enter. The 50 ly
+  gears do not dim.
   Stars you are not aiming at never slow the ship.
 - **Render distance** (the only things that “run”): one star system
   fully instantiated; one planetoid + its moons in close LOD; one

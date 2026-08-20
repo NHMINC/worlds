@@ -10,7 +10,7 @@
  * Home parks on the loaded star; Back restores the previous pose.
  */
 import * as THREE from 'three';
-import { UNIVERSE } from '../world/physics';
+import { UNIVERSE, surveyGain } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
@@ -1425,24 +1425,58 @@ export class GalaxyView {
   }
 
   /**
-   * Survey gain. Full until the sphere speed limit
-   * (ARRIVE_RANGE), then ARRIVE_SKY_GAIN at park, linear.
-   * The 50 ly gears are still open catalog light; only the
-   * crawl inside the fence dims the photograph. Astern is
-   * the same span (host sphere → park). The furnace is a
-   * second pass and is not dimmed.
+   * Catalog distance to the nearest harvest star if the
+   * viewpoint is inside that star's sphere. Known subjects
+   * first (host / course / reticle / here); otherwise a
+   * harvest walk. Null outside every fence. Lock and helm
+   * gear do not choose the centre.
+   */
+  private soiDist(): number | null {
+    const range = UNIVERSE.ARRIVE_RANGE_KPC;
+    if (!(range > 0)) return null;
+    const r2 = range * range;
+    let best2 = Infinity;
+    const considerObj = (obj: GalaxyObject | null): void => {
+      if (!obj) return;
+      const d = this.arriveDist(obj);
+      const d2 = d * d;
+      if (d2 < best2) best2 = d2;
+    };
+    considerObj(this.hostObj);
+    considerObj(this.courseObj);
+    considerObj(this.focusObj);
+    considerObj(this.selected);
+    considerObj(this.hereObj);
+    // A known subject inside AIM_RANGE is the sphere we are
+    // with. Do not walk the disk for another 0.01 ly bubble.
+    const aim2 = UNIVERSE.AIM_RANGE_KPC * UNIVERSE.AIM_RANGE_KPC;
+    if (best2 > r2 && best2 > aim2 && this.cloud) {
+      const cat = this.cloud.pos;
+      const ox = this.arcCenter.x;
+      const oy = this.arcCenter.y;
+      const oz = this.arcCenter.z;
+      for (let i = 0; i < this.cloud.n; i++) {
+        const i3 = i * 3;
+        const dx = cat[i3] - ox;
+        const dy = cat[i3 + 1] - oy;
+        const dz = cat[i3 + 2] - oz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < best2) best2 = d2;
+        if (best2 <= r2) break;
+      }
+    }
+    if (best2 > r2) return null;
+    return Math.sqrt(best2);
+  }
+
+  /**
+   * Survey gain at the viewpoint. surveyGain of soiDist —
+   * a place law. Ahead, astern, lock, and look-around do
+   * not enter. The furnace is a second pass and is not dimmed.
    */
   private skyDim(): number {
-    const obj = this.astern ? this.hostObj : this.closeSubject();
-    if (!obj) return 1;
-    const outer = UNIVERSE.ARRIVE_RANGE_KPC;
-    if (outer <= 0) return 1;
-    const g = UNIVERSE.ARRIVE_SKY_GAIN;
-    const park = this.parkKpc(obj);
-    const span = outer - park;
-    if (span <= 1e-12) return g;
-    const t = Math.max(0, Math.min(1, (outer - this.arriveDist(obj)) / span));
-    return 1 + (g - 1) * t;
+    const d = this.soiDist();
+    return d == null ? 1 : surveyGain(d);
   }
 
   /** Catalog positions stay on the GPU; only the bubble centre moves. */
@@ -2863,8 +2897,8 @@ export class GalaxyView {
     this.hereRing.rotation.z = t * -0.22;
 
     this.updateHostArrival(now);
-    // Attach can land on this frame — write the fence→park
-    // gain after the host is known so this draw matches.
+    // Place can change this frame — write surveyGain after
+    // attach so this draw matches the viewpoint.
     const dim = this.skyDim();
     for (const mat of this.cloudMats()) {
       if (mat.uniforms.uSkyDim) mat.uniforms.uSkyDim.value = dim;
