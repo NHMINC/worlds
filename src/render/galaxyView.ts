@@ -601,6 +601,8 @@ export interface GalaxyFrame {
    * outside every SOI. Place law — lock does not enter.
    */
   soiRemain: number | null;
+  /** Host star in the 0.01 ly sphere, if any. */
+  hostId: number | null;
   /** Luminous-tail backdrop points currently on the GPU (0 if not minted). */
   backdrop: number;
 }
@@ -1758,6 +1760,11 @@ export class GalaxyView {
 
   focusedObject(): GalaxyObject | null {
     return this.focusObj;
+  }
+
+  /** Host in the 0.01 ly sphere — the explorer chart’s only subject. */
+  chartObject(): GalaxyObject | null {
+    return this.hostObj;
   }
 
   /** Refresh sight uniforms — smoke / tests. */
@@ -2961,6 +2968,7 @@ export class GalaxyView {
       astern: this.astern,
       inView: this.overview,
       soiRemain: soi == null ? null : Math.max(0, UNIVERSE.ARRIVE_RANGE_KPC - soi),
+      hostId: this.hostObj?.id ?? null,
       backdrop: this.shownCount(),
     });
     this.raf = requestAnimationFrame(this.frame);

@@ -858,6 +858,12 @@ body,
   background: #0b101c;
 }
 
+.sysmap-modal.is-zoom {
+  width: min(720px, calc(100vw - 16px));
+  max-height: calc(100vh - 36px);
+  overflow: hidden;
+}
+
 .sysmap-head {
   display: flex;
   align-items: center;
@@ -875,6 +881,12 @@ body,
   aspect-ratio: 1 / 1;
 }
 
+.sysmap.is-zoom {
+  touch-action: none;
+  cursor: grab;
+  overflow: hidden;
+}
+
 .sm-ring {
   fill: none;
   stroke: rgba(150, 172, 205, 0.16);
@@ -883,6 +895,10 @@ body,
 
 .sm-body {
   cursor: pointer;
+}
+
+.sysmap.is-zoom .sm-body {
+  cursor: inherit;
 }
 
 .sm-body:hover {
@@ -978,6 +994,10 @@ body,
   visibility: hidden;
   pointer-events: none;
   z-index: 0;
+}
+
+.galaxy-explorer.is-map .galaxy-top {
+  z-index: 12;
 }
 
 .galaxy-stage {
@@ -1675,6 +1695,18 @@ i.gx-plate-go {
   font-size: 11.5px;
   letter-spacing: 0.04em;
   cursor: pointer;
+}
+
+.gx-chip.gx-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
+}
+
+.gx-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .gx-chip:hover,

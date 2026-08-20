@@ -321,7 +321,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
   `src/render/star.ts`.
 - **The explorer is the harvest, not a magnifier ball.**
-  **Cosmic engineer** (explorer top bar) is a dropdown of
+  The **system chart** (orbits icon next to Cosmic engineer)
+  is the same rank-spaced orbits-and-moons schematic as the
+  world viewer, zoomable. It appears only inside a host
+  sphere. A tap does not fly yet. **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, approach, nebulae). Sections stay
   collapsed until opened, and stay open when you pick a

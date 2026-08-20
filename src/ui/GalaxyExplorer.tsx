@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
+import { systemAt } from '../world/systemgen';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
 import {
@@ -11,6 +12,8 @@ import {
   rebuildKnob,
   type RebuildScope,
 } from './liveKnobs';
+import { IconOrbits } from './icons';
+import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
 
 const VIEW_PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -61,6 +64,7 @@ export function GalaxyExplorer(props: Props) {
   const [knobVal, setKnobVal] = useState(0);
   const [knobDirty, setKnobDirty] = useState(false);
   const [menu, setMenu] = useState<null | 'view' | 'engineer'>(null);
+  const [mapOpen, setMapOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [rebuilding, setRebuilding] = useState<null | RebuildScope>(null);
   const [rebuildFrac, setRebuildFrac] = useState(0);
@@ -81,6 +85,7 @@ export function GalaxyExplorer(props: Props) {
     astern: false,
     inView: false,
     soiRemain: null,
+    hostId: null,
     backdrop: 0,
   });
 
@@ -116,6 +121,7 @@ export function GalaxyExplorer(props: Props) {
               prev.course?.id !== f.course?.id ||
               Math.abs((prev.course?.dist ?? -1) - (f.course?.dist ?? -1)) > 1e-12 ||
               Math.abs((prev.soiRemain ?? -1) - (f.soiRemain ?? -1)) > 1e-12 ||
+              prev.hostId !== f.hostId ||
               prev.focus?.id !== f.focus?.id ||
               (f.focus != null &&
                 (Math.abs((prev.focus?.x ?? 0) - f.focus.x) > 2 ||
@@ -165,6 +171,7 @@ export function GalaxyExplorer(props: Props) {
     if (active && wrapRef.current) {
       view.resize(wrapRef.current.clientWidth, wrapRef.current.clientHeight);
     }
+    if (!active) setMapOpen(false);
   }, [active, ready]);
 
   useEffect(() => {
@@ -203,6 +210,19 @@ export function GalaxyExplorer(props: Props) {
       document.removeEventListener('keydown', onKey);
     };
   }, [menu]);
+
+  useEffect(() => {
+    if (!mapOpen) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setMapOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [mapOpen]);
+
+  useEffect(() => {
+    if (frame.hostId == null) setMapOpen(false);
+  }, [frame.hostId]);
 
   function openKnob(id: string): void {
     const live = liveKnob(id);
@@ -310,11 +330,30 @@ export function GalaxyExplorer(props: Props) {
   const spec = live ?? rebuild;
   const isDefault = Boolean(spec && atDefault(spec, knobVal));
   const editing = Boolean(spec);
+  const chartId = frame.hostId;
+  const chartSpec = useMemo(() => {
+    if (chartId == null) return null;
+    try {
+      return systemAt(seed, chartId);
+    } catch {
+      return null;
+    }
+  }, [seed, chartId]);
+  const chartPlanets = useMemo(
+    () => (chartSpec ? planetsFromSpec(chartSpec) : []),
+    [chartSpec],
+  );
+  const chartSpecRef = useRef(chartSpec);
+  chartSpecRef.current = chartSpec;
+  const chartAngleOf = useCallback((id: string) => {
+    const sys = chartSpecRef.current;
+    return sys ? mapAngleOf(sys, id, systemClock()) : 0;
+  }, []);
 
   return (
     <div
       ref={rootRef}
-      className={`galaxy-explorer${active ? '' : ' is-dormant'}`}
+      className={`galaxy-explorer${active ? '' : ' is-dormant'}${mapOpen ? ' is-map' : ''}`}
       aria-hidden={!active}
       inert={!active ? true : undefined}
     >
@@ -441,6 +480,20 @@ export function GalaxyExplorer(props: Props) {
               </div>
             )}
           </div>
+          )}
+          {!editing && chartSpec && (
+            <button
+              type="button"
+              className={`gx-chip gx-icon${mapOpen ? ' active' : ''}`}
+              aria-label="System chart"
+              title="System chart"
+              onClick={() => {
+                setMenu(null);
+                setMapOpen((open) => !open);
+              }}
+            >
+              <IconOrbits size={16} />
+            </button>
           )}
           <div className={`gx-drop gx-drop-eng-wrap${menu === 'engineer' ? ' is-open' : ''}`}>
             <button
@@ -580,6 +633,16 @@ export function GalaxyExplorer(props: Props) {
         </footer>
       )}
 
+      {mapOpen && chartSpec && (
+        <SystemMap
+          starName={chartSpec.star.name}
+          starColor={chartSpec.star.color}
+          planets={chartPlanets}
+          angleOf={chartAngleOf}
+          zoomable
+          onClose={() => setMapOpen(false)}
+        />
+      )}
     </div>
   );
 }
