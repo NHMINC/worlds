@@ -107,18 +107,18 @@ toy — Godus blocks on a real-sized globe.
   (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
   reads Course Locked; a look drag hands the stick back. On a
   locked course warp stays warp — full rate, then `ARRIVE_WARP`
-  (1/1000) inside the object's 0.2 ly sphere, and `ARRIVE_K · d`
+  (1/1000) inside the object's 0.1 ly sphere, and `ARRIVE_K · d`
   so the disk-growth stretch lasts seconds. The photosphere
   replaces the pin when the sphere is entered (the pin cannot
   draw the approach). Sticky — fly out before a new target or
   full warp. Stop at the fill park. The object stays until we
-  fly out of its 0.2 ly sphere — a look drag only releases the
+  fly out of its 0.1 ly sphere — a look drag only releases the
   heading. Warp latches Stop when the disk covers `ARRIVE_FILL`
   of the vertical field. The close star draws as a second AU-scale depth
   pass over the live galaxy — the sky never bakes, blanks, or
   switches environment, and the controls never change. The
   harvest / nebula / cosmic photograph is enhanced survey light
-  for flying the disk; inside the 0.2 ly sphere that gain falls
+  for flying the disk; inside the 0.1 ly sphere that gain falls
   as t² to `ARRIVE_SKY_GAIN` — a dark-sky Earth night, a bit
   clearer. That is the only galaxy light in the bubble
   (looking out, other pins, nebulae, later night sides). The
@@ -473,13 +473,17 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - **Explorer gestures.** The camera stays at the bubble centre.
   Fly is a **latched warp**: ↑ / W (or the **Warp** button)
   holds a fixed catalog rate; ↓ / S / **Stop** is stop.
+  When stopped, a smaller helm bubble overlapping Warp
+  toggles **ahead** (up arrow) and **astern** (down arrow);
+  Warp then runs in that gear so you can back off a park.
   Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
-  quietly unless the nose points inward. A tap, not a hold.
+  quietly unless that gear points inward. A tap, not a hold.
   Drag looks. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
   `AIM_RANGE_KPC`. Set course holds the heading. Inside a host's
-  0.2 ly sphere (fixed, not object-size) every move is under
+  0.1 ly sphere (fixed, not object-size; engineer 0.01–0.5 ly)
+  every move is under
   `ARRIVE_WARP` / `ARRIVE_K · d` (sticky — fly out before a new
   target or full warp). A locked course stops at the
   `ARRIVE_FILL` park. The survey photograph dims to

@@ -65,6 +65,7 @@ export function GalaxyExplorer(props: Props) {
     focus: null,
     course: null,
     warp: false,
+    astern: false,
     backdrop: 0,
   });
 
@@ -94,6 +95,7 @@ export function GalaxyExplorer(props: Props) {
               prev.population !== f.population ||
               prev.sector !== f.sector ||
               prev.warp !== f.warp ||
+              prev.astern !== f.astern ||
               prev.backdrop !== f.backdrop ||
               prev.course?.id !== f.course?.id ||
               prev.focus?.id !== f.focus?.id ||
@@ -297,13 +299,26 @@ export function GalaxyExplorer(props: Props) {
         )}
         {inRegion && !engineer && <div className="gx-pip" aria-hidden />}
         {inRegion && !engineer && (
-          <button
-            type="button"
-            className={`gx-warp${frame.warp ? ' stop' : ''}`}
-            onClick={() => viewRef.current?.setWarp(!frame.warp)}
-          >
-            {frame.warp ? 'Stop' : 'Warp'}
-          </button>
+          <div className="gx-helm">
+            {!frame.warp && (
+              <button
+                type="button"
+                className={`gx-gear${frame.astern ? ' astern' : ''}`}
+                aria-label={frame.astern ? 'Astern' : 'Ahead'}
+                title={frame.astern ? 'Astern' : 'Ahead'}
+                onClick={() => viewRef.current?.toggleGear()}
+              >
+                {frame.astern ? '↓' : '↑'}
+              </button>
+            )}
+            <button
+              type="button"
+              className={`gx-warp${frame.warp ? ' stop' : ''}`}
+              onClick={() => viewRef.current?.setWarp(!frame.warp)}
+            >
+              {frame.warp ? 'Stop' : 'Warp'}
+            </button>
+          </div>
         )}
         {inRegion && !engineer && (frame.course || frame.focus) && (
           <div className="gx-plate">

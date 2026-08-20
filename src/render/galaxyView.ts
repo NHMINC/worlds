@@ -592,6 +592,8 @@ export interface GalaxyFrame {
   course: GalaxyFocus | null;
   /** True while warp is latched on (Stop). */
   warp: boolean;
+  /** True when the helm is set astern (warp runs opposite the nose). */
+  astern: boolean;
   /** Luminous-tail backdrop points currently on the GPU (0 if not minted). */
   backdrop: number;
 }
@@ -703,6 +705,8 @@ export class GalaxyView {
   private pointers = new Map<number, { x: number; y: number }>();
   private pinch0 = 0;
   private thrustOn = false;
+  /** Helm gear: false = ahead (along the nose), true = astern. */
+  private astern = false;
   private thrustSpeed = 0;
   private idle = 0;
   private lastT = performance.now();
@@ -1852,14 +1856,19 @@ export class GalaxyView {
     return Math.hypot(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
   }
 
-  /** Warp may run inside the fence, or past it only while flying inward. */
+  /** Signed look axis for this gear: +1 ahead, −1 astern. */
+  private thrustSign(): number {
+    return this.astern ? -1 : 1;
+  }
+
+  /** Warp may run inside the fence, or past it only while the gear points inward. */
   private warpMayRun(): boolean {
     const r = this.bubbleR();
     const lim = UNIVERSE.GALAXY_WARP_LIM;
     if (r < lim) return true;
     this.orientArc();
     if (r < 1e-6) return true;
-    return this.arcFwd.dot(this.arcCenter) < 0;
+    return this.arcFwd.dot(this.arcCenter) * this.thrustSign() < 0;
   }
 
   /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
@@ -1868,6 +1877,14 @@ export class GalaxyView {
     this.thrustOn = on && this.warpMayRun();
     this.idle = 0;
     if (this.thrustOn) this.wake(2);
+  }
+
+  /** Ahead / astern. Only while stopped — a running warp keeps the gear. */
+  toggleGear(): void {
+    if (this.mode !== 'region' || this.thrustOn) return;
+    this.astern = !this.astern;
+    this.idle = 0;
+    this.wake();
   }
 
   warping(): boolean {
@@ -2443,11 +2460,13 @@ export class GalaxyView {
 
   /**
    * Latched warp: ↑ / Warp is a fixed catalog rate; ↓ / Stop is stop.
-   * Inside a host's ARRIVE_RANGE_LY sphere the rate is ARRIVE_WARP of
-   * GALAXY_WARP — a speed limit, sticky until you fly out. If this
-   * step would enter the sphere, the limit already applies (or a
-   * warp frame skips it). On a locked course, Stop at the fill park
-   * — no teleport, no leftover-frame dump.
+   * The helm gear (only while stopped) flips the sign: astern runs
+   * opposite the nose so you can back off a park. Inside a host's
+   * ARRIVE_RANGE_LY sphere the rate is ARRIVE_WARP of GALAXY_WARP —
+   * a speed limit, sticky until you fly out. If this step would
+   * enter the sphere, the limit already applies (or a warp frame
+   * skips it). Ahead on a locked course Stops at the fill park —
+   * no teleport, no leftover-frame dump. Astern never parks.
    */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
@@ -2458,6 +2477,7 @@ export class GalaxyView {
     if (this.thrustOn && !this.warpMayRun()) this.thrustOn = false;
     this.orientArc();
     this.updateArriveSubject();
+    const sign = this.thrustSign();
     let v = UNIVERSE.GALAXY_WARP;
     const course = this.courseObj;
     const range = UNIVERSE.ARRIVE_RANGE_KPC;
@@ -2467,15 +2487,16 @@ export class GalaxyView {
       const d = this.arriveDist(course);
       const c = galToCart(course.pos);
       const tCa =
-        (c.x - this.arcCenter.x) * this.arcFwd.x +
-        (c.y - this.arcCenter.y) * this.arcFwd.y +
-        (c.z - this.arcCenter.z) * this.arcFwd.z;
+        ((c.x - this.arcCenter.x) * this.arcFwd.x +
+          (c.y - this.arcCenter.y) * this.arcFwd.y +
+          (c.z - this.arcCenter.z) * this.arcFwd.z) *
+        sign;
       if (tCa > 0 && d - UNIVERSE.GALAXY_WARP * dt <= range) v = this.sphereSpeed(d);
     }
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
     let step = this.thrustSpeed * dt;
-    if (course) {
+    if (!this.astern && course) {
       const d = this.arriveDist(course);
       const park = this.parkKpc(course);
       if (d <= park) {
@@ -2499,7 +2520,7 @@ export class GalaxyView {
         return;
       }
     }
-    this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
+    this.moveBubble(this.arcFwd.x * sign * step, this.arcFwd.y * sign * step, this.arcFwd.z * sign * step);
   }
 
   private steerArc(dt: number): void {
@@ -2836,6 +2857,7 @@ export class GalaxyView {
       focus: this.focusHud,
       course: this.courseHud,
       warp: this.thrustOn,
+      astern: this.astern,
       backdrop: this.shownCount(),
     });
     this.raf = requestAnimationFrame(this.frame);

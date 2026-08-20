@@ -1000,10 +1000,19 @@ body,
   white-space: nowrap;
 }
 
-.gx-warp {
+.gx-helm {
   position: absolute;
   right: calc(16px + env(safe-area-inset-right));
   bottom: calc(78px + env(safe-area-inset-bottom));
+  z-index: 3;
+  width: 88px;
+  height: 88px;
+  pointer-events: none;
+}
+
+.gx-warp {
+  position: absolute;
+  inset: 0;
   z-index: 3;
   width: 88px;
   height: 88px;
@@ -1024,6 +1033,31 @@ body,
 .gx-warp.stop {
   border-color: #e8b4a2;
   background: rgba(180, 70, 50, 0.35);
+}
+
+.gx-gear {
+  position: absolute;
+  left: -10px;
+  top: -10px;
+  z-index: 4;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: var(--shadow);
+}
+
+.gx-gear.astern {
+  border-color: #e8b4a2;
 }
 
 .galaxy-loading {
