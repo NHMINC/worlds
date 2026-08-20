@@ -36,6 +36,7 @@ import {
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
 import {
+  eclipticPole,
   keplerPlane,
   starSpecFromState,
   systemAt,
@@ -778,6 +779,9 @@ export class GalaxyView {
   private readonly hostTmp = new THREE.Vector3();
   private readonly hostTmp2 = new THREE.Vector3();
   private readonly hostTmpQ = new THREE.Quaternion();
+  private readonly hostPole = new THREE.Vector3();
+  private readonly hostAlignQ = new THREE.Quaternion();
+  private readonly hostEclipticZ = new THREE.Vector3(0, 0, 1);
   private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
 
   constructor(
@@ -2131,6 +2135,23 @@ export class GalaxyView {
     if (this.hostSpec) this.buildHostBodies(this.hostSpec);
   }
 
+  /**
+   * Host +Z is the ecliptic pole. The galaxy's pole is +Y (XZ disk).
+   * Rotate the km frame so this system's hashed pole sits in the sky.
+   */
+  private orientHost(root: THREE.Group): void {
+    const e = this.hostSpec?.ecliptic;
+    if (!e) {
+      root.quaternion.identity();
+      return;
+    }
+    const p = eclipticPole(e);
+    this.hostPole.set(p.x, p.y, p.z);
+    this.hostAlignQ.setFromUnitVectors(this.hostEclipticZ, this.hostPole);
+    this.hostTmpQ.setFromAxisAngle(this.hostPole, e.spin);
+    root.quaternion.copy(this.hostTmpQ).multiply(this.hostAlignQ);
+  }
+
   /** Tier-0 balls + Kepler ellipses. Same pose law as the engine; no terrain. */
   private buildHostBodies(spec: SystemSpec): void {
     const root = this.ensureHostRoot();
@@ -2325,7 +2346,10 @@ export class GalaxyView {
     if (!this.hostStar) this.attachHostFurnace(lock);
 
     const root = this.hostRoot;
-    if (root) root.position.set(dx, dy, dz);
+    if (root) {
+      root.position.set(dx, dy, dz);
+      this.orientHost(root);
+    }
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.updateHostBodies(tSys);

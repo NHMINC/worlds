@@ -139,7 +139,13 @@ toy — Godus blocks on a real-sized globe.
   that host (tier-0 planets, moons, Kepler
   orbits) draw in the same AU-scale pass —
   they live in the sphere, not a second
-  sky. Landing on a world still waits;
+  sky. Each system's ecliptic is a hashed
+  orientation vs the galactic plane
+  (`eclipticOf` — isotropic pole, node +
+  spin; planet `inc` / `node` stay relative
+  to that frame). The old bottle never sat
+  in the galaxy, so its XY was an accident,
+  not a law. Landing on a world still waits;
   short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -292,6 +298,13 @@ Related laws that must stay physics, not flags:
 - **Variety without abandoning physics:** Type-II migration, disk C/O
   scatter, and an outgassing law for moons exist so systems are not all
   Sol clones. Tune those laws; do not inject “exotic planet” presets.
+- **Ecliptic vs the galaxy** is a hashed SO(3) on the system address
+  (`eclipticOf`). Poles are isotropic — protoplanetary disks do not
+  know the Galactic plane (the Solar ecliptic is ~60° from it). Do
+  not align every system with the Milky Way disk. The host pass
+  applies that rotation; the isolated engine viewer still lives in
+  the ecliptic. Do not drink `assembleSystem`'s leftover stream for
+  this — a new draw would move every planet.
 
 Worlds show the physics they were born with. There is no climate or sea
 slider — those were a dev inspect path. `effectivePhysics` still exists

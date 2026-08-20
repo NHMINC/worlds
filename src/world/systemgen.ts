@@ -14,6 +14,8 @@ import { rgbToHex, teffToRgb, type StellarState } from './stellar';
  * eccentricity and inclination, a tidal-locking law — and the physics module
  * derives everything else (gravity, atmosphere, oceans, palettes) from each
  * body's elemental inventory. Archetypes are outputs, never inputs.
+ * The ecliptic's orientation in the galaxy is a separate hash of the
+ * system address (`eclipticOf`); planet elements stay in that frame.
  *
  * Every rocky body's terrain seed is a hash of the system seed and its slot,
  * so the whole universe is addressable: (systemSeed, bodyId, cell) names a
@@ -95,11 +97,24 @@ export interface StarSpec {
   carbon: number;
 }
 
+/**
+ * The system's ecliptic in the galactic frame (XZ midplane, +Y pole).
+ * `inc` is the angle between poles — 0 sits in the Milky Way disk.
+ * Planet `inc` / `node` stay relative to this frame, not the galaxy.
+ */
+export interface Ecliptic {
+  node: number;
+  inc: number;
+  spin: number;
+}
+
 export interface SystemSpec {
   seed: string;
   star: StarSpec;
   /** All bodies, planets in orbit order, each planet's moons right after it. */
   bodies: BodySpec[];
+  /** Disk orientation vs the galaxy. Hash of the system address. */
+  ecliptic: Ecliptic;
 }
 
 // ---------------------------------------------------------------- helpers
@@ -178,6 +193,32 @@ function keplerMoonSec(aKm: number, parentMassKg: number): number {
   const a = Math.max(1e3, aKm) * 1000;
   const mu = UNIVERSE.G_SI * Math.max(1e18, parentMassKg);
   return 2 * Math.PI * Math.sqrt((a * a * a) / mu);
+}
+
+/**
+ * Disk pole vs the galaxy. Three hashes of the system address — not a
+ * walking draw, so planet elements stay put. Poles are isotropic
+ * (cos i uniform on [-1, 1]); protoplanetary disks do not know the
+ * Galactic plane. The old bottle's default (+Z pole) was an accident
+ * of an isolated XY frame.
+ */
+export function eclipticOf(seed: string): Ecliptic {
+  const u = (salt: string) => xmur3(`${seed}:ecliptic:${salt}`)() / 4294967296;
+  return {
+    node: u('node') * Math.PI * 2,
+    inc: Math.acos(2 * u('inc') - 1),
+    spin: u('spin') * Math.PI * 2,
+  };
+}
+
+/** Ecliptic pole in galactic cartesian. +Y is the Galactic pole. */
+export function eclipticPole(e: Ecliptic): { x: number; y: number; z: number } {
+  const s = Math.sin(e.inc);
+  return {
+    x: s * Math.sin(e.node),
+    y: Math.cos(e.inc),
+    z: s * Math.cos(e.node),
+  };
 }
 
 /** In-plane Kepler pose (AU for planets, km for moons). One law, two viewers. */
@@ -474,7 +515,7 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
     }
   }
 
-  return { seed, star, bodies };
+  return { seed, star, bodies, ecliptic: eclipticOf(seed) };
 }
 
 /**
