@@ -324,7 +324,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, approach, nebulae). Sections stay
-  collapsed until opened. Each option states what the setting
+  collapsed until opened, and stay open when you pick a
+  setting — picking does not close the list. The chosen law
+  edits in a bottom panel; other chrome hides while that
+  panel is open. Each option states what the setting
   does. Remint / rebake knobs are amber. Live photograph
   knobs already sit on the GPU (smudge brightness and count,
   background-star brightness and count, extinction, shine,

@@ -1491,14 +1491,66 @@ i.gx-plate-go {
   margin-right: auto;
 }
 
-.gx-drop-eng .gx-eng-about,
-.gx-drop-eng .gx-eng-slider,
-.gx-drop-eng .gx-eng-actions {
-  margin-top: 8px;
+.galaxy-bottom {
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: block;
+  padding: 14px 16px 16px;
+}
+
+.galaxy-bottom.is-eng {
+  left: 16px;
+  right: 16px;
+}
+
+.gx-eng-name {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+@media (orientation: landscape) and (max-height: 520px) {
+  .gx-eng {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    grid-template-areas:
+      'top top'
+      'about slider'
+      'about actions';
+    column-gap: 20px;
+    row-gap: 10px;
+    align-items: center;
+  }
+
+  .gx-eng-top {
+    grid-area: top;
+  }
+
+  .gx-eng-about {
+    grid-area: about;
+    align-self: start;
+  }
+
+  .gx-eng-slider {
+    grid-area: slider;
+  }
+
+  .gx-eng-actions {
+    grid-area: actions;
+    justify-content: flex-end;
+  }
+
+  .gx-eng-reset {
+    margin-right: 0;
+  }
 }
 
 .galaxy-top,
-.galaxy-dossier {
+.galaxy-dossier,
+.galaxy-bottom {
   position: absolute;
   z-index: 2;
   pointer-events: auto;
