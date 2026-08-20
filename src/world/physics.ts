@@ -349,7 +349,10 @@ export const UNIVERSE = {
    * one viewer (a saved camera is a camp; a visit with no cam is
    * the course).
    */
-  ARRIVE_K: 0.35,
+  /** Approach e-fold rate (1/s): remaining distance halves every
+   * ln2/ARRIVE_K seconds, so any course — 2 kpc or 20 pc — lands in
+   * ~e-folds/ARRIVE_K seconds. 0.35 was a minute-long crawl. */
+  ARRIVE_K: 1.2,
   STAR_REVEAL_PX: 3,
   SYSTEM_REVEAL_PX: 3,
   /** Outer-a used for the system angular test (AU). The rim, not a stretch. */

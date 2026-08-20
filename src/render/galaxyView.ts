@@ -2594,12 +2594,22 @@ export class GalaxyView {
       const dy = c.y - this.arcCenter.y;
       const dz = c.z - this.arcCenter.z;
       const d = Math.hypot(dx, dy, dz);
-      const toward = d > 1e-12
+      let toward = d > 1e-12
         ? (dx * this.arcFwd.x + dy * this.arcFwd.y + dz * this.arcFwd.z) / d
         : 1;
+      // Autopilot: while warping broadly inward and the player is not
+      // steering, hold the nose exactly on the lock. Without this a
+      // mid-flight drag lets the approach cone decay and the clamp
+      // silently stops applying — full warp past the star, no park.
+      // Pointing away (toward ≤ 0) is a deliberate escape: no re-aim.
+      if (this.thrustOn && toward > 0 && !this.dragging && !this.steerHeld()) {
+        this.aimAt(dx, dy, dz);
+        this.orientArc();
+        toward = 1;
+      }
       if (toward > 0.55) {
-        // Ease onto the system rim, not the photosphere: the stop is
-        // the park radius, so v → 0 as the whole system fills the view.
+        // Ease onto the safe-exposure park, not the photosphere: the
+        // stop is the park radius, so v → 0 as the star fills the view.
         const park = this.parkKpc();
         const remain = Math.max(0, d - park);
         v = Math.min(v, UNIVERSE.ARRIVE_K * Math.max(remain, 1e-14));
