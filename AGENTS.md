@@ -107,8 +107,10 @@ toy — Godus blocks on a real-sized globe.
   covers `SYSTEM_REVEAL_PX` (Kepler `f(spec, t)`, tier-0 globes); the
   photosphere replaces the harvest pin at `STAR_REVEAL_PX`; set course
   locks the host and starts that approach — it does not teleport onto
-  a planet. The autopilot eases to rest at the system rim
-  (`ARRIVE_PARK` × outer orbit): the star ahead, the planets on their
+  a planet. The autopilot stays locked and eases to rest at a **safe
+  exposure** (`ARRIVE_FLUX`: hold where the star's eye flux is a set
+  multiple of habitable light, `ARRIVE_R_MIN` radii floor for
+  remnants): the sun a real furnace up close, the planets on their
   rings. Parked, the **system map** (the same map the engine uses)
   offers the worlds; picking one opens the engine in orbit of that
   body. A parked system does not keep the loop hot: poses are
@@ -220,8 +222,9 @@ The shape sample and the `HARVEST_ALL` million-pin photograph
 are retired. A later survey will
 resolve the faint neighbours of a camp. Set course locks a
 picked harvest star (or the here / POI focus) and starts the
-approach in the explorer; it parks at the rim, and the system
-map picks the world to orbit. We **store visits only** (overlays,
+approach in the explorer; it parks by the star at safe exposure,
+and the system map picks the world to orbit. We **store visits
+only** (overlays,
 camera, labels). A visit with no camera is the course; a saved
 camera is a camp (Return / boot resume). We do
   not mint systems.   App boot mints the whole-disk backdrop once

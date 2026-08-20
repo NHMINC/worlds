@@ -347,7 +347,7 @@ export function GalaxyExplorer(props: Props) {
         {inRegion && !engineer && arrived && (
           <div className="gx-plate">
             <b>{arrived.spec.star.name}</b>
-            <em>holding at the system rim</em>
+            <em>holding by the star · safe exposure</em>
             <i>
               {arrivedPlanets.length} planet{arrivedPlanets.length === 1 ? '' : 's'} · pick a
               world to orbit

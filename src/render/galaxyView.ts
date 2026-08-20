@@ -1764,10 +1764,16 @@ export class GalaxyView {
     return Math.hypot(this.arcCenter.x, this.arcCenter.y, this.arcCenter.z);
   }
 
-  /** Approach park radius (kpc): the system rim, scaled off the outer orbit. */
+  /** Approach park radius (kpc): the safe-exposure hold by the star
+   * (fixed eye flux, floored outside the corona for remnants). */
   private parkKpc(): number {
     if (!this.hostSpec) return 0;
-    return this.hostOuterAu * UNIVERSE.ARRIVE_PARK * UNIVERSE.AU_KM * KM_TO_KPC;
+    const s = this.hostSpec.star;
+    const dFlux =
+      UNIVERSE.A_HAB *
+      UNIVERSE.AU_KM *
+      Math.sqrt(Math.max(s.luminosity, 1e-8) / UNIVERSE.ARRIVE_FLUX);
+    return Math.max(dFlux, s.radius * UNIVERSE.ARRIVE_R_MIN) * KM_TO_KPC;
   }
 
   /** Warp may run inside the fence, or past it only while flying inward. */
