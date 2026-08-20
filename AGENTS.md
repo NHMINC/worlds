@@ -789,31 +789,50 @@ knob family. Leave the rest of the bottle alone.
    reading older files.
 4. **Do not commit secrets.** Update this file when the contract
    changes. Do not invent a test to replace a look.
-5. **Ship on `main`.** This is a solo project. Work on `main`.
-   **Commit and `git push origin main`.** No feature branches, no
-   pull requests, no merge step. The live app (GitHub Pages,
-   `https://nhminc.github.io/worlds/`) only builds from `main`;
-   that is the only way the owner can look.
-   **`origin/main` is not the live sky.** The `pages` workflow
-   (`.github/workflows/pages.yml`) must go **green for that push
-   SHA**. The only gate is the production build (`tsc -b && vite
-   build`) — a red deploy means they are still on the previous
-   universe. Then tell the owner to **hard-refresh once** so the
-   PWA drops the previous worker, and **stop**. The next look is
-   theirs.
-   Other agents may land on `main` while you work. `git fetch
-   origin main` before you push; if the remote moved, pull (do
-   not rebase away, do not force-push `main`).
+5. **Ship protocol — a change is not done until Pages is green
+   and the owner has been told to hard-refresh.** This is a
+   solo project. The owner looks at
+   `https://nhminc.github.io/worlds/`. That site only builds
+   from `main`. A feature branch, a `cursor/*` branch, or an
+   open pull request is **not shipped**. The owner cannot look
+   at it. Do not stop there.
+   Work on `main`. After the law is in:
+   1. `git fetch origin main`. If the remote moved, pull
+      (do not rebase away, do not force-push `main`).
+   2. **Commit** on `main` with a descriptive message.
+   3. **`git push origin main`.**
+   4. **Watch** `.github/workflows/pages.yml` for **this
+      push SHA**. `origin/main` is not the live sky until
+      that run is **green**. The only gate is
+      `tsc -b && vite build`. A red deploy means they are
+      still on the previous universe — fix it and push
+      again. A green run on an *older* SHA does not count.
+   5. Tell the owner to **hard-refresh once** so the PWA
+      drops the previous worker, and **stop**. The next
+      look is theirs.
+   No feature branches. No pull requests. No merge step
+   as a substitute for pushing `main`. If a cloud harness
+   opened a `cursor/*` branch, land those commits on
+   `main` and finish steps 3–5 before you say you are done.
 
 ## Cursor Cloud specific instructions
 
-- Work on `main`. Commit and push `origin main`. Do not open a
-  PR. Do not create a `cursor/*` branch for the owner.
+The ship protocol in **How we change things §5** is the
+job. Cloud default habits (feature branch, draft PR, stop)
+lose here. Override them.
+
+- Work on `main`. Commit. `git push origin main`. Watch
+  `pages.yml` until it is **green for that SHA**. Tell the
+  owner to **hard-refresh once**. Then stop and wait.
+- Do not open a PR. Do not create a `cursor/*` branch for
+  the owner. A PR is not a look. Pages is the look.
 - Do not run or restore `scripts/check-*` / `scripts/smoke-*`.
 - Do not stand up Playwright, computerUse walkthroughs, or a
   harvest mint to verify a visual change. The owner looks at Pages.
 - On-the-spot diagnostics are allowed. Delete them before commit.
-- After Pages is green, stop and wait for the owner.
+- After Pages is green and you have asked for the hard-refresh,
+  stop and wait for the owner. Do not call the turn done at
+  “pushed a branch.”
 
 Code map (start here):
 
