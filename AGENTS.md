@@ -152,8 +152,12 @@ toy — Godus blocks on a real-sized globe.
   of that disk). Reticle and chart pick
   the body; another world can be chosen
   without leaving the host; another star
-  cannot. The ball stays a ball. Landing
-  on a world still waits;
+  cannot.   The coursed / latched rocky
+  world is the Goldberg globe
+  (terrace, air, water — same
+  shaders as the old viewer).
+  Siblings stay balls. Landing
+  tools and save rows still wait;
   short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -872,6 +876,7 @@ Code map (start here):
 | Nebula shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
 | Galaxy explorer (stars + nebulae + dust + cosmic shell) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Host-pass rocky globe (one latched world) | `src/render/rockyGlobe.ts` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Packed harvest cache (IDB, not the export) | `src/store/harvestCache.ts` |

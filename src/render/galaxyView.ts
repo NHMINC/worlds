@@ -45,6 +45,7 @@ import {
   type SystemSpec,
 } from '../world/systemgen';
 import { makeGasGiant } from './gasGiant';
+import { RockyGlobe } from './rockyGlobe';
 import {
   silhouetteCloud,
   nebulaCloud,
@@ -243,6 +244,8 @@ interface HostBodyRT {
   group: THREE.Group;
   orbitLine: THREE.LineLoop;
   gasMat: THREE.ShaderMaterial | null;
+  /** Lambert stand-in until the latched globe is ready. */
+  placeholder: THREE.Object3D | null;
   orbX: THREE.Vector3;
   orbY: THREE.Vector3;
   tiltQ: THREE.Quaternion;
@@ -766,6 +769,8 @@ export class GalaxyView {
   private worldId: string | null = null;
   private focusBodyId: string | null = null;
   private selectedBodyId: string | null = null;
+  /** One Goldberg globe — the coursed / latched rocky world. */
+  private globe: RockyGlobe | null = null;
   /**
    * Close-approach subject. Latched when the course, reticle, or
    * selected star comes inside ARRIVE_RANGE_LY; released when the
@@ -2170,6 +2175,36 @@ export class GalaxyView {
     }
   }
 
+  /**
+   * The coursed / latched rocky world becomes the Goldberg globe.
+   * Build starts on set course so the mesh is ready at the fence.
+   * Gas stays the existing giant. Siblings stay balls.
+   */
+  private tickGlobe(tSys: number): void {
+    const id = this.worldId ?? this.courseBodyId;
+    const rt = this.worldRt(id);
+    if (!rt || !this.hostSpec || rt.spec.kind !== 'rocky') {
+      this.dropGlobe();
+      return;
+    }
+    if (!this.globe || this.globe.bodyId !== rt.spec.id) {
+      this.dropGlobe();
+      this.globe = new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder);
+    }
+    if (!this.globe.ready) {
+      this.globe.tick();
+      this.wake(2);
+    }
+    if (this.globe.ready) {
+      this.globe.update(this.camera, tSys, this.hostSpec.star.luminosity, rt.pos, rt.spinQ);
+    }
+  }
+
+  private dropGlobe(): void {
+    this.globe?.dispose();
+    this.globe = null;
+  }
+
   private detachHostStar(): void {
     this.hostObj = null;
     this.detachHost();
@@ -2181,6 +2216,7 @@ export class GalaxyView {
     this.focusBodyId = null;
     this.selectedBodyId = null;
     if (this.courseHud?.bodyId) this.clearCourse();
+    this.dropGlobe();
     this.clearHostBodies();
     this.detachHostFurnace();
     if (this.hostRoot) {
@@ -2261,7 +2297,7 @@ export class GalaxyView {
     root.quaternion.copy(this.hostTmpQ).multiply(this.hostAlignQ);
   }
 
-  /** Tier-0 balls + Kepler ellipses. Same pose law as the engine; no terrain. */
+  /** Tier-0 stand-ins + Kepler ellipses. The latched rocky world grows a globe. */
   private buildHostBodies(spec: SystemSpec): void {
     const root = this.ensureHostRoot();
     const byId = new Map<string, HostBodyRT>();
@@ -2271,17 +2307,18 @@ export class GalaxyView {
       const group = new THREE.Group();
       group.scale.setScalar(b.radius);
       let gasMat: THREE.ShaderMaterial | null = null;
+      let placeholder: THREE.Object3D | null = null;
       if (b.kind === 'gas' && b.gas) {
         const gg = makeGasGiant(b.gas);
         group.add(gg.group);
         gasMat = gg.material;
       } else {
-        group.add(
-          new THREE.Mesh(
-            new THREE.SphereGeometry(1, 28, 18),
-            new THREE.MeshLambertMaterial({ color: new THREE.Color(...b.meanColor) }),
-          ),
+        const ball = new THREE.Mesh(
+          new THREE.SphereGeometry(1, 28, 18),
+          new THREE.MeshLambertMaterial({ color: new THREE.Color(...b.meanColor) }),
         );
+        group.add(ball);
+        placeholder = ball;
       }
       root.add(group);
 
@@ -2342,6 +2379,7 @@ export class GalaxyView {
         group,
         orbitLine,
         gasMat,
+        placeholder,
         orbX,
         orbY,
         tiltQ,
@@ -3386,6 +3424,7 @@ export class GalaxyView {
     this.hereRing.rotation.z = t * -0.22;
 
     this.updateHostArrival(now);
+    this.tickGlobe((this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE);
     // Place can change this frame — write surveyGain after
     // attach so this draw matches the viewpoint.
     const dim = this.skyDim();
