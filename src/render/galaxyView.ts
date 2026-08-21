@@ -1745,9 +1745,7 @@ export class GalaxyView {
       name === 'uArriveFill' ||
       name === 'uArriveHold' ||
       name === 'uAimRange' ||
-      name === 'uWarpCross' ||
-      name === 'uWorldBrake' ||
-      name === 'uWorldBrakeGain'
+      name === 'uWarpCross'
     ) {
       return;
     }
@@ -4386,9 +4384,8 @@ export class GalaxyView {
    * would reach the fence, then half again — the longest
    * stretch at each gear, the fewest frames to the SOI.
    * Floor is the sphere limit. Astern: sphere, then full warp.
-   * A world course keeps host-sphere cruise until
-   * WORLD_BRAKE_AU, then WORLD_BRAKE_GAIN of that speed
-   * against WORLD_RANGE, capped by the host-sphere limit.
+   * A world course ramps k from ARRIVE_K down to
+   * WORLD_SLOT_K as remain closes the insert window.
    */
   private closeSpeed(d: number, dt = this.lastDt): number {
     const warp = UNIVERSE.GALAXY_WARP;
@@ -4405,22 +4402,29 @@ export class GalaxyView {
     return Math.max(vLim, v);
   }
 
-  private worldCloseSpeed(d: number, dt = this.lastDt): number {
-    // Host-sphere ceiling, not the star's close-crawl: sitting on
-    // the photosphere park must not pin a world course to a crawl.
+  /**
+   * World-course speed. k eases from ARRIVE_K (transfer)
+   * to WORLD_SLOT_K (insertion) as remain closes the
+   * ORBIT_INSERT window. No AU step — the window is the
+   * body's own ring. A frame that would skip the slot
+   * halves. Astern keeps the close-crawl.
+   */
+  private worldCloseSpeed(d: number, park: number, dt = this.lastDt): number {
     const vCeil = UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP;
-    const vCruise = Math.min(vCeil, this.sphereSpeed(d));
-    const fence = UNIVERSE.WORLD_RANGE_KPC;
-    if (d <= fence) return vCruise;
-    if (this.astern) return vCruise;
-    const brake = UNIVERSE.WORLD_BRAKE_KPC;
-    if (d > brake) return vCruise;
-    const vLim = this.sphereSpeed(fence);
+    const slot = Math.max(park, 1e-18);
+    const remain = Math.max(Math.abs(d - slot), 1e-18);
+    const insert = UNIVERSE.ORBIT_INSERT * slot;
+    const kSlot = UNIVERSE.WORLD_SLOT_K;
+    const kFar = Math.max(UNIVERSE.ARRIVE_K, kSlot);
+    const a = remain / (remain + insert);
+    const k = this.astern ? kFar : kSlot + (kFar - kSlot) * a;
+    let v = Math.min(vCeil, k * remain);
+    const slack = Math.max(d - slot, 0);
+    const vLim = Math.min(vCeil, UNIVERSE.ARRIVE_K * slot);
+    if (slack <= 0) return vLim;
     const frame = Math.min(0.05, Math.max(dt, 1 / 120));
-    const remain = Math.max(d - fence, 0);
-    let v = vCruise * UNIVERSE.WORLD_BRAKE_GAIN;
-    while (v > vLim && v * frame >= remain) v *= 0.5;
-    return Math.max(vLim, Math.min(vCruise, v));
+    while (v > vLim && v * frame >= slack) v *= 0.5;
+    return Math.max(vLim, Math.min(vCeil, v));
   }
 
   private moveCap(dt = this.lastDt): number | null {
@@ -4428,11 +4432,11 @@ export class GalaxyView {
     if (world) {
       const d = this.bodyDist(world);
       const pending = this.pendingOrbit;
-      if (pending && pending.bodyId === world.spec.id) {
-        const park = orbitRadiusKpc(world.spec, pending.kind);
-        return this.worldCloseSpeed(Math.max(d, Math.abs(d - park)), dt);
-      }
-      return this.worldCloseSpeed(d, dt);
+      const park =
+        pending && pending.bodyId === world.spec.id
+          ? orbitRadiusKpc(world.spec, pending.kind)
+          : this.parkBodyKpc(world.spec);
+      return this.worldCloseSpeed(d, park, dt);
     }
     const sub = this.closeSubject();
     if (sub) return this.closeSpeed(this.arriveDist(sub), dt);
@@ -5185,18 +5189,7 @@ export class GalaxyView {
     // Land just inside so the next frame is on the curve.
     // Astern does not land on a shell — jumping the fence
     // on the way out is fine.
-    if (!this.astern && world) {
-      this.bodyFromEye(world, this.hostTmp);
-      const d = this.hostTmp.length();
-      const closing =
-        this.hostTmp.x * this.arcFwd.x +
-        this.hostTmp.y * this.arcFwd.y +
-        this.hostTmp.z * this.arcFwd.z;
-      const brake = UNIVERSE.WORLD_BRAKE_KPC;
-      if (closing > 0 && d > brake) {
-        step = Math.min(step, d - brake * (1 - 1e-6));
-      }
-    } else if (!this.astern && !world) {
+    if (!this.astern && !world) {
       const sub = this.closeSubject();
       if (sub) {
         const d = this.arriveDist(sub);

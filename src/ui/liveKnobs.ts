@@ -422,7 +422,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Close crawl',
     group: 'approach',
     hint: 'v ≤ this × distance on the last stretch',
-    about: 'Inside the sphere (and the floor of the half-warp gears at the fence), v ≤ this × catalog distance so the disk-growth stretch lasts seconds. Higher arrives faster. Next frame.',
+    about: 'Inside the sphere (and the floor of the half-warp gears at the fence), v ≤ this × catalog distance so the disk-growth stretch lasts seconds. On a world course this is the far end of the slot ramp — k eases to ORBIT_CAPTURE / ORBIT_INSERT as remain closes the insert window. Higher arrives faster. Next frame.',
     uniform: 'uArriveK',
     min: 0.3,
     max: 4,
@@ -490,36 +490,6 @@ export const LIVE_KNOBS: LiveKnob[] = [
     read: () => UNIVERSE.WORLD_RANGE_AU,
     write: (v) => {
       UNIVERSE.WORLD_RANGE_AU = v;
-    },
-  },
-  {
-    id: 'worldBrake',
-    label: 'World brake',
-    group: 'approach',
-    hint: 'how far out the orbital-slot crawl begins (AU)',
-    about: 'Ahead only, and only on a world course. Outside this radius, full host-sphere cruise. Inside it — when the locked body is about to own the insertion — keep a quarter of that cruise (WORLD_BRAKE_GAIN, 75% slower) until a frame would hit the world fence, then half again. 1 AU is the law. Astern does not use this. Next frame.',
-    uniform: 'uWorldBrake',
-    min: 0.2,
-    max: 15,
-    step: 0.2,
-    read: () => UNIVERSE.WORLD_BRAKE_AU,
-    write: (v) => {
-      UNIVERSE.WORLD_BRAKE_AU = v;
-    },
-  },
-  {
-    id: 'worldBrakeGain',
-    label: 'World slot keep',
-    group: 'approach',
-    hint: 'cruise fraction inside the world brake',
-    about: 'Ahead only. Inside World brake, warp keeps this fraction of host-sphere cruise so the last AU into the orbital slot is a crawl, not a fly-by. 0.25 is 75% slower. Then half again if a frame would skip the world fence. Astern ignores this. Next frame.',
-    uniform: 'uWorldBrakeGain',
-    min: 0.05,
-    max: 1,
-    step: 0.05,
-    read: () => UNIVERSE.WORLD_BRAKE_GAIN,
-    write: (v) => {
-      UNIVERSE.WORLD_BRAKE_GAIN = v;
     },
   },
   {
