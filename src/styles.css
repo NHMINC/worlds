@@ -507,15 +507,26 @@ body,
   display: block;
   aspect-ratio: 1 / 1;
   margin: 0 auto;
-  width: min(516px, calc(100vw - 84px), calc(100vh - 176px));
-  width: min(516px, calc(100vw - 84px), calc(100dvh - 176px));
+  width: min(516px, calc(100vw - 84px), calc(100vh - 240px));
+  width: min(516px, calc(100vw - 84px), calc(100dvh - 240px));
 }
 
 .sysmap.is-zoom {
-  width: min(676px, calc(100vw - 84px), calc(100vh - 176px));
-  width: min(676px, calc(100vw - 84px), calc(100dvh - 176px));
+  width: min(676px, calc(100vw - 84px), calc(100vh - 240px));
+  width: min(676px, calc(100vw - 84px), calc(100dvh - 240px));
   touch-action: none;
   cursor: grab;
+}
+
+/* Landscape: a wider box (the square chart letterboxes inside;
+ * a 3D wireframe of the orbits will use the extra width). */
+@media (orientation: landscape) {
+  .sysmap,
+  .sysmap.is-zoom {
+    aspect-ratio: 4 / 3;
+    width: min(720px, calc(100vw - 84px), calc((100vh - 240px) * 1.3333));
+    width: min(720px, calc(100vw - 84px), calc((100dvh - 240px) * 1.3333));
+  }
 }
 
 .sm-ring {

@@ -100,6 +100,9 @@ export function SystemMap(props: Props) {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const pinch0 = useRef(0);
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  /** Tap = one pointer, barely moved. Pointer capture retargets the
+   * browser click at the svg, so world taps are resolved by hand. */
+  const tap = useRef({ x: 0, y: 0, live: false });
 
   const ringR = (i: number): number =>
     planets.length <= 1
@@ -201,8 +204,10 @@ export function SystemMap(props: Props) {
       const [a, b] = [...pointers.current.values()];
       pinch0.current = Math.hypot(a.x - b.x, a.y - b.y);
       drag.current = null;
+      tap.current.live = false;
       return;
     }
+    tap.current = { x: e.clientX, y: e.clientY, live: true };
     if (view.current.z > 1) {
       drag.current = { x: e.clientX, y: e.clientY, px: view.current.x, py: view.current.y };
     }
@@ -212,6 +217,9 @@ export function SystemMap(props: Props) {
     if (!zoomable) return;
     if (!pointers.current.has(e.pointerId)) return;
     pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (tap.current.live && Math.hypot(e.clientX - tap.current.x, e.clientY - tap.current.y) > 8) {
+      tap.current.live = false;
+    }
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -237,6 +245,11 @@ export function SystemMap(props: Props) {
     pointers.current.delete(e.pointerId);
     drag.current = null;
     pinch0.current = 0;
+    if (!tap.current.live) return;
+    tap.current.live = false;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const id = el?.closest?.('[data-body]')?.getAttribute('data-body');
+    if (id) travel(id);
   };
 
   return (
@@ -290,7 +303,8 @@ export function SystemMap(props: Props) {
                     className="sm-body"
                     r={d}
                     fill={p.color}
-                    onClick={props.onTravel ? () => travel(p.id) : undefined}
+                    data-body={p.id}
+                    onClick={!zoomable && props.onTravel ? () => travel(p.id) : undefined}
                   >
                     <title>{p.name}</title>
                   </circle>
@@ -305,7 +319,8 @@ export function SystemMap(props: Props) {
                       <circle
                         className="sm-body sm-moon-hit"
                         r={3.4}
-                        onClick={props.onTravel ? () => travel(m.id) : undefined}
+                        data-body={m.id}
+                        onClick={!zoomable && props.onTravel ? () => travel(m.id) : undefined}
                       >
                         <title>{m.name}</title>
                       </circle>
