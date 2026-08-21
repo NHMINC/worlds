@@ -157,11 +157,12 @@ toy — Godus blocks on a real-sized globe.
   that ring (`WORLD_ORBIT_*`, Kepler
   GEO from spin and mass). Another world
   can be chosen without leaving the host;
-  another star cannot.   The coursed / latched rocky
-  world is the Goldberg globe
+  another star cannot.   Every rocky body
+  of the host grows a Goldberg globe
   (terrace, air, water — same
-  shaders as the old viewer).
-  Siblings stay balls. Land from a
+  shaders as the old viewer). The
+  coursed / latched world builds first.
+  Gas stays a giant. Land from a
   ridden ring (or a latched rocky
   world once the globe is ready):
   the viewpoint joins the spinning
@@ -901,7 +902,7 @@ Code map (start here):
 | Nebula shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
 | Galaxy explorer (stars + nebulae + dust + cosmic shell) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
-| Host-pass rocky globe (one latched world) | `src/render/rockyGlobe.ts` |
+| Host-pass rocky globes (every rocky body) | `src/render/rockyGlobe.ts` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Packed harvest cache (IDB, not the export) | `src/store/harvestCache.ts` |

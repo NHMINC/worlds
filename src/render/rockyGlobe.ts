@@ -1,9 +1,8 @@
 /**
  * One rocky globe for the host pass. Same terrace, air, and water
- * as the isolated viewer — no second planet. Built on a world
- * course / latch; siblings stay balls. Landing walks this
- * skin — same terrace law as the mesh. No inspector, no
- * reflection RTs, no torch.
+ * as the isolated viewer. Every rocky body of the host grows
+ * one of these; landing walks the latched world's skin.
+ * No inspector, no reflection RTs, no torch.
  */
 import * as THREE from 'three';
 import { frequencyForSize, getGrid, type GeoGrid } from '../world/geodesic';

@@ -783,8 +783,8 @@ export class GalaxyView {
   private worldId: string | null = null;
   private focusBodyId: string | null = null;
   private selectedBodyId: string | null = null;
-  /** One Goldberg globe — the coursed / latched rocky world. */
-  private globe: RockyGlobe | null = null;
+  /** Goldberg globes for every rocky body of the host. */
+  private readonly globes = new Map<string, RockyGlobe>();
   /** Chart pick: fly to this ring, then ride it. */
   private pendingOrbit: { bodyId: string; kind: WorldOrbitKind } | null = null;
   private riding: {
@@ -1695,7 +1695,8 @@ export class GalaxyView {
     const id = this.riding?.bodyId ?? this.worldId;
     const rt = this.worldRt(id);
     if (!rt || rt.spec.kind !== 'rocky') return false;
-    if (!this.globe || this.globe.bodyId !== rt.spec.id || !this.globe.ready) return false;
+    const globe = this.globeOf(rt.spec.id);
+    if (!globe?.ready) return false;
     return true;
   }
 
@@ -1707,7 +1708,9 @@ export class GalaxyView {
     if (this.mode !== 'region' || !this.hostObj) return;
     const id = this.riding?.bodyId ?? this.worldId;
     const rt = this.worldRt(id);
-    if (!rt || !this.canLandNow() || !this.globe) return;
+    if (!rt) return;
+    const globe = this.globeOf(rt.spec.id);
+    if (!this.canLandNow() || !globe) return;
     this.landKind = this.riding?.kind ?? 'hover';
     this.clearRide();
     this.pendingOrbit = null;
@@ -1726,7 +1729,7 @@ export class GalaxyView {
     this.orbitTmp.copy(this.arcUp).applyQuaternion(this.orbitQ.clone().conjugate());
     this.sYaw = Math.atan2(this.orbitTmp.dot(this.surfEast), this.orbitTmp.dot(this.surfNorth));
     this.sPitch = UNIVERSE.WORLD_SURF_PITCH;
-    this.sEyeH = this.sEyeHTarget = Math.max(this.globe.terraceStep * 0.6, this.globe.terraceStep * 4);
+    this.sEyeH = this.sEyeHTarget = Math.max(globe.terraceStep * 0.6, globe.terraceStep * 4);
     this.sWalk = 0;
     this.landed = true;
     this.courseBodyId = rt.spec.id;
@@ -1768,8 +1771,9 @@ export class GalaxyView {
       this.sWalk = Math.max(0, this.sWalk + logZoom * UNIVERSE.WORLD_SURF_STOP);
     } else {
       this.sWalk = 0;
-      if (!this.globe) return;
-      const lo = Math.max(0.004, this.globe.terraceStep * 0.6);
+      const globe = this.globeOf(this.worldId ?? this.courseBodyId);
+      if (!globe) return;
+      const lo = Math.max(0.004, globe.terraceStep * 0.6);
       this.sEyeHTarget = Math.min(
         UNIVERSE.WORLD_SURF_EYE_MAX,
         Math.max(lo, this.sEyeHTarget * Math.exp(logZoom * UNIVERSE.WORLD_SURF_HEIGHT)),
@@ -1819,7 +1823,8 @@ export class GalaxyView {
       this.leaveSurface();
       return;
     }
-    const gR = this.globe && this.globe.bodyId === rt.spec.id ? this.globe.groundR(this.surfDir) : 1;
+    const globe = this.globeOf(rt.spec.id);
+    const gR = globe?.ready ? globe.groundR(this.surfDir) : 1;
     const eyeR = (gR + this.sEyeH) * Math.max(rt.spec.radius, 1) * KM_TO_KPC;
     this.bodyCatalog(rt, this.orbitTmp);
     this.spinWorld(rt, this.orbitQ);
@@ -2551,33 +2556,71 @@ export class GalaxyView {
   }
 
   /**
-   * The coursed / latched rocky world becomes the Goldberg globe.
-   * Build starts on set course so the mesh is ready at the fence.
-   * Gas stays the existing giant. Siblings stay balls.
+   * Every rocky body of the host grows a Goldberg globe.
+   * The coursed / latched world builds first so Land is ready
+   * at the fence; siblings share the leftover tick budget.
+   * Gas stays the existing giant.
    */
-  private tickGlobe(tSys: number): void {
-    const id = this.worldId ?? this.courseBodyId;
-    const rt = this.worldRt(id);
-    if (!rt || !this.hostSpec || rt.spec.kind !== 'rocky') {
-      this.dropGlobe();
+  private tickGlobes(tSys: number): void {
+    if (!this.hostSpec) {
+      this.dropGlobes();
       return;
     }
-    if (!this.globe || this.globe.bodyId !== rt.spec.id) {
-      this.dropGlobe();
-      this.globe = new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder);
+    const prefer = this.worldId ?? this.courseBodyId ?? this.riding?.bodyId ?? null;
+    const rocky: HostBodyRT[] = [];
+    for (const rt of this.hostBodies) {
+      if (rt.spec.kind !== 'rocky') continue;
+      rocky.push(rt);
     }
-    if (!this.globe.ready) {
-      this.globe.tick();
-      this.wake(2);
+    const mint = (rt: HostBodyRT): void => {
+      if (!this.hostSpec || this.globes.has(rt.spec.id)) return;
+      this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder));
+    };
+    if (prefer) {
+      const first = rocky.find((rt) => rt.spec.id === prefer);
+      if (first) mint(first);
     }
-    if (this.globe.ready) {
-      this.globe.update(this.camera, tSys, this.hostSpec.star.luminosity, rt.pos, rt.spinQ);
+    for (const rt of rocky) {
+      if (this.globes.has(rt.spec.id)) continue;
+      mint(rt);
+      break;
+    }
+    for (const id of [...this.globes.keys()]) {
+      if (!rocky.some((rt) => rt.spec.id === id)) {
+        this.globes.get(id)?.dispose();
+        this.globes.delete(id);
+      }
+    }
+    const ordered = prefer
+      ? [...rocky.filter((rt) => rt.spec.id === prefer), ...rocky.filter((rt) => rt.spec.id !== prefer)]
+      : rocky;
+    let budget = 8;
+    const L = this.hostSpec.star.luminosity;
+    for (const rt of ordered) {
+      const g = this.globes.get(rt.spec.id);
+      if (!g) continue;
+      if (!g.ready) {
+        if (budget <= 0.4) {
+          this.wake(2);
+          continue;
+        }
+        const t0 = performance.now();
+        g.tick(Math.min(6, budget));
+        budget -= performance.now() - t0;
+        this.wake(2);
+      }
+      if (g.ready) g.update(this.camera, tSys, L, rt.pos, rt.spinQ);
     }
   }
 
-  private dropGlobe(): void {
-    this.globe?.dispose();
-    this.globe = null;
+  private globeOf(id: string | null | undefined): RockyGlobe | null {
+    if (!id) return null;
+    return this.globes.get(id) ?? null;
+  }
+
+  private dropGlobes(): void {
+    for (const g of this.globes.values()) g.dispose();
+    this.globes.clear();
   }
 
   private detachHostStar(): void {
@@ -2594,7 +2637,7 @@ export class GalaxyView {
     this.clearRide();
     this.leaveSurface();
     if (this.courseHud?.bodyId) this.clearCourse();
-    this.dropGlobe();
+    this.dropGlobes();
     this.clearHostBodies();
     this.detachHostFurnace();
     if (this.hostRoot) {
@@ -2675,7 +2718,7 @@ export class GalaxyView {
     root.quaternion.copy(this.hostTmpQ).multiply(this.hostAlignQ);
   }
 
-  /** Tier-0 stand-ins + Kepler ellipses. The latched rocky world grows a globe. */
+  /** Kepler ellipses + stand-ins. Rocky bodies grow globes; gas is a giant. */
   private buildHostBodies(spec: SystemSpec): void {
     const root = this.ensureHostRoot();
     const byId = new Map<string, HostBodyRT>();
@@ -3920,7 +3963,7 @@ export class GalaxyView {
     this.hereRing.rotation.z = t * -0.22;
 
     this.updateHostArrival(now);
-    this.tickGlobe((this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE);
+    this.tickGlobes((this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE);
     // Place can change this frame — write surveyGain after
     // attach so this draw matches the viewpoint.
     const dim = this.skyDim();
