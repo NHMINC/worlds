@@ -120,8 +120,6 @@ const SURF_HEIGHT_GAIN = 1;
 /** One full revolution of the station-style orbit ride (ISS-ish). */
 const STATION_PERIOD_SEC = 5400;
 
-/** Temporary in-system starfield; the harvest cubemap retires this. */
-const STARS_R = AU_KM * 40;
 const CAM_FAR = AU_KM * 80;
 
 function smoothstep01(t: number): number {
@@ -308,7 +306,6 @@ export class Engine {
     this.renderer.setClearColor(new THREE.Color(SPACE_COLOR), 1);
     this.camera = new THREE.PerspectiveCamera(FOV, 1, 0.01, CAM_FAR);
 
-    this.buildStars();
     this.scene.add(this.systemRoot);
 
     canvas.style.touchAction = 'none';
@@ -323,45 +320,6 @@ export class Engine {
 
     this.lastFrame = performance.now();
     requestAnimationFrame(this.frame);
-  }
-
-  // ---------------------------------------------------------------- static scene
-
-  private buildStars(): void {
-    const makeStars = (count: number, size: number, bright: number): THREE.Points => {
-      const pos = new Float32Array(count * 3);
-      const col = new Float32Array(count * 3);
-      for (let i = 0; i < count; i++) {
-        const z = 2 * Math.random() - 1;
-        const a = 2 * Math.PI * Math.random();
-        const r = Math.sqrt(Math.max(0, 1 - z * z));
-        pos[i * 3] = STARS_R * r * Math.cos(a);
-        pos[i * 3 + 1] = STARS_R * r * Math.sin(a);
-        pos[i * 3 + 2] = STARS_R * z;
-        const b = bright * (0.45 + 0.55 * Math.random());
-        const warm = Math.random() * 0.25;
-        col[i * 3] = b;
-        col[i * 3 + 1] = b * (1 - warm * 0.3);
-        col[i * 3 + 2] = b * (1 - warm);
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      return new THREE.Points(
-        geo,
-        new THREE.PointsMaterial({
-          size,
-          sizeAttenuation: false,
-          vertexColors: true,
-          transparent: true,
-          depthWrite: false,
-        }),
-      );
-    };
-    this.scene.add(makeStars(900, 1.6, 0.6), makeStars(140, 2.8, 1));
-    // Faint cool fill so tier-0 balls' night sides stay readable. Kept
-    // low so the star's inverse-square is what lights the day side.
-    this.scene.add(new THREE.AmbientLight(0x30384a, 0.22));
   }
 
   // ---------------------------------------------------------------- system load

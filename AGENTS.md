@@ -61,9 +61,7 @@ toy — Godus blocks on a real-sized globe.
   stream through `generateSystem` / `objectAt` is leftover debt:
   do not add draws; new laws hash the address. Allowed rolls live
   *outside* the universe only: a listen seed for the music (never
-  the system seed), a UUID for a save row. The in-system
-  `buildStars()` shell still uses `Math.random` and must retire
-  so ground and explorer agree.
+  the system seed),   a UUID for a save row.
 - **Archetypes are outputs, never inputs.** There is no `if (iceball)` /
   `if (hothouse)` / `if (pulsar)` generator switch. Iceballs, O stars,
   pulsars, H II regions, and living paradises are attractor regions of
@@ -191,8 +189,7 @@ toy — Godus blocks on a real-sized globe.
   dumps it, then settles. WASD glides.
   Take off returns to the ring we
   left, over that face.
-  Water reflection captures and the
-  catalog night shell still wait;
+  Water reflection captures still wait;
   short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -569,8 +566,6 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (desktop Chrome) and reads `n/a` on iOS Safari. Planets
   will live inside this scene — it must idle cold. A painted starfield is still a lie: every
   individual star drawn anywhere is an addressable catalog row.
-  The in-system night shell (`buildStars`) is still unseeded and
-  must retire so ground and explorer agree.
 - **Explorer gestures.** The camera stays at the bubble centre.
   Fly is a **latched warp**: W (or the **Warp** button)
   holds a fixed catalog rate in the current gear; S / **Stop**
@@ -615,8 +610,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   every star and planet is — we just do not mesh them.
 
 Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
-ring; land walks the terrace; the SOI drone is a look. `engine.ts` is leftover (water reflection captures, the unseeded night
-shell) — not a player verb. The sculpt brush never ran and is retired.
+ring; land walks the terrace; the SOI drone is a look. `engine.ts` is leftover (water reflection captures) — not a player
+verb. The sculpt brush and the unseeded night shell never belonged
+on the host pass and are retired.
 The app lives at `http://localhost:5173/` (`npm run dev`).
 
 | Mode | Meaning |
@@ -831,9 +827,6 @@ These are allowed as *future physics*, not as painted features:
   exist; lush biomes as a sim is later).
 - Interiors and plate tectonics (columns plus hydrology/coastal-plain
   process passes stand in for now).
-- Wiring the catalog into the **in-system** night-sky shader (the explorer
-  already *is* the catalog; `buildStars()` in the system viewer is still
-  a random shell and must retire).
 - Live multiplayer. Freeze generation before anyone shares a hex live.
 
 Player features (mining, bases, cargo) are **not** in this bucket — they
