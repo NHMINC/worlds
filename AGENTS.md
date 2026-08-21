@@ -321,8 +321,8 @@ visits only** (overlays, camera, labels). We do
   world writes the camp (`LastPlace`: star, body, ring or
   landing face). Boot always opens the explorer there —
   same body, same arrangement, look held on that body.
-  Time still runs; Kepler at `t` is the law. The isolated
-  viewer still opens old visit rows from the manager.
+  Time still runs; Kepler at `t` is the law. The manager
+  opens a visit as that camp in the explorer.
   Changing the grid renumbers `starId`;
   old visits from the 7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
@@ -348,8 +348,7 @@ Related laws that must stay physics, not flags:
   (`eclipticOf`). Poles are isotropic — protoplanetary disks do not
   know the Galactic plane (the Solar ecliptic is ~60° from it). Do
   not align every system with the Milky Way disk. The host pass
-  applies that rotation; the isolated engine viewer still lives in
-  the ecliptic. Do not drink `assembleSystem`'s leftover stream for
+  applies that rotation. Do not drink `assembleSystem`'s leftover stream for
   this — a new draw would move every planet.
 
 Worlds show the physics they were born with. There is no climate or sea
@@ -609,15 +608,16 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   every star and planet is — we just do not mesh them.
 
 Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
-ring; land walks the terrace; the SOI drone is a look. `engine.ts` is leftover — not a player verb. The sculpt brush, the
-unseeded night shell, and the water-capture photographs are retired.
+ring; land walks the terrace; the SOI drone is a look. The sculpt
+brush, the unseeded night shell, and the water-capture photographs
+are retired.
 The app lives at `http://localhost:5173/` (`npm run dev`).
 
-| Mode | Meaning |
-|------|---------|
-| `orbit` | Around a body. **Station** = ISS-like inertial sweep; **geo** = hung over one spot. |
-| `flight` | Free ship in the system. Distant bodies are simple spheres until close. |
-| `surface` | Landed on a rocky body. Same globe. Drag looks. **Zoom in** (pinch out / wheel in) walks forward at a latched variable speed; **zoom out** stops that walk, then settles toward the ground. Zoom does not take off — the rocket does. WASD still glides on a keyboard. |
+| Arrangement | Meaning |
+|-------------|---------|
+| disk | Catalog flight. Warp, look, Face-on / Edge-on / Home. |
+| host | Inside the 0.01 ly sphere. Photosphere + planets. A chart pick rides a named ring. |
+| land | Walk the latched globe. Drag looks. Zoom walks the terrace. |
 
 ---
 
@@ -701,7 +701,7 @@ Do not put secrets, API keys, or machine-local paths in a save.
 The physics universe does not know about the player. Mining and building
 are **overlays on the addressable grid**, not new planet types.
 
-**Now** (on the host-pass globe, not the isolated viewer)
+**Now** (on the host-pass globe)
 
 - Inspect a hex: composition of that column’s surface layer, from geology.
 - Place labels and objects (`city` / `town` / `landmark`) on a cell.
@@ -931,7 +931,6 @@ Code map (start here):
 | Palettes from physics | `src/world/toyPalette.ts` |
 | Per-cell geology (mining truth) | `src/world/geology.ts` |
 | Grid | `src/world/geodesic.ts` |
-| Leftover isolated viewer (not a player path) | `src/render/engine.ts` |
 | Star (photosphere, corona, wind, glare) | `src/render/star.ts` |
 | Terrain + water shaders, surf, foam | `src/render/terraceMesh.ts` |
 | Sky shell | `src/render/atmosphere.ts` |

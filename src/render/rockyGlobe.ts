@@ -1,6 +1,6 @@
 /**
  * One rocky globe for the host pass. Same terrace, air, and water
- * as the isolated viewer. Every rocky body of the host grows
+ * laws as the shared shaders. Every rocky body of the host grows
  * one of these; landing walks the latched world's skin.
  * Inspect reads this grid. The torch stays later.
  */

@@ -66,15 +66,14 @@ share sheet instead of a download.
 
 ## AI naming (optional)
 
-Add an xAI API key in Settings to get name suggestions when labeling places.
-The key is stored only in this browser's localStorage and requests go directly
-to xAI.
+An xAI API key in this browser's localStorage (`wb_xai_key`) unlocks name
+suggestions when labeling places. Requests go directly to xAI.
 
 ## Layout
 
-- `src/world/` — geodesic (Goldberg) grid, seeded RNG, terrain generator, biome palettes
-- `src/render/` — Three.js engine: globe chunks, trackball camera, picking, painting
+- `src/world/` — geodesic (Goldberg) grid, physics, galaxy catalog, terrain
+- `src/render/` — galaxy explorer, host-pass globes, shared terrace / air / star
 - `src/store/` — Dexie (IndexedDB) schema and JSON export/import
 - `src/audio/` — generative ambient music
 - `src/ai/` — AI provider interface with the xAI implementation
-- `src/ui/` — React toolbar, palette, dialogs, label overlay
+- `src/ui/` — explorer chrome, chart, inspect, marks
