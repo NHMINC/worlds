@@ -45,7 +45,6 @@ import {
 } from '../world/systemgen';
 import { RockyGlobe } from './rockyGlobe';
 import { HostSystem, type HostBodyRT } from './hostSystem';
-import { makeHostSkyMaterial, makeHostSkyMesh } from './hostSky';
 import { nearestBody } from './hostLook';
 import { type HostNavMode } from './hostNav';
 import { planOrbitInsert, type InsertMode } from './orbitInsert';
@@ -915,22 +914,10 @@ export class GalaxyView {
   private hostStarId = -1;
   /**
    * The close star draws in its own depth pass over the live galaxy
-   * — same camera pose, AU-scale near/far — so the sky never blanks
-   * or switches environment. The far photograph is a cubemap bake.
-   * One universe, two depth windows.
+   * — same camera pose, AU-scale near/far — so the sky never bakes,
+   * blanks, or switches environment. One universe, two depth windows.
    */
   private readonly hostScene = new THREE.Scene();
-  /**
-   * SOI night sky. Live harvest bakes one cube face a frame;
-   * then this photograph is the far sky and the catalog sleeps.
-   */
-  private hostSky: THREE.WebGLCubeRenderTarget | null = null;
-  private hostSkyCube: THREE.CubeCamera | null = null;
-  private hostSkyScene: THREE.Scene | null = null;
-  private hostSkyMat: THREE.ShaderMaterial | null = null;
-  private hostSkyFace = 6;
-  private hostSkyId = -1;
-  private readonly hostSkyCenter = new THREE.Vector3();
   /** Local km frame at the locked host, scaled into catalog kpc. */
   private hostRoot: THREE.Group | null = null;
   /** Galaxy fill on objects in the bubble — ARRIVE_SKY_GAIN, not a flood. */
@@ -4046,7 +4033,6 @@ export class GalaxyView {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     this.detachHostStar();
-    this.dropHostSky();
     this.disposeArcStars();
     this.disposeCosmic();
     this.pickRing.geometry.dispose();
@@ -4499,7 +4485,6 @@ export class GalaxyView {
     this.hostStarId = -1;
     this.hostFill = null;
     this.navMode = null;
-    this.dropHostSky();
   }
 
   private detachHostFurnace(): void {
@@ -4536,146 +4521,6 @@ export class GalaxyView {
     this.starVis.needsUpdate = true;
   }
 
-  private setCatalogVisible(on: boolean): void {
-    if (this.silPts) this.silPts.visible = on;
-    if (this.silEmisPts) this.silEmisPts.visible = on;
-    if (this.cosmicPts) this.cosmicPts.visible = on;
-    if (this.cosmicStarPts) this.cosmicStarPts.visible = on;
-    if (this.cosmicSmudgePts) this.cosmicSmudgePts.visible = on;
-  }
-
-  private hostSkyReady(): boolean {
-    return this.hostSky != null && this.hostSkyFace >= 6;
-  }
-
-  private beginHostSky(id: number): void {
-    if (this.hostSkyId === id && this.hostSky) return;
-    this.dropHostSky();
-    const n = Math.max(64, Math.round(UNIVERSE.HOST_SKY_N));
-    const rt = new THREE.WebGLCubeRenderTarget(n, {
-      type: THREE.HalfFloatType,
-      format: THREE.RGBAFormat,
-      colorSpace: THREE.NoColorSpace,
-      generateMipmaps: false,
-      minFilter: THREE.LinearFilter,
-      magFilter: THREE.LinearFilter,
-    });
-    const cube = new THREE.CubeCamera(0.001, regionCamFar(), rt);
-    cube.coordinateSystem = this.renderer.coordinateSystem;
-    cube.updateCoordinateSystem();
-    const mat = makeHostSkyMaterial(rt.texture);
-    const mesh = makeHostSkyMesh(mat);
-    const scene = new THREE.Scene();
-    scene.add(mesh);
-    this.hostSky = rt;
-    this.hostSkyCube = cube;
-    this.hostSkyMat = mat;
-    this.hostSkyScene = scene;
-    this.hostSkyFace = 0;
-    this.hostSkyId = id;
-    this.hostSkyCenter.copy(this.arcCenter);
-    this.wake(8);
-  }
-
-  private dropHostSky(): void {
-    this.setCatalogVisible(true);
-    if (this.hostSkyMat) {
-      this.hostSkyMat.dispose();
-      this.hostSkyMat = null;
-    }
-    if (this.hostSkyScene) {
-      for (const child of [...this.hostSkyScene.children]) {
-        this.hostSkyScene.remove(child);
-        if (child instanceof THREE.Mesh) child.geometry.dispose();
-      }
-      this.hostSkyScene = null;
-    }
-    this.hostSky?.dispose();
-    this.hostSky = null;
-    this.hostSkyCube = null;
-    this.hostSkyFace = 6;
-    this.hostSkyId = -1;
-  }
-
-  private drawHostSky(dim: number): void {
-    const mat = this.hostSkyMat;
-    const scene = this.hostSkyScene;
-    if (!mat || !scene) return;
-    this.camera.updateMatrixWorld();
-    this.camRot3.setFromMatrix4(this.camera.matrixWorld);
-    (mat.uniforms.uCamRot.value as THREE.Matrix3).copy(this.camRot3);
-    (mat.uniforms.uInvProj.value as THREE.Matrix4).copy(this.camera.projectionMatrixInverse);
-    mat.uniforms.uSkyDim.value = dim;
-    this.renderer.render(scene, this.camera);
-  }
-
-  /**
-   * One cube face of the live harvest. Unity gain; surveyGain
-   * multiplies at sample time. Rings stay off the photograph.
-   */
-  private tickHostSkyBake(): void {
-    const lock = this.hostObj;
-    if (!lock) {
-      if (this.hostSky) this.dropHostSky();
-      return;
-    }
-    if (this.hostSkyId !== lock.id || !this.hostSky || !this.hostSkyCube) {
-      this.beginHostSky(lock.id);
-    }
-    const cube = this.hostSkyCube;
-    const rt = this.hostSky;
-    if (!cube || !rt || this.hostSkyFace >= 6) return;
-    if (cube.coordinateSystem !== this.renderer.coordinateSystem) {
-      cube.coordinateSystem = this.renderer.coordinateSystem;
-      cube.updateCoordinateSystem();
-    }
-    cube.updateMatrixWorld();
-    const cam = cube.children[this.hostSkyFace] as THREE.PerspectiveCamera | undefined;
-    if (!cam) return;
-    cam.updateMatrixWorld();
-
-    const ringPick = this.pickRing.visible;
-    const ringHere = this.hereRing.visible;
-    this.pickRing.visible = false;
-    this.hereRing.visible = false;
-    this.setCatalogVisible(true);
-
-    const n = rt.width;
-    const pxPer = (0.5 * n) / Math.tan(Math.PI / 4);
-    this.camRot3.setFromMatrix4(cam.matrixWorld);
-    for (const mat of this.cloudMats()) {
-      if (mat.uniforms.uCenter) mat.uniforms.uCenter.value.copy(this.hostSkyCenter);
-      if (mat.uniforms.uSkyDim) mat.uniforms.uSkyDim.value = 1;
-      if (mat.uniforms.uPixel) mat.uniforms.uPixel.value = 1;
-      if (mat.uniforms.uPxPerRad) mat.uniforms.uPxPerRad.value = pxPer;
-      if (mat.uniforms.uCamRotInv) {
-        (mat.uniforms.uCamRotInv.value as THREE.Matrix3).copy(this.camRot3);
-      }
-      if (mat.uniforms.uInvProj) {
-        (mat.uniforms.uInvProj.value as THREE.Matrix4).copy(cam.projectionMatrixInverse);
-      }
-    }
-
-    const prevRT = this.renderer.getRenderTarget();
-    const prevFace = this.renderer.getActiveCubeFace();
-    const prevMip = this.renderer.getActiveMipmapLevel();
-    const prevXr = this.renderer.xr.enabled;
-    const prevAuto = this.renderer.autoClear;
-    this.renderer.xr.enabled = false;
-    this.renderer.autoClear = true;
-    this.renderer.setRenderTarget(rt, this.hostSkyFace);
-    this.renderer.render(this.scene, cam);
-    this.renderer.setRenderTarget(prevRT, prevFace, prevMip);
-    this.renderer.autoClear = prevAuto;
-    this.renderer.xr.enabled = prevXr;
-
-    this.pickRing.visible = ringPick;
-    this.hereRing.visible = ringHere;
-    this.hostSkyFace++;
-    if (this.hostSkyFace >= 6) this.setCatalogVisible(false);
-    this.wake(2);
-  }
-
   private attachHostFurnace(lock: GalaxyObject): void {
     this.detachHostFurnace();
     this.clearHostBodies();
@@ -4689,10 +4534,8 @@ export class GalaxyView {
     this.hostStar = makeStar(star);
     this.ensureHostRoot().add(this.hostStar.group);
     this.hostStarId = lock.id;
-    // The photosphere replaces the pin. The harvest bakes into
-    // the night sky — one face a frame, then the catalog sleeps.
+    // The photosphere replaces the pin — the rest of the sky stays live.
     this.hideHarvestId(lock.id);
-    this.beginHostSky(lock.id);
     if (this.hostSpec) this.buildHostBodies(this.hostSpec);
   }
 
@@ -6032,20 +5875,12 @@ export class GalaxyView {
     // stacked column saturates to white — film, not a knee.
     this.renderer.setRenderTarget(null);
     this.perf.beginDraw();
-    if (this.hostSkyReady()) {
-      this.drawHostSky(dim);
-      this.setCatalogVisible(false);
-      this.renderer.autoClear = false;
-      this.renderer.render(this.scene, this.camera);
-      this.renderer.autoClear = true;
-    } else {
-      this.setCatalogVisible(true);
-      this.renderer.render(this.scene, this.camera);
-    }
+    this.renderer.render(this.scene, this.camera);
     if (this.hostRoot && this.hostObj) {
       // Close-approach pass: same camera pose, AU-scale depth window,
-      // drawn over the sky (live harvest, or the SOI cubemap).
-      // Depth is re-cleared for the near geometry.
+      // drawn over the live galaxy. The star is IN the galaxy — the
+      // sky never bakes, blanks, or switches environment; the depth
+      // buffer is simply re-cleared for the near geometry.
       const d = this.arriveDist(this.hostObj);
       const aKpc = this.host.outerAu * AU_KM * KM_TO_KPC;
       let near = Math.min(d * 0.02, aKpc * 0.01);
@@ -6069,7 +5904,6 @@ export class GalaxyView {
       this.camera.far = far0;
       this.camera.updateProjectionMatrix();
     }
-    this.tickHostSkyBake();
     this.perf.endDraw();
     this.perf.tick(performance.now() - f0, true);
     if (this.courseHud && this.courseBodyId) {

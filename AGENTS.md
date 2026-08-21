@@ -659,14 +659,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   planets / km for moons; physics `a`
   stays AU). The survey photograph is a place law
   (`surveyGain`): full outside any sphere, `ARRIVE_SKY_GAIN`
-  at   the centre, linear in distance (dark-sky Earth, a bit
+  at the centre, linear in distance (dark-sky Earth, a bit
   clearer — the only galaxy light on anything in the bubble;
-  the furnace stays). On sphere entry the live harvest
-  bakes into a cubemap (one face a frame, `HOST_SKY_N`);
-  then the catalog sleeps and the bake is the night sky.
-  surveyGain still multiplies that photograph. Leave the
-  sphere and the live catalog returns. Lock and helm do
-  not enter. The 50 ly
+  the furnace stays). Lock and helm do not enter. The 50 ly
   gears do not dim.
   Stars you are not aiming at never slow the ship.
 - **Render distance** (the only things that “run”): one star system
@@ -992,7 +987,6 @@ Code map (start here):
 | Host nav modes (lock-on / in orbit / proximity) | `src/render/hostNav.ts` |
 | Host orbit insertion (prograde approach) | `src/render/orbitInsert.ts` |
 | Host-pass rocky globes (every rocky body) | `src/render/rockyGlobe.ts` |
-| SOI sky bake (cubemap photograph) | `src/render/hostSky.ts` |
 | Visits (camp → SystemMeta by starId) | `src/store/visits.ts` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
