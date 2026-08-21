@@ -670,7 +670,7 @@ export function GalaxyExplorer(props: Props) {
               className={`gx-look-btn${frame.drone ? ' is-on' : ''}`}
               aria-label="Trackball"
               aria-pressed={frame.drone}
-              title={frame.drone ? 'Trackball on — tap to return to the ship' : 'Trackball — roll the world'}
+              title={frame.drone ? 'Drone out — tap to return to the ship' : 'Launch drone — same look as the ship'}
               onClick={() => {
                 const on = viewRef.current?.toggleDrone();
                 if (on == null) return;
