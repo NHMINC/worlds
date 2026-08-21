@@ -78,19 +78,12 @@ export interface EngineCallbacks {
   onFrame(view: ViewState): void;
   onTap(tool: Tool, bodyId: string, cell: number): void;
   onCameraSettled(cam: SavedCamera): void;
-  /**
-   * Fired after applyEdits merges terrain overrides, with the body's full
-   * override set (absolute levels) ready to persist.
-   */
-  onTerrainEdited(bodyId: string, overrides: Map<number, number>): void;
 }
 
 /** Per-body player state fed into loadSystem. */
 export interface BodyOverrides {
   temp?: number;
   seaLevel?: number;
-  /** Absolute level overrides: effectiveLevel = override ?? generated. */
-  terrain?: Map<number, number>;
 }
 
 /** Vertical field of view, degrees. */
@@ -641,19 +634,6 @@ export class Engine {
     if (had2) this.ensureTier(rt, 2, true);
   }
 
-  /**
-   * Addressable-universe write path: absolute level overrides for cells on a
-   * body, applied over the generated terrain and rebuilt asynchronously.
-   */
-  applyEdits(bodyId: string, edits: Array<{ cell: number; level: number }>): void {
-    const o = this.overrides.get(bodyId) ?? {};
-    const terrain = o.terrain ?? new Map<number, number>();
-    for (const e of edits) terrain.set(e.cell, Math.max(0, Math.min(MAX_LEVEL, e.level)));
-    o.terrain = terrain;
-    this.setOverrides(bodyId, o, true);
-    this.callbacks.onTerrainEdited(bodyId, terrain);
-  }
-
   // ---------------------------------------------------------------- body data & tiers
 
   private effective(bodyId: string): { temp: number; sea: number } {
@@ -682,17 +662,11 @@ export class Engine {
     const f = frequencyForSize(rt.spec.size);
     rt.grid = getGrid(f);
     const levels = generateLevels(rt.spec.seed, rt.grid);
-    const terrain = this.overrides.get(rt.spec.id)?.terrain;
-    if (terrain) {
-      for (const [cell, level] of terrain) {
-        if (cell >= 0 && cell < levels.length) levels[cell] = level;
-      }
-    }
     rt.levels = levels;
     const { temp, sea } = this.effective(rt.spec.id);
     rt.waterLevel = waterLevelFor(sea);
-    // Basin fetch on the FINAL field (player edits included): waves need
-    // open water to grow, so ponds stay glassy and oceans take the swell.
+    // Basin fetch on the generated field. Waves need open water to grow,
+    // so ponds stay glassy and oceans take the swell.
     rt.fetch = basinFetch(rt.grid, levels, rt.waterLevel);
     rt.snowLine = snowLineFor(temp + this.snowShift(rt), rt.waterLevel, rt.phys?.snow ?? 1);
     rt.step = stepFor(rt.grid);

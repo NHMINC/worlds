@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
 import { lockedToStar, systemAt, type BodySpec } from '../world/systemgen';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset, type GlobePick, type MarkTool } from '../render/galaxyView';
-import type { LabelRecord, LastPlace, ObjectKind, ObjectRecord, TerrainOverrideRecord } from '../world/types';
+import type { LabelRecord, LastPlace, ObjectKind, ObjectRecord } from '../world/types';
 import { db, touchSystem } from '../store/db';
 import { uuid } from '../world/rng';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
@@ -82,9 +82,8 @@ interface Props {
   onReady?: () => void;
   onPlace?: (p: LastPlace) => void;
   onOpenVisits?: () => void;
-  /** Current visit row — overlays persist on this id. */
+  /** Current visit row — labels and objects persist on this id. */
   visitId?: string | null;
-  visitStarId?: number | null;
 }
 
 export function GalaxyExplorer(props: Props) {
@@ -107,7 +106,6 @@ export function GalaxyExplorer(props: Props) {
   const [markTool, setMarkTool] = useState<MarkTool | null>(null);
   const [labels, setLabels] = useState<LabelRecord[]>([]);
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
-  const [terrain, setTerrain] = useState<TerrainOverrideRecord[]>([]);
   const [placeDialog, setPlaceDialog] = useState<{
     mode: MarkTool;
     bodyId: string;
@@ -275,31 +273,21 @@ export function GalaxyExplorer(props: Props) {
     if (!id) {
       setLabels([]);
       setObjects([]);
-      setTerrain([]);
       return;
     }
     let cancelled = false;
     void Promise.all([
       db.labels.where('systemId').equals(id).toArray(),
       db.objects.where('systemId').equals(id).toArray(),
-      db.terrain.where('systemId').equals(id).toArray(),
-    ]).then(([lbs, objs, terr]) => {
+    ]).then(([lbs, objs]) => {
       if (cancelled) return;
       setLabels(lbs);
       setObjects(objs);
-      setTerrain(terr);
     });
     return () => {
       cancelled = true;
     };
   }, [props.visitId]);
-
-  useEffect(() => {
-    if (!ready) return;
-    const host = frame.hostId;
-    const mine = props.visitStarId != null && host === props.visitStarId;
-    viewRef.current?.setTerrainOverlays(mine ? terrain : []);
-  }, [ready, terrain, frame.hostId, props.visitStarId]);
 
   useEffect(() => {
     if (!ready) return;

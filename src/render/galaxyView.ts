@@ -814,9 +814,6 @@ export class GalaxyView {
   private selectedBodyId: string | null = null;
   /** Goldberg globes for every rocky body of the host. */
   private readonly globes = new Map<string, RockyGlobe>();
-  /** Absolute level overlays, keyed by body id. Applied at mint. */
-  private readonly terrainByBody = new Map<string, Map<number, number>>();
-  private terrainKey = '';
   private markTool: MarkTool | null = null;
   /** Chart pick: fly to this ring, then ride it. */
   private pendingOrbit: { bodyId: string; kind: WorldOrbitKind } | null = null;
@@ -1016,31 +1013,6 @@ export class GalaxyView {
    */
   setMarkTool(tool: MarkTool | null): void {
     this.markTool = tool;
-  }
-
-  /**
-   * Player terrain overlays. Same addressable write as the old
-   * viewer: effectiveLevel = override ?? generated. A change
-   * remints existing globes so a loaded visit wears its sculpt.
-   */
-  setTerrainOverlays(rows: Array<{ bodyId: string; packed: number[] }>): void {
-    const key = rows
-      .map((r) => `${r.bodyId}:${r.packed.join(',')}`)
-      .sort()
-      .join('|');
-    if (key === this.terrainKey) return;
-    this.terrainKey = key;
-    this.terrainByBody.clear();
-    for (const r of rows) {
-      const m = new Map<number, number>();
-      for (let i = 0; i + 1 < r.packed.length; i += 2) m.set(r.packed[i], r.packed[i + 1]);
-      if (m.size) this.terrainByBody.set(r.bodyId, m);
-    }
-    for (const id of [...this.globes.keys()]) {
-      this.globes.get(id)?.dispose();
-      this.globes.delete(id);
-    }
-    this.wake();
   }
 
   /**
@@ -3075,10 +3047,7 @@ export class GalaxyView {
     }
     const mint = (rt: HostBodyRT): void => {
       if (!this.hostSpec || this.globes.has(rt.spec.id)) return;
-      this.globes.set(
-        rt.spec.id,
-        new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder, this.terrainByBody.get(rt.spec.id)),
-      );
+      this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder));
     };
     if (prefer) {
       const first = rocky.find((rt) => rt.spec.id === prefer);

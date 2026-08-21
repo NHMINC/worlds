@@ -2,7 +2,7 @@
  * One rocky globe for the host pass. Same terrace, air, and water
  * as the isolated viewer. Every rocky body of the host grows
  * one of these; landing walks the latched world's skin.
- * Inspect reads this grid; reflection RTs and the torch stay later.
+ * Inspect reads this grid. Water reflection captures and the torch stay later.
  */
 import * as THREE from 'three';
 import { frequencyForSize, getGrid, type GeoGrid } from '../world/geodesic';
@@ -57,13 +57,7 @@ export class RockyGlobe {
   private step = 0.01;
   private tideAmp = 0;
 
-  constructor(
-    spec: BodySpec,
-    system: SystemSpec,
-    group: THREE.Group,
-    placeholder: THREE.Object3D | null,
-    terrain?: Map<number, number> | null,
-  ) {
+  constructor(spec: BodySpec, system: SystemSpec, group: THREE.Group, placeholder: THREE.Object3D | null) {
     this.bodyId = spec.id;
     this.spec = spec;
     this.system = system;
@@ -72,11 +66,6 @@ export class RockyGlobe {
     const f = frequencyForSize(spec.size);
     const grid = getGrid(f);
     const levels = generateLevels(spec.seed, grid);
-    if (terrain) {
-      for (const [cell, level] of terrain) {
-        if (cell >= 0 && cell < levels.length) levels[cell] = level;
-      }
-    }
     this.grid = grid;
     this.levels = levels;
     const phys = effectivePhysics(system, spec);

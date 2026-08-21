@@ -191,8 +191,8 @@ toy — Godus blocks on a real-sized globe.
   dumps it, then settles. WASD glides.
   Take off returns to the ring we
   left, over that face.
-  Inspector, labels, sculpt, and
-  save rows still wait;
+  Water reflection captures and the
+  catalog night shell still wait;
   short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -615,10 +615,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   every star and planet is — we just do not mesh them.
 
 Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
-ring; land walks the terrace; the SOI drone is a look. `engine.ts` is
-leftover (sculpt brush, reflection RTs, the unseeded night shell) —
-not a player verb. Do not retire it until those draw on the latched
-globe. The app lives at `http://localhost:5173/` (`npm run dev`).
+ring; land walks the terrace; the SOI drone is a look. `engine.ts` is leftover (water reflection captures, the unseeded night
+shell) — not a player verb. The sculpt brush never ran and is retired.
+The app lives at `http://localhost:5173/` (`npm run dev`).
 
 | Mode | Meaning |
 |------|---------|
@@ -712,7 +711,6 @@ are **overlays on the addressable grid**, not new planet types.
 
 - Inspect a hex: composition of that column’s surface layer, from geology.
 - Place labels and objects (`city` / `town` / `landmark`) on a cell.
-- Stored terrain overlays apply at globe mint (`effectiveLevel = override ?? generated`). The sculpt brush is still later.
 
 **Direction (do not invent a parallel world to get here)**
 

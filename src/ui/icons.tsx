@@ -10,21 +10,6 @@ export const IconPan = (p: IconProps) => (
   </svg>
 );
 
-export const IconBrush = (p: IconProps) => (
-  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14.5 3.5 20.5 9.5 8.5 21.5H2.5v-6z" />
-    <path d="M12 6l6 6" />
-  </svg>
-);
-
-export const IconErase = (p: IconProps) => (
-  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="m14 4 6 6-9 9H7l-4-4z" />
-    <path d="M9 9l6 6" />
-    <path d="M11 19h9" />
-  </svg>
-);
-
 export const IconLabel = (p: IconProps) => (
   <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 8l9-5 9 5v0l-9 5-9-5z" transform="translate(0,4)" />

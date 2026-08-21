@@ -122,7 +122,6 @@ export default function App() {
           onPlace={handlePlace}
           onOpenVisits={() => setManagerOpen(true)}
           visitId={system?.id ?? null}
-          visitStarId={system?.starId ?? lookStarId}
         />
       )}
 
