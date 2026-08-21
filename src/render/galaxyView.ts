@@ -922,7 +922,7 @@ export class GalaxyView {
   private hostRoot: THREE.Group | null = null;
   /** Galaxy fill on objects in the bubble — ARRIVE_SKY_GAIN, not a flood. */
   private hostFill: THREE.AmbientLight | null = null;
-  /** Cleanroom Kepler balls + rings — own file, not the galaxy flight. */
+  /** Kepler balls + rings — own file, not the galaxy flight. */
   private readonly host = new HostSystem();
   private hostSpec: SystemSpec | null = null;
   private readonly hostTmp = new THREE.Vector3();
@@ -1205,8 +1205,8 @@ export class GalaxyView {
     this.courseHud = this.hudForBody(rt);
     const dir = this.dirFromPlace(p, rt);
     if (p.landed) {
-      // Cleanroom: no RockyGlobe — park on hover instead of hanging
-      // forever waiting for a terrace that will not mint.
+      // A landed save parks on the ring. Land is a player verb
+      // once that globe is ready — helm does not auto-land.
       const kind = p.orbit ?? 'hover';
       this.beginRide(rt, kind, dir, tSys);
       this.pendingPlace = null;
@@ -4370,26 +4370,59 @@ export class GalaxyView {
   }
 
   /**
-   * Cleanroom host: Goldberg globes and gas-giant shaders are
-   * parked. Every body is a textured sphere of true radius on
-   * the Kepler clock so orbit and size can be eyeballed. Land
-   * stays off until the globe returns.
+   * Skin only: grow the toy globe on each rocky Kepler ball
+   * (latched / coursed first). Rings, helm, and the clock stay
+   * where they are. The placeholder hides when the terrace is on.
    */
-  private tickGlobes(_tSys: number): void {
+  private tickGlobes(tSys: number): void {
     if (!this.hostSpec) {
       this.dropGlobes();
       return;
     }
-    // RockyGlobe mint is commented out for the cleanroom pass.
-    // for (const rt of this.host.bodies) {
-    //   if (rt.spec.kind !== 'rocky') continue;
-    //   if (!this.globes.has(rt.spec.id)) {
-    //     this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder));
-    //   }
-    // }
+    const prefer = this.worldId ?? this.courseBodyId ?? this.riding?.bodyId ?? null;
+    const rocky: HostBodyRT[] = [];
+    for (const rt of this.host.bodies) {
+      if (rt.spec.kind !== 'rocky') continue;
+      rocky.push(rt);
+    }
+    const mint = (rt: HostBodyRT): void => {
+      if (!this.hostSpec || this.globes.has(rt.spec.id)) return;
+      this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder));
+    };
+    if (prefer) {
+      const first = rocky.find((rt) => rt.spec.id === prefer);
+      if (first) mint(first);
+    }
+    for (const rt of rocky) {
+      if (this.globes.has(rt.spec.id)) continue;
+      mint(rt);
+      break;
+    }
     for (const id of [...this.globes.keys()]) {
-      this.globes.get(id)?.dispose();
-      this.globes.delete(id);
+      if (!rocky.some((rt) => rt.spec.id === id)) {
+        this.globes.get(id)?.dispose();
+        this.globes.delete(id);
+      }
+    }
+    const ordered = prefer
+      ? [...rocky.filter((rt) => rt.spec.id === prefer), ...rocky.filter((rt) => rt.spec.id !== prefer)]
+      : rocky;
+    let budget = 8;
+    const L = this.hostSpec.star.luminosity;
+    for (const rt of ordered) {
+      const g = this.globes.get(rt.spec.id);
+      if (!g) continue;
+      if (!g.ready) {
+        if (budget <= 0.4) {
+          this.wake(2);
+          continue;
+        }
+        const t0 = performance.now();
+        g.tick(Math.min(6, budget));
+        budget -= performance.now() - t0;
+        this.wake(2);
+      }
+      if (g.ready) g.update(this.camera, tSys, L, rt.pos, rt.spinQ);
     }
   }
 

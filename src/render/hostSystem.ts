@@ -1,10 +1,8 @@
 /**
- * Cleanroom host solar system: Kepler ellipses + textured
- * spheres sized to each body's radius. Same clock as
- * `systemAt` — no RockyGlobe, no gas giant rings. The galaxy
- * explorer attaches this under the host root the moment a
- * sphere is entered; cruise / look / furnace stay in
- * `galaxyView`.
+ * Host Kepler clock: ellipses + unit spheres scaled to each
+ * body's radius. RockyGlobe skins the rocky balls (same
+ * group); gas stays a sphere. Cruise / look / furnace stay
+ * in `galaxyView`.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
@@ -13,7 +11,7 @@ import { keplerPlane, type BodySpec, type SystemSpec } from '../world/systemgen'
 const AU_KM = UNIVERSE.AU_KM;
 const KM_TO_KPC = 1 / UNIVERSE.KPC_KM;
 
-/** Shared unit sphere for cleanroom host balls. */
+/** Shared unit sphere for host Kepler balls. */
 const BALL_GEO = new THREE.SphereGeometry(1, 32, 24);
 
 /** Magenta = body is not on its Kepler ring (cleanroom diagnostic). */
@@ -93,7 +91,7 @@ export interface HostBodyRT {
   spec: BodySpec;
   group: THREE.Group;
   orbitLine: THREE.Line;
-  /** Cleanroom stand-in (textured unit sphere). RockyGlobe later. */
+  /** Kepler stand-in. RockyGlobe hides this when the terrace is on. */
   placeholder: THREE.Object3D | null;
   orbX: THREE.Vector3;
   orbY: THREE.Vector3;
