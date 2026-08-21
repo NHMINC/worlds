@@ -6,8 +6,11 @@
  *                insertion that yaws onto prograde before the
  *                shell, then a capture settle onto the rail.
  *                Turns off the moment the ring is held.
- *   orbit      — on the ring. Autopilot off. Cameras free;
- *                the reticle is only the view-centre pip.
+ *   orbit      — on the ring. Autopilot off. Default look is
+ *                body-locked (nadir down, prograde forward —
+ *                the sphere fills the lower half); a look
+ *                drag frees the stick until release. The
+ *                reticle is only the view-centre pip.
  *   proximity  — left orbit by warp (free roam). Reports
  *                nearest body only; no heading hold, no
  *                guidance, no re-lock until the player picks

@@ -1141,7 +1141,20 @@ export class GalaxyView {
     }
     this.arcCenter.set(c.x + ax * park, c.y + ay * park, c.z + az * park);
     this.mintAt.copy(this.arcCenter);
-    this.aimAt(-ax, -ay, -az);
+    // Startup: star below, look forward over the furnace. Zenith =
+    // radial out; prograde ⊥ zenith in the galactic-ish plane.
+    this.orbitTmp.set(ax, ay, az);
+    this.orbitTmp2.crossVectors(this.worldUp, this.orbitTmp);
+    if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(1, 0, 0);
+    this.orbitTmp2.normalize();
+    this.aimOrbitBank(
+      this.orbitTmp2.x,
+      this.orbitTmp2.y,
+      this.orbitTmp2.z,
+      ax,
+      ay,
+      az,
+    );
     this.applyCam();
     // Drop into the ecliptic ring (In Orbit) once the host frame exists.
     this.pendingArriveOrbit = true;
@@ -1973,7 +1986,7 @@ export class GalaxyView {
   /**
    * Chart pick: Lock-on to a named ring. Warp approaches on a
    * graze-safe heading; orbit entry clears lock and opens
-   * In Orbit (free cameras).
+   * In Orbit (body-locked look: nadir down, prograde forward).
    */
   goToWorldOrbit(bodyId: string, kind: WorldOrbitKind): void {
     if (this.mode !== 'region' || !this.hostObj) return;
@@ -2072,7 +2085,8 @@ export class GalaxyView {
 
   /**
    * Hold look on the core of the body nearest the camera.
-   * In Orbit: no-op — the pip is the view centre; cameras stay free.
+   * In Orbit: no-op — the pip is the view centre; default look
+   * is already body-locked.
    */
   centerLook(): void {
     if (this.mode !== 'region' || !this.hostObj || this.landed) return;
@@ -2546,7 +2560,44 @@ export class GalaxyView {
     const tx = this.orbitTmp.x + this.orbitTmp2.x;
     const ty = this.orbitTmp.y + this.orbitTmp2.y;
     const tz = this.orbitTmp.z + this.orbitTmp2.z;
-    this.easeCapturePose(dt, tx, ty, tz);
+    // Parked bank at capture longitude: zenith along offset, fwd prograde (or hang-east).
+    if (hang) {
+      this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+      this.orbitTmp.copy(this.orbitTmp2);
+      if (this.orbitTmp.lengthSq() < 1e-28) this.orbitTmp.copy(cap.dir);
+      this.orbitTmp.normalize();
+      this.hostTmp.crossVectors(this.rideNorth, this.orbitTmp);
+      if (this.hostTmp.lengthSq() < 1e-16) {
+        this.hostTmp.crossVectors(this.worldUp, this.orbitTmp);
+        if (this.hostTmp.lengthSq() < 1e-16) this.hostTmp.set(1, 0, 0);
+      }
+      this.hostTmp.normalize();
+      this.easeCapturePose(
+        dt,
+        tx,
+        ty,
+        tz,
+        this.hostTmp.x,
+        this.hostTmp.y,
+        this.hostTmp.z,
+        this.orbitTmp.x,
+        this.orbitTmp.y,
+        this.orbitTmp.z,
+      );
+    } else {
+      this.easeCapturePose(
+        dt,
+        tx,
+        ty,
+        tz,
+        this.rideE2.x,
+        this.rideE2.y,
+        this.rideE2.z,
+        this.rideE1.x,
+        this.rideE1.y,
+        this.rideE1.z,
+      );
+    }
     const posErr = Math.hypot(tx - this.arcCenter.x, ty - this.arcCenter.y, tz - this.arcCenter.z);
     const slack = Math.max(r * 0.002, 1e-18);
     if (posErr <= slack) {
@@ -2571,7 +2622,19 @@ export class GalaxyView {
     const tx = c.x + this.orbitTmp2.x;
     const ty = c.y + this.orbitTmp2.y;
     const tz = c.z + this.orbitTmp2.z;
-    this.easeCapturePose(dt, tx, ty, tz);
+    // θ=0: zenith = E1, prograde = E2.
+    this.easeCapturePose(
+      dt,
+      tx,
+      ty,
+      tz,
+      this.rideE2.x,
+      this.rideE2.y,
+      this.rideE2.z,
+      this.rideE1.x,
+      this.rideE1.y,
+      this.rideE1.z,
+    );
     const posErr = Math.hypot(tx - this.arcCenter.x, ty - this.arcCenter.y, tz - this.arcCenter.z);
     const slack = Math.max(r * 0.002, 1e-18);
     if (posErr <= slack) {
@@ -2607,10 +2670,22 @@ export class GalaxyView {
   }
 
   /**
-   * Ease the eye onto the ring. Look is left alone — Lock-on
-   * already faced forward; parking must not yank the camera.
+   * Ease the eye onto the ring. Soft-seek the nose onto the
+   * parked bank (body below, prograde forward) so capture does
+   * not leave a dive-at-core look.
    */
-  private easeCapturePose(dt: number, tx: number, ty: number, tz: number): void {
+  private easeCapturePose(
+    dt: number,
+    tx: number,
+    ty: number,
+    tz: number,
+    fwdX: number,
+    fwdY: number,
+    fwdZ: number,
+    zenX: number,
+    zenY: number,
+    zenZ: number,
+  ): void {
     const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
     this.arcCenter.x += (tx - this.arcCenter.x) * k;
     this.arcCenter.y += (ty - this.arcCenter.y) * k;
@@ -2625,6 +2700,22 @@ export class GalaxyView {
       this.hostRoot.position.copy(this.orbitTmp).negate();
       this.hostRoot.updateMatrixWorld(true);
     }
+    if (this.looking) return;
+    const tgtYaw = Math.atan2(fwdX, fwdZ);
+    const flen = Math.max(1e-8, Math.hypot(fwdX, fwdY, fwdZ));
+    const tgtPitch = THREE.MathUtils.clamp(
+      Math.asin(THREE.MathUtils.clamp(fwdY / flen, -1, 1)),
+      -1.45,
+      1.45,
+    );
+    const tgtRoll = this.orbitBankRoll(fwdX, fwdY, fwdZ, zenX, zenY, zenZ);
+    let dYaw = tgtYaw - this.arcYaw;
+    dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+    let dRoll = tgtRoll - this.arcRoll;
+    dRoll = Math.atan2(Math.sin(dRoll), Math.cos(dRoll));
+    this.arcYaw += dYaw * k;
+    this.arcPitch += (tgtPitch - this.arcPitch) * k;
+    this.arcRoll += dRoll * k;
   }
 
   /** dirCatalog is body → camera at first contact, unit. The ring starts there. */
@@ -2662,8 +2753,8 @@ export class GalaxyView {
       this.riding.theta0 = -this.riding.omega * tSys;
     }
     this.placeRide(tSys);
-    // Lock-on ends. In Orbit: free cameras — leave the look
-    // exactly where insertion left it.
+    // Lock-on ends. In Orbit: body-locked look (aesthetic
+    // gravity lock) — placeRide banks every frame.
     this.capturing = null;
     this.dropLookHold();
     this.courseObj = null;
@@ -2740,6 +2831,7 @@ export class GalaxyView {
         const cart = galToCart(this.hostObj.pos);
         this.arcCenter.set(cart.x + ox, cart.y + oy, cart.z + oz);
       }
+      this.bankRideLook(tSys);
       return;
     }
     const rt = this.worldRt(ride.bodyId);
@@ -2775,6 +2867,68 @@ export class GalaxyView {
       this.bodyCatalog(rt, this.orbitTmp);
       this.arcCenter.set(this.orbitTmp.x + ox, this.orbitTmp.y + oy, this.orbitTmp.z + oz);
     }
+    this.bankRideLook(tSys);
+  }
+
+  /**
+   * Aesthetic gravity lock: nose prograde (or hang-east), bank
+   * so the body is screen-down. Look-drag frees the stick; on
+   * release the next placeRide snaps back. The orbital plane
+   * is the vertical midplane — left / right halves of the ship.
+   */
+  private bankRideLook(tSys: number): void {
+    const ride = this.riding;
+    if (!ride || this.looking || this.drone) return;
+    let fx: number;
+    let fy: number;
+    let fz: number;
+    let zx: number;
+    let zy: number;
+    let zz: number;
+    if (ride.hang) {
+      // Hang: zenith = body → eye; forward = local east (N × zenith).
+      const rt = this.worldRt(ride.bodyId);
+      if (!rt) return;
+      this.spinWorld(rt, this.orbitQ);
+      this.orbitTmp2.copy(this.rideLocal).applyQuaternion(this.orbitQ);
+      const len = Math.hypot(this.orbitTmp2.x, this.orbitTmp2.y, this.orbitTmp2.z);
+      if (len < 1e-18) return;
+      zx = this.orbitTmp2.x / len;
+      zy = this.orbitTmp2.y / len;
+      zz = this.orbitTmp2.z / len;
+      this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+      this.orbitTmp.crossVectors(this.rideNorth, this.orbitTmp2);
+      if (this.orbitTmp.lengthSq() < 1e-16) {
+        this.orbitTmp.crossVectors(this.worldUp, this.orbitTmp2);
+        if (this.orbitTmp.lengthSq() < 1e-16) this.orbitTmp.set(1, 0, 0);
+      }
+      this.orbitTmp.normalize();
+      fx = this.orbitTmp.x;
+      fy = this.orbitTmp.y;
+      fz = this.orbitTmp.z;
+    } else {
+      const th = ride.theta0 + ride.omega * tSys;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      // Radial out (body below) and prograde (dθ).
+      zx = this.rideE1.x * c + this.rideE2.x * s;
+      zy = this.rideE1.y * c + this.rideE2.y * s;
+      zz = this.rideE1.z * c + this.rideE2.z * s;
+      const zlen = Math.hypot(zx, zy, zz);
+      if (zlen < 1e-18) return;
+      zx /= zlen;
+      zy /= zlen;
+      zz /= zlen;
+      fx = -this.rideE1.x * s + this.rideE2.x * c;
+      fy = -this.rideE1.y * s + this.rideE2.y * c;
+      fz = -this.rideE1.z * s + this.rideE2.z * c;
+      const flen = Math.hypot(fx, fy, fz);
+      if (flen < 1e-18) return;
+      fx /= flen;
+      fy /= flen;
+      fz /= flen;
+    }
+    this.aimOrbitBank(fx, fy, fz, zx, zy, zz);
   }
 
   private clearCourse(): void {
@@ -2901,10 +3055,19 @@ export class GalaxyView {
     if (this.riding || this.landed || this.drone || this.capturing) return;
     if (this.looking && !this.pendingOrbit) return;
     let insertBlend = 0;
+    // Eye→body before insert rewrite — zenith = radial out (−eye→body).
+    let zenX = 0;
+    let zenY = 0;
+    let zenZ = 0;
+    let haveZen = false;
     if (this.courseBodyId) {
       const rt = this.worldRt(this.courseBodyId);
       if (!rt) return;
       this.bodyFromEye(rt, this.orbitTmp);
+      zenX = -this.orbitTmp.x;
+      zenY = -this.orbitTmp.y;
+      zenZ = -this.orbitTmp.z;
+      haveZen = this.orbitTmp.lengthSq() > 1e-28;
       if (this.pendingOrbit && this.pendingOrbit.bodyId === rt.spec.id) {
         insertBlend = this.applyPendingInsert(rt, this.pendingOrbit.kind, this.orbitTmp);
       }
@@ -2916,6 +3079,10 @@ export class GalaxyView {
         p.y - this.arcCenter.y,
         p.z - this.arcCenter.z,
       );
+      zenX = -this.orbitTmp.x;
+      zenY = -this.orbitTmp.y;
+      zenZ = -this.orbitTmp.z;
+      haveZen = this.orbitTmp.lengthSq() > 1e-28;
       if (
         this.pendingOrbit &&
         this.pendingOrbit.bodyId == null &&
@@ -2942,13 +3109,22 @@ export class GalaxyView {
       -1.45,
       1.45,
     );
+    // Bank so the body fills the lower half as insertion yaws
+    // onto prograde. Far transfer (blend ~0) looks at the shell;
+    // near contact, fwd ⊥ zenith and the plane is vertical.
+    const tgtRoll = haveZen
+      ? this.orbitBankRoll(dx, dy, dz, zenX, zenY, zenZ)
+      : this.arcRoll;
     let dYaw = tgtYaw - this.arcYaw;
     dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
     const dPitch = tgtPitch - this.arcPitch;
-    if (Math.abs(dYaw) + Math.abs(dPitch) < 1e-7) return;
+    let dRoll = tgtRoll - this.arcRoll;
+    dRoll = Math.atan2(Math.sin(dRoll), Math.cos(dRoll));
+    if (Math.abs(dYaw) + Math.abs(dPitch) + Math.abs(dRoll) < 1e-7) return;
     const k = 1 - Math.exp(-UNIVERSE.ARRIVE_HOLD * dt);
     this.arcYaw += dYaw * k;
     this.arcPitch += dPitch * k;
+    this.arcRoll += dRoll * k;
     this.applyCam();
     this.wake();
   }
@@ -3436,6 +3612,63 @@ export class GalaxyView {
     const len = Math.max(1e-8, Math.hypot(dx, dy, dz));
     this.arcPitch = Math.asin(THREE.MathUtils.clamp(dy / len, -1, 1));
     this.arcYaw = Math.atan2(dx, dz);
+  }
+
+  /**
+   * Ship frame for orbit: nose along `fwd` (prograde / transfer),
+   * bank so `zenith` (away from the body) is screen-up. The body
+   * fills the lower half; the orbital plane is the vertical
+   * midplane (left / right).
+   */
+  private aimOrbitBank(
+    fwdX: number,
+    fwdY: number,
+    fwdZ: number,
+    zenX: number,
+    zenY: number,
+    zenZ: number,
+  ): void {
+    this.aimAt(fwdX, fwdY, fwdZ);
+    const cp = Math.cos(this.arcPitch);
+    this.arcFwd.set(cp * Math.sin(this.arcYaw), Math.sin(this.arcPitch), cp * Math.cos(this.arcYaw));
+    this.arcRight.crossVectors(this.arcFwd, this.worldUp);
+    if (this.arcRight.lengthSq() < 1e-10) this.arcRight.set(1, 0, 0);
+    else this.arcRight.normalize();
+    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+    this.orbitTmp.set(zenX, zenY, zenZ);
+    this.orbitTmp.addScaledVector(this.arcFwd, -this.orbitTmp.dot(this.arcFwd));
+    if (this.orbitTmp.lengthSq() < 1e-16) {
+      this.arcRoll = 0;
+      return;
+    }
+    this.orbitTmp.normalize();
+    // applyRoll: up' = c·up − s·right  →  roll = atan2(−zen·right, zen·up)
+    this.arcRoll = Math.atan2(-this.orbitTmp.dot(this.arcRight), this.orbitTmp.dot(this.arcUp));
+  }
+
+  /** Roll that would bank `fwd` with `zenith` up — does not write pose. */
+  private orbitBankRoll(
+    fwdX: number,
+    fwdY: number,
+    fwdZ: number,
+    zenX: number,
+    zenY: number,
+    zenZ: number,
+  ): number {
+    const len = Math.max(1e-8, Math.hypot(fwdX, fwdY, fwdZ));
+    const pitch = Math.asin(THREE.MathUtils.clamp(fwdY / len, -1, 1));
+    const yaw = Math.atan2(fwdX, fwdZ);
+    const cp = Math.cos(pitch);
+    this.arcFwd.set(cp * Math.sin(yaw), Math.sin(pitch), cp * Math.cos(yaw));
+    this.arcRight.crossVectors(this.arcFwd, this.worldUp);
+    if (this.arcRight.lengthSq() < 1e-10) this.arcRight.set(1, 0, 0);
+    else this.arcRight.normalize();
+    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+    this.orbitTmp.set(zenX, zenY, zenZ);
+    this.orbitTmp.addScaledVector(this.arcFwd, -this.orbitTmp.dot(this.arcFwd));
+    if (this.orbitTmp.lengthSq() < 1e-16) return 0;
+    this.orbitTmp.normalize();
+    return Math.atan2(-this.orbitTmp.dot(this.arcRight), this.orbitTmp.dot(this.arcUp));
   }
 
   private orientArc(): void {
@@ -4905,7 +5138,7 @@ export class GalaxyView {
    *  still. Planets will live inside this scene; it must idle
    *  cold. */
   private restIn = 90;
-  private lastPose = { x: NaN, y: 0, z: 0, yaw: 0, pitch: 0 };
+  private lastPose = { x: NaN, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0 };
 
   /** Keep the loop rendering for at least n more frames.
    *  Resting stops rAF entirely — wake is the only restart. */
@@ -4947,13 +5180,15 @@ export class GalaxyView {
       Math.abs(p.y - this.arcCenter.y) > 1e-9 ||
       Math.abs(p.z - this.arcCenter.z) > 1e-9 ||
       Math.abs(p.yaw - this.arcYaw) > 1e-9 ||
-      Math.abs(p.pitch - this.arcPitch) > 1e-9;
+      Math.abs(p.pitch - this.arcPitch) > 1e-9 ||
+      Math.abs(p.roll - this.arcRoll) > 1e-9;
     if (moved || !Number.isFinite(p.x)) {
       p.x = this.arcCenter.x;
       p.y = this.arcCenter.y;
       p.z = this.arcCenter.z;
       p.yaw = this.arcYaw;
       p.pitch = this.arcPitch;
+      p.roll = this.arcRoll;
       this.applyCam();
       this.wake(30);
     }

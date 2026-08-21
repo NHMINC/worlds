@@ -727,7 +727,7 @@ export function GalaxyExplorer(props: Props) {
                     Land
                   </button>
                 ) : frame.orbit ? (
-                  <i className="gx-plate-go">{orbitLabel(frame.orbit)} · free look</i>
+                  <i className="gx-plate-go">{orbitLabel(frame.orbit)} · body below</i>
                 ) : (
                   <i className="gx-plate-go">Free look</i>
                 )}
