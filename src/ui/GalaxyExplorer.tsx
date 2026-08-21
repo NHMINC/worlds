@@ -636,15 +636,17 @@ export function GalaxyExplorer(props: Props) {
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
         {inRegion && !editing && frame.hostId != null && (
           <div className="gx-look">
-            <button
-              type="button"
-              className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
-              aria-label="Center"
-              title="Center — hold look on this body's core"
-              onClick={() => viewRef.current?.centerLook()}
-            >
-              <IconCenter size={18} />
-            </button>
+            {!frame.landed && (
+              <button
+                type="button"
+                className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
+                aria-label="Center"
+                title="Center — hold look on this body's core"
+                onClick={() => viewRef.current?.centerLook()}
+              >
+                <IconCenter size={18} />
+              </button>
+            )}
             {frame.showSunLook && (
               <button
                 type="button"

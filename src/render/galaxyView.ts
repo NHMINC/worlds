@@ -648,7 +648,7 @@ export interface GalaxyFrame {
   landed: boolean;
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
-  /** Look-hold: Center (this body's core) or Sun, until a look drag. */
+  /** Look-hold: Center (body core, off the ground) or Sun, until a look drag. */
   lookHold: 'center' | 'sun' | null;
   /** Drone trackball around the primary world (else the star). */
   drone: boolean;
@@ -2011,6 +2011,7 @@ export class GalaxyView {
     this.sEyeH = this.sEyeHTarget = Math.max(globe.terraceStep * 0.6, globe.terraceStep * 4);
     this.sWalk = 0;
     this.landed = true;
+    if (this.lookHold === 'center') this.lookHold = null;
     this.courseBodyId = rt.spec.id;
     this.worldId = rt.spec.id;
     this.courseHud = this.hudForBody(rt);
@@ -2038,12 +2039,13 @@ export class GalaxyView {
   }
 
   /**
-   * Hold look on the core of the body we are at: landed /
-   * ridden / latched world, else the host star. A look drag
-   * lets go.
+   * Hold look on the core of the body we are at: ridden /
+   * latched world, else the host star. Offered off the
+   * ground — on the ground Sun holds the furnace. A look
+   * drag lets go.
    */
   centerLook(): void {
-    if (this.mode !== 'region' || !this.hostObj) return;
+    if (this.mode !== 'region' || !this.hostObj || this.landed) return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'center';
     this.holdLook();
