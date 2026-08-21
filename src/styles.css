@@ -740,6 +740,7 @@ body,
   display: flex;
   flex-direction: column;
   gap: 8px;
+  pointer-events: auto;
 }
 
 .gx-look-btn {
@@ -757,7 +758,9 @@ body,
 }
 
 .gx-look-btn.is-on {
-  background: var(--accent-soft);
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0c1210;
 }
 
 .gx-helm {

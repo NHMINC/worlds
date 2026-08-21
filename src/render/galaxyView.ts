@@ -2128,6 +2128,12 @@ export class GalaxyView {
    * Drag rolls that body; pinch is altitude; off restores the
    * ship look. Ride / land keep ticking in closed form.
    */
+  /** Tap: on if off, off if on. Returns the new state. */
+  toggleDrone(): boolean {
+    this.setDrone(!this.drone);
+    return Boolean(this.drone);
+  }
+
   setDrone(on: boolean): void {
     if (this.mode !== 'region' || !this.hostObj || !this.hostRoot) return;
     if (on === Boolean(this.drone)) return;
@@ -2136,6 +2142,7 @@ export class GalaxyView {
       this.arcPitch = this.shipLook.pitch;
       this.arcRoll = this.shipLook.roll;
       this.drone = null;
+      this.applyCam();
       this.wake();
       return;
     }
