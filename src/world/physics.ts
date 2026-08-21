@@ -380,6 +380,14 @@ export const UNIVERSE = {
    */
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
+  /**
+   * Lock-on capture into a named ring. After the graze-safe
+   * approach reaches the shell, the ship does not teleport onto
+   * the rail — it eases position and heading onto the ring at
+   * this rate (1/s), same family as ARRIVE_HOLD, then Lock-on
+   * ends and In Orbit begins.
+   */
+  ORBIT_CAPTURE: 1.4,
   ARRIVE_WARP: 0.001,
   ARRIVE_K: 1.2,
   ARRIVE_FILL: 0.22,

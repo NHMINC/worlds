@@ -953,6 +953,7 @@ Code map (start here):
 | Galaxy explorer (stars + nebulae + dust + cosmic shell + host pass) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Host solar system (Kepler balls + rings under the sphere) | `src/render/hostSystem.ts` |
 | Host look (Center = nearest body core) | `src/render/hostLook.ts` |
+| Host nav modes (lock-on / in orbit / proximity) | `src/render/hostNav.ts` |
 | Host-pass rocky globes (every rocky body) | `src/render/rockyGlobe.ts` |
 | Visits (camp → SystemMeta by starId) | `src/store/visits.ts` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |

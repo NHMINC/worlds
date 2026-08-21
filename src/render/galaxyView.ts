@@ -46,9 +46,11 @@ import {
 import { RockyGlobe } from './rockyGlobe';
 import { HostSystem, type HostBodyRT } from './hostSystem';
 import { nearestBody } from './hostLook';
+import { type HostNavMode } from './hostNav';
 import {
   clearRadiusKm,
   isHangOrbit,
+  orbitLabel,
   orbitOmega,
   orbitRadiusKpc,
   shellFloorKm,
@@ -631,11 +633,24 @@ export interface GalaxyFrame {
   orbit: WorldOrbitKind | null;
   /** True once the viewpoint is on that ring. */
   orbiting: boolean;
+  /**
+   * Autopilot mode: lock-on → in orbit → proximity (after warp
+   * break). Null is free cruise. Exclusive of look-hold guidance.
+   */
+  navMode: HostNavMode;
+  /** Proximity / orbit readout: nearest or ridden body id. */
+  nearestBodyId: string | null;
+  /** Short HUD line for the active nav mode (body · ring). */
+  navHint: string | null;
   /** Standing on the latched rocky globe. */
   landed: boolean;
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
-  /** Look-hold: Center (body core, off the ground) or Sun, until a look drag. */
+  /**
+   * Look-hold (Center / Sun). Offered off the ground and only
+   * outside In Orbit — on the ring the pip is the view centre
+   * alone; cameras are free.
+   */
   lookHold: 'center' | 'sun' | null;
   /** Drone trackball around the primary world (else the star). */
   drone: boolean;
@@ -812,6 +827,12 @@ export class GalaxyView {
     theta0: number;
     omega: number;
   } | null = null;
+  /**
+   * Exclusive autopilot mode. See `hostNav.ts`. Derived helpers
+   * (`pendingOrbit`, `riding`) still drive the physics; this is
+   * the contract the HUD and look system obey.
+   */
+  private navMode: HostNavMode = null;
   private readonly rideLocal = new THREE.Vector3();
   private readonly rideE1 = new THREE.Vector3();
   private readonly rideE2 = new THREE.Vector3();
@@ -819,8 +840,17 @@ export class GalaxyView {
   private readonly orbitTmp = new THREE.Vector3();
   private readonly orbitTmp2 = new THREE.Vector3();
   private readonly orbitQ = new THREE.Quaternion();
-  /** Cruise reached the ring this frame — enter after bodies pose. */
+  /** Cruise reached the ring this frame — start capture after bodies pose. */
   private pendingArriveOrbit = false;
+  /**
+   * Lock-on capture burn: ease onto the ring (position + heading)
+   * before In Orbit. Null when not capturing.
+   */
+  private capturing: {
+    bodyId: string;
+    kind: WorldOrbitKind;
+    dir: THREE.Vector3;
+  } | null = null;
   /** On the skin of the latched rocky globe. */
   private landed = false;
   /** Ring to restore on take-off. */
@@ -1112,13 +1142,11 @@ export class GalaxyView {
     if (!this.hostRoot || !this.hostSpec) return false;
     if (!p.bodyId) {
       this.pendingPlace = null;
-      this.centerLook();
       return true;
     }
     const rt = this.worldRt(p.bodyId);
     if (!rt) {
       this.pendingPlace = null;
-      this.centerLook();
       return true;
     }
     this.worldId = rt.spec.id;
@@ -1131,7 +1159,6 @@ export class GalaxyView {
       const kind = p.orbit ?? 'hover';
       this.beginRide(rt, kind, dir, tSys);
       this.pendingPlace = null;
-      this.centerLook();
       return true;
     }
     const kind = p.orbit ?? 'hover';
@@ -1147,7 +1174,6 @@ export class GalaxyView {
     }
     this.placeRide(tSys);
     this.pendingPlace = null;
-    this.centerLook();
     return true;
   }
 
@@ -1866,10 +1892,9 @@ export class GalaxyView {
   }
 
   /**
-   * Set course: hold the heading on a star. The nose eases onto the
-   * target at ARRIVE_HOLD and stays there while flying. A look drag
-   * hands the stick back — it does not remove the close star.
-   * Warp parks when the disk fills the view.
+   * Set course: enter Lock-on on a star (fill-park heading).
+   * Chart orbit picks use goToWorldOrbit. A look drag hands the
+   * stick back; it does not remove the close star.
    */
   setCourse(obj: GalaxyObject): void {
     if (this.mode !== 'region') return;
@@ -1882,6 +1907,7 @@ export class GalaxyView {
     this.pendingOrbit = null;
     this.courseBodyId = null;
     this.courseObj = obj;
+    this.navMode = 'lock';
     const brief = this.briefFor(obj);
     const st = obj.star;
     this.courseHud = {
@@ -1902,7 +1928,7 @@ export class GalaxyView {
     this.wake();
   }
 
-  /** Set course on a world of the current host. Chart and plate. */
+  /** Set course on a world of the current host — Lock-on heading. */
   setCourseBody(bodyId: string): void {
     if (this.mode !== 'region' || !this.hostObj) return;
     const rt = this.worldRt(bodyId);
@@ -1914,16 +1940,16 @@ export class GalaxyView {
     this.courseObj = null;
     this.courseBodyId = bodyId;
     this.selectedBodyId = bodyId;
+    this.navMode = 'lock';
     this.courseHud = this.hudForBody(rt);
     this.select(null);
     this.wake();
   }
 
   /**
-   * Chart pick: hold the heading, latch warp, park on the
-   * first contact with the named ring (the approach face),
-   * then ride it. Reticle Set course stays the fill-park
-   * heading.
+   * Chart pick: Lock-on to a named ring. Warp approaches on a
+   * graze-safe heading; orbit entry clears lock and opens
+   * In Orbit (free cameras).
    */
   goToWorldOrbit(bodyId: string, kind: WorldOrbitKind): void {
     if (this.mode !== 'region' || !this.hostObj) return;
@@ -1932,6 +1958,7 @@ export class GalaxyView {
     this.setCourseBody(bodyId);
     this.pendingArriveOrbit = false;
     this.pendingOrbit = { bodyId, kind };
+    this.navMode = 'lock';
     this.setGear(false);
     this.setWarp(true);
     this.wake();
@@ -1939,6 +1966,7 @@ export class GalaxyView {
 
   private clearRide(): void {
     this.riding = null;
+    this.capturing = null;
   }
 
   private leaveSurface(): void {
@@ -1972,6 +2000,7 @@ export class GalaxyView {
     this.clearRide();
     this.pendingOrbit = null;
     this.pendingArriveOrbit = false;
+    this.capturing = null;
     this.setWarp(false);
     this.bodyFromEye(rt, this.orbitTmp2).negate();
     if (this.orbitTmp2.lengthSq() < 1e-28) {
@@ -1988,6 +2017,7 @@ export class GalaxyView {
     this.sEyeH = this.sEyeHTarget = Math.max(globe.terraceStep * 0.6, globe.terraceStep * 4);
     this.sWalk = 0;
     this.landed = true;
+    this.navMode = null;
     if (this.lookHold === 'center') this.dropLookHold();
     this.courseBodyId = rt.spec.id;
     this.worldId = rt.spec.id;
@@ -2017,11 +2047,11 @@ export class GalaxyView {
 
   /**
    * Hold look on the core of the body nearest the camera.
-   * Rewritten: distance, not angular size, not a latched id.
-   * Park engages this; a look drag lets go.
+   * In Orbit: no-op — the pip is the view centre; cameras stay free.
    */
   centerLook(): void {
     if (this.mode !== 'region' || !this.hostObj || this.landed) return;
+    if (this.navMode === 'orbit') return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'center';
     this.holdLook();
@@ -2032,6 +2062,7 @@ export class GalaxyView {
   /** Hold look on the host star until a look drag. */
   sunLook(): void {
     if (this.mode !== 'region' || !this.hostObj) return;
+    if (this.navMode === 'orbit') return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'sun';
     this.holdLook();
@@ -2096,16 +2127,17 @@ export class GalaxyView {
   }
 
   private showSunLook(): boolean {
-    return Boolean(this.hostObj && this.host.bodies.length > 0);
+    return Boolean(this.hostObj && this.host.bodies.length > 0 && this.navMode !== 'orbit');
   }
 
   private holdLook(): void {
     if (!this.lookHold || this.looking || !this.hostObj) return;
+    // In Orbit: autopilot look is off — free cameras.
+    if (this.navMode === 'orbit') return;
     // The course owns the nose while thrusting: cruise flies along
     // arcFwd, so a held look would drag the ship toward the LOOK
-    // and the course would never depart. The hold resumes at Stop,
-    // on a ride, and on the ground.
-    if (this.thrustOn && !this.riding && !this.landed && (this.courseBodyId || this.courseObj)) {
+    // and the course would never depart. The hold resumes at Stop.
+    if (this.thrustOn && !this.landed && (this.courseBodyId || this.courseObj)) {
       return;
     }
     if (this.lookHold === 'center') {
@@ -2404,7 +2436,113 @@ export class GalaxyView {
       this.orbitTmp2.copy(this.arcFwd).negate();
     }
     this.orbitTmp2.normalize();
-    this.beginRide(rt, pending.kind, this.orbitTmp2, tSys);
+    // Capture burn — ease onto the rail, then latch In Orbit.
+    this.capturing = {
+      bodyId: pending.bodyId,
+      kind: pending.kind,
+      dir: this.orbitTmp2.clone(),
+    };
+    this.navMode = 'lock';
+    this.dropLookHold();
+    this.tickCapture(this.lastDt || 1 / 60, tSys);
+  }
+
+  /**
+   * Soft-seek the eye and nose onto the chosen ring. When close
+   * enough, beginRide latches In Orbit and Lock-on ends.
+   */
+  private tickCapture(dt: number, tSys: number): void {
+    const cap = this.capturing;
+    if (!cap || !this.hostObj) return;
+    const rt = this.worldRt(cap.bodyId);
+    if (!rt) {
+      this.capturing = null;
+      if (this.navMode === 'lock') this.navMode = null;
+      return;
+    }
+    const r = orbitRadiusKpc(rt.spec, cap.kind);
+    const hang = isHangOrbit(cap.kind);
+    this.spinWorld(rt, this.orbitQ);
+    // Desired ring offset from the body (catalog), same law as placeRide.
+    if (hang) {
+      this.rideLocal.copy(cap.dir).applyQuaternion(this.orbitQ.clone().conjugate());
+      this.orbitTmp2.copy(this.rideLocal).applyQuaternion(this.orbitQ).multiplyScalar(r);
+    } else {
+      this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+      this.rideE1.copy(cap.dir);
+      if (this.rideE1.lengthSq() < 1e-16) this.rideE1.copy(this.arcFwd).negate();
+      this.rideE1.normalize();
+      if (cap.kind === 'polar') {
+        this.rideE2.copy(this.rideNorth).addScaledVector(this.rideE1, -this.rideNorth.dot(this.rideE1));
+      } else {
+        this.rideE2.crossVectors(this.rideNorth, this.rideE1);
+      }
+      if (this.rideE2.lengthSq() < 1e-16) {
+        this.rideE2.crossVectors(this.rideE1, this.arcRight);
+        if (this.rideE2.lengthSq() < 1e-16) this.rideE2.crossVectors(this.rideE1, this.worldUp);
+      }
+      this.rideE2.normalize();
+      // Capture holds the arrival longitude (theta = 0 on E1).
+      this.orbitTmp2.copy(this.rideE1).multiplyScalar(r);
+    }
+    // Desired eye = body + offset.
+    this.bodyCatalog(rt, this.orbitTmp);
+    const tx = this.orbitTmp.x + this.orbitTmp2.x;
+    const ty = this.orbitTmp.y + this.orbitTmp2.y;
+    const tz = this.orbitTmp.z + this.orbitTmp2.z;
+    const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
+    this.arcCenter.x += (tx - this.arcCenter.x) * k;
+    this.arcCenter.y += (ty - this.arcCenter.y) * k;
+    this.arcCenter.z += (tz - this.arcCenter.z) * k;
+    if (this.hostRoot) {
+      // Keep the host root honest with the eased catalog eye.
+      const cart = galToCart(this.hostObj.pos);
+      this.orbitTmp.set(
+        this.arcCenter.x - cart.x,
+        this.arcCenter.y - cart.y,
+        this.arcCenter.z - cart.z,
+      );
+      this.hostRoot.position.copy(this.orbitTmp).negate();
+      this.hostRoot.updateMatrixWorld(true);
+    }
+    // Desired look: body (hang) or orbital tangent (inertial).
+    if (hang) {
+      this.bodyFromEye(rt, this.orbitTmp);
+    } else {
+      this.orbitTmp.set(
+        this.rideE2.x,
+        this.rideE2.y,
+        this.rideE2.z,
+      );
+    }
+    const dx = this.orbitTmp.x;
+    const dy = this.orbitTmp.y;
+    const dz = this.orbitTmp.z;
+    const dAim = Math.hypot(dx, dy, dz);
+    let lookErr = 0;
+    if (dAim > 1e-15) {
+      const tgtYaw = Math.atan2(dx, dz);
+      const tgtPitch = THREE.MathUtils.clamp(
+        Math.asin(THREE.MathUtils.clamp(dy / dAim, -1, 1)),
+        -1.45,
+        1.45,
+      );
+      let dYaw = tgtYaw - this.arcYaw;
+      dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+      const dPitch = tgtPitch - this.arcPitch;
+      lookErr = Math.abs(dYaw) + Math.abs(dPitch);
+      const hk = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
+      this.arcYaw += dYaw * hk;
+      this.arcPitch += dPitch * hk;
+    }
+    const posErr = Math.hypot(tx - this.arcCenter.x, ty - this.arcCenter.y, tz - this.arcCenter.z);
+    const slack = Math.max(r * 0.002, 1e-18);
+    if (posErr <= slack && lookErr < 0.04) {
+      this.capturing = null;
+      this.beginRide(rt, cap.kind, cap.dir, tSys);
+    }
+    this.applyCam();
+    this.wake();
   }
 
   /** dirCatalog is body → camera at first contact, unit. The ring starts there. */
@@ -2442,10 +2580,36 @@ export class GalaxyView {
       this.riding.theta0 = -this.riding.omega * tSys;
     }
     this.placeRide(tSys);
-    // Park faces the body the same way Center does — bodyFromEye
-    // after the pin, not a one-shot -ox that freezes while hang
-    // / inertial rings move the nadir under a fixed yaw.
-    this.centerLook();
+    // Lock-on ends. In Orbit: free cameras — no Center latch.
+    // Face along the ring (inertial) or the body (hang / hover).
+    this.capturing = null;
+    this.dropLookHold();
+    this.courseObj = null;
+    this.courseBodyId = null;
+    this.courseHud = null;
+    this.pendingOrbit = null;
+    this.pendingArriveOrbit = false;
+    this.navMode = 'orbit';
+    this.thrustOn = false;
+    this.thrustSpeed = 0;
+    if (hang) {
+      this.bodyFromEye(rt, this.orbitTmp);
+      if (this.orbitTmp.lengthSq() > 1e-28) {
+        this.aimAt(this.orbitTmp.x, this.orbitTmp.y, this.orbitTmp.z);
+      }
+    } else if (this.riding) {
+      const th = this.riding.theta0 + this.riding.omega * tSys;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      this.orbitTmp.set(
+        -this.rideE1.x * s + this.rideE2.x * c,
+        -this.rideE1.y * s + this.rideE2.y * c,
+        -this.rideE1.z * s + this.rideE2.z * c,
+      );
+      if (this.orbitTmp.lengthSq() > 1e-28) {
+        this.aimAt(this.orbitTmp.x, this.orbitTmp.y, this.orbitTmp.z);
+      }
+    }
   }
 
   private placeRide(tSys: number): void {
@@ -2493,6 +2657,7 @@ export class GalaxyView {
     this.courseObj = null;
     this.courseHud = null;
     this.courseBodyId = null;
+    if (this.navMode === 'lock') this.navMode = null;
   }
 
   /**
@@ -2568,15 +2733,23 @@ export class GalaxyView {
       .multiplyScalar(dT);
   }
 
-  /** Ease the nose onto the course star or world and keep it there. */
+  /** Ease the nose onto the Lock-on target. Off in orbit / proximity / capture. */
   private holdCourse(dt: number): void {
+    if (this.navMode !== 'lock') return;
     if (this.mode !== 'region') return;
-    if (this.riding || this.landed || this.drone) return;
+    if (this.riding || this.landed || this.drone || this.capturing) return;
     if (this.looking && !this.pendingOrbit) return;
     if (this.courseBodyId) {
       const rt = this.worldRt(this.courseBodyId);
       if (!rt) return;
       this.bodyFromEye(rt, this.orbitTmp);
+      // Chart lock: aim at the near-side ring point, not the core —
+      // the transfer never dives through the ball to get onto the rail.
+      if (this.pendingOrbit && this.pendingOrbit.bodyId === rt.spec.id) {
+        const ring = orbitRadiusKpc(rt.spec, this.pendingOrbit.kind);
+        const d = this.orbitTmp.length();
+        if (d > ring * 1.001) this.orbitTmp.multiplyScalar(1 - ring / d);
+      }
       this.routeAim(this.orbitTmp, rt.spec.id);
     } else if (this.courseObj) {
       const p = galToCart(this.courseObj.pos);
@@ -2966,8 +3139,33 @@ export class GalaxyView {
   setWarp(on: boolean): void {
     if (this.drone) this.setDrone(false);
     if (this.mode !== 'region' || this.landed) return;
-    if (on && this.riding) this.clearRide();
-    if (!on && this.pendingOrbit && !this.pendingArriveOrbit) this.pendingOrbit = null;
+    if (on && this.riding) {
+      // Break orbit → Proximity. No lock-on resume.
+      this.clearRide();
+      this.dropLookHold();
+      this.courseObj = null;
+      this.courseBodyId = null;
+      this.courseHud = null;
+      this.pendingOrbit = null;
+      this.pendingArriveOrbit = false;
+      this.capturing = null;
+      this.navMode = 'proximity';
+    }
+    if (on && this.capturing) {
+      // Abort capture burn → Proximity.
+      this.capturing = null;
+      this.pendingOrbit = null;
+      this.pendingArriveOrbit = false;
+      this.courseObj = null;
+      this.courseBodyId = null;
+      this.courseHud = null;
+      this.navMode = 'proximity';
+    }
+    if (!on && this.navMode === 'lock' && this.pendingOrbit && !this.pendingArriveOrbit && !this.capturing) {
+      this.pendingOrbit = null;
+      // Heading-only lock may remain (course still set).
+      if (!this.courseObj && !this.courseBodyId) this.navMode = null;
+    }
     this.thrustOn = on && this.warpMayRun();
     this.idle = 0;
     if (this.thrustOn) this.wake(2);
@@ -3212,6 +3410,7 @@ export class GalaxyView {
     this.focusBodyId = null;
     this.selectedBodyId = null;
     this.pendingOrbit = null;
+    this.pendingArriveOrbit = false;
     this.pendingPlace = null;
     this.drone = null;
     this.dropLookHold();
@@ -3227,6 +3426,7 @@ export class GalaxyView {
     }
     this.hostStarId = -1;
     this.hostFill = null;
+    this.navMode = null;
   }
 
   private detachHostFurnace(): void {
@@ -3360,7 +3560,8 @@ export class GalaxyView {
     } else if (this.pendingArriveOrbit && this.pendingOrbit) {
       this.pendingArriveOrbit = false;
       this.enterRide(tSys);
-      this.holdLook();
+    } else if (this.capturing) {
+      this.tickCapture(this.lastDt, tSys);
     } else if (this.riding) {
       this.placeRide(tSys);
       this.holdLook();
@@ -4131,8 +4332,22 @@ export class GalaxyView {
       return;
     }
     if (this.riding) {
-      if (this.thrustOn) this.clearRide();
-      else return;
+      if (this.thrustOn) {
+        this.clearRide();
+        this.dropLookHold();
+        this.courseObj = null;
+        this.courseBodyId = null;
+        this.courseHud = null;
+        this.pendingOrbit = null;
+        this.pendingArriveOrbit = false;
+        this.navMode = 'proximity';
+      } else return;
+    }
+    if (this.capturing) {
+      // Capture owns the stick — cruise waits.
+      this.thrustOn = false;
+      this.thrustSpeed = 0;
+      return;
     }
     if (this.thrustOn && !this.warpMayRun()) this.thrustOn = false;
     this.orientArc();
@@ -4592,6 +4807,26 @@ export class GalaxyView {
       this.courseHud.dist = this.arriveDist(this.courseObj);
     }
     const soi = this.soiDist();
+    const nearRt =
+      this.navMode === 'proximity' || this.navMode === 'orbit' || this.navMode === 'lock'
+        ? nearestBody(this.host.bodies, (b) => this.bodyDist(b))
+        : null;
+    let navHint: string | null = null;
+    if (this.navMode === 'orbit' && this.riding) {
+      const rt = this.worldRt(this.riding.bodyId);
+      const ring = orbitLabel(this.riding.kind);
+      navHint = rt ? `${rt.spec.name} · ${ring}` : ring;
+    } else if (this.navMode === 'proximity' && nearRt) {
+      navHint = nearRt.spec.name;
+    } else if (this.navMode === 'lock' && this.capturing) {
+      const rt = this.worldRt(this.capturing.bodyId);
+      const ring = orbitLabel(this.capturing.kind);
+      navHint = rt ? `Capturing ${rt.spec.name} · ${ring}` : `Capturing · ${ring}`;
+    } else if (this.navMode === 'lock' && this.pendingOrbit) {
+      const rt = this.worldRt(this.pendingOrbit.bodyId);
+      const ring = orbitLabel(this.pendingOrbit.kind);
+      navHint = rt ? `${rt.spec.name} · ${ring}` : ring;
+    }
     this.callbacks.onFrame?.({
       mode: this.mode,
       theta: this.theta,
@@ -4610,14 +4845,17 @@ export class GalaxyView {
       soiRemain: soi == null ? null : Math.max(0, UNIVERSE.ARRIVE_RANGE_KPC - soi),
       hostId: this.hostObj?.id ?? null,
       backdrop: this.shownCount(),
-      orbit: this.riding?.kind ?? this.pendingOrbit?.kind ?? this.landKind,
+      orbit: this.riding?.kind ?? this.capturing?.kind ?? this.pendingOrbit?.kind ?? this.landKind,
       orbiting: Boolean(this.riding),
+      navMode: this.navMode,
+      nearestBodyId: nearRt?.spec.id ?? null,
+      navHint,
       landed: this.landed,
       canLand: this.canLandNow(),
-      lookHold: this.lookHold,
+      lookHold: this.navMode === 'orbit' ? null : this.lookHold,
       drone: Boolean(this.drone),
       showSunLook: this.showSunLook(),
-      worldId: this.riding?.bodyId ?? this.worldId ?? this.courseBodyId,
+      worldId: this.riding?.bodyId ?? this.capturing?.bodyId ?? this.worldId ?? this.courseBodyId,
     });
     this.raf = requestAnimationFrame(this.frame);
   };

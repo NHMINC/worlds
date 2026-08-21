@@ -25,6 +25,7 @@ import { InspectorPanel, type InspectedCell } from './InspectorPanel';
 import { LabelsOverlay } from './LabelsOverlay';
 import { PlaceDialog } from './PlaceDialog';
 import { orbitLabel } from '../world/worldOrbit';
+import { navModeLabel } from '../render/hostNav';
 
 const VIEW_PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -149,6 +150,9 @@ export function GalaxyExplorer(props: Props) {
     backdrop: 0,
     orbit: null,
     orbiting: false,
+    navMode: null,
+    nearestBodyId: null,
+    navHint: null,
     landed: false,
     canLand: false,
     lookHold: null,
@@ -197,6 +201,9 @@ export function GalaxyExplorer(props: Props) {
               prev.hostId !== f.hostId ||
               prev.orbit !== f.orbit ||
               prev.orbiting !== f.orbiting ||
+              prev.navMode !== f.navMode ||
+              prev.nearestBodyId !== f.nearestBodyId ||
+              prev.navHint !== f.navHint ||
               prev.landed !== f.landed ||
               prev.canLand !== f.canLand ||
               prev.lookHold !== f.lookHold ||
@@ -636,7 +643,7 @@ export function GalaxyExplorer(props: Props) {
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
         {inRegion && !editing && frame.hostId != null && (
           <div className="gx-look">
-            {!frame.landed && (
+            {!frame.landed && frame.navMode !== 'orbit' && (
               <button
                 type="button"
                 className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
@@ -703,65 +710,99 @@ export function GalaxyExplorer(props: Props) {
             )}
           </div>
         )}
-        {inRegion && !editing && (frame.course || frame.focus) && (
+        {inRegion && !editing && (frame.course || frame.focus || frame.navMode) && (
           <div className="gx-plate">
-            <b>{(frame.course ?? frame.focus)!.name}</b>
-            <em>
-              {(frame.course ?? frame.focus)!.cls} · {(frame.course ?? frame.focus)!.phase}
-            </em>
-            {(frame.course ?? frame.focus)!.bodyId ? (
-              <i>
-                {(frame.course ?? frame.focus)!.moons
-                  ? `${(frame.course ?? frame.focus)!.moons} moon${(frame.course ?? frame.focus)!.moons === 1 ? '' : 's'}`
-                  : (frame.course ?? frame.focus)!.phase}
-                {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
-              </i>
+            {frame.navMode === 'orbit' ? (
+              <>
+                <b>{frame.navHint ?? 'Orbit'}</b>
+                <em>{navModeLabel('orbit')}</em>
+                {frame.landed ? (
+                  <i className="gx-plate-go">On the ground</i>
+                ) : frame.canLand ? (
+                  <button
+                    type="button"
+                    className="gx-plate-go"
+                    onClick={() => viewRef.current?.land()}
+                  >
+                    Land
+                  </button>
+                ) : frame.orbit ? (
+                  <i className="gx-plate-go">{orbitLabel(frame.orbit)} · free look</i>
+                ) : (
+                  <i className="gx-plate-go">Free look</i>
+                )}
+              </>
+            ) : frame.navMode === 'proximity' ? (
+              <>
+                <b>{frame.navHint ?? 'Nearest body'}</b>
+                <em>{navModeLabel('proximity')}</em>
+                <i className="gx-plate-go">Closest body — no guidance</i>
+              </>
             ) : (
-              <i>
-                {(frame.course ?? frame.focus)!.planets} planet
-                {(frame.course ?? frame.focus)!.planets === 1 ? '' : 's'}
-                {(frame.course ?? frame.focus)!.moons
-                  ? ` · ${(frame.course ?? frame.focus)!.moons} moon${(frame.course ?? frame.focus)!.moons === 1 ? '' : 's'}`
-                  : ''}
-                {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
-              </i>
-            )}
-            {frame.course && !frame.landed && (
-              <i className="gx-plate-dist">{formatCatalogDist(frame.course.dist)}</i>
-            )}
-            {frame.landed ? (
-              <i className="gx-plate-go">On the ground</i>
-            ) : frame.canLand ? (
-              <button
-                type="button"
-                className="gx-plate-go"
-                onClick={() => viewRef.current?.land()}
-              >
-                Land
-              </button>
-            ) : frame.orbiting && frame.orbit ? (
-              <i className="gx-plate-go">{orbitLabel(frame.orbit)}</i>
-            ) : frame.orbit && frame.course ? (
-              <i className="gx-plate-go">Warping to {orbitLabel(frame.orbit)}</i>
-            ) : frame.course ? (
-              <i className="gx-plate-go">Course Locked</i>
-            ) : (
-              <button
-                type="button"
-                className="gx-plate-go"
-                onClick={() => {
-                  const view = viewRef.current;
-                  if (!view) return;
-                  const body = view.focusedBodyId();
-                  if (body) view.setCourseBody(body);
-                  else {
-                    const o = view.focusedObject();
-                    if (o) view.setCourse(o);
-                  }
-                }}
-              >
-                Set course
-              </button>
+              <>
+                <b>{(frame.course ?? frame.focus)!.name}</b>
+                <em>
+                  {frame.navMode === 'lock' ? `${navModeLabel('lock')} · ` : ''}
+                  {(frame.course ?? frame.focus)!.cls} · {(frame.course ?? frame.focus)!.phase}
+                </em>
+                {(frame.course ?? frame.focus)!.bodyId ? (
+                  <i>
+                    {(frame.course ?? frame.focus)!.moons
+                      ? `${(frame.course ?? frame.focus)!.moons} moon${(frame.course ?? frame.focus)!.moons === 1 ? '' : 's'}`
+                      : (frame.course ?? frame.focus)!.phase}
+                    {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
+                  </i>
+                ) : (
+                  <i>
+                    {(frame.course ?? frame.focus)!.planets} planet
+                    {(frame.course ?? frame.focus)!.planets === 1 ? '' : 's'}
+                    {(frame.course ?? frame.focus)!.moons
+                      ? ` · ${(frame.course ?? frame.focus)!.moons} moon${(frame.course ?? frame.focus)!.moons === 1 ? '' : 's'}`
+                      : ''}
+                    {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
+                  </i>
+                )}
+                {frame.course && !frame.landed && (
+                  <i className="gx-plate-dist">{formatCatalogDist(frame.course.dist)}</i>
+                )}
+                {frame.navHint && frame.navMode === 'lock' && (
+                  <i>{frame.navHint}</i>
+                )}
+                {frame.landed ? (
+                  <i className="gx-plate-go">On the ground</i>
+                ) : frame.canLand ? (
+                  <button
+                    type="button"
+                    className="gx-plate-go"
+                    onClick={() => viewRef.current?.land()}
+                  >
+                    Land
+                  </button>
+                ) : frame.orbiting && frame.orbit ? (
+                  <i className="gx-plate-go">{orbitLabel(frame.orbit)}</i>
+                ) : frame.orbit && frame.course ? (
+                  <i className="gx-plate-go">Lock-on · {orbitLabel(frame.orbit)}</i>
+                ) : frame.course ? (
+                  <i className="gx-plate-go">Course Locked</i>
+                ) : (
+                  <button
+                    type="button"
+                    className="gx-plate-go"
+                    onClick={() => {
+                      const view = viewRef.current;
+                      if (!view) return;
+                      const body = view.focusedBodyId();
+                      if (body) view.setCourseBody(body);
+                      else {
+                        const o = view.focusedObject();
+                        if (o) view.setCourse(o);
+                      }
+                    }}
+                  >
+                    Set course
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
