@@ -951,6 +951,7 @@ Code map (start here):
 | Nebula shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
 | Galaxy explorer (stars + nebulae + dust + cosmic shell + host pass) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Host solar system (Kepler balls + rings under the sphere) | `src/render/hostSystem.ts` |
 | Host-pass rocky globes (every rocky body) | `src/render/rockyGlobe.ts` |
 | Visits (camp → SystemMeta by starId) | `src/store/visits.ts` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
