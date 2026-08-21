@@ -127,6 +127,30 @@ export const IconGlobe = (p: IconProps) => (
   </svg>
 );
 
+export const IconCenter = (p: IconProps) => (
+  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3.2" />
+    <path d="M12 2.5v4.2M12 17.3v4.2M2.5 12h4.2M17.3 12h4.2" />
+  </svg>
+);
+
+export const IconSun = (p: IconProps) => (
+  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3.4" />
+    <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.2 5.2l1.7 1.7M17.1 17.1l1.7 1.7M5.2 18.8l1.7-1.7M17.1 6.9l1.7-1.7" />
+  </svg>
+);
+
+export const IconTrackball = (p: IconProps) => (
+  <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="8.2" />
+    <path d="M4.6 10.2c2.4 1.4 5 2.1 7.4 2.1s5-.7 7.4-2.1" opacity="0.75" />
+    <path d="M12 3.8c-2.2 2.4-3.4 5.2-3.4 8.2S9.8 17.8 12 20.2" opacity="0.75" />
+    <path d="M8.2 4.8 5.4 6.2 6.6 3.2" />
+    <path d="M15.8 19.2 18.6 17.8 17.4 20.8" />
+  </svg>
+);
+
 export const IconGalaxy = (p: IconProps) => (
   <svg width={S(p)} height={S(p)} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <ellipse cx="12" cy="12" rx="9" ry="3.6" />

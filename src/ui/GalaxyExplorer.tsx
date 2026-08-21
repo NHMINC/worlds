@@ -12,7 +12,7 @@ import {
   rebuildKnob,
   type RebuildScope,
 } from './liveKnobs';
-import { IconOrbits } from './icons';
+import { IconCenter, IconOrbits, IconSun, IconTrackball } from './icons';
 import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
 import { OrbitPick } from './OrbitPick';
 import { orbitLabel } from '../world/worldOrbit';
@@ -94,6 +94,9 @@ export function GalaxyExplorer(props: Props) {
     orbiting: false,
     landed: false,
     canLand: false,
+    lookHold: null,
+    drone: false,
+    showSunLook: false,
   });
 
   useEffect(() => {
@@ -134,6 +137,9 @@ export function GalaxyExplorer(props: Props) {
               prev.orbiting !== f.orbiting ||
               prev.landed !== f.landed ||
               prev.canLand !== f.canLand ||
+              prev.lookHold !== f.lookHold ||
+              prev.drone !== f.drone ||
+              prev.showSunLook !== f.showSunLook ||
               prev.focus?.id !== f.focus?.id ||
               prev.focus?.bodyId !== f.focus?.bodyId ||
               (f.focus != null &&
@@ -388,6 +394,39 @@ export function GalaxyExplorer(props: Props) {
           </div>
         )}
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
+        {inRegion && !editing && frame.hostId != null && (
+          <div className="gx-look">
+            <button
+              type="button"
+              className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
+              aria-label="Center"
+              title="Center — hold look on the primary"
+              onClick={() => viewRef.current?.centerLook()}
+            >
+              <IconCenter size={18} />
+            </button>
+            {frame.showSunLook && (
+              <button
+                type="button"
+                className={`gx-look-btn${frame.lookHold === 'sun' ? ' is-on' : ''}`}
+                aria-label="Sun"
+                title="Sun — hold look on the star"
+                onClick={() => viewRef.current?.sunLook()}
+              >
+                <IconSun size={18} />
+              </button>
+            )}
+            <button
+              type="button"
+              className={`gx-look-btn${frame.drone ? ' is-on' : ''}`}
+              aria-label="Trackball"
+              title={frame.drone ? 'Leave trackball — back to the ship' : 'Trackball — roll the world'}
+              onClick={() => viewRef.current?.setDrone(!frame.drone)}
+            >
+              <IconTrackball size={18} />
+            </button>
+          </div>
+        )}
         {inRegion && !editing && (
           <div className="gx-helm">
             {frame.landed ? (
@@ -523,7 +562,7 @@ export function GalaxyExplorer(props: Props) {
                     type="button"
                     role="menuitem"
                     className="gx-drop-item"
-                    disabled={frame.landed}
+                    disabled={frame.landed || frame.drone}
                     onClick={() => {
                       viewRef.current?.setPreset(p.id);
                       setMenu(null);

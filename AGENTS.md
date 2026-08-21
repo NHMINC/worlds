@@ -173,10 +173,24 @@ toy — Godus blocks on a real-sized globe.
   metres (an 8 kpc ULP is larger than
   a world), so `starCart − arcCenter`
   does not follow orbit or spin.
-  Drag looks. Zoom-in latches a walk;
-  zoom-out dumps it, then settles.
-  WASD glides. Take off returns to
-  the ring we left, over that face.
+  Drag looks. Inside the sphere, pinch /
+  wheel dollies at the subject distance
+  (`SOI_ZOOM`); on a ring it changes
+  that radius. Two-finger twist rolls
+  the look (`SOI_TWIST`). Center holds
+  look on the primary (a nearby world,
+  else the star; on the ground, the
+  sun) until a look drag. Sun holds
+  look on the furnace when the primary
+  is a world. Trackball is a drone
+  around that world (else the star):
+  drag rolls the body, pinch is
+  altitude (`SOI_TRACK_*`); off
+  restores the ship. On the ground,
+  zoom-in latches a walk; zoom-out
+  dumps it, then settles. WASD glides.
+  Take off returns to the ring we
+  left, over that face.
   Inspector, labels, sculpt, and
   save rows still wait;
   short nebula phases are toy-stretched
@@ -382,7 +396,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Pick one and warp auto-engages; the viewpoint
   parks on that radius and rides it (hang for GEO /
   hover, inertial for the rest). A look drag is
-  free — the ring does not hold nadir. Land sets down on
+  free — the ring does not hold nadir. Pinch zooms the ring
+  radius; twist rolls. Center holds look on that world;
+  Sun finds the furnace. Trackball is a drone around the
+  body — off is the ship again. Land sets down on
   that face; Take off returns to the ring. Reticle Set course
   stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,

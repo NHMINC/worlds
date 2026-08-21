@@ -1084,6 +1084,34 @@ body,
   transform: translateX(-50%);
 }
 
+.gx-look {
+  position: absolute;
+  left: calc(12px + env(safe-area-inset-left));
+  bottom: calc(26px + env(safe-area-inset-bottom));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gx-look-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.gx-look-btn.is-on {
+  background: var(--accent-soft);
+}
+
 .gx-helm {
   position: absolute;
   right: calc(16px + env(safe-area-inset-right));

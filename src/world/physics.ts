@@ -470,6 +470,21 @@ export const UNIVERSE = {
   WORLD_SURF_PITCH: -0.15,
   WORLD_SURF_STEER: 0.004,
   /**
+   * Host-sphere camera. Pinch / wheel dollies at a fraction of
+   * the subject distance (`SOI_ZOOM`); two-finger twist rolls
+   * the view (`SOI_TWIST`). On a ridden ring, zoom changes that
+   * radius instead of fighting placeRide. Trackball is a drone
+   * around the primary world (else the star): drag rolls the
+   * body, pinch is altitude in body radii (`SOI_TRACK_*`), off
+   * restores the ship. Center holds look on the primary (a
+   * nearby world, else the star) until a look drag; Sun holds
+   * look on the furnace when the primary is a world.
+   */
+  SOI_ZOOM: 0.55,
+  SOI_TWIST: 1,
+  SOI_TRACK_MIN: 0.12,
+  SOI_TRACK_MAX: 8,
+  /**
    * Host-pass orbit rings. The old system viewer used ~0.1 on a
    * black void; that is glass on the dimmed harvest. These are
    * wayfinding, not emission — readable ellipses against the

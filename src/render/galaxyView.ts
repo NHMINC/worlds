@@ -647,6 +647,12 @@ export interface GalaxyFrame {
   landed: boolean;
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
+  /** Look-hold: Center (primary) or Sun, until a look drag. */
+  lookHold: 'center' | 'sun' | null;
+  /** Drone trackball around the primary world (else the star). */
+  drone: boolean;
+  /** Sun look is offered when the primary is a world. */
+  showSunLook: boolean;
 }
 
 export interface RegionSelection {
@@ -816,6 +822,19 @@ export class GalaxyView {
   private sEyeH = 0.03;
   private sEyeHTarget = 0.03;
   private sWalk = 0;
+  /** Roll around the look. Catalog yaw/pitch have no twist. */
+  private arcRoll = 0;
+  /** Hold look on the primary or the star until a drag. */
+  private lookHold: 'center' | 'sun' | null = null;
+  /**
+   * Trackball drone. bodyId null is the host star. dir is
+   * body-local (ecliptic for the star); h is radii above the
+   * surface. The ship pose stays in ride / land / arcCenter.
+   */
+  private drone: { bodyId: string | null; dir: THREE.Vector3; h: number; roll: number } | null =
+    null;
+  private readonly shipLook = { yaw: 0, pitch: 0, roll: 0 };
+  private pinchAngle = 0;
   /**
    * Close-approach subject. Latched when the course, reticle, or
    * selected star comes inside ARRIVE_RANGE_LY; released when the
@@ -1705,6 +1724,7 @@ export class GalaxyView {
    * joins the spinning frame — you stand on the turning world.
    */
   land(): void {
+    if (this.drone) this.setDrone(false);
     if (this.mode !== 'region' || !this.hostObj) return;
     const id = this.riding?.bodyId ?? this.worldId;
     const rt = this.worldRt(id);
@@ -1742,6 +1762,7 @@ export class GalaxyView {
 
   /** Rise from the landing spot back onto the ring we left. */
   takeOff(): void {
+    if (this.drone) this.setDrone(false);
     if (!this.landed || this.mode !== 'region') return;
     const rt = this.worldRt(this.worldId ?? this.courseBodyId);
     const kind = this.landKind ?? 'hover';
@@ -1755,6 +1776,177 @@ export class GalaxyView {
     this.courseHud = this.hudForBody(rt);
     this.applyCam();
     this.wake();
+  }
+
+  /**
+   * Hold look on the primary: a nearby / ridden world, else the
+   * star. On the ground the world is underfoot, so Center is the
+   * sun. A look drag lets go.
+   */
+  centerLook(): void {
+    if (this.mode !== 'region' || !this.hostObj) return;
+    if (this.drone) this.setDrone(false);
+    this.lookHold = 'center';
+    this.holdLook();
+    if (this.landed) this.placeSurface();
+    this.applyCam();
+    this.wake();
+  }
+
+  /** Hold look on the host star until a look drag. */
+  sunLook(): void {
+    if (this.mode !== 'region' || !this.hostObj) return;
+    if (this.drone) this.setDrone(false);
+    this.lookHold = 'sun';
+    this.holdLook();
+    if (this.landed) this.placeSurface();
+    this.applyCam();
+    this.wake();
+  }
+
+  /**
+   * Trackball drone around the primary world (else the star).
+   * Drag rolls that body; pinch is altitude; off restores the
+   * ship look. Ride / land keep ticking in closed form.
+   */
+  setDrone(on: boolean): void {
+    if (this.mode !== 'region' || !this.hostObj || !this.hostRoot) return;
+    if (on === Boolean(this.drone)) return;
+    if (!on) {
+      this.arcYaw = this.shipLook.yaw;
+      this.arcPitch = this.shipLook.pitch;
+      this.arcRoll = this.shipLook.roll;
+      this.drone = null;
+      this.wake();
+      return;
+    }
+    this.shipLook.yaw = this.arcYaw;
+    this.shipLook.pitch = this.arcPitch;
+    this.shipLook.roll = this.arcRoll;
+    this.lookHold = null;
+    const rt = this.lookPrimaryWorld();
+    const minH = UNIVERSE.SOI_TRACK_MIN;
+    const maxH = UNIVERSE.SOI_TRACK_MAX;
+    if (rt) {
+      rt.group.getWorldPosition(this.hostTmp);
+      const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
+      const d = Math.max(this.hostTmp.length(), R * (1 + minH));
+      const h = THREE.MathUtils.clamp(d / Math.max(R, 1e-18) - 1, minH, maxH);
+      this.orbitTmp.copy(this.hostTmp).negate().normalize();
+      this.spinWorld(rt, this.orbitQ);
+      this.orbitTmp.applyQuaternion(this.hostTmpQ.copy(this.orbitQ).conjugate());
+      this.drone = { bodyId: rt.spec.id, dir: this.orbitTmp.clone(), h, roll: this.arcRoll };
+    } else {
+      const Rkm = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
+      const R = Rkm * KM_TO_KPC;
+      this.hostTmp.copy(this.hostRoot.position);
+      const d = Math.max(this.hostTmp.length(), R * (1 + minH));
+      const h = THREE.MathUtils.clamp(d / Math.max(R, 1e-18) - 1, minH, maxH);
+      this.orbitTmp
+        .copy(this.hostRoot.position)
+        .negate()
+        .applyQuaternion(this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate())
+        .normalize();
+      this.drone = { bodyId: null, dir: this.orbitTmp.clone(), h, roll: this.arcRoll };
+    }
+    this.placeDrone();
+    this.applyCam();
+    this.wake();
+  }
+
+  /** Nearby / ridden / landed world. Null → the star is primary. */
+  private lookPrimaryWorld(): HostBodyRT | null {
+    const id = this.riding?.bodyId ?? this.worldId;
+    return this.worldRt(id);
+  }
+
+  private showSunLook(): boolean {
+    return Boolean(this.hostObj && this.lookPrimaryWorld() && !this.landed);
+  }
+
+  private holdLook(): void {
+    if (!this.lookHold || this.looking || !this.hostObj) return;
+    const sun = this.lookHold === 'sun' || this.landed || !this.lookPrimaryWorld();
+    if (sun) {
+      if (!this.hostRoot) return;
+      this.hostTmp.copy(this.hostRoot.position);
+      if (this.hostTmp.lengthSq() < 1e-32) return;
+    } else {
+      const rt = this.lookPrimaryWorld();
+      if (!rt) return;
+      rt.group.getWorldPosition(this.hostTmp);
+    }
+    if (this.landed) this.aimSurfaceAt(this.hostTmp);
+    else this.aimAt(this.hostTmp.x, this.hostTmp.y, this.hostTmp.z);
+  }
+
+  /** Point the surface look along a catalog vector from the eye. */
+  private aimSurfaceAt(fromEye: THREE.Vector3): void {
+    const rt = this.worldRt(this.worldId ?? this.courseBodyId);
+    if (!rt || fromEye.lengthSq() < 1e-32) return;
+    this.spinWorld(rt, this.orbitQ);
+    this.orbitTmp.copy(fromEye).normalize().applyQuaternion(this.hostTmpQ.copy(this.orbitQ).conjugate());
+    this.surfBasis(this.surfDir, this.surfEast, this.surfNorth);
+    this.sPitch = THREE.MathUtils.clamp(Math.asin(THREE.MathUtils.clamp(this.orbitTmp.dot(this.surfDir), -1, 1)), -1.35, 1.35);
+    this.orbitTmp2.copy(this.orbitTmp).addScaledVector(this.surfDir, -this.orbitTmp.dot(this.surfDir));
+    if (this.orbitTmp2.lengthSq() < 1e-12) return;
+    this.orbitTmp2.normalize();
+    this.sYaw = Math.atan2(this.orbitTmp2.dot(this.surfEast), this.orbitTmp2.dot(this.surfNorth));
+  }
+
+  private placeDrone(): void {
+    const drone = this.drone;
+    const root = this.hostRoot;
+    if (!drone || !root || !this.hostObj) return;
+    const rt = drone.bodyId ? this.worldRt(drone.bodyId) : null;
+    if (drone.bodyId && !rt) {
+      this.setDrone(false);
+      return;
+    }
+    if (rt) {
+      const eyeKm = (1 + drone.h) * Math.max(rt.spec.radius, 1);
+      this.orbitTmp2.copy(drone.dir).applyQuaternion(rt.spinQ).multiplyScalar(eyeKm).add(rt.pos);
+      this.pinHostEyeKm(this.orbitTmp2);
+      this.spinWorld(rt, this.orbitQ);
+      this.arcFwd.copy(drone.dir).applyQuaternion(this.orbitQ).negate().normalize();
+      this.arcUp.copy(drone.dir).applyQuaternion(this.orbitQ).normalize();
+    } else {
+      const Rkm = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
+      this.orbitTmp2.copy(drone.dir).multiplyScalar((1 + drone.h) * Rkm);
+      this.pinHostEyeKm(this.orbitTmp2);
+      this.arcFwd.copy(drone.dir).applyQuaternion(root.quaternion).negate().normalize();
+      this.arcUp.copy(drone.dir).applyQuaternion(root.quaternion).normalize();
+    }
+    this.arcRight.crossVectors(this.arcFwd, this.arcUp);
+    if (this.arcRight.lengthSq() < 1e-12) this.arcRight.set(1, 0, 0);
+    else this.arcRight.normalize();
+    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+    this.applyRollToBasis(drone.roll);
+  }
+
+  private turnDrone(dx: number, dy: number): void {
+    const drone = this.drone;
+    if (!drone) return;
+    const k = 0.005;
+    this.orbitTmp.copy(this.arcUp);
+    this.orbitTmp2.copy(this.arcRight);
+    if (drone.bodyId) {
+      const rt = this.worldRt(drone.bodyId);
+      if (!rt) return;
+      this.spinWorld(rt, this.orbitQ);
+      this.hostTmpQ.copy(this.orbitQ).conjugate();
+      this.orbitTmp.applyQuaternion(this.hostTmpQ);
+      this.orbitTmp2.applyQuaternion(this.hostTmpQ);
+    } else if (this.hostRoot) {
+      this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate();
+      this.orbitTmp.applyQuaternion(this.hostTmpQ);
+      this.orbitTmp2.applyQuaternion(this.hostTmpQ);
+    }
+    drone.dir.applyAxisAngle(this.orbitTmp, -dx * k);
+    drone.dir.applyAxisAngle(this.orbitTmp2, -dy * k);
+    drone.dir.normalize();
+    this.placeDrone();
+    this.applyCam();
   }
 
   private surfBasis(dir: THREE.Vector3, east: THREE.Vector3, north: THREE.Vector3): void {
@@ -1827,24 +2019,8 @@ export class GalaxyView {
     const gR = globe?.ready ? globe.groundR(this.surfDir) : 1;
     const eyeKm = (gR + this.sEyeH) * Math.max(rt.spec.radius, 1);
     // Eye in the host-root km frame (body centre + spun hover).
-    // Catalog kpc is an ~8 kpc number; a metre there is below a
-    // ULP, so starCart − arcCenter cannot follow orbit or spin.
-    // The globe still does both in km — pin the root from this
-    // small vector. The harvest only needs the AU-scale hint.
     this.orbitTmp2.copy(this.surfDir).applyQuaternion(rt.spinQ).multiplyScalar(eyeKm).add(rt.pos);
-    const root = this.hostRoot;
-    if (root) {
-      this.orbitTmp.copy(this.orbitTmp2).multiplyScalar(KM_TO_KPC).applyQuaternion(root.quaternion);
-      root.position.copy(this.orbitTmp).negate();
-      root.updateMatrixWorld(true);
-      const cart = galToCart(this.hostObj.pos);
-      this.arcCenter.copy(cart).add(this.orbitTmp);
-    } else {
-      this.bodyCatalog(rt, this.orbitTmp);
-      this.spinWorld(rt, this.orbitQ);
-      this.orbitTmp2.copy(this.surfDir).applyQuaternion(this.orbitQ).multiplyScalar(eyeKm * KM_TO_KPC);
-      this.arcCenter.copy(this.orbitTmp).add(this.orbitTmp2);
-    }
+    this.pinHostEyeKm(this.orbitTmp2);
     this.spinWorld(rt, this.orbitQ);
     this.surfBasis(this.surfDir, this.surfEast, this.surfNorth);
     this.orbitTmp
@@ -1862,6 +2038,23 @@ export class GalaxyView {
     if (this.arcRight.lengthSq() < 1e-12) this.arcRight.set(1, 0, 0);
     else this.arcRight.normalize();
     this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+    this.applyRollToBasis(this.arcRoll);
+  }
+
+  /**
+   * Pin hostRoot so a host-root-local km point sits at the
+   * camera. Do not fold that offset into the 8 kpc catalog
+   * point first — a metre there is below a ULP.
+   */
+  private pinHostEyeKm(eyeKm: THREE.Vector3): void {
+    const root = this.hostRoot;
+    const lock = this.hostObj;
+    if (!root || !lock) return;
+    this.orbitTmp.copy(eyeKm).multiplyScalar(KM_TO_KPC).applyQuaternion(root.quaternion);
+    root.position.copy(this.orbitTmp).negate();
+    root.updateMatrixWorld(true);
+    const cart = galToCart(lock.pos);
+    this.arcCenter.copy(cart).add(this.orbitTmp);
   }
 
   /** Catalog position of a host-pass body — independent of arcCenter. */
@@ -1991,7 +2184,7 @@ export class GalaxyView {
   /** Ease the nose onto the course star or world and keep it there. */
   private holdCourse(dt: number): void {
     if (this.mode !== 'region') return;
-    if (this.riding || this.landed) return;
+    if (this.riding || this.landed || this.drone) return;
     if (this.looking && !this.pendingOrbit) return;
     let dx = 0;
     let dy = 0;
@@ -2105,7 +2298,7 @@ export class GalaxyView {
   }
 
   setPreset(p: GalaxyPreset): void {
-    if (this.landed) return;
+    if (this.landed || this.drone) return;
     this.wake();
     if (p === 'home') {
       const obj = this.hereObj ?? this.home;
@@ -2391,6 +2584,7 @@ export class GalaxyView {
 
   /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
   setWarp(on: boolean): void {
+    if (this.drone) this.setDrone(false);
     if (this.mode !== 'region' || this.landed) return;
     if (on && this.riding) this.clearRide();
     if (!on && this.pendingOrbit && !this.pendingArriveOrbit) this.pendingOrbit = null;
@@ -2441,6 +2635,19 @@ export class GalaxyView {
     if (this.arcRight.lengthSq() < 1e-10) this.arcRight.set(1, 0, 0);
     else this.arcRight.normalize();
     this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+    this.applyRollToBasis(this.arcRoll);
+  }
+
+  /** Twist the current look basis around the nose. */
+  private applyRollToBasis(roll: number): void {
+    if (Math.abs(roll) < 1e-8) return;
+    const c = Math.cos(roll);
+    const s = Math.sin(roll);
+    this.orbitTmp.copy(this.arcRight);
+    this.orbitTmp2.copy(this.arcUp);
+    this.arcRight.copy(this.orbitTmp).multiplyScalar(c).addScaledVector(this.orbitTmp2, s);
+    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+    this.arcRight.crossVectors(this.arcFwd, this.arcUp).normalize();
   }
 
   private pxPerRad(): number {
@@ -2450,7 +2657,7 @@ export class GalaxyView {
   }
 
   private applyCam(): void {
-    if (!this.landed) this.orientArc();
+    if (!this.landed && !this.drone) this.orientArc();
     this.camera.position.set(0, 0, 0);
     this.camera.up.copy(this.arcUp);
     this.arcLook.copy(this.arcFwd);
@@ -2641,6 +2848,8 @@ export class GalaxyView {
     this.focusBodyId = null;
     this.selectedBodyId = null;
     this.pendingOrbit = null;
+    this.drone = null;
+    this.lookHold = null;
     this.clearRide();
     this.leaveSurface();
     if (this.courseHud?.bodyId) this.clearCourse();
@@ -2923,24 +3132,30 @@ export class GalaxyView {
 
     const root = this.hostRoot;
     if (root) {
-      // Landed eye is pinned from the km hover in placeSurface —
-      // starCart − arcCenter drops the metres at 8 kpc.
-      if (!this.landed) root.position.set(dx, dy, dz);
+      // Landed / drone eyes pin from a km hover — starCart −
+      // arcCenter drops the metres at 8 kpc.
+      if (!this.landed && !this.drone) root.position.set(dx, dy, dz);
       this.orientHost(root);
     }
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.updateHostBodies(tSys);
-    if (this.landed) {
+    if (this.drone) {
+      this.placeDrone();
+    } else if (this.landed) {
       this.walkSurface(this.lastDt);
+      this.holdLook();
       this.placeSurface();
     } else if (this.pendingArriveOrbit && this.pendingOrbit) {
       this.pendingArriveOrbit = false;
       this.enterRide(tSys);
+      this.holdLook();
     } else if (this.riding) {
       this.placeRide(tSys);
+      this.holdLook();
     } else {
       this.pendingArriveOrbit = false;
+      this.holdLook();
     }
     if (root) root.updateMatrixWorld(true);
     if (this.hostStar && root) {
@@ -3111,20 +3326,92 @@ export class GalaxyView {
   }
 
   /**
-   * Pinch / wheel slides the ball along the look (the camera stays
-   * at the centre; the bubble moves).
+   * Pinch / wheel. Inside an SOI this is a subject-distance
+   * dolly (or ride-radius / drone altitude). On the disk it
+   * still slides the bubble along the look.
    */
   private zoom(factor: number): void {
+    const f = Math.max(1e-3, factor);
+    if (this.drone) {
+      const drone = this.drone;
+      drone.h = THREE.MathUtils.clamp(drone.h * f, UNIVERSE.SOI_TRACK_MIN, UNIVERSE.SOI_TRACK_MAX);
+      this.placeDrone();
+      this.applyCam();
+      this.wake();
+      return;
+    }
     if (this.landed) {
-      this.applySurfaceZoom(-Math.log(Math.max(1e-3, factor)));
+      this.applySurfaceZoom(-Math.log(f));
       return;
     }
     this.idle = 0;
+    if (this.riding && this.hostObj) {
+      this.zoomRide(f);
+      return;
+    }
+    if (this.hostObj) {
+      this.zoomSoi(f);
+      return;
+    }
     this.orientArc();
-    const dir = factor < 1 ? 1 : -1;
-    const step = this.arcPace() * 14 * Math.abs(Math.log(Math.max(1e-3, factor))) * dir;
+    const dir = f < 1 ? 1 : -1;
+    const step = this.arcPace() * 14 * Math.abs(Math.log(f)) * dir;
     this.moveBubble(this.arcFwd.x * step, this.arcFwd.y * step, this.arcFwd.z * step);
     this.applyCam();
+  }
+
+  /** Pinch on a ridden ring changes that radius. placeRide owns the pose. */
+  private zoomRide(factor: number): void {
+    const ride = this.riding;
+    const rt = this.worldRt(ride?.bodyId);
+    if (!ride || !rt) return;
+    const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
+    const lo = R * (1 + UNIVERSE.SOI_TRACK_MIN);
+    const hi = Math.max(R * (1 + UNIVERSE.SOI_TRACK_MAX), UNIVERSE.WORLD_RANGE_KPC * 0.8);
+    ride.r = THREE.MathUtils.clamp(ride.r * factor, lo, hi);
+    this.wake();
+  }
+
+  /** Dolly along the look at a fraction of the subject distance. */
+  private zoomSoi(factor: number): void {
+    this.orientArc();
+    const world = this.closeWorld();
+    const d = world ? this.bodyDist(world) : this.hostObj ? this.arriveDist(this.hostObj) : 0;
+    if (!(d > 0)) return;
+    const log = -Math.log(factor);
+    let step = d * UNIVERSE.SOI_ZOOM * log;
+    if (step > 0) {
+      const fence = world
+        ? Math.max(world.spec.radius, 1) * KM_TO_KPC * (1 + UNIVERSE.SOI_TRACK_MIN)
+        : this.hostObj
+          ? this.parkKpc(this.hostObj)
+          : 0;
+      step = Math.min(step, Math.max(0, d - fence) * 0.9);
+    } else if (this.hostObj) {
+      const lim = UNIVERSE.ARRIVE_RANGE_KPC * 0.85;
+      const fromStar = this.arriveDist(this.hostObj);
+      if (fromStar - step > lim) step = -(lim - fromStar);
+    }
+    if (Math.abs(step) < 1e-18) return;
+    this.arcCenter.x += this.arcFwd.x * step;
+    this.arcCenter.y += this.arcFwd.y * step;
+    this.arcCenter.z += this.arcFwd.z * step;
+    this.mintAt.copy(this.arcCenter);
+    this.pushMagUniforms();
+    this.applyCam();
+    this.wake();
+  }
+
+  /** Two-finger twist rolls the look around the nose. */
+  private twistLook(dAng: number): void {
+    const d = dAng * UNIVERSE.SOI_TWIST;
+    if (Math.abs(d) < 1e-6) return;
+    if (this.drone) this.drone.roll += d;
+    else this.arcRoll += d;
+    if (this.drone) this.placeDrone();
+    else if (this.landed) this.placeSurface();
+    this.applyCam();
+    this.wake();
   }
 
   // ------------------------------------------------------------- picking
@@ -3291,6 +3578,7 @@ export class GalaxyView {
       this.looking = false;
       const pts = [...this.pointers.values()];
       this.pinch0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      this.pinchAngle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
     }
   };
 
@@ -3303,11 +3591,19 @@ export class GalaxyView {
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const ang = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
       if (this.pinch0 > 0) {
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
       }
+      if (this.hostObj) {
+        let dAng = ang - this.pinchAngle;
+        if (dAng > Math.PI) dAng -= Math.PI * 2;
+        if (dAng < -Math.PI) dAng += Math.PI * 2;
+        this.twistLook(dAng);
+      }
       this.pinch0 = d;
+      this.pinchAngle = ang;
       this.moved += 4;
       this.idle = 0;
       return;
@@ -3335,6 +3631,11 @@ export class GalaxyView {
     }
     if (this.mode === 'region') {
       this.looking = true;
+      this.lookHold = null;
+      if (this.drone) {
+        this.turnDrone(dx, dy);
+        return;
+      }
       if (this.landed) {
         this.sYaw += dx * UNIVERSE.WORLD_SURF_STEER;
         this.sPitch = THREE.MathUtils.clamp(
@@ -3383,7 +3684,10 @@ export class GalaxyView {
 
   private endPointer(id: number): void {
     this.pointers.delete(id);
-    if (this.pointers.size < 2) this.pinch0 = 0;
+    if (this.pointers.size < 2) {
+      this.pinch0 = 0;
+      this.pinchAngle = 0;
+    }
     this.dragging = false;
     this.looking = false;
   };
@@ -3391,7 +3695,7 @@ export class GalaxyView {
   private onWheel = (e: WheelEvent): void => {
     this.wake();
     e.preventDefault();
-    if (this.landed) this.applySurfaceZoom(-e.deltaY * 0.0016);
+    if (this.landed && !this.drone) this.applySurfaceZoom(-e.deltaY * 0.0016);
     else this.zoom(Math.exp(e.deltaY * ZOOM_WHEEL_SENS));
     this.idle = 0;
   };
@@ -3523,7 +3827,7 @@ export class GalaxyView {
       this.thrustSpeed = 0;
       return;
     }
-    if (this.landed) {
+    if (this.landed || this.drone) {
       this.thrustOn = false;
       this.thrustSpeed = 0;
       return;
@@ -3659,7 +3963,7 @@ export class GalaxyView {
   }
 
   private steerArc(dt: number): void {
-    if (this.riding || this.landed) return;
+    if (this.riding || this.landed || this.drone) return;
     let mx = 0;
     let my = 0;
     let mz = 0;
@@ -3931,7 +4235,15 @@ export class GalaxyView {
       this.applyCam();
       this.wake(30);
     }
-    if (this.thrustOn || this.steerHeld() || this.riding || this.pendingOrbit || this.landed) {
+    if (
+      this.thrustOn ||
+      this.steerHeld() ||
+      this.riding ||
+      this.pendingOrbit ||
+      this.landed ||
+      this.drone ||
+      this.lookHold
+    ) {
       this.wake(2);
     }
     if (this.restIn <= 0) {
@@ -4047,6 +4359,9 @@ export class GalaxyView {
       orbiting: Boolean(this.riding),
       landed: this.landed,
       canLand: this.canLandNow(),
+      lookHold: this.lookHold,
+      drone: Boolean(this.drone),
+      showSunLook: this.showSunLook(),
     });
     this.raf = requestAnimationFrame(this.frame);
   };
