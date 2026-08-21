@@ -652,9 +652,9 @@ export interface GalaxyFrame {
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
   /**
-   * Look-hold (Center / Sun). Offered off the ground and only
-   * outside In Orbit — on the ring the pip is the view centre
-   * alone; cameras are free.
+   * Look-hold (Center / Sun). Offered off the ground, including
+   * In Orbit — Center is the ridden world (else nearest);
+   * Sun is the furnace. A look drag drops the hold.
    */
   lookHold: 'center' | 'sun' | null;
   /** Drone trackball around the primary world (else the star). */
@@ -2094,13 +2094,12 @@ export class GalaxyView {
   }
 
   /**
-   * Hold look on the core of the body nearest the camera.
-   * In Orbit: no-op — the pip is the view centre; default look
-   * is already body-locked.
+   * Hold look on the ridden world (else the body nearest the
+   * camera) until a look drag. Offered on the ring and in
+   * free roam; not on the ground.
    */
   centerLook(): void {
     if (this.mode !== 'region' || !this.hostObj || this.landed) return;
-    if (this.navMode === 'orbit') return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'center';
     this.holdLook();
@@ -2111,7 +2110,6 @@ export class GalaxyView {
   /** Hold look on the host star until a look drag. */
   sunLook(): void {
     if (this.mode !== 'region' || !this.hostObj) return;
-    if (this.navMode === 'orbit') return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'sun';
     this.holdLook();
@@ -2176,21 +2174,21 @@ export class GalaxyView {
   }
 
   private showSunLook(): boolean {
-    return Boolean(this.hostObj && this.host.bodies.length > 0 && this.navMode !== 'orbit');
+    return Boolean(this.hostObj && this.host.bodies.length > 0);
   }
 
   private holdLook(): void {
     if (!this.lookHold || this.looking || !this.hostObj) return;
-    // In Orbit: autopilot look is off — free cameras.
-    if (this.navMode === 'orbit') return;
     // The course owns the nose while thrusting: cruise flies along
     // arcFwd, so a held look would drag the ship toward the LOOK
     // and the course would never depart. The hold resumes at Stop.
+    // In Orbit thrust is off — Center / Sun may own the look.
     if (this.thrustOn && !this.landed && (this.courseBodyId || this.courseObj)) {
       return;
     }
     if (this.lookHold === 'center') {
-      const rt = nearestBody(this.host.bodies, (b) => this.bodyDist(b));
+      const boundId = this.riding?.bodyId ?? this.worldId;
+      const rt = (boundId ? this.worldRt(boundId) : null) ?? nearestBody(this.host.bodies, (b) => this.bodyDist(b));
       if (!rt) return;
       this.bodyFromEye(rt, this.hostTmp);
     } else if (this.hostRoot) {
@@ -2887,7 +2885,7 @@ export class GalaxyView {
    */
   private bankRideLook(tSys: number): void {
     const ride = this.riding;
-    if (!ride || this.looking || this.drone || this.rideLookFree) return;
+    if (!ride || this.looking || this.drone || this.rideLookFree || this.lookHold) return;
     if (ride.hang) {
       // GEO / hover: face the hang face — full sphere ahead.
       const rt = this.worldRt(ride.bodyId);
@@ -5516,7 +5514,7 @@ export class GalaxyView {
       navHint,
       landed: this.landed,
       canLand: this.canLandNow(),
-      lookHold: this.navMode === 'orbit' ? null : this.lookHold,
+      lookHold: this.lookHold,
       drone: Boolean(this.drone),
       showSunLook: this.showSunLook(),
       worldId: this.riding?.bodyId ?? this.capturing?.bodyId ?? this.worldId ?? this.courseBodyId,

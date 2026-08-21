@@ -643,12 +643,12 @@ export function GalaxyExplorer(props: Props) {
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
         {inRegion && !editing && frame.hostId != null && (
           <div className="gx-look">
-            {!frame.landed && frame.navMode !== 'orbit' && (
+            {!frame.landed && (
               <button
                 type="button"
                 className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
                 aria-label="Center"
-                title="Center — hold look on the nearest body's core"
+                title="Center — hold look on this world's core"
                 onClick={() => viewRef.current?.centerLook()}
               >
                 <IconCenter size={18} />

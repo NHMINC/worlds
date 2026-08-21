@@ -206,8 +206,9 @@ toy — Godus blocks on a real-sized globe.
   that core as it moves (rendered
   position, so the hold matches the
   pixels; never the focus of an orbit).
-  Offered off the ground. On the ground,
-  Sun holds the furnace. Trackball is a drone
+  Offered off the ground, including In
+  Orbit. On the ground, Sun holds the
+  furnace. Trackball is a drone
   around that world (else the star):
   drag rolls the body, pinch is
   altitude (`SOI_TRACK_*`); off
