@@ -177,8 +177,10 @@ toy — Godus blocks on a real-sized globe.
   that radius. Two-finger twist rolls
   the look (`SOI_TWIST`). Center holds
   look on the core of the body we are
-  at (ridden / latched world, else the
-  host star) until a look drag — offered
+  attending (ridden / latched / coursed
+  / aimed world, else the host star)
+  and follows that core as it moves —
+  not the focus of its orbit. Offered
   off the ground. On the ground, Sun
   holds the furnace. Trackball is a drone
   around that world (else the star):
