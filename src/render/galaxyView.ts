@@ -3135,32 +3135,40 @@ export class GalaxyView {
     return this.arcFwd.dot(this.arcCenter) * this.thrustSign() < 0;
   }
 
+  /**
+   * Leave a ring or capture burn for Free roam. Clears lock
+   * state, and if the nose was into the body (hang / hover),
+   * turns out so Warp Ahead can actually leave.
+   */
+  private breakOrbit(): void {
+    const leftId = this.riding?.bodyId ?? this.capturing?.bodyId ?? null;
+    this.clearRide();
+    this.dropLookHold();
+    this.courseObj = null;
+    this.courseBodyId = null;
+    this.courseHud = null;
+    this.pendingOrbit = null;
+    this.pendingArriveOrbit = false;
+    this.capturing = null;
+    this.navMode = 'proximity';
+    if (!leftId) return;
+    const rt = this.worldRt(leftId);
+    if (!rt) return;
+    this.bodyFromEye(rt, this.orbitTmp);
+    if (this.orbitTmp.lengthSq() < 1e-28) return;
+    this.orientArc();
+    // Nose into the body → look radially out so Ahead is escape.
+    if (this.arcFwd.dot(this.orbitTmp) > 0) {
+      this.aimAt(-this.orbitTmp.x, -this.orbitTmp.y, -this.orbitTmp.z);
+      this.applyCam();
+    }
+  }
+
   /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
   setWarp(on: boolean): void {
     if (this.drone) this.setDrone(false);
     if (this.mode !== 'region' || this.landed) return;
-    if (on && this.riding) {
-      // Break orbit → Proximity. No lock-on resume.
-      this.clearRide();
-      this.dropLookHold();
-      this.courseObj = null;
-      this.courseBodyId = null;
-      this.courseHud = null;
-      this.pendingOrbit = null;
-      this.pendingArriveOrbit = false;
-      this.capturing = null;
-      this.navMode = 'proximity';
-    }
-    if (on && this.capturing) {
-      // Abort capture burn → Proximity.
-      this.capturing = null;
-      this.pendingOrbit = null;
-      this.pendingArriveOrbit = false;
-      this.courseObj = null;
-      this.courseBodyId = null;
-      this.courseHud = null;
-      this.navMode = 'proximity';
-    }
+    if (on && (this.riding || this.capturing)) this.breakOrbit();
     if (!on && this.navMode === 'lock' && this.pendingOrbit && !this.pendingArriveOrbit && !this.capturing) {
       this.pendingOrbit = null;
       // Heading-only lock may remain (course still set).
@@ -3627,14 +3635,15 @@ export class GalaxyView {
   }
 
   /**
-   * The body governing the speed cap: where we are GOING first
-   * (chart pick, then course), then the latched place. The old
-   * latched-first order capped departure by the body being left —
-   * ARRIVE_K × d(A) is a crawl at a ring, and aiming past A only
-   * shrank it further.
+   * The body governing the speed / park cap: only an active
+   * destination (chart pick or body course). The latched
+   * `worldId` is a place law (SOI readout), not a course —
+   * feeding it here pinned Free roam to ARRIVE_K × d at the
+   * ring you just left, so Warp Ahead never left the planet.
+   * The hard shell fence still keeps you out of the ball.
    */
   private closeWorld(): HostBodyRT | null {
-    return this.worldRt(this.pendingOrbit?.bodyId ?? this.courseBodyId ?? this.worldId);
+    return this.worldRt(this.pendingOrbit?.bodyId ?? this.courseBodyId);
   }
 
   /**
@@ -4332,16 +4341,8 @@ export class GalaxyView {
       return;
     }
     if (this.riding) {
-      if (this.thrustOn) {
-        this.clearRide();
-        this.dropLookHold();
-        this.courseObj = null;
-        this.courseBodyId = null;
-        this.courseHud = null;
-        this.pendingOrbit = null;
-        this.pendingArriveOrbit = false;
-        this.navMode = 'proximity';
-      } else return;
+      if (this.thrustOn) this.breakOrbit();
+      else return;
     }
     if (this.capturing) {
       // Capture owns the stick — cruise waits.

@@ -736,7 +736,7 @@ export function GalaxyExplorer(props: Props) {
               <>
                 <b>{frame.navHint ?? 'Nearest body'}</b>
                 <em>{navModeLabel('proximity')}</em>
-                <i className="gx-plate-go">Closest body — no guidance</i>
+                <i className="gx-plate-go">Nearest body — free flight</i>
               </>
             ) : (
               <>

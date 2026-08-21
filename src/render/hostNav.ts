@@ -7,11 +7,13 @@
  *                rail. Turns off the moment the ring is held.
  *   orbit      — on the ring. Autopilot off. Cameras free;
  *                the reticle is only the view-centre pip.
- *   proximity  — left orbit by warp. Reports nearest body
- *                only; no heading hold, no guidance, no
- *                re-lock until the player picks a course.
+ *   proximity  — left orbit by warp (free roam). Reports
+ *                nearest body only; no heading hold, no
+ *                guidance, no re-lock until the player picks
+ *                a course. Speed is not capped by the body
+ *                you just left — only an active course is.
  *   null       — free cruise (no lock, not on a ring, not
- *                in post-break proximity).
+ *                post-break).
  *
  * Place laws (host sphere, world fence) are separate from this.
  */
@@ -31,7 +33,7 @@ export function navModeLabel(mode: HostNavMode): string {
     case 'orbit':
       return 'In orbit';
     case 'proximity':
-      return 'Proximity';
+      return 'Free roam';
     default:
       return '';
   }
