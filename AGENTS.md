@@ -414,8 +414,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (LEO, GEO low / Station, MEO, GEO, Polar, Hover).
   Pick one and warp auto-engages; the viewpoint
   parks on that radius and rides it (hang for GEO /
-  hover, inertial for the rest). A look drag is
-  free — the ring does not hold nadir. Pinch zooms the ring
+  hover, inertial for the rest). Arrival look is the
+  aesthetic bank (nadir down / prograde, or hang face
+  on GEO / hover). A look drag takes the stick —
+  the ring does not hold nadir, and release does not
+  snap the look back. Pinch zooms the ring
   radius; twist rolls. Center holds look on that world;
   Sun finds the furnace. Trackball is a drone around the
   body — off is the ship again. Land sets down on

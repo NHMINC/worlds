@@ -837,6 +837,11 @@ export class GalaxyView {
    * the contract the HUD and look system obey.
    */
   private navMode: HostNavMode = null;
+  /**
+   * In Orbit: a look drag (or twist) owns the camera. The
+   * arrival bank stays until then; release does not snap back.
+   */
+  private rideLookFree = false;
   /** Lock-on insertion blend 0…1 (far transfer → at the shell). */
   private insertBlend = 0;
   private readonly rideLocal = new THREE.Vector3();
@@ -1988,7 +1993,7 @@ export class GalaxyView {
   /**
    * Chart pick: Lock-on to a named ring. Warp approaches on a
    * graze-safe heading; orbit entry clears lock and opens
-   * In Orbit (body-locked look: nadir down, prograde forward).
+   * In Orbit (arrival look: nadir down, prograde forward).
    */
   goToWorldOrbit(bodyId: string, kind: WorldOrbitKind): void {
     if (this.mode !== 'region' || !this.hostObj) return;
@@ -2007,6 +2012,7 @@ export class GalaxyView {
   private clearRide(): void {
     this.riding = null;
     this.capturing = null;
+    this.rideLookFree = false;
   }
 
   private leaveSurface(): void {
@@ -2748,9 +2754,10 @@ export class GalaxyView {
       this.rideE2.normalize();
       this.riding.theta0 = -this.riding.omega * tSys;
     }
+    this.rideLookFree = false;
     this.placeRide(tSys);
-    // Lock-on ends. In Orbit: body-locked look (aesthetic
-    // gravity lock) — placeRide banks every frame.
+    // Lock-on ends. In Orbit: arrival look is the aesthetic
+    // gravity lock. A look drag takes the stick for good.
     this.capturing = null;
     this.dropLookHold();
     this.courseObj = null;
@@ -2786,6 +2793,7 @@ export class GalaxyView {
       theta0: -omega * tSys,
       omega,
     };
+    this.rideLookFree = false;
     this.placeRide(tSys);
     this.capturing = null;
     this.dropLookHold();
@@ -2867,15 +2875,15 @@ export class GalaxyView {
   }
 
   /**
-   * Default ride look. Inertial rings: aesthetic gravity lock —
+   * Arrival ride look. Inertial rings: aesthetic gravity lock —
    * nose prograde, bank so the body is screen-down (orbital
    * plane = vertical midplane). Hang / hover: nose into the
-   * body so the full sphere fills the view. Look-drag frees
-   * the stick; on release the next placeRide snaps back.
+   * body so the full sphere fills the view. A look drag takes
+   * the stick; release leaves that heading.
    */
   private bankRideLook(tSys: number): void {
     const ride = this.riding;
-    if (!ride || this.looking || this.drone) return;
+    if (!ride || this.looking || this.drone || this.rideLookFree) return;
     if (ride.hang) {
       // GEO / hover: face the hang face — full sphere ahead.
       const rt = this.worldRt(ride.bodyId);
@@ -3483,6 +3491,7 @@ export class GalaxyView {
    */
   orbitBy(dTheta: number, dPhi = 0): void {
     if (this.mode === 'region') {
+      if (this.riding) this.rideLookFree = true;
       this.arcYaw += dTheta;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dPhi, -1.45, 1.45);
       this.applyCam();
@@ -4412,6 +4421,7 @@ export class GalaxyView {
   private twistLook(dAng: number): void {
     const d = dAng * UNIVERSE.SOI_TWIST;
     if (Math.abs(d) < 1e-6) return;
+    if (this.riding) this.rideLookFree = true;
     if (this.drone) this.drone.roll += d;
     else this.arcRoll += d;
     if (this.drone) this.placeDrone();
@@ -4654,6 +4664,7 @@ export class GalaxyView {
         return;
       }
       if (!this.pendingOrbit && !this.riding) this.clearCourse();
+      if (this.riding) this.rideLookFree = true;
       this.arcYaw -= dx * 0.005;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
       this.applyCam();
