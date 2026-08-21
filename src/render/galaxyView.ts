@@ -815,7 +815,7 @@ export class GalaxyView {
   /** Goldberg globes for every rocky body of the host. */
   private readonly globes = new Map<string, RockyGlobe>();
   private markTool: MarkTool | null = null;
-  /** Chart pick: fly to this ring, then ride it. */
+  /** Chart pick: fly to first contact with this ring, then ride it. */
   private pendingOrbit: { bodyId: string; kind: WorldOrbitKind } | null = null;
   private riding: {
     bodyId: string;
@@ -1946,8 +1946,9 @@ export class GalaxyView {
 
   /**
    * Chart pick: hold the heading, latch warp, park on the
-   * named ring, then ride it. Reticle Set course stays
-   * the fill-park heading.
+   * first contact with the named ring (the approach face),
+   * then ride it. Reticle Set course stays the fill-park
+   * heading.
    */
   goToWorldOrbit(bodyId: string, kind: WorldOrbitKind): void {
     if (this.mode !== 'region' || !this.hostObj) return;
@@ -2353,6 +2354,59 @@ export class GalaxyView {
     return out;
   }
 
+  /** Camera → body in catalog kpc. */
+  private bodyFromEye(rt: HostBodyRT, out: THREE.Vector3): THREE.Vector3 {
+    return this.bodyCatalog(rt, out).sub(this.arcCenter);
+  }
+
+  /**
+   * First forward hit with a sphere of radius `R` about the
+   * body. Null if the ray misses, or if we are inside (the
+   * only hit is the far side — we never punch through).
+   */
+  private firstShellHit(rel: THREE.Vector3, dir: THREE.Vector3, R: number): number | null {
+    const d2 = rel.lengthSq();
+    const R2 = R * R;
+    if (d2 < R2) return null;
+    const b = dir.x * rel.x + dir.y * rel.y + dir.z * rel.z;
+    const disc = b * b - (d2 - R2);
+    if (disc < 0) return null;
+    const t = b - Math.sqrt(disc);
+    if (t > 1e-18) return t;
+    if (t >= -1e-12) return 0;
+    return null;
+  }
+
+  /**
+   * Close on a world shell at the first contact on the way.
+   * Inside: back out radially (planet still ahead). True when
+   * this frame consumed the step.
+   */
+  private closeWorldShell(rt: HostBodyRT, park: number, step: number, onPark: () => void): boolean {
+    this.bodyFromEye(rt, this.hostTmp);
+    const d = Math.max(this.hostTmp.length(), 1e-18);
+    const slack = Math.max(park * 0.002, 1e-18);
+    if (Math.abs(d - park) <= slack) {
+      onPark();
+      return true;
+    }
+    if (d < park) {
+      const remain = park - d;
+      const go = Math.min(step, remain);
+      const k = go / d;
+      this.moveBubble(-this.hostTmp.x * k, -this.hostTmp.y * k, -this.hostTmp.z * k);
+      if (go >= remain * 0.999) onPark();
+      return true;
+    }
+    const t = this.firstShellHit(this.hostTmp, this.arcFwd, park);
+    if (t != null && t <= step) {
+      this.moveBubble(this.arcFwd.x * t, this.arcFwd.y * t, this.arcFwd.z * t);
+      onPark();
+      return true;
+    }
+    return false;
+  }
+
   private spinWorld(rt: HostBodyRT, out: THREE.Quaternion): THREE.Quaternion {
     out.copy(rt.spinQ);
     if (this.hostRoot) out.premultiply(this.hostRoot.quaternion);
@@ -2376,7 +2430,7 @@ export class GalaxyView {
     this.beginRide(rt, pending.kind, this.orbitTmp2, tSys);
   }
 
-  /** dirCatalog is body → camera, unit. */
+  /** dirCatalog is body → camera at first contact, unit. The ring starts there. */
   private beginRide(rt: HostBodyRT, kind: WorldOrbitKind, dirCatalog: THREE.Vector3, tSys: number): void {
     const r = orbitRadiusKpc(rt.spec, kind);
     const hang = isHangOrbit(kind);
@@ -2392,26 +2446,22 @@ export class GalaxyView {
     if (hang) {
       this.rideLocal.copy(dirCatalog).applyQuaternion(this.orbitQ.clone().conjugate());
     } else {
+      // Height is the named ring. The plane contains the arrival
+      // so we do not seek an equator / far-side start.
       this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+      this.rideE1.copy(dirCatalog);
+      if (this.rideE1.lengthSq() < 1e-16) this.rideE1.copy(this.arcFwd).negate();
+      this.rideE1.normalize();
       if (kind === 'polar') {
-        this.rideE1.copy(dirCatalog).addScaledVector(this.rideNorth, -dirCatalog.dot(this.rideNorth));
-        if (this.rideE1.lengthSq() < 1e-16) {
-          this.rideE1.crossVectors(this.rideNorth, this.arcRight);
-          if (this.rideE1.lengthSq() < 1e-16) this.rideE1.crossVectors(this.rideNorth, this.worldUp);
-        }
-        this.rideE1.normalize();
-        this.rideE2.copy(this.rideNorth);
+        this.rideE2.copy(this.rideNorth).addScaledVector(this.rideE1, -this.rideNorth.dot(this.rideE1));
       } else {
-        this.rideE1.copy(dirCatalog).addScaledVector(this.rideNorth, -dirCatalog.dot(this.rideNorth));
-        if (this.rideE1.lengthSq() < 1e-16) {
-          this.rideE1.crossVectors(this.rideNorth, this.arcRight);
-          if (this.rideE1.lengthSq() < 1e-16) {
-            this.rideE1.set(1, 0, 0).addScaledVector(this.rideNorth, -this.rideNorth.x);
-          }
-        }
-        this.rideE1.normalize();
-        this.rideE2.crossVectors(this.rideNorth, this.rideE1).normalize();
+        this.rideE2.crossVectors(this.rideNorth, this.rideE1);
       }
+      if (this.rideE2.lengthSq() < 1e-16) {
+        this.rideE2.crossVectors(this.rideE1, this.arcRight);
+        if (this.rideE2.lengthSq() < 1e-16) this.rideE2.crossVectors(this.rideE1, this.worldUp);
+      }
+      this.rideE2.normalize();
       this.riding.theta0 = -this.riding.omega * tSys;
     }
     this.placeRide(tSys, true);
@@ -2475,20 +2525,10 @@ export class GalaxyView {
     if (this.courseBodyId) {
       const rt = this.worldRt(this.courseBodyId);
       if (!rt) return;
-      rt.group.getWorldPosition(this.hostTmp);
+      this.bodyFromEye(rt, this.hostTmp);
       dx = this.hostTmp.x;
       dy = this.hostTmp.y;
       dz = this.hostTmp.z;
-      const pending = this.pendingOrbit;
-      if (pending && pending.bodyId === this.courseBodyId) {
-        const park = orbitRadiusKpc(rt.spec, pending.kind);
-        const d0 = this.hostTmp.length();
-        if (d0 < park * 0.998) {
-          dx = -dx;
-          dy = -dy;
-          dz = -dz;
-        }
-      }
     } else if (this.courseObj) {
       const p = galToCart(this.courseObj.pos);
       dx = p.x - this.arcCenter.x;
@@ -2980,8 +3020,7 @@ export class GalaxyView {
 
   /** Catalog kpc from the camera to a host-pass body. */
   private bodyDist(rt: HostBodyRT): number {
-    rt.group.getWorldPosition(this.hostTmp);
-    return this.hostTmp.length();
+    return this.bodyFromEye(rt, this.hostTmp).length();
   }
 
   private hudForBody(rt: HostBodyRT): GalaxyFocus {
@@ -4169,66 +4208,20 @@ export class GalaxyView {
     if (this.thrustSpeed <= 0) return;
     let step = this.thrustSpeed * dt;
     if (world && orbitPark != null && !this.astern) {
-      const d = this.bodyDist(world);
-      const park = orbitPark;
-      if (d <= park * 1.002 && d >= park * 0.998) {
-        this.pendingArriveOrbit = true;
-        this.setWarp(false);
+      if (
+        this.closeWorldShell(world, orbitPark, step, () => {
+          this.pendingArriveOrbit = true;
+          this.setWarp(false);
+        })
+      ) {
         return;
-      }
-      world.group.getWorldPosition(this.hostTmp);
-      if (d < park) {
-        const remain = park - d;
-        const inv = 1 / Math.max(d, 1e-18);
-        if (step >= remain) {
-          this.moveBubble(
-            -this.hostTmp.x * inv * remain,
-            -this.hostTmp.y * inv * remain,
-            -this.hostTmp.z * inv * remain,
-          );
-          this.pendingArriveOrbit = true;
-          this.setWarp(false);
-          return;
-        }
-      } else {
-        const tCa =
-          this.hostTmp.x * this.arcFwd.x +
-          this.hostTmp.y * this.arcFwd.y +
-          this.hostTmp.z * this.arcFwd.z;
-        if (tCa > 0 && step >= d - park) {
-          const inv = 1 / d;
-          const remain = d - park;
-          this.moveBubble(
-            this.hostTmp.x * inv * remain,
-            this.hostTmp.y * inv * remain,
-            this.hostTmp.z * inv * remain,
-          );
-          this.pendingArriveOrbit = true;
-          this.setWarp(false);
-          return;
-        }
       }
     } else if (world && !this.astern) {
-      const d = this.bodyDist(world);
-      const park = this.parkBodyKpc(world.spec);
-      if (d <= park) {
-        this.setWarp(false);
-        return;
-      }
-      world.group.getWorldPosition(this.hostTmp);
-      const tCa =
-        this.hostTmp.x * this.arcFwd.x +
-        this.hostTmp.y * this.arcFwd.y +
-        this.hostTmp.z * this.arcFwd.z;
-      if (tCa > 0 && step >= d - park) {
-        const inv = 1 / d;
-        const remain = d - park;
-        this.moveBubble(
-          this.hostTmp.x * inv * remain,
-          this.hostTmp.y * inv * remain,
-          this.hostTmp.z * inv * remain,
-        );
-        this.setWarp(false);
+      if (
+        this.closeWorldShell(world, this.parkBodyKpc(world.spec), step, () => {
+          this.setWarp(false);
+        })
+      ) {
         return;
       }
     } else if (this.hostObj && !this.astern && course) {

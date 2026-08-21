@@ -152,8 +152,10 @@ toy — Godus blocks on a real-sized globe.
   opens an orbit picker (LEO, GEO low /
   Station, MEO, GEO, Polar, Hover);
   confirm auto-warps and settles onto
-  that ring (`WORLD_ORBIT_*`, Kepler
-  GEO from spin and mass). Another world
+  that ring at the approach face
+  (`WORLD_ORBIT_*`, Kepler GEO from
+  spin and mass) — first contact, never
+  through the body. Another world
   can be chosen without leaving the host;
   another star cannot.   Every rocky body
   of the host grows a Goldberg globe
@@ -595,8 +597,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   that world's disk; gears run from
   `WORLD_BRAKE_AU` down to `WORLD_RANGE_AU`
   so the fence cannot be skipped. A chart
-  orbit pick parks on the named ring
-  instead and then rides it. The survey photograph is a place law
+  orbit pick parks on the first contact
+  with the named ring (the approach
+  face — never through the body) and
+  then rides it. The survey photograph is a place law
   (`surveyGain`): full outside any sphere, `ARRIVE_SKY_GAIN`
   at the centre, linear in distance (dark-sky Earth, a bit
   clearer — the only galaxy light on anything in the bubble;
