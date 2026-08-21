@@ -1072,8 +1072,7 @@ export class GalaxyView {
     } else if (this.riding?.hang) {
       dir = [this.rideLocal.x, this.rideLocal.y, this.rideLocal.z];
     } else if (rt) {
-      this.bodyCatalog(rt, this.orbitTmp);
-      this.orbitTmp2.copy(this.arcCenter).sub(this.orbitTmp);
+      this.bodyFromEye(rt, this.orbitTmp2).negate();
       if (this.orbitTmp2.lengthSq() > 1e-28) {
         this.spinWorld(rt, this.orbitQ);
         this.orbitTmp2.normalize().applyQuaternion(this.hostTmpQ.copy(this.orbitQ).conjugate());
@@ -1183,8 +1182,7 @@ export class GalaxyView {
       this.orbitTmp.set(p.dir[0], p.dir[1], p.dir[2]).normalize().applyQuaternion(this.orbitQ);
       return this.orbitTmp;
     }
-    this.bodyCatalog(rt, this.orbitTmp);
-    this.orbitTmp2.copy(this.arcCenter).sub(this.orbitTmp);
+    this.bodyFromEye(rt, this.orbitTmp2).negate();
     if (this.orbitTmp2.lengthSq() < 1e-28) {
       this.orientArc();
       this.orbitTmp2.copy(this.arcFwd).negate();
@@ -1998,8 +1996,7 @@ export class GalaxyView {
     this.pendingOrbit = null;
     this.pendingArriveOrbit = false;
     this.setWarp(false);
-    this.bodyCatalog(rt, this.orbitTmp);
-    this.orbitTmp2.copy(this.arcCenter).sub(this.orbitTmp);
+    this.bodyFromEye(rt, this.orbitTmp2).negate();
     if (this.orbitTmp2.lengthSq() < 1e-28) {
       this.orientArc();
       this.orbitTmp2.copy(this.arcFwd).negate();
@@ -2149,8 +2146,7 @@ export class GalaxyView {
     if (!this.lookHold || this.looking || !this.hostObj) return;
     const rt = this.lookHold === 'center' ? this.lookPrimaryWorld() : null;
     if (rt) {
-      this.bodyCatalog(rt, this.hostTmp);
-      this.hostTmp.sub(this.arcCenter);
+      this.bodyFromEye(rt, this.hostTmp);
     } else {
       const c = galToCart(this.hostObj.pos);
       this.hostTmp.set(
@@ -2354,9 +2350,24 @@ export class GalaxyView {
     return out;
   }
 
-  /** Camera → body in catalog kpc. */
+  /**
+   * Camera → body in catalog kpc. Order is the precision law:
+   * star − eye is an exact difference of two nearby ~8 kpc
+   * doubles; the body's km offset adds after, in that small
+   * frame. Folding the kilometres into the 8 kpc point first
+   * quantizes them by a ULP (~30 km) — that noise was the
+   * shell-park zigzag that never arrived.
+   */
   private bodyFromEye(rt: HostBodyRT, out: THREE.Vector3): THREE.Vector3 {
-    return this.bodyCatalog(rt, out).sub(this.arcCenter);
+    const lock = this.hostObj;
+    if (!lock) return out.set(0, 0, 0);
+    out.copy(rt.pos).multiplyScalar(KM_TO_KPC);
+    if (this.hostRoot) out.applyQuaternion(this.hostRoot.quaternion);
+    const c = galToCart(lock.pos);
+    out.x += c.x - this.arcCenter.x;
+    out.y += c.y - this.arcCenter.y;
+    out.z += c.z - this.arcCenter.z;
+    return out;
   }
 
   /**
@@ -2420,8 +2431,7 @@ export class GalaxyView {
     this.pendingOrbit = null;
     this.setWarp(false);
     if (!rt) return;
-    this.bodyCatalog(rt, this.orbitTmp);
-    this.orbitTmp2.copy(this.arcCenter).sub(this.orbitTmp);
+    this.bodyFromEye(rt, this.orbitTmp2).negate();
     if (this.orbitTmp2.lengthSq() < 1e-28) {
       this.orientArc();
       this.orbitTmp2.copy(this.arcFwd).negate();
@@ -2475,7 +2485,6 @@ export class GalaxyView {
       this.clearRide();
       return;
     }
-    this.bodyCatalog(rt, this.orbitTmp);
     let ox: number;
     let oy: number;
     let oz: number;
@@ -2493,15 +2502,19 @@ export class GalaxyView {
       oy = (this.rideE1.y * c + this.rideE2.y * s) * ride.r;
       oz = (this.rideE1.z * c + this.rideE2.z * s) * ride.r;
     }
-    this.arcCenter.set(this.orbitTmp.x + ox, this.orbitTmp.y + oy, this.orbitTmp.z + oz);
     if (this.hostRoot) {
-      const cart = galToCart(this.hostObj.pos);
-      this.hostRoot.position.set(
-        cart.x - this.arcCenter.x,
-        cart.y - this.arcCenter.y,
-        cart.z - this.arcCenter.z,
-      );
-      this.hostRoot.updateMatrixWorld(true);
+      // Pin the ride eye in the host km frame (the landed / drone
+      // law): body centre + ring offset. Building arcCenter out of
+      // the 8 kpc point instead quantizes the park by a ULP.
+      this.orbitTmp2
+        .set(ox, oy, oz)
+        .applyQuaternion(this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate())
+        .multiplyScalar(1 / KM_TO_KPC)
+        .add(rt.pos);
+      this.pinHostEyeKm(this.orbitTmp2);
+    } else {
+      this.bodyCatalog(rt, this.orbitTmp);
+      this.arcCenter.set(this.orbitTmp.x + ox, this.orbitTmp.y + oy, this.orbitTmp.z + oz);
     }
     // Aim once on arrival. After that the look is the pilot's —
     // a drag must not snap back to nadir each frame.
