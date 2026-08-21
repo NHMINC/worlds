@@ -715,6 +715,26 @@ body,
   border-radius: 6px;
 }
 
+/* `?verify=N` choreography report (src/dev/verify.ts). */
+.gx-verify {
+  position: fixed;
+  left: 8px;
+  top: calc(56px + env(safe-area-inset-top));
+  z-index: 40;
+  max-width: min(520px, calc(100vw - 16px));
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  background: rgba(6, 10, 16, 0.88);
+  color: rgba(214, 226, 240, 0.95);
+  font: 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  border: 1px solid rgba(150, 172, 205, 0.25);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  pointer-events: auto;
+}
+
 /* Flush to the canvas corner. Stars already paint here — do not lift
    for the home-indicator inset; that left a starfield gap under the line. */
 .gx-hud-perf {

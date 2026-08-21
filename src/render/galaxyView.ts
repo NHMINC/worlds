@@ -1903,6 +1903,7 @@ export class GalaxyView {
     if (this.hostObj && this.hostObj.id !== obj.id) return;
     this.leaveSurface();
     this.clearRide();
+    this.dropLookHold();
     this.pendingOrbit = null;
     this.courseBodyId = null;
     this.courseObj = obj;
@@ -1933,6 +1934,7 @@ export class GalaxyView {
     if (!rt) return;
     this.leaveSurface();
     this.clearRide();
+    this.dropLookHold();
     this.pendingOrbit = null;
     this.courseObj = null;
     this.courseBodyId = bodyId;
@@ -2124,16 +2126,22 @@ export class GalaxyView {
   /**
    * The body that owns the sky. A bound body (Center latch,
    * ride, world latch) keeps priority — we are at it. Otherwise
-   * the host body with the largest angular radius above a small
-   * threshold (~a Moon-in-Earth's-sky disk): moons count the
-   * same as planets, no latch fragility. Null → the host star —
-   * never the focus of some other body's orbit.
+   * the body whose angular radius BEATS THE STAR'S from here —
+   * a relative law, no magic threshold: deep in a planet's
+   * neighbourhood the planet wins; near the furnace the star
+   * does. Moons count the same as planets. Null → the host
+   * star — never the focus of some other body's orbit.
    */
   private lookPrimaryWorld(): HostBodyRT | null {
     const bound = this.worldRt(this.lookWorldId ?? this.riding?.bodyId ?? this.worldId);
     if (bound) return bound;
+    if (!this.hostObj) return null;
+    const dStar = this.hostRoot
+      ? this.hostRoot.position.length()
+      : this.arriveDist(this.hostObj);
+    const starR = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM) * KM_TO_KPC;
     let best: HostBodyRT | null = null;
-    let bestSin = 0.004;
+    let bestSin = starR / Math.max(dStar, 1e-18);
     for (const rt of this.hostBodies) {
       const d = this.bodyDist(rt);
       const sin = (Math.max(rt.spec.radius, 1) * KM_TO_KPC) / Math.max(d, 1e-18);
@@ -2151,6 +2159,13 @@ export class GalaxyView {
 
   private holdLook(): void {
     if (!this.lookHold || this.looking || !this.hostObj) return;
+    // The course owns the nose while thrusting: cruise flies along
+    // arcFwd, so a held look would drag the ship toward the LOOK
+    // and the course would never depart. The hold resumes at Stop,
+    // on a ride, and on the ground.
+    if (this.thrustOn && !this.riding && !this.landed && (this.courseBodyId || this.courseObj)) {
+      return;
+    }
     const rt = this.lookHold === 'center' ? this.lookPrimaryWorld() : null;
     // Rendered positions, not catalog differences: the hold runs
     // after the frame's root pin, so this matches the drawn pixels
