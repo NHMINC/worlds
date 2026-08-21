@@ -845,6 +845,8 @@ export class GalaxyView {
   private readonly rideNorth = new THREE.Vector3();
   private readonly orbitTmp = new THREE.Vector3();
   private readonly orbitTmp2 = new THREE.Vector3();
+  /** Scratch for look-vector slerp (attitude nudges). */
+  private readonly lookSlerp = new THREE.Vector3();
   private readonly orbitQ = new THREE.Quaternion();
   /** Cruise reached the ring this frame — start capture after bodies pose. */
   private pendingArriveOrbit = false;
@@ -2666,8 +2668,7 @@ export class GalaxyView {
 
   /**
    * Ease the eye onto the ring. Soft-seek the nose onto the
-   * parked look: inertial = body below / prograde forward;
-   * hang / hover = nose into the sphere.
+   * parked look via look-vector slerp (no Euler corkscrew).
    */
   private easeCapturePose(
     dt: number,
@@ -2696,21 +2697,21 @@ export class GalaxyView {
       this.hostRoot.updateMatrixWorld(true);
     }
     if (this.looking) return;
-    const tgtYaw = Math.atan2(fwdX, fwdZ);
-    const flen = Math.max(1e-8, Math.hypot(fwdX, fwdY, fwdZ));
-    const tgtPitch = THREE.MathUtils.clamp(
-      Math.asin(THREE.MathUtils.clamp(fwdY / flen, -1, 1)),
-      -1.45,
-      1.45,
+    // Hang capture: fwd ≈ −zenith → face the sphere (roll → 0).
+    const face =
+      fwdX * zenX + fwdY * zenY + fwdZ * zenZ <
+      -0.7 * Math.hypot(fwdX, fwdY, fwdZ) * Math.hypot(zenX, zenY, zenZ);
+    this.easeLookToward(
+      dt,
+      UNIVERSE.ORBIT_CAPTURE,
+      fwdX,
+      fwdY,
+      fwdZ,
+      face ? null : zenX,
+      face ? null : zenY,
+      face ? null : zenZ,
+      face,
     );
-    const tgtRoll = this.orbitBankRoll(fwdX, fwdY, fwdZ, zenX, zenY, zenZ);
-    let dYaw = tgtYaw - this.arcYaw;
-    dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
-    let dRoll = tgtRoll - this.arcRoll;
-    dRoll = Math.atan2(Math.sin(dRoll), Math.cos(dRoll));
-    this.arcYaw += dYaw * k;
-    this.arcPitch += (tgtPitch - this.arcPitch) * k;
-    this.arcRoll += dRoll * k;
   }
 
   /** dirCatalog is body → camera at first contact, unit. The ring starts there. */
@@ -2884,7 +2885,9 @@ export class GalaxyView {
       const len = Math.hypot(this.orbitTmp2.x, this.orbitTmp2.y, this.orbitTmp2.z);
       if (len < 1e-18) return;
       this.aimAt(-this.orbitTmp2.x / len, -this.orbitTmp2.y / len, -this.orbitTmp2.z / len);
-      this.arcRoll = 0;
+      let dR = -this.arcRoll;
+      dR = Math.atan2(Math.sin(dR), Math.cos(dR));
+      this.arcRoll += dR;
       return;
     }
     const th = ride.theta0 + ride.omega * tSys;
@@ -3082,36 +3085,101 @@ export class GalaxyView {
     if (d < 1e-15) return;
     if (this.courseHud) this.courseHud.dist = d;
     this.insertBlend = insertBlend;
-    const tgtYaw = Math.atan2(dx, dz);
-    const tgtPitch = THREE.MathUtils.clamp(
-      Math.asin(THREE.MathUtils.clamp(dy / d, -1, 1)),
-      -1.45,
-      1.45,
-    );
-    // Inertial: bank so the body fills the lower half as the
-    // nose yaws onto prograde. Hang / hover look into the
-    // sphere — no bank (fwd ≈ −zenith).
+    // Hang / hover face the sphere. Inertial banks body-below.
+    // Look-vector slerp — never ease yaw/pitch/roll as three angles.
     const hangLook =
       this.pendingOrbit != null &&
       this.pendingOrbit.bodyId != null &&
       isHangOrbit(this.pendingOrbit.kind);
-    const tgtRoll = hangLook
-      ? 0
-      : haveZen
-        ? this.orbitBankRoll(dx, dy, dz, zenX, zenY, zenZ)
-        : this.arcRoll;
-    let dYaw = tgtYaw - this.arcYaw;
-    dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
-    const dPitch = tgtPitch - this.arcPitch;
-    let dRoll = tgtRoll - this.arcRoll;
-    dRoll = Math.atan2(Math.sin(dRoll), Math.cos(dRoll));
-    if (Math.abs(dYaw) + Math.abs(dPitch) + Math.abs(dRoll) < 1e-7) return;
-    const k = 1 - Math.exp(-UNIVERSE.ARRIVE_HOLD * dt);
-    this.arcYaw += dYaw * k;
-    this.arcPitch += dPitch * k;
-    this.arcRoll += dRoll * k;
+    this.easeLookToward(
+      dt,
+      UNIVERSE.ARRIVE_HOLD,
+      dx,
+      dy,
+      dz,
+      hangLook || !haveZen ? null : zenX,
+      hangLook || !haveZen ? null : zenY,
+      hangLook || !haveZen ? null : zenZ,
+      hangLook,
+    );
     this.applyCam();
     this.wake();
+  }
+
+  /**
+   * Nudge attitude without corkscrews. Slerp the nose toward
+   * `fwd`; then either bank so `zenith` is screen-up, ease roll
+   * to 0 (hang / hover face), or leave roll alone.
+   */
+  private easeLookToward(
+    dt: number,
+    rate: number,
+    fwdX: number,
+    fwdY: number,
+    fwdZ: number,
+    zenX: number | null,
+    zenY: number | null,
+    zenZ: number | null,
+    faceBody: boolean,
+  ): void {
+    const flen = Math.hypot(fwdX, fwdY, fwdZ);
+    if (flen < 1e-15) return;
+    const tx = fwdX / flen;
+    const ty = fwdY / flen;
+    const tz = fwdZ / flen;
+    this.orientArc();
+    const cx = this.arcFwd.x;
+    const cy = this.arcFwd.y;
+    const cz = this.arcFwd.z;
+    let dot = THREE.MathUtils.clamp(cx * tx + cy * ty + cz * tz, -1, 1);
+    let k = 1 - Math.exp(-rate * dt);
+    // Cap the step so a peel / 180° flip cannot whip a full turn.
+    const ang = Math.acos(dot);
+    const maxStep = 0.55;
+    if (ang > 1e-6 && ang * k > maxStep) k = maxStep / ang;
+    let bx: number;
+    let by: number;
+    let bz: number;
+    if (dot > 0.999999) {
+      bx = tx;
+      by = ty;
+      bz = tz;
+    } else if (dot < -0.999999) {
+      // Opposite: rotate around zenith (else world up) by k·π.
+      if (zenX != null && zenY != null && zenZ != null) {
+        this.lookSlerp.set(zenX, zenY, zenZ);
+      } else {
+        this.lookSlerp.copy(this.worldUp);
+      }
+      this.lookSlerp.addScaledVector(this.arcFwd, -this.lookSlerp.dot(this.arcFwd));
+      if (this.lookSlerp.lengthSq() < 1e-16) {
+        this.lookSlerp.crossVectors(this.arcFwd, this.worldUp);
+        if (this.lookSlerp.lengthSq() < 1e-16) this.lookSlerp.set(1, 0, 0);
+      }
+      this.lookSlerp.normalize();
+      this.orbitTmp2.copy(this.arcFwd).applyAxisAngle(this.lookSlerp, Math.PI * k);
+      bx = this.orbitTmp2.x;
+      by = this.orbitTmp2.y;
+      bz = this.orbitTmp2.z;
+    } else {
+      const omega = Math.acos(dot);
+      const so = Math.sin(omega);
+      const a = Math.sin((1 - k) * omega) / so;
+      const b = Math.sin(k * omega) / so;
+      bx = a * cx + b * tx;
+      by = a * cy + b * ty;
+      bz = a * cz + b * tz;
+    }
+    if (zenX != null && zenY != null && zenZ != null) {
+      this.aimOrbitBank(bx, by, bz, zenX, zenY, zenZ);
+      return;
+    }
+    this.aimAt(bx, by, bz);
+    if (faceBody) {
+      let dR = -this.arcRoll;
+      dR = Math.atan2(Math.sin(dR), Math.cos(dR));
+      this.arcRoll += dR * k;
+    }
   }
 
   /**
@@ -3603,7 +3671,8 @@ export class GalaxyView {
    * Ship frame for orbit: nose along `fwd` (prograde / transfer),
    * bank so `zenith` (away from the body) is screen-up. The body
    * fills the lower half; the orbital plane is the vertical
-   * midplane (left / right).
+   * midplane (left / right). Roll is unwrapped against the
+   * previous value so a ±π atan2 hop cannot spin the ship.
    */
   private aimOrbitBank(
     fwdX: number,
@@ -3623,37 +3692,15 @@ export class GalaxyView {
     this.orbitTmp.set(zenX, zenY, zenZ);
     this.orbitTmp.addScaledVector(this.arcFwd, -this.orbitTmp.dot(this.arcFwd));
     if (this.orbitTmp.lengthSq() < 1e-16) {
-      this.arcRoll = 0;
+      let dR = -this.arcRoll;
+      dR = Math.atan2(Math.sin(dR), Math.cos(dR));
+      this.arcRoll += dR;
       return;
     }
     this.orbitTmp.normalize();
     // applyRoll: up' = c·up − s·right  →  roll = atan2(−zen·right, zen·up)
-    this.arcRoll = Math.atan2(-this.orbitTmp.dot(this.arcRight), this.orbitTmp.dot(this.arcUp));
-  }
-
-  /** Roll that would bank `fwd` with `zenith` up — does not write pose. */
-  private orbitBankRoll(
-    fwdX: number,
-    fwdY: number,
-    fwdZ: number,
-    zenX: number,
-    zenY: number,
-    zenZ: number,
-  ): number {
-    const len = Math.max(1e-8, Math.hypot(fwdX, fwdY, fwdZ));
-    const pitch = Math.asin(THREE.MathUtils.clamp(fwdY / len, -1, 1));
-    const yaw = Math.atan2(fwdX, fwdZ);
-    const cp = Math.cos(pitch);
-    this.arcFwd.set(cp * Math.sin(yaw), Math.sin(pitch), cp * Math.cos(yaw));
-    this.arcRight.crossVectors(this.arcFwd, this.worldUp);
-    if (this.arcRight.lengthSq() < 1e-10) this.arcRight.set(1, 0, 0);
-    else this.arcRight.normalize();
-    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
-    this.orbitTmp.set(zenX, zenY, zenZ);
-    this.orbitTmp.addScaledVector(this.arcFwd, -this.orbitTmp.dot(this.arcFwd));
-    if (this.orbitTmp.lengthSq() < 1e-16) return 0;
-    this.orbitTmp.normalize();
-    return Math.atan2(-this.orbitTmp.dot(this.arcRight), this.orbitTmp.dot(this.arcUp));
+    const raw = Math.atan2(-this.orbitTmp.dot(this.arcRight), this.orbitTmp.dot(this.arcUp));
+    this.arcRoll += Math.atan2(Math.sin(raw - this.arcRoll), Math.cos(raw - this.arcRoll));
   }
 
   private orientArc(): void {
