@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
-import { systemAt } from '../world/systemgen';
-import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
+import { lockedToStar, systemAt, type BodySpec } from '../world/systemgen';
+import { GalaxyView, type GalaxyFrame, type GalaxyPreset, type GlobePick } from '../render/galaxyView';
 import type { LastPlace } from '../world/types';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
+import { AmbientMusic } from '../audio/ambient';
+import { geologyFor } from '../world/geology';
+import { insolationAt, localTemp01, METERS_PER_LEVEL } from '../world/toygen';
 import {
   ENGINEER_GROUPS,
   atDefault,
@@ -13,9 +16,10 @@ import {
   rebuildKnob,
   type RebuildScope,
 } from './liveKnobs';
-import { IconCenter, IconOrbits, IconSun, IconTrackball } from './icons';
+import { IconCenter, IconGlobe, IconInspect, IconMusic, IconMusicOff, IconOrbits, IconSun, IconTrackball } from './icons';
 import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
 import { OrbitPick } from './OrbitPick';
+import { InspectorPanel, type InspectedCell } from './InspectorPanel';
 import { orbitLabel } from '../world/worldOrbit';
 
 const VIEW_PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
@@ -39,19 +43,41 @@ export function formatCatalogDist(kpc: number): string {
   return `${Math.max(0, km * 1000).toFixed(0)} m`;
 }
 
+function cellInspect(body: BodySpec, hit: GlobePick): InspectedCell {
+  const geo = geologyFor(body.seed, body.physics, hit.waterLevel);
+  const locked = lockedToStar(body);
+  const span = locked ? UNIVERSE.TEMP_SPAN_LOCKED : UNIVERSE.TEMP_SPAN_SPIN;
+  const insol = insolationAt(hit.dir[0], hit.dir[1], hit.dir[2], locked);
+  const t01 = localTemp01(body.temp ?? body.physics.temp01, span, insol);
+  return {
+    cell: hit.cell,
+    level: hit.level,
+    elevationM: (hit.level - hit.waterLevel) * METERS_PER_LEVEL,
+    localK: UNIVERSE.T_COLD + t01 * (UNIVERSE.T_HOT - UNIVERSE.T_COLD),
+    elements: geo.at(hit.dir[0], hit.dir[1], hit.dir[2], hit.level),
+  };
+}
+
+export interface ExplorerGo {
+  key: number;
+  starId: number;
+  /** Full camp when opening a visit; null parks on the star. */
+  place: LastPlace | null;
+}
+
 interface Props {
   galaxySeed?: string;
   hereStarId?: number | null;
   visitedStarIds?: number[];
   /** Last camp — boot snaps here instead of the first-look park. */
   resume?: LastPlace | null;
-  /** False on an empty save — there is no system to return to. */
-  canClose?: boolean;
+  /** Later travel (visits / import / forget) — does not remint the view. */
+  go?: ExplorerGo | null;
   /** False while the explorer is kept warm but hidden. */
   active?: boolean;
-  onClose: () => void;
   onReady?: () => void;
   onPlace?: (p: LastPlace) => void;
+  onOpenVisits?: () => void;
 }
 
 export function GalaxyExplorer(props: Props) {
@@ -68,8 +94,13 @@ export function GalaxyExplorer(props: Props) {
   placeRef.current = props.onPlace;
   const resumeRef = useRef(props.resume);
   resumeRef.current = props.resume;
+  const inspectRef = useRef<(hit: GlobePick | null) => void>(() => {});
   const active = props.active !== false;
   const [ready, setReady] = useState(false);
+  const [inspect, setInspect] = useState<{ body: BodySpec; cell: InspectedCell | null } | null>(null);
+  const [musicOn, setMusicOn] = useState(false);
+  const [volume, setVolume] = useState(0.7);
+  const musicRef = useRef<AmbientMusic | null>(null);
   const [engineer, setEngineer] = useState<string | null>(null);
   const [knobVal, setKnobVal] = useState(0);
   const [knobDirty, setKnobDirty] = useState(false);
@@ -123,6 +154,7 @@ export function GalaxyExplorer(props: Props) {
         {
           onSelect: () => {},
           onPlace: (p) => placeRef.current?.(p),
+          onInspect: (hit) => inspectRef.current(hit),
           onFrame: (f) => {
             setFrame((prev) =>
               prev.mode !== f.mode ||
@@ -205,6 +237,14 @@ export function GalaxyExplorer(props: Props) {
   useEffect(() => {
     if (ready) viewRef.current?.setVisited(props.visitedStarIds ?? []);
   }, [props.visitedStarIds, ready]);
+
+  useEffect(() => {
+    if (!ready || !props.go) return;
+    const view = viewRef.current;
+    if (!view) return;
+    if (props.go.place) view.restorePlace(props.go.place);
+    else view.goToStar(props.go.starId);
+  }, [ready, props.go]);
 
   useEffect(() => {
     if (!ready) return;
@@ -366,6 +406,37 @@ export function GalaxyExplorer(props: Props) {
     } finally {
       setRebuilding(null);
       setKnobDirty(false);
+    }
+  }
+
+  inspectRef.current = (hit) => {
+    const body = viewRef.current?.inspectBody();
+    if (!body) return;
+    setInspect({
+      body,
+      cell: hit && hit.bodyId === body.id ? cellInspect(body, hit) : null,
+    });
+  };
+
+  useEffect(() => {
+    if (!frame.landed && !frame.orbiting) setInspect(null);
+  }, [frame.landed, frame.orbiting, frame.hostId]);
+
+  async function toggleMusic(): Promise<void> {
+    if (!musicOn) {
+      if (!musicRef.current) {
+        musicRef.current = new AmbientMusic(
+          () => viewRef.current?.getMood() ?? { group: 'space', density: 0 },
+        );
+      }
+      musicRef.current.beginListen();
+      musicRef.current.setVolume(volume);
+      musicRef.current.setMuted(false);
+      await musicRef.current.start();
+      setMusicOn(true);
+    } else {
+      musicRef.current?.setMuted(true);
+      setMusicOn(false);
     }
   }
 
@@ -601,6 +672,20 @@ export function GalaxyExplorer(props: Props) {
             )}
           </div>
           )}
+          {!editing && (
+            <button
+              type="button"
+              className="gx-chip gx-icon"
+              aria-label="Places you’ve been"
+              title="Places you’ve been"
+              onClick={() => {
+                setMenu(null);
+                props.onOpenVisits?.();
+              }}
+            >
+              <IconGlobe size={16} />
+            </button>
+          )}
           {!editing && chartSpec && (
             <button
               type="button"
@@ -613,6 +698,21 @@ export function GalaxyExplorer(props: Props) {
               }}
             >
               <IconOrbits size={16} />
+            </button>
+          )}
+          {!editing && (frame.landed || frame.orbiting) && viewRef.current?.inspectBody() && (
+            <button
+              type="button"
+              className={`gx-chip gx-icon${inspect ? ' active' : ''}`}
+              aria-label="Inspect"
+              title="Inspect — tap a hex when landed"
+              onClick={() => {
+                const body = viewRef.current?.inspectBody();
+                if (!body) return;
+                setInspect((cur) => (cur ? null : { body, cell: null }));
+              }}
+            >
+              <IconInspect size={16} />
             </button>
           )}
           <div className={`gx-drop gx-drop-eng-wrap${menu === 'engineer' ? ' is-open' : ''}`}>
@@ -671,10 +771,31 @@ export function GalaxyExplorer(props: Props) {
               Back
             </button>
           )}
-          {!editing && props.canClose !== false && (
-            <button className="gx-chip gx-close" onClick={props.onClose}>
-              Return
+          {!editing && (
+            <button
+              type="button"
+              className={`gx-chip gx-icon${musicOn ? ' active' : ''}`}
+              aria-label={musicOn ? 'Music off' : 'Music on'}
+              title={musicOn ? 'Music off' : 'Music on'}
+              onClick={() => void toggleMusic()}
+            >
+              {musicOn ? <IconMusic size={16} /> : <IconMusicOff size={16} />}
             </button>
+          )}
+          {!editing && musicOn && (
+            <input
+              className="gx-volume"
+              type="range"
+              min={0}
+              max={100}
+              value={Math.round(volume * 100)}
+              onChange={(e) => {
+                const v = Number(e.target.value) / 100;
+                setVolume(v);
+                musicRef.current?.setVolume(v);
+              }}
+              title="Volume"
+            />
           )}
         </div>
       </header>
@@ -779,6 +900,14 @@ export function GalaxyExplorer(props: Props) {
             setMapOpen(false);
             viewRef.current?.goToWorldOrbit(id, kind);
           }}
+        />
+      )}
+      {inspect && (
+        <InspectorPanel
+          body={inspect.body}
+          physics={inspect.body.physics}
+          cell={inspect.cell}
+          onClose={() => setInspect(null)}
         />
       )}
     </div>

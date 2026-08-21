@@ -725,6 +725,7 @@ body,
 
 .inspector {
   position: absolute;
+  z-index: 12;
   top: calc(64px + env(safe-area-inset-top));
   right: 14px;
   width: 250px;
@@ -1771,6 +1772,11 @@ i.gx-plate-go {
   align-items: center;
   justify-content: center;
   padding: 5px 8px;
+}
+
+.gx-volume {
+  width: 72px;
+  accent-color: var(--accent);
 }
 
 .gx-chip:disabled {

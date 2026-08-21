@@ -446,8 +446,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   not this sky. “Here” (the
   loaded star, else `homeStar`) is a **focus highlight** parked
   in front of the camera; visited samples can mark other points
-  of interest. The explorer canvas stays alive after Return /
-  set course; only the splash is once-per-load. A camp
+  of interest. The explorer is the player path — there is no
+  Return to the isolated viewer. A camp writes a visit
+  (`upsertVisit` by starId); the manager opens that camp
+  here. Only the splash is once-per-load. A camp
   restores that body; an empty save with no camp opens on a
   discovered living host. The camera
   sits at the viewpoint centre. Gestures **slide** through
@@ -612,17 +614,17 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (points, dots, the band). At any Unix time `t` we already know where
   every star and planet is — we just do not mesh them.
 
-Camera rigs (`src/render/engine.ts` for old saves; host-pass land/walk lives in `galaxyView.ts`):
+Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
+ring; land walks the terrace; the SOI drone is a look. `engine.ts` is
+leftover (labels, sculpt, reflection RTs, the unseeded night shell) —
+not a player verb. Do not retire it until overlays draw on the latched
+globe. The app lives at `http://localhost:5173/` (`npm run dev`).
 
 | Mode | Meaning |
 |------|---------|
 | `orbit` | Around a body. **Station** = ISS-like inertial sweep; **geo** = hung over one spot. |
 | `flight` | Free ship in the system. Distant bodies are simple spheres until close. |
 | `surface` | Landed on a rocky body. Same globe. Drag looks. **Zoom in** (pinch out / wheel in) walks forward at a latched variable speed; **zoom out** stops that walk, then settles toward the ground. Zoom does not take off — the rocket does. WASD still glides on a keyboard. |
-
-`engine.ts` **declines HMR**. After changing it, **full page reload** or
-you will debug a stale engine class. The app lives at
-`http://localhost:5173/` (`npm run dev`).
 
 ---
 
@@ -927,11 +929,13 @@ Code map (start here):
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
-| Galaxy explorer (stars + nebulae + dust + cosmic shell) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (stars + nebulae + dust + cosmic shell + host pass) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Host-pass rocky globes (every rocky body) | `src/render/rockyGlobe.ts` |
+| Visits (camp → SystemMeta by starId) | `src/store/visits.ts` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |
 | Universe boot (once-per-load backdrop) | `src/world/universePrep.ts` |
 | Packed harvest cache (IDB, not the export) | `src/store/harvestCache.ts` |
+| Last-place camp | `src/store/place.ts` |
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
@@ -940,7 +944,7 @@ Code map (start here):
 | Palettes from physics | `src/world/toyPalette.ts` |
 | Per-cell geology (mining truth) | `src/world/geology.ts` |
 | Grid | `src/world/geodesic.ts` |
-| Scene, camera, reflections, capture | `src/render/engine.ts` |
+| Leftover isolated viewer (not a player path) | `src/render/engine.ts` |
 | Star (photosphere, corona, wind, glare) | `src/render/star.ts` |
 | Terrain + water shaders, surf, foam | `src/render/terraceMesh.ts` |
 | Sky shell | `src/render/atmosphere.ts` |

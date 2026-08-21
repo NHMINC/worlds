@@ -1,5 +1,4 @@
 import * as Tone from 'tone';
-import type { Mood } from '../render/engine';
 import { HouseKit, duck } from './kit';
 import {
   MUSIC,
@@ -9,6 +8,7 @@ import {
   freshListenSeed,
   type Arrangement,
   type Dna,
+  type MoodLike as Mood,
   type PitchHit,
   type SectionScore,
 } from './theory';

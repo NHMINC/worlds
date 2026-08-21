@@ -2,7 +2,7 @@
  * One rocky globe for the host pass. Same terrace, air, and water
  * as the isolated viewer. Every rocky body of the host grows
  * one of these; landing walks the latched world's skin.
- * No inspector, no reflection RTs, no torch.
+ * Inspect reads this grid; reflection RTs and the torch stay later.
  */
 import * as THREE from 'three';
 import { frequencyForSize, getGrid, type GeoGrid } from '../world/geodesic';
@@ -32,6 +32,7 @@ function stepFor(grid: GeoGrid): number {
 
 interface GlobeAssets {
   root: THREE.Group;
+  terrain: THREE.Mesh;
   geometry: THREE.BufferGeometry;
   terrainMat: THREE.ShaderMaterial;
   waterMat?: THREE.ShaderMaterial;
@@ -89,6 +90,32 @@ export class RockyGlobe {
   /** Terrace step in body radii — hover height is a few of these. */
   get terraceStep(): number {
     return this.step;
+  }
+
+  terrainMesh(): THREE.Mesh | null {
+    return this.assets?.terrain ?? null;
+  }
+
+  /**
+   * Hex under a body-local direction. Same Goldberg grid the
+   * terrace was built from — inspect is a read of the law.
+   */
+  cellAt(lx: number, ly: number, lz: number): {
+    cell: number;
+    level: number;
+    dir: [number, number, number];
+    waterLevel: number;
+  } | null {
+    const len = Math.hypot(lx, ly, lz);
+    if (!(len > 1e-12)) return null;
+    const cell = this.grid.nearestCell(lx / len, ly / len, lz / len);
+    if (cell < 0 || cell >= this.levels.length) return null;
+    return {
+      cell,
+      level: this.levels[cell],
+      dir: [this.grid.centers[cell * 3], this.grid.centers[cell * 3 + 1], this.grid.centers[cell * 3 + 2]],
+      waterLevel: this.waterLevel,
+    };
   }
 
   /**
@@ -262,6 +289,6 @@ export class RockyGlobe {
 
     this.group.add(root);
     if (this.placeholder) this.placeholder.visible = false;
-    this.assets = { root, geometry, terrainMat, waterMat, water, atmoMat };
+    this.assets = { root, terrain, geometry, terrainMat, waterMat, water, atmoMat };
   }
 }

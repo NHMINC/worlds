@@ -664,10 +664,19 @@ export interface RegionSelection {
   z: number;
 }
 
+export interface GlobePick {
+  bodyId: string;
+  cell: number;
+  level: number;
+  dir: [number, number, number];
+  waterLevel: number;
+}
+
 interface Callbacks {
   onSelect: (obj: GalaxyObject | null) => void;
   onFrame?: (f: GalaxyFrame) => void;
   onPlace?: (p: LastPlace) => void;
+  onInspect?: (hit: GlobePick | null) => void;
 }
 
 export class GalaxyView {
@@ -959,10 +968,47 @@ export class GalaxyView {
       this.openAtHere();
       return;
     }
+    if (this.hostObj && this.hostObj.id !== obj.id) this.detachHost();
     this.pendingPlace = place;
     this.setHere(place.starId);
     this.parkAtStar(obj);
     this.wake();
+  }
+
+  /** Leave the current host and park on another catalog star. */
+  goToStar(starId: number): void {
+    const obj = objectAt(this.seed, starId);
+    this.pendingPlace = null;
+    if (this.hostObj && this.hostObj.id !== starId) this.detachHost();
+    this.setHere(starId);
+    if (obj) this.parkAtStar(obj);
+    else this.openAtHere();
+    this.wake();
+  }
+
+  /** Rocky world under the ride / landing / course — inspector body. */
+  inspectBody(): BodySpec | null {
+    const id = this.riding?.bodyId ?? this.worldId ?? this.courseBodyId;
+    const rt = this.worldRt(id);
+    if (!rt || rt.spec.kind !== 'rocky') return null;
+    return rt.spec;
+  }
+
+  /**
+   * Viewport mood from the latched world's physics. Density is
+   * how close we stand — space, a ring, the skin.
+   */
+  getMood(): { group: 'water' | 'green' | 'dry' | 'cold' | 'rock' | 'space'; density: number } {
+    if (!this.hostObj) return { group: 'space', density: 0 };
+    const rt = this.worldRt(this.riding?.bodyId ?? this.worldId);
+    const density = this.landed ? 0.85 : this.riding ? 0.45 : 0.08;
+    if (!rt || rt.spec.kind !== 'rocky') return { group: 'space', density };
+    const p = rt.spec.physics;
+    if (p.life) return { group: 'green', density };
+    if (p.hydrosphere.state === 'liquid') return { group: 'water', density };
+    if (p.hydrosphere.state === 'ice' || p.TsurfK < 250) return { group: 'cold', density };
+    if (p.TsurfK > 330 || p.hydrosphere.substance === 'none') return { group: 'dry', density };
+    return { group: 'rock', density };
   }
 
   snapshotPlace(): LastPlace | null {
@@ -2996,6 +3042,27 @@ export class GalaxyView {
     return this.globes.get(id) ?? null;
   }
 
+  /** Hex under a landed tap. Same grid the globe grew from. */
+  private pickGlobeCell(clientX: number, clientY: number): GlobePick | null {
+    if (!this.landed || !this.worldId) return null;
+    const globe = this.globeOf(this.worldId);
+    const mesh = globe?.terrainMesh();
+    if (!globe || !mesh) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const w = Math.max(1, rect.width);
+    const h = Math.max(1, rect.height);
+    this.ndc.set(((clientX - rect.left) / w) * 2 - 1, -((clientY - rect.top) / h) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    this.hostScene.updateMatrixWorld(true);
+    const hits = this.raycaster.intersectObject(mesh, false);
+    if (!hits[0]) return null;
+    this.hostTmp.copy(hits[0].point);
+    mesh.worldToLocal(this.hostTmp);
+    const at = globe.cellAt(this.hostTmp.x, this.hostTmp.y, this.hostTmp.z);
+    if (!at) return null;
+    return { bodyId: globe.bodyId, ...at };
+  }
+
   private dropGlobes(): void {
     for (const g of this.globes.values()) g.dispose();
     this.globes.clear();
@@ -3842,7 +3909,8 @@ export class GalaxyView {
     this.wake();
     const tap = this.dragging && !this.looking && this.moved < TAP_SLOP;
     this.endPointer(e.pointerId);
-    if (tap && !this.landed) this.pick(e.clientX, e.clientY);
+    if (tap && this.landed) this.callbacks.onInspect?.(this.pickGlobeCell(e.clientX, e.clientY));
+    else if (tap && !this.landed) this.pick(e.clientX, e.clientY);
   };
 
   private onLostCapture = (e: PointerEvent): void => {

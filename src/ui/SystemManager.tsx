@@ -25,7 +25,7 @@ export function SystemManager(props: Props) {
         </p>
 
         {visits.length === 0 ? (
-          <p className="modal-note">No visits yet. Open the galaxy and set course.</p>
+          <p className="modal-note">No visits yet. Arrive at a star — the camp writes the visit.</p>
         ) : (
           <ul className="world-list">
             {visits.map((s) => (
