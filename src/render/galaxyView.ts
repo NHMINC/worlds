@@ -278,8 +278,49 @@ function hostBallTexture(rgb: [number, number, number]): THREE.CanvasTexture {
 function makeHostBall(rgb: [number, number, number]): THREE.Mesh {
   return new THREE.Mesh(
     HOST_BALL_GEO,
-    new THREE.MeshLambertMaterial({ map: hostBallTexture(rgb) }),
+    new THREE.MeshLambertMaterial({ map: hostBallTexture(rgb), color: 0xffffff }),
   );
+}
+
+/** Magenta = body is not on its Kepler ring (cleanroom diagnostic). */
+const HOST_BALL_ON = new THREE.Color(0xffffff);
+const HOST_BALL_OFF = new THREE.Color(0xff2a7a);
+
+/**
+ * Kilometres from `rel` (orbit-centre → body) to the Kepler ellipse
+ * in the (orbX, orbY) plane. Out-of-plane height counts too.
+ */
+function keplerPathMissKm(
+  rel: THREE.Vector3,
+  orbX: THREE.Vector3,
+  orbY: THREE.Vector3,
+  aKm: number,
+  ecc: number,
+): number {
+  const a = Math.max(aKm, 1e-9);
+  const e = Math.min(Math.max(ecc, 0), 0.999);
+  const bAxis = a * Math.sqrt(Math.max(0, 1 - e * e));
+  const xo = rel.dot(orbX);
+  const yo = rel.dot(orbY);
+  const zo = rel.x * (orbX.y * orbY.z - orbX.z * orbY.y)
+    + rel.y * (orbX.z * orbY.x - orbX.x * orbY.z)
+    + rel.z * (orbX.x * orbY.y - orbX.y * orbY.x);
+  // Nearest eccentric anomaly from the parametric inverse, then
+  // re-normalise onto the unit circle so off-ellipse points still
+  // map to a real ring sample.
+  let cosE = xo / a + e;
+  let sinE = yo / Math.max(bAxis, 1e-18);
+  const n = Math.hypot(cosE, sinE);
+  if (n > 1e-12) {
+    cosE /= n;
+    sinE /= n;
+  } else {
+    cosE = 1;
+    sinE = 0;
+  }
+  const ex = a * (cosE - e);
+  const ey = bAxis * sinE;
+  return Math.hypot(xo - ex, yo - ey, zo);
 }
 
 /** Tier-0 world in the host pass — same Kepler pose as the clock. */
@@ -294,6 +335,8 @@ interface HostBodyRT {
   tiltQ: THREE.Quaternion;
   pos: THREE.Vector3;
   spinQ: THREE.Quaternion;
+  /** Last paint: on the Kepler ring, or flagged off. */
+  onOrbitPath: boolean;
 }
 
 interface BubblePose {
@@ -3481,6 +3524,7 @@ export class GalaxyView {
         tiltQ,
         pos: new THREE.Vector3(),
         spinQ: new THREE.Quaternion(),
+        onOrbitPath: true,
       };
       byId.set(b.id, rt);
       this.hostBodies.push(rt);
@@ -3514,15 +3558,30 @@ export class GalaxyView {
     this.hostOuterAu = 1;
   }
 
+  private paintHostBall(rt: HostBodyRT, onPath: boolean): void {
+    if (rt.onOrbitPath === onPath) return;
+    rt.onOrbitPath = onPath;
+    const mesh = rt.placeholder as THREE.Mesh | null;
+    if (!mesh) return;
+    const mat = mesh.material as THREE.MeshLambertMaterial;
+    mat.color.copy(onPath ? HOST_BALL_ON : HOST_BALL_OFF);
+  }
+
   private updateHostBodies(t: number): void {
     const byId = new Map<string, HostBodyRT>();
     for (const rt of this.hostBodies) byId.set(rt.spec.id, rt);
     for (const rt of this.hostBodies) {
       const b = rt.spec;
       const { xo, yo } = keplerPlane(b.orbitRadius, b.orbitPeriod, b.orbitPhase, b.ecc, t);
+      let center: THREE.Vector3 | null = null;
       if (b.parent) {
         const parent = byId.get(b.parent);
-        if (!parent) continue;
+        if (!parent) {
+          // No orbit centre — the moon cannot sit on a ring.
+          this.paintHostBall(rt, false);
+          continue;
+        }
+        center = parent.pos;
         rt.pos.set(
           parent.pos.x + rt.orbX.x * xo + rt.orbY.x * yo,
           parent.pos.y + rt.orbX.y * xo + rt.orbY.y * yo,
@@ -3550,6 +3609,14 @@ export class GalaxyView {
       rt.spinQ.premultiply(rt.tiltQ);
       rt.group.position.copy(rt.pos);
       rt.group.quaternion.copy(rt.spinQ);
+
+      // Does this ball sit on the drawn Kepler ring?
+      const aKm = b.parent ? b.orbitRadius : b.orbitRadius * AU_KM;
+      if (center) this.hostTmp.copy(rt.pos).sub(center);
+      else this.hostTmp.copy(rt.pos);
+      const miss = keplerPathMissKm(this.hostTmp, rt.orbX, rt.orbY, aKm, b.ecc);
+      const tol = Math.max(1, Math.max(b.radius, 1) * 0.05, aKm * 1e-6);
+      this.paintHostBall(rt, miss <= tol);
     }
     this.hostRoot?.updateMatrixWorld(true);
     const cam = this.camera.position;
