@@ -447,31 +447,15 @@ export const UNIVERSE = {
     return (this.WORLD_BRAKE_AU * this.AU_KM) / this.KPC_KM;
   },
   /**
-   * Transfer route. A held course never flies through a body:
-   * if the sightline to the target crosses another body's (or
-   * the photosphere's) graze sphere — this many radii, or the
-   * absolute clear shell (`WORLD_ORBIT_CLEAR_KM`), whichever is
-   * larger — the heading deflects to the tangent of that sphere,
-   * re-derived every frame (bodies ride Kepler rails; no stored
-   * waypoints). Inside the graze sphere the same formula aims
-   * out first, then tangent. Several peels (`ROUTE_PASSES`) and
-   * a sticky graze side keep corridors from weaving; a stall
-   * flips the side. Not a global path planner.
+   * Transfer route. Space is empty; bodies are balls. A held
+   * course never flies into one: if the sightline crosses
+   * another body's (or the photosphere's) graze sphere — this
+   * many radii, or the absolute clear shell
+   * (`WORLD_ORBIT_CLEAR_KM`), whichever is larger — take the
+   * shorter of the two tangents. Inside a graze, climb out
+   * first. Re-derived every frame from Kepler positions.
    */
   ROUTE_GRAZE: 3,
-  /**
-   * How many greedy graze peels per frame. One was enough for a
-   * single blocker; a moon behind a planet needs a second pass
-   * on the deflected aim. Three covers typical host clutter
-   * without a full path search.
-   */
-  ROUTE_PASSES: 3,
-  /**
-   * Lock-on progress watchdog (seconds). If warp is on and range
-   * to the target is not closing, flip the graze side — the
-   * usual corridor trap is a sticky wrong tangent.
-   */
-  ROUTE_STALL: 2.5,
   /**
    * Absolute clearance above any surface (km). Named orbits,
    * the near-shell fence, and the transfer graze never put the
