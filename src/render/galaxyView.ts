@@ -45,6 +45,7 @@ import {
 } from '../world/systemgen';
 import { RockyGlobe } from './rockyGlobe';
 import { HostSystem, type HostBodyRT } from './hostSystem';
+import { nearestBody } from './hostLook';
 import {
   clearRadiusKm,
   isHangOrbit,
@@ -836,8 +837,6 @@ export class GalaxyView {
   private arcRoll = 0;
   /** Hold look on a body core or the star until a drag. */
   private lookHold: 'center' | 'sun' | null = null;
-  /** World Center latched; null follows the host star. */
-  private lookWorldId: string | null = null;
   /**
    * Trackball drone. bodyId null is the host star. dir is
    * body-local (ecliptic for the star); h is radii above the
@@ -1146,7 +1145,7 @@ export class GalaxyView {
     if (kind && isHangOrbit(kind) && p.dir && this.riding) {
       this.rideLocal.set(p.dir[0], p.dir[1], p.dir[2]).normalize();
     }
-    this.placeRide(tSys, true);
+    this.placeRide(tSys);
     this.pendingPlace = null;
     this.centerLook();
     return true;
@@ -2017,16 +2016,14 @@ export class GalaxyView {
   }
 
   /**
-   * Hold look on the core of the body we are attending —
-   * ridden / latched / coursed / aimed world, else the host
-   * star — and follow that core as it moves. Offered off the
-   * ground. A look drag lets go.
+   * Hold look on the core of the body nearest the camera.
+   * Rewritten: distance, not angular size, not a latched id.
+   * Park engages this; a look drag lets go.
    */
   centerLook(): void {
     if (this.mode !== 'region' || !this.hostObj || this.landed) return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'center';
-    this.lookWorldId = this.lookPrimaryWorld()?.spec.id ?? null;
     this.holdLook();
     this.applyCam();
     this.wake();
@@ -2037,7 +2034,6 @@ export class GalaxyView {
     if (this.mode !== 'region' || !this.hostObj) return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'sun';
-    this.lookWorldId = null;
     this.holdLook();
     if (this.landed) this.placeSurface();
     this.applyCam();
@@ -2046,11 +2042,10 @@ export class GalaxyView {
 
   private dropLookHold(): void {
     this.lookHold = null;
-    this.lookWorldId = null;
   }
 
   /**
-   * Trackball drone around the primary world (else the star).
+   * Trackball drone around the nearest world (else the star).
    * Drag rolls that body; pinch is altitude; off restores the
    * ship look. Ride / land keep ticking in closed form.
    */
@@ -2069,7 +2064,7 @@ export class GalaxyView {
     this.shipLook.pitch = this.arcPitch;
     this.shipLook.roll = this.arcRoll;
     this.dropLookHold();
-    const rt = this.lookPrimaryWorld();
+    const rt = nearestBody(this.host.bodies, (b) => this.bodyDist(b));
     if (rt) {
       this.bodyFromEye(rt, this.hostTmp);
       const R = Math.max(rt.spec.radius, 1);
@@ -2100,38 +2095,8 @@ export class GalaxyView {
     this.wake();
   }
 
-  /**
-   * The body that owns the sky. A bound body (Center latch,
-   * ride, world latch) keeps priority — we are at it. Otherwise
-   * the body whose angular radius BEATS THE STAR'S from here —
-   * a relative law, no magic threshold: deep in a planet's
-   * neighbourhood the planet wins; near the furnace the star
-   * does. Moons count the same as planets. Null → the host
-   * star — never the focus of some other body's orbit.
-   */
-  private lookPrimaryWorld(): HostBodyRT | null {
-    const bound = this.worldRt(this.lookWorldId ?? this.riding?.bodyId ?? this.worldId);
-    if (bound) return bound;
-    if (!this.hostObj) return null;
-    const dStar = this.hostRoot
-      ? this.hostRoot.position.length()
-      : this.arriveDist(this.hostObj);
-    const starR = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM) * KM_TO_KPC;
-    let best: HostBodyRT | null = null;
-    let bestSin = starR / Math.max(dStar, 1e-18);
-    for (const rt of this.host.bodies) {
-      const d = this.bodyDist(rt);
-      const sin = (Math.max(rt.spec.radius, 1) * KM_TO_KPC) / Math.max(d, 1e-18);
-      if (sin > bestSin) {
-        bestSin = sin;
-        best = rt;
-      }
-    }
-    return best;
-  }
-
   private showSunLook(): boolean {
-    return Boolean(this.hostObj && this.lookPrimaryWorld());
+    return Boolean(this.hostObj && this.host.bodies.length > 0);
   }
 
   private holdLook(): void {
@@ -2143,12 +2108,9 @@ export class GalaxyView {
     if (this.thrustOn && !this.riding && !this.landed && (this.courseBodyId || this.courseObj)) {
       return;
     }
-    const rt = this.lookHold === 'center' ? this.lookPrimaryWorld() : null;
-    // Catalog eye→body (precision law). getWorldPosition of the
-    // group matches when the root is pinned, but bodyFromEye is
-    // the same vector the course / fence already use — Center
-    // must put that core under the pip.
-    if (rt) {
+    if (this.lookHold === 'center') {
+      const rt = nearestBody(this.host.bodies, (b) => this.bodyDist(b));
+      if (!rt) return;
       this.bodyFromEye(rt, this.hostTmp);
     } else if (this.hostRoot) {
       this.hostTmp.copy(this.hostRoot.position);
@@ -2479,10 +2441,14 @@ export class GalaxyView {
       this.rideE2.normalize();
       this.riding.theta0 = -this.riding.omega * tSys;
     }
-    this.placeRide(tSys, true);
+    this.placeRide(tSys);
+    // Park faces the body the same way Center does — bodyFromEye
+    // after the pin, not a one-shot -ox that freezes while hang
+    // / inertial rings move the nadir under a fixed yaw.
+    this.centerLook();
   }
 
-  private placeRide(tSys: number, aim = false): void {
+  private placeRide(tSys: number): void {
     const ride = this.riding;
     if (!ride) return;
     const rt = this.worldRt(ride.bodyId);
@@ -2521,9 +2487,6 @@ export class GalaxyView {
       this.bodyCatalog(rt, this.orbitTmp);
       this.arcCenter.set(this.orbitTmp.x + ox, this.orbitTmp.y + oy, this.orbitTmp.z + oz);
     }
-    // Aim once on arrival. After that the look is the pilot's —
-    // a drag must not snap back to nadir each frame.
-    if (aim) this.aimAt(-ox, -oy, -oz);
   }
 
   private clearCourse(): void {
@@ -3376,9 +3339,11 @@ export class GalaxyView {
 
     const root = this.hostRoot;
     if (root) {
-      // Landed / drone eyes pin from a km hover — starCart −
-      // arcCenter drops the metres at 8 kpc.
-      if (!this.landed && !this.drone) root.position.set(dx, dy, dz);
+      // Landed / drone / ride eyes pin from a km hover — starCart −
+      // arcCenter drops the metres at 8 kpc. Do not overwrite the
+      // pin before placeRide / placeSurface; that was a one-frame
+      // star-relative root that made bodyFromEye aim at the void.
+      if (!this.landed && !this.drone && !this.riding) root.position.set(dx, dy, dz);
       this.orientHost(root);
     }
 
