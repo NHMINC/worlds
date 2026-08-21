@@ -648,11 +648,11 @@ export interface GalaxyFrame {
   landed: boolean;
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
-  /** Look-hold: Center (primary) or Sun, until a look drag. */
+  /** Look-hold: Center (this body's core) or Sun, until a look drag. */
   lookHold: 'center' | 'sun' | null;
   /** Drone trackball around the primary world (else the star). */
   drone: boolean;
-  /** Sun look is offered when the primary is a world. */
+  /** Sun look is offered when we are at a world. */
   showSunLook: boolean;
   /** Latched / ridden / landed world, if any. */
   worldId: string | null;
@@ -2038,9 +2038,9 @@ export class GalaxyView {
   }
 
   /**
-   * Hold look on the primary: a nearby / ridden world, else the
-   * star. On the ground the world is underfoot, so Center is the
-   * sun. A look drag lets go.
+   * Hold look on the core of the body we are at: landed /
+   * ridden / latched world, else the host star. A look drag
+   * lets go.
    */
   centerLook(): void {
     if (this.mode !== 'region' || !this.hostObj) return;
@@ -2120,21 +2120,25 @@ export class GalaxyView {
   }
 
   private showSunLook(): boolean {
-    return Boolean(this.hostObj && this.lookPrimaryWorld() && !this.landed);
+    return Boolean(this.hostObj && this.lookPrimaryWorld());
   }
 
   private holdLook(): void {
     if (!this.lookHold || this.looking || !this.hostObj) return;
-    const sun = this.lookHold === 'sun' || this.landed || !this.lookPrimaryWorld();
+    const rt = this.lookPrimaryWorld();
+    const sun = this.lookHold === 'sun' || !rt;
     if (sun) {
-      if (!this.hostRoot) return;
-      this.hostTmp.copy(this.hostRoot.position);
-      if (this.hostTmp.lengthSq() < 1e-32) return;
+      const c = galToCart(this.hostObj.pos);
+      this.hostTmp.set(
+        c.x - this.arcCenter.x,
+        c.y - this.arcCenter.y,
+        c.z - this.arcCenter.z,
+      );
     } else {
-      const rt = this.lookPrimaryWorld();
-      if (!rt) return;
-      rt.group.getWorldPosition(this.hostTmp);
+      this.bodyCatalog(rt, this.hostTmp);
+      this.hostTmp.sub(this.arcCenter);
     }
+    if (this.hostTmp.lengthSq() < 1e-32) return;
     if (this.landed) this.aimSurfaceAt(this.hostTmp);
     else this.aimAt(this.hostTmp.x, this.hostTmp.y, this.hostTmp.z);
   }

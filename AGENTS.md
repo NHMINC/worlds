@@ -176,11 +176,11 @@ toy — Godus blocks on a real-sized globe.
   (`SOI_ZOOM`); on a ring it changes
   that radius. Two-finger twist rolls
   the look (`SOI_TWIST`). Center holds
-  look on the primary (a nearby world,
-  else the star; on the ground, the
-  sun) until a look drag. Sun holds
-  look on the furnace when the primary
-  is a world. Trackball is a drone
+  look on the core of the body we are
+  at (landed / ridden / latched world,
+  else the host star) until a look
+  drag. Sun holds look on the furnace
+  when we are at a world. Trackball is a drone
   around that world (else the star):
   drag rolls the body, pinch is
   altitude (`SOI_TRACK_*`); off

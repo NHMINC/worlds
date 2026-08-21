@@ -640,7 +640,7 @@ export function GalaxyExplorer(props: Props) {
               type="button"
               className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
               aria-label="Center"
-              title="Center — hold look on the primary"
+              title="Center — hold look on this body's core"
               onClick={() => viewRef.current?.centerLook()}
             >
               <IconCenter size={18} />
