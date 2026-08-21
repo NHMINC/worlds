@@ -839,6 +839,14 @@ export class GalaxyView {
   private navMode: HostNavMode = null;
   /** Lock-on insertion blend 0…1 (far transfer → at the shell). */
   private insertBlend = 0;
+  /**
+   * Graze-side memory: last tangent axis so the plotter does not
+   * flip sides every frame and weave. Cleared on a new course.
+   */
+  private readonly routeAxis = new THREE.Vector3();
+  /** Seconds without closing on the lock target while thrusting. */
+  private routeStall = 0;
+  private routeLastDist = Infinity;
   private readonly rideLocal = new THREE.Vector3();
   private readonly rideE1 = new THREE.Vector3();
   private readonly rideE2 = new THREE.Vector3();
@@ -1925,6 +1933,7 @@ export class GalaxyView {
     this.leaveSurface();
     this.clearRide();
     this.dropLookHold();
+    this.resetRoutePlot();
     this.courseBodyId = null;
     this.courseObj = obj;
     this.pendingArriveOrbit = false;
@@ -1958,6 +1967,7 @@ export class GalaxyView {
     this.leaveSurface();
     this.clearRide();
     this.dropLookHold();
+    this.resetRoutePlot();
     this.pendingOrbit = null;
     this.courseObj = null;
     this.courseBodyId = bodyId;
@@ -1981,6 +1991,7 @@ export class GalaxyView {
     this.pendingArriveOrbit = false;
     this.pendingOrbit = { bodyId, kind };
     this.navMode = 'lock';
+    this.resetRoutePlot();
     this.setGear(false);
     this.setWarp(true);
     this.wake();
@@ -2839,77 +2850,151 @@ export class GalaxyView {
     if (this.navMode === 'lock') this.navMode = null;
   }
 
+  /** Reset graze hysteresis when Lock-on picks a new destination. */
+  private resetRoutePlot(): void {
+    this.routeAxis.set(0, 0, 0);
+    this.routeStall = 0;
+    this.routeLastDist = Infinity;
+    this.insertBlend = 0;
+  }
+
   /**
-   * Transfer route: deflect the aim if the sightline to the
-   * target crosses another body's (or the photosphere's) graze
-   * sphere — max(ROUTE_GRAZE radii, clear shell). The aim moves
-   * to the tangent of the nearest blocker, in the
-   * eye–blocker–target plane; inside a graze sphere asin
-   * saturates and the aim goes tangent, so departure spirals
-   * out before bending onto the transfer. A blocker's sphere
-   * is capped below its distance to the target, so a moon
-   * hugging its planet stays reachable. Re-derived every
-   * frame — bodies ride Kepler rails; there are no stored
-   * waypoints.
+   * Transfer route: keep the sightline off every blocker between
+   * here and the aim. Not a stored path — re-derived each frame
+   * from Kepler positions — but hardened against the common
+   * stuck cases:
+   *   • inside a non-target graze → climb out first
+   *   • several blockers → up to ROUTE_PASSES greedy tangents
+   *   • side flip / weave → sticky graze axis
+   *   • no progress → flip the graze side and try again
+   * Still not a global planner; a full corridor search is later.
    */
   private routeAim(aim: THREE.Vector3, targetId: string | null): void {
     if (!this.hostObj || !this.hostRoot) return;
     const dT = aim.length();
     if (!(dT > 1e-18)) return;
-    let bx = 0;
-    let by = 0;
-    let bz = 0;
-    let bestD = Infinity;
-    let bestSin = 0;
-    const consider = (rx: number, ry: number, rz: number, radiusKm: number): void => {
+
+    // 1) Escape: if we sit inside a non-target graze, aim out.
+    let escapeD = Infinity;
+    let ex = 0;
+    let ey = 0;
+    let ez = 0;
+    const noteEscape = (rx: number, ry: number, rz: number, radiusKm: number): void => {
       const dO = Math.hypot(rx, ry, rz);
-      if (!(dO > 1e-18) || dO >= dT || dO >= bestD) return;
-      const dOT = Math.hypot(aim.x - rx, aim.y - ry, aim.z - rz);
+      if (!(dO > 1e-18) || dO >= escapeD) return;
       const R = Math.max(radiusKm, 1);
       const grazeKm = Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
-      const graze = Math.min(grazeKm * KM_TO_KPC, dOT * 0.9);
-      if (!(graze > 0)) return;
-      const sinMin = Math.min(1, graze / dO);
-      const cosMin = Math.sqrt(Math.max(0, 1 - sinMin * sinMin));
-      const cosA = (aim.x * rx + aim.y * ry + aim.z * rz) / (dT * dO);
-      if (cosA <= cosMin) return;
-      bestD = dO;
-      bestSin = sinMin;
-      bx = rx;
-      by = ry;
-      bz = rz;
+      const graze = grazeKm * KM_TO_KPC;
+      if (dO >= graze) return;
+      escapeD = dO;
+      ex = rx;
+      ey = ry;
+      ez = rz;
     };
     for (const rt of this.host.bodies) {
       if (rt.spec.id === targetId) continue;
       this.bodyFromEye(rt, this.hostTmp2);
-      consider(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
+      noteEscape(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
     }
     if (targetId != null) {
-      // The photosphere blocks world courses; a star course aims at it.
       this.hostTmp2.copy(this.hostRoot.position);
-      consider(
+      noteEscape(
         this.hostTmp2.x,
         this.hostTmp2.y,
         this.hostTmp2.z,
         this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM,
       );
     }
-    if (!(bestD < Infinity)) return;
-    // Rotate the blocker direction out to the cone edge nearest the
-    // target: blocker-hat swung by the tangent angle toward the aim.
-    this.hostTmp2.set(bx, by, bz);
-    this.orbitTmp2.crossVectors(this.hostTmp2, aim);
-    if (this.orbitTmp2.lengthSq() < 1e-24) {
-      // Aim dead through the centre: any perpendicular plane works.
-      this.orbitTmp2.crossVectors(this.hostTmp2, this.worldUp);
-      if (this.orbitTmp2.lengthSq() < 1e-24) this.orbitTmp2.set(1, 0, 0);
+    if (escapeD < Infinity) {
+      const inv = dT / Math.max(escapeD, 1e-18);
+      aim.set(-ex * inv, -ey * inv, -ez * inv);
+      return;
     }
-    this.orbitTmp2.normalize();
-    aim
-      .copy(this.hostTmp2)
-      .normalize()
-      .applyAxisAngle(this.orbitTmp2, Math.asin(bestSin))
-      .multiplyScalar(dT);
+
+    // 2) Multi-pass tangent: each pass peels the nearest blocker
+    // still crossing the current aim.
+    const passes = Math.max(1, Math.floor(UNIVERSE.ROUTE_PASSES));
+    for (let pass = 0; pass < passes; pass++) {
+      const len = aim.length();
+      if (!(len > 1e-18)) return;
+      let bx = 0;
+      let by = 0;
+      let bz = 0;
+      let bestD = Infinity;
+      let bestSin = 0;
+      const consider = (rx: number, ry: number, rz: number, radiusKm: number): void => {
+        const dO = Math.hypot(rx, ry, rz);
+        if (!(dO > 1e-18) || dO >= len || dO >= bestD) return;
+        const dOT = Math.hypot(aim.x - rx, aim.y - ry, aim.z - rz);
+        const R = Math.max(radiusKm, 1);
+        const grazeKm = Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
+        const graze = Math.min(grazeKm * KM_TO_KPC, dOT * 0.9);
+        if (!(graze > 0)) return;
+        const sinMin = Math.min(1, graze / dO);
+        const cosMin = Math.sqrt(Math.max(0, 1 - sinMin * sinMin));
+        const cosA = (aim.x * rx + aim.y * ry + aim.z * rz) / (len * dO);
+        if (cosA <= cosMin) return;
+        bestD = dO;
+        bestSin = sinMin;
+        bx = rx;
+        by = ry;
+        bz = rz;
+      };
+      for (const rt of this.host.bodies) {
+        if (rt.spec.id === targetId) continue;
+        this.bodyFromEye(rt, this.hostTmp2);
+        consider(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
+      }
+      if (targetId != null) {
+        this.hostTmp2.copy(this.hostRoot.position);
+        consider(
+          this.hostTmp2.x,
+          this.hostTmp2.y,
+          this.hostTmp2.z,
+          this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM,
+        );
+      }
+      if (!(bestD < Infinity)) break;
+      this.hostTmp2.set(bx, by, bz);
+      this.orbitTmp2.crossVectors(this.hostTmp2, aim);
+      if (this.orbitTmp2.lengthSq() < 1e-24) {
+        this.orbitTmp2.crossVectors(this.hostTmp2, this.worldUp);
+        if (this.orbitTmp2.lengthSq() < 1e-24) this.orbitTmp2.set(1, 0, 0);
+      }
+      this.orbitTmp2.normalize();
+      // Sticky side: keep the last graze handedness so we do not weave.
+      if (this.routeAxis.lengthSq() > 1e-8 && this.orbitTmp2.dot(this.routeAxis) < 0) {
+        this.orbitTmp2.negate();
+      }
+      this.routeAxis.copy(this.orbitTmp2);
+      aim
+        .copy(this.hostTmp2)
+        .normalize()
+        .applyAxisAngle(this.orbitTmp2, Math.asin(bestSin))
+        .multiplyScalar(len);
+    }
+  }
+
+  /**
+   * While Lock-on is thrusting, watch range-to-target. No close
+   * for ROUTE_STALL seconds → flip the graze side so a corridor
+   * trap can break.
+   */
+  private watchRouteProgress(dt: number, dist: number): void {
+    if (!this.thrustOn || !(dist > 0) || !Number.isFinite(dist)) {
+      this.routeStall = 0;
+      this.routeLastDist = dist;
+      return;
+    }
+    const closed = this.routeLastDist - dist;
+    const slack = Math.max(dist * 1e-4, 1e-18);
+    if (closed > slack) this.routeStall = 0;
+    else this.routeStall += dt;
+    this.routeLastDist = dist;
+    if (this.routeStall < UNIVERSE.ROUTE_STALL) return;
+    this.routeStall = 0;
+    if (this.routeAxis.lengthSq() > 1e-12) this.routeAxis.negate();
+    else this.routeAxis.copy(this.worldUp);
   }
 
   /** Ease the nose onto the Lock-on insertion. Off in orbit / proximity / capture. */
@@ -2954,6 +3039,16 @@ export class GalaxyView {
     if (d < 1e-15) return;
     if (this.courseHud) this.courseHud.dist = d;
     this.insertBlend = insertBlend;
+    // Range for the stall watchdog: true distance to the body /
+    // star, not the lead aim length (that shrinks as φ grows).
+    let progressDist = d;
+    if (this.courseBodyId) {
+      const rt = this.worldRt(this.courseBodyId);
+      if (rt) progressDist = this.bodyDist(rt);
+    } else if (this.courseObj) {
+      progressDist = this.arriveDist(this.courseObj);
+    }
+    this.watchRouteProgress(dt, progressDist);
     const tgtYaw = Math.atan2(dx, dz);
     const tgtPitch = THREE.MathUtils.clamp(
       Math.asin(THREE.MathUtils.clamp(dy / d, -1, 1)),

@@ -454,10 +454,24 @@ export const UNIVERSE = {
    * larger — the heading deflects to the tangent of that sphere,
    * re-derived every frame (bodies ride Kepler rails; no stored
    * waypoints). Inside the graze sphere the same formula aims
-   * tangent, so departure spirals out before bending onto the
-   * transfer.
+   * out first, then tangent. Several peels (`ROUTE_PASSES`) and
+   * a sticky graze side keep corridors from weaving; a stall
+   * flips the side. Not a global path planner.
    */
   ROUTE_GRAZE: 3,
+  /**
+   * How many greedy graze peels per frame. One was enough for a
+   * single blocker; a moon behind a planet needs a second pass
+   * on the deflected aim. Three covers typical host clutter
+   * without a full path search.
+   */
+  ROUTE_PASSES: 3,
+  /**
+   * Lock-on progress watchdog (seconds). If warp is on and range
+   * to the target is not closing, flip the graze side — the
+   * usual corridor trap is a sticky wrong tangent.
+   */
+  ROUTE_STALL: 2.5,
   /**
    * Absolute clearance above any surface (km). Named orbits,
    * the near-shell fence, and the transfer graze never put the
