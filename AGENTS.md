@@ -208,11 +208,12 @@ toy — Godus blocks on a real-sized globe.
   pixels; never the focus of an orbit).
   Offered off the ground, including In
   Orbit. On the ground, Sun holds the
-  furnace. Trackball is a drone
-  around that world (else the star):
-  drag rolls the body, pinch is
-  altitude (`SOI_TRACK_*`); off
-  restores the ship. On the ground,
+  furnace. Trackball is a freeform
+  drone around that world (else the
+  star): drag rolls the body with no
+  pole endstops, pinch is altitude
+  (`SOI_TRACK_*`); off restores the
+  ship. On the ground,
   zoom-in latches a walk; zoom-out
   dumps it, then settles. WASD glides.
   Take off returns to the ring we
@@ -429,8 +430,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   drag takes the stick — release does not snap the
   look back. Pinch zooms the ring
   radius; twist rolls. Center holds look on that world;
-  Sun finds the furnace. Trackball is a drone around the
-  body — off is the ship again. Land sets down on
+  Sun finds the furnace. Trackball is a freeform
+  drone around the body (no pole endstops) — off
+  is the ship again. Land sets down on
   that face; Take off returns to the ring. Reticle Set course
   stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,

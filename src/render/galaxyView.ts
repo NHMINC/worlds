@@ -884,10 +884,11 @@ export class GalaxyView {
   private lookHold: 'center' | 'sun' | null = null;
   /**
    * Trackball drone. bodyId null is the host star. dir is
-   * body-local (ecliptic for the star); h is radii above the
+   * body-local radial out (ecliptic for the star); up travels
+   * with the ball — no pole endstops. h is radii above the
    * surface. The ship pose stays in ride / land / arcCenter.
    */
-  private drone: { bodyId: string | null; dir: THREE.Vector3; h: number; roll: number } | null =
+  private drone: { bodyId: string | null; dir: THREE.Vector3; up: THREE.Vector3; h: number } | null =
     null;
   private readonly shipLook = { yaw: 0, pitch: 0, roll: 0 };
   private pinchAngle = 0;
@@ -2153,7 +2154,12 @@ export class GalaxyView {
       this.orbitTmp.copy(this.hostTmp).negate().normalize();
       this.spinWorld(rt, this.orbitQ);
       this.orbitTmp.applyQuaternion(this.hostTmpQ.copy(this.orbitQ).conjugate());
-      this.drone = { bodyId: rt.spec.id, dir: this.orbitTmp.clone(), h, roll: this.arcRoll };
+      this.drone = {
+        bodyId: rt.spec.id,
+        dir: this.orbitTmp.clone(),
+        up: this.droneLocalUp(this.orbitTmp, this.hostTmpQ),
+        h,
+      };
     } else {
       const maxH = UNIVERSE.SOI_TRACK_MAX;
       const Rkm = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
@@ -2161,12 +2167,18 @@ export class GalaxyView {
       this.hostTmp.copy(this.hostRoot.position);
       const dKm = Math.max(this.hostTmp.length() / KM_TO_KPC, clear);
       const h = THREE.MathUtils.clamp(dKm / Rkm - 1, clear / Rkm - 1, maxH);
+      this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate();
       this.orbitTmp
         .copy(this.hostRoot.position)
         .negate()
-        .applyQuaternion(this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate())
+        .applyQuaternion(this.hostTmpQ)
         .normalize();
-      this.drone = { bodyId: null, dir: this.orbitTmp.clone(), h, roll: this.arcRoll };
+      this.drone = {
+        bodyId: null,
+        dir: this.orbitTmp.clone(),
+        up: this.droneLocalUp(this.orbitTmp, this.hostTmpQ),
+        h,
+      };
     }
     this.placeDrone();
     this.applyCam();
@@ -2235,42 +2247,61 @@ export class GalaxyView {
       this.pinHostEyeKm(this.orbitTmp2);
       this.spinWorld(rt, this.orbitQ);
       this.arcFwd.copy(drone.dir).applyQuaternion(this.orbitQ).negate().normalize();
-      this.arcUp.copy(drone.dir).applyQuaternion(this.orbitQ).normalize();
+      this.arcUp.copy(drone.up).applyQuaternion(this.orbitQ).normalize();
     } else {
       const Rkm = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
       this.orbitTmp2.copy(drone.dir).multiplyScalar((1 + drone.h) * Rkm);
       this.pinHostEyeKm(this.orbitTmp2);
       this.arcFwd.copy(drone.dir).applyQuaternion(root.quaternion).negate().normalize();
-      this.arcUp.copy(drone.dir).applyQuaternion(root.quaternion).normalize();
+      this.arcUp.copy(drone.up).applyQuaternion(root.quaternion).normalize();
     }
     this.arcRight.crossVectors(this.arcFwd, this.arcUp);
-    if (this.arcRight.lengthSq() < 1e-12) this.arcRight.set(1, 0, 0);
-    else this.arcRight.normalize();
+    if (this.arcRight.lengthSq() < 1e-12) {
+      this.arcRight.crossVectors(this.arcFwd, this.worldUp);
+      if (this.arcRight.lengthSq() < 1e-12) this.arcRight.set(1, 0, 0);
+    }
+    this.arcRight.normalize();
     this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
-    this.applyRollToBasis(drone.roll);
+  }
+
+  /** Current camera up, in the same local frame as `dir`, orthogonal to it. */
+  private droneLocalUp(dir: THREE.Vector3, localOfWorld: THREE.Quaternion): THREE.Vector3 {
+    this.orientArc();
+    this.orbitTmp2.copy(this.arcUp).applyQuaternion(localOfWorld);
+    this.orbitTmp2.addScaledVector(dir, -this.orbitTmp2.dot(dir));
+    if (this.orbitTmp2.lengthSq() < 1e-16) {
+      this.orbitTmp2.set(1, 0, 0).addScaledVector(dir, -dir.x);
+      if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 1, 0);
+    }
+    return this.orbitTmp2.normalize().clone();
   }
 
   private turnDrone(dx: number, dy: number): void {
     const drone = this.drone;
     if (!drone) return;
     const k = 0.005;
-    this.orbitTmp.copy(this.arcUp);
-    this.orbitTmp2.copy(this.arcRight);
-    if (drone.bodyId) {
-      const rt = this.worldRt(drone.bodyId);
-      if (!rt) return;
-      this.spinWorld(rt, this.orbitQ);
-      this.hostTmpQ.copy(this.orbitQ).conjugate();
-      this.orbitTmp.applyQuaternion(this.hostTmpQ);
-      this.orbitTmp2.applyQuaternion(this.hostTmpQ);
-    } else if (this.hostRoot) {
-      this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate();
-      this.orbitTmp.applyQuaternion(this.hostTmpQ);
-      this.orbitTmp2.applyQuaternion(this.hostTmpQ);
+    // Freeform ball: yaw around current up, pitch around current
+    // right — both dir and up travel, so the poles are not stops.
+    this.orbitTmp.copy(drone.up);
+    // Camera right: fwd = −dir, so right = fwd × up = up × dir.
+    this.orbitTmp2.crossVectors(drone.up, drone.dir);
+    if (this.orbitTmp2.lengthSq() < 1e-16) {
+      this.orbitTmp2.set(1, 0, 0).addScaledVector(drone.dir, -drone.dir.x);
+      if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 1, 0);
     }
-    drone.dir.applyAxisAngle(this.orbitTmp, -dx * k);
-    drone.dir.applyAxisAngle(this.orbitTmp2, -dy * k);
+    this.orbitTmp2.normalize();
+    if (dx !== 0) {
+      drone.dir.applyAxisAngle(this.orbitTmp, -dx * k);
+      drone.up.applyAxisAngle(this.orbitTmp, -dx * k);
+    }
+    if (dy !== 0) {
+      drone.dir.applyAxisAngle(this.orbitTmp2, -dy * k);
+      drone.up.applyAxisAngle(this.orbitTmp2, -dy * k);
+    }
     drone.dir.normalize();
+    drone.up.addScaledVector(drone.dir, -drone.up.dot(drone.dir));
+    if (drone.up.lengthSq() < 1e-16) drone.up.copy(this.orbitTmp);
+    else drone.up.normalize();
     this.placeDrone();
     this.applyCam();
   }
@@ -4530,8 +4561,10 @@ export class GalaxyView {
     const d = dAng * UNIVERSE.SOI_TWIST;
     if (Math.abs(d) < 1e-6) return;
     if (this.riding) this.rideLookFree = true;
-    if (this.drone) this.drone.roll += d;
-    else this.arcRoll += d;
+    if (this.drone) {
+      this.drone.up.applyAxisAngle(this.drone.dir, d);
+      this.drone.up.normalize();
+    } else this.arcRoll += d;
     if (this.drone) this.placeDrone();
     else if (this.landed) this.placeSurface();
     this.applyCam();
