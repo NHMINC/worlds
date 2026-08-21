@@ -375,7 +375,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (LEO, GEO low / Station, MEO, GEO, Polar, Hover).
   Pick one and warp auto-engages; the viewpoint
   parks on that radius and rides it (hang for GEO /
-  hover, inertial for the rest). Land sets down on
+  hover, inertial for the rest). A look drag is
+  free — the ring does not hold nadir. Land sets down on
   that face; Take off returns to the ring. Reticle Set course
   stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,

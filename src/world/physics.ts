@@ -441,13 +441,16 @@ export const UNIVERSE = {
    * body has no useful GEO, so that pick is hover. MEO sits
    * on the LEO→GEO lerp. Polar is LEO in a plane that
    * contains the spin axis. Hover hangs over the arrival
-   * face, low. Gas floors the skim so the ball is not a
+   * face. Gas floors the skim so the ball is not a
    * clip. GEO_MAX clamps a slow spinner so the ring stays
-   * a world orbit, not a second heliocentric.
+   * a world orbit, not a second heliocentric. Heights are
+   * framing altitudes on the toy globe — a true ISS skim
+   * reads as scraping the terrace.
    */
-  WORLD_ORBIT_LEO: 0.08,
-  WORLD_ORBIT_HOVER: 0.18,
-  WORLD_ORBIT_MEO_FRAC: 0.45,
+  WORLD_ORBIT_LEO: 0.22,
+  WORLD_ORBIT_HOVER: 0.42,
+  WORLD_ORBIT_MEO: 0.8,
+  WORLD_ORBIT_MEO_FRAC: 0.55,
   WORLD_ORBIT_GEO_MAX: 12,
   WORLD_ORBIT_GAS_FLOOR: 0.35,
   /**

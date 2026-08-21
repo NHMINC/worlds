@@ -1926,10 +1926,10 @@ export class GalaxyView {
       }
       this.riding.theta0 = -this.riding.omega * tSys;
     }
-    this.placeRide(tSys);
+    this.placeRide(tSys, true);
   }
 
-  private placeRide(tSys: number): void {
+  private placeRide(tSys: number, aim = false): void {
     const ride = this.riding;
     if (!ride) return;
     const rt = this.worldRt(ride.bodyId);
@@ -1965,7 +1965,9 @@ export class GalaxyView {
       );
       this.hostRoot.updateMatrixWorld(true);
     }
-    if (!this.looking) this.aimAt(-ox, -oy, -oz);
+    // Aim once on arrival. After that the look is the pilot's —
+    // a drag must not snap back to nadir each frame.
+    if (aim) this.aimAt(-ox, -oy, -oz);
   }
 
   private clearCourse(): void {

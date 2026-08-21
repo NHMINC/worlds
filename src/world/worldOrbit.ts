@@ -110,7 +110,8 @@ export function orbitHeightRel(body: BodySpec, kind: WorldOrbitKind): number {
       return geoHeightRel(body);
     case 'meo': {
       const geo = geoHeightRel(body);
-      return leo + (geo - leo) * UNIVERSE.WORLD_ORBIT_MEO_FRAC;
+      const mix = leo + (geo - leo) * UNIVERSE.WORLD_ORBIT_MEO_FRAC;
+      return Math.max(UNIVERSE.WORLD_ORBIT_MEO, mix);
     }
   }
 }
