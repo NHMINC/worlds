@@ -890,7 +890,9 @@ export class GalaxyView {
    */
   private drone: { bodyId: string | null; dir: THREE.Vector3; up: THREE.Vector3; h: number } | null =
     null;
+  /** Ship pose parked while the trackball is out. Off restores this. */
   private readonly shipLook = { yaw: 0, pitch: 0, roll: 0 };
+  private readonly shipAt = new THREE.Vector3();
   private pinchAngle = 0;
   /** Boot restore: park the host, then the world, once bodies exist. */
   private pendingPlace: LastPlace | null = null;
@@ -2125,8 +2127,8 @@ export class GalaxyView {
 
   /**
    * Trackball drone around the nearest world (else the star).
-   * Drag rolls that body; pinch is altitude; off restores the
-   * ship look. Ride / land keep ticking in closed form.
+   * Drag rolls that body; pinch is altitude; off is the ship
+   * camera again (live rail if riding, else the parked pose).
    */
   /** Tap: on if off, off if on. Returns the new state. */
   toggleDrone(): boolean {
@@ -2138,17 +2140,14 @@ export class GalaxyView {
     if (this.mode !== 'region' || !this.hostObj || !this.hostRoot) return;
     if (on === Boolean(this.drone)) return;
     if (!on) {
-      this.arcYaw = this.shipLook.yaw;
-      this.arcPitch = this.shipLook.pitch;
-      this.arcRoll = this.shipLook.roll;
       this.drone = null;
-      this.applyCam();
-      this.wake();
+      this.restoreShipCam();
       return;
     }
     this.shipLook.yaw = this.arcYaw;
     this.shipLook.pitch = this.arcPitch;
     this.shipLook.roll = this.arcRoll;
+    this.shipAt.copy(this.arcCenter);
     this.dropLookHold();
     const rt = nearestBody(this.host.bodies, (b) => this.bodyDist(b));
     if (rt) {
@@ -2188,6 +2187,35 @@ export class GalaxyView {
       };
     }
     this.placeDrone();
+    this.applyCam();
+    this.wake();
+  }
+
+  /** Leave the trackball: eye and look are the ship again. */
+  private restoreShipCam(): void {
+    this.arcYaw = this.shipLook.yaw;
+    this.arcPitch = this.shipLook.pitch;
+    this.arcRoll = this.shipLook.roll;
+    if (this.riding && this.hostObj) {
+      const tSys = (this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE;
+      this.placeRide(tSys);
+    } else if (this.landed) {
+      this.placeSurface();
+    } else {
+      this.arcCenter.copy(this.shipAt);
+      this.mintAt.copy(this.arcCenter);
+      const root = this.hostRoot;
+      const lock = this.hostObj;
+      if (root && lock) {
+        const cart = galToCart(lock.pos);
+        root.position.set(
+          cart.x - this.arcCenter.x,
+          cart.y - this.arcCenter.y,
+          cart.z - this.arcCenter.z,
+        );
+        root.updateMatrixWorld(true);
+      }
+    }
     this.applyCam();
     this.wake();
   }

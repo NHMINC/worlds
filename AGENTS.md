@@ -212,8 +212,8 @@ toy — Godus blocks on a real-sized globe.
   drone around that world (else the
   star): drag rolls the body with no
   pole endstops, pinch is altitude
-  (`SOI_TRACK_*`); off restores the
-  ship. On the ground,
+  (`SOI_TRACK_*`); off is the ship
+  camera again. On the ground,
   zoom-in latches a walk; zoom-out
   dumps it, then settles. WASD glides.
   Take off returns to the ring we
