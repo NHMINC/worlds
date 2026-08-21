@@ -196,7 +196,8 @@ toy — Godus blocks on a real-sized globe.
   wheel dollies at the subject distance
   (`SOI_ZOOM`); on a ring it changes
   that radius. Two-finger twist rolls
-  the look (`SOI_TWIST`). Inertial parks
+  the look (`SOI_TWIST`) — clockwise
+  fingers, clockwise roll. Inertial parks
   (LEO / station / MEO / polar) pitch
   the look so the forward limb fills
   `ORBIT_LIMB_FILL` (30%) of the bottom

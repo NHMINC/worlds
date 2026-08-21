@@ -4948,9 +4948,14 @@ export class GalaxyView {
     this.wake();
   }
 
-  /** Two-finger twist rolls the look around the nose. */
+  /**
+   * Two-finger twist rolls the look around the nose.
+   * Screen atan2 is Y-down, so a clockwise pinch is +dAng;
+   * look-axis roll is the other way. Negate so clockwise
+   * fingers roll the camera clockwise.
+   */
   private twistLook(dAng: number): void {
-    const d = dAng * UNIVERSE.SOI_TWIST;
+    const d = -dAng * UNIVERSE.SOI_TWIST;
     if (Math.abs(d) < 1e-6) return;
     if (this.riding) this.rideLookFree = true;
     if (this.drone) {
