@@ -370,8 +370,9 @@ export const UNIVERSE = {
    * not open the old system viewer.
    * A world inside that bubble has its own fence
    * (WORLD_RANGE_AU) — a place, not the radius.
-   * Same family: heading hold, half-warp gears from
-   * WORLD_BRAKE_AU so the fence cannot be skipped,
+   * Same family: heading hold, then a late crawl from
+   * WORLD_BRAKE_AU (keep WORLD_BRAKE_GAIN of cruise) so
+   * the fence cannot be skipped — not an early slowdown,
    * Stop when that world's disk covers ARRIVE_FILL.
    * Look drag releases the heading, not the world.
    * Another world can be picked without leaving the
@@ -437,15 +438,21 @@ export const UNIVERSE = {
     return (this.WORLD_RANGE_AU * this.AU_KM) / this.KPC_KM;
   },
   /**
-   * Ahead only. Inside this radius of a coursed world,
-   * half of the host-sphere speed, held until a frame
-   * would hit WORLD_RANGE, then half again. Floor is
-   * the close crawl at the fence. Astern ignores this.
+   * Ahead only. The orbital-slot approach — not an early
+   * crawl. Outside this radius of a coursed / locked
+   * world, host-sphere cruise. Inside it, keep
+   * WORLD_BRAKE_GAIN of that cruise (0.25 = 75% slower)
+   * until a frame would hit WORLD_RANGE, then half again.
+   * Floor is the close crawl at the fence. 1 AU is when
+   * the ball is about to own the insertion. Astern
+   * ignores this.
    */
-  WORLD_BRAKE_AU: 2,
+  WORLD_BRAKE_AU: 1,
   get WORLD_BRAKE_KPC(): number {
     return (this.WORLD_BRAKE_AU * this.AU_KM) / this.KPC_KM;
   },
+  /** Fraction of cruise kept inside WORLD_BRAKE_AU. */
+  WORLD_BRAKE_GAIN: 0.25,
   /**
    * Transfer route. Space is empty; bodies are balls. A held
    * course never flies into one: if the sightline crosses

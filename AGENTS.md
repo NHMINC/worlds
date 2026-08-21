@@ -145,8 +145,11 @@ toy — Godus blocks on a real-sized globe.
   in the galaxy, so its XY was an accident,
   not a law. A world has its own fence
   (`WORLD_RANGE_AU`) — same arrive family
-  (heading hold, half-warp gears from
-  `WORLD_BRAKE_AU`, Stop at `ARRIVE_FILL`
+  (heading hold, then a late crawl from
+  `WORLD_BRAKE_AU` that keeps
+  `WORLD_BRAKE_GAIN` of cruise — 1 AU,
+  75% slower — so insertion is not a
+  fly-by; Stop at `ARRIVE_FILL`
   of that disk). Reticle Set course is
   still that heading. The system chart
   opens an orbit picker (LEO, GEO low /
@@ -624,8 +627,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   A locked course stops at the
   `ARRIVE_FILL` park. Inside a host, set
   course on a world uses the same park on
-  that world's disk; gears run from
-  `WORLD_BRAKE_AU` down to `WORLD_RANGE_AU`
+  that world's disk; the late crawl
+  (`WORLD_BRAKE_AU` × `WORLD_BRAKE_GAIN`)
+  runs down to `WORLD_RANGE_AU`
   so the fence cannot be skipped, and the
   cap follows the destination — departure
   is never held by the body being left. A

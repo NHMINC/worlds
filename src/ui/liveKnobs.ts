@@ -496,8 +496,8 @@ export const LIVE_KNOBS: LiveKnob[] = [
     id: 'worldBrake',
     label: 'World brake',
     group: 'approach',
-    hint: 'how far out the world gears begin (AU)',
-    about: 'Ahead only, and only on a world course. Outside this radius, cruise is Close crawl × distance to the world (capped by Approach warp). Inside it, half of that until a frame would hit the world fence, then half again. Astern does not use this. Next frame.',
+    hint: 'how far out the orbital-slot crawl begins (AU)',
+    about: 'Ahead only, and only on a world course. Outside this radius, full host-sphere cruise. Inside it — when the locked body is about to own the insertion — keep a quarter of that cruise (WORLD_BRAKE_GAIN, 75% slower) until a frame would hit the world fence, then half again. 1 AU is the law. Astern does not use this. Next frame.',
     uniform: 'uWorldBrake',
     min: 0.2,
     max: 15,
@@ -505,6 +505,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
     read: () => UNIVERSE.WORLD_BRAKE_AU,
     write: (v) => {
       UNIVERSE.WORLD_BRAKE_AU = v;
+    },
+  },
+  {
+    id: 'worldBrakeGain',
+    label: 'World slot keep',
+    group: 'approach',
+    hint: 'cruise fraction inside the world brake',
+    about: 'Ahead only. Inside World brake, warp keeps this fraction of host-sphere cruise so the last AU into the orbital slot is a crawl, not a fly-by. 0.25 is 75% slower. Then half again if a frame would skip the world fence. Astern ignores this. Next frame.',
+    uniform: 'uWorldBrakeGain',
+    min: 0.05,
+    max: 1,
+    step: 0.05,
+    read: () => UNIVERSE.WORLD_BRAKE_GAIN,
+    write: (v) => {
+      UNIVERSE.WORLD_BRAKE_GAIN = v;
     },
   },
   {

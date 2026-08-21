@@ -4384,8 +4384,9 @@ export class GalaxyView {
    * would reach the fence, then half again — the longest
    * stretch at each gear, the fewest frames to the SOI.
    * Floor is the sphere limit. Astern: sphere, then full warp.
-   * A world course uses the same gears against WORLD_RANGE,
-   * capped by the host-sphere limit.
+   * A world course keeps host-sphere cruise until
+   * WORLD_BRAKE_AU, then WORLD_BRAKE_GAIN of that speed
+   * against WORLD_RANGE, capped by the host-sphere limit.
    */
   private closeSpeed(d: number, dt = this.lastDt): number {
     const warp = UNIVERSE.GALAXY_WARP;
@@ -4415,7 +4416,7 @@ export class GalaxyView {
     const vLim = this.sphereSpeed(fence);
     const frame = Math.min(0.05, Math.max(dt, 1 / 120));
     const remain = Math.max(d - fence, 0);
-    let v = vCruise * 0.5;
+    let v = vCruise * UNIVERSE.WORLD_BRAKE_GAIN;
     while (v > vLim && v * frame >= remain) v *= 0.5;
     return Math.max(vLim, Math.min(vCruise, v));
   }
@@ -5182,7 +5183,18 @@ export class GalaxyView {
     // Land just inside so the next frame is on the curve.
     // Astern does not land on a shell — jumping the fence
     // on the way out is fine.
-    if (!this.astern && !world) {
+    if (!this.astern && world) {
+      this.bodyFromEye(world, this.hostTmp);
+      const d = this.hostTmp.length();
+      const closing =
+        this.hostTmp.x * this.arcFwd.x +
+        this.hostTmp.y * this.arcFwd.y +
+        this.hostTmp.z * this.arcFwd.z;
+      const brake = UNIVERSE.WORLD_BRAKE_KPC;
+      if (closing > 0 && d > brake) {
+        step = Math.min(step, d - brake * (1 - 1e-6));
+      }
+    } else if (!this.astern && !world) {
       const sub = this.closeSubject();
       if (sub) {
         const d = this.arriveDist(sub);
