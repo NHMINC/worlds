@@ -2546,10 +2546,10 @@ export class GalaxyView {
     const tx = this.orbitTmp.x + this.orbitTmp2.x;
     const ty = this.orbitTmp.y + this.orbitTmp2.y;
     const tz = this.orbitTmp.z + this.orbitTmp2.z;
-    const lookErr = this.easeCapturePose(dt, tx, ty, tz, hang, rt);
+    this.easeCapturePose(dt, tx, ty, tz);
     const posErr = Math.hypot(tx - this.arcCenter.x, ty - this.arcCenter.y, tz - this.arcCenter.z);
     const slack = Math.max(r * 0.002, 1e-18);
-    if (posErr <= slack && lookErr < 0.04) {
+    if (posErr <= slack) {
       this.capturing = null;
       this.beginRide(rt, cap.kind, cap.dir, tSys);
     }
@@ -2571,11 +2571,10 @@ export class GalaxyView {
     const tx = c.x + this.orbitTmp2.x;
     const ty = c.y + this.orbitTmp2.y;
     const tz = c.z + this.orbitTmp2.z;
-    this.orbitTmp.copy(this.rideE2);
-    const lookErr = this.easeCapturePose(dt, tx, ty, tz, false, null);
+    this.easeCapturePose(dt, tx, ty, tz);
     const posErr = Math.hypot(tx - this.arcCenter.x, ty - this.arcCenter.y, tz - this.arcCenter.z);
     const slack = Math.max(r * 0.002, 1e-18);
-    if (posErr <= slack && lookErr < 0.04) {
+    if (posErr <= slack) {
       this.capturing = null;
       this.beginStarRide(dir, tSys);
     }
@@ -2608,17 +2607,10 @@ export class GalaxyView {
   }
 
   /**
-   * Ease arcCenter toward (tx,ty,tz) and the nose toward hang→body
-   * or inertial tangent (rideE2). Returns remaining look error.
+   * Ease the eye onto the ring. Look is left alone — Lock-on
+   * already faced forward; parking must not yank the camera.
    */
-  private easeCapturePose(
-    dt: number,
-    tx: number,
-    ty: number,
-    tz: number,
-    hang: boolean,
-    rt: HostBodyRT | null,
-  ): number {
+  private easeCapturePose(dt: number, tx: number, ty: number, tz: number): void {
     const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
     this.arcCenter.x += (tx - this.arcCenter.x) * k;
     this.arcCenter.y += (ty - this.arcCenter.y) * k;
@@ -2633,27 +2625,6 @@ export class GalaxyView {
       this.hostRoot.position.copy(this.orbitTmp).negate();
       this.hostRoot.updateMatrixWorld(true);
     }
-    if (hang && rt) this.bodyFromEye(rt, this.orbitTmp);
-    else this.orbitTmp.copy(this.rideE2);
-    const dx = this.orbitTmp.x;
-    const dy = this.orbitTmp.y;
-    const dz = this.orbitTmp.z;
-    const dAim = Math.hypot(dx, dy, dz);
-    if (!(dAim > 1e-15)) return 0;
-    const tgtYaw = Math.atan2(dx, dz);
-    const tgtPitch = THREE.MathUtils.clamp(
-      Math.asin(THREE.MathUtils.clamp(dy / dAim, -1, 1)),
-      -1.45,
-      1.45,
-    );
-    let dYaw = tgtYaw - this.arcYaw;
-    dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
-    const dPitch = tgtPitch - this.arcPitch;
-    const lookErr = Math.abs(dYaw) + Math.abs(dPitch);
-    const hk = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
-    this.arcYaw += dYaw * hk;
-    this.arcPitch += dPitch * hk;
-    return lookErr;
   }
 
   /** dirCatalog is body → camera at first contact, unit. The ring starts there. */
@@ -2691,8 +2662,8 @@ export class GalaxyView {
       this.riding.theta0 = -this.riding.omega * tSys;
     }
     this.placeRide(tSys);
-    // Lock-on ends. In Orbit: free cameras — no Center latch.
-    // Face along the ring (inertial) or the body (hang / hover).
+    // Lock-on ends. In Orbit: free cameras — leave the look
+    // exactly where insertion left it.
     this.capturing = null;
     this.dropLookHold();
     this.courseObj = null;
@@ -2704,24 +2675,6 @@ export class GalaxyView {
     this.insertBlend = 0;
     this.thrustOn = false;
     this.thrustSpeed = 0;
-    if (hang) {
-      this.bodyFromEye(rt, this.orbitTmp);
-      if (this.orbitTmp.lengthSq() > 1e-28) {
-        this.aimAt(this.orbitTmp.x, this.orbitTmp.y, this.orbitTmp.z);
-      }
-    } else if (this.riding) {
-      const th = this.riding.theta0 + this.riding.omega * tSys;
-      const c = Math.cos(th);
-      const s = Math.sin(th);
-      this.orbitTmp.set(
-        -this.rideE1.x * s + this.rideE2.x * c,
-        -this.rideE1.y * s + this.rideE2.y * c,
-        -this.rideE1.z * s + this.rideE2.z * c,
-      );
-      if (this.orbitTmp.lengthSq() > 1e-28) {
-        this.aimAt(this.orbitTmp.x, this.orbitTmp.y, this.orbitTmp.z);
-      }
-    }
   }
 
   /**
@@ -2758,17 +2711,6 @@ export class GalaxyView {
     this.insertBlend = 0;
     this.thrustOn = false;
     this.thrustSpeed = 0;
-    const th = this.riding.theta0 + this.riding.omega * tSys;
-    const c = Math.cos(th);
-    const s = Math.sin(th);
-    this.orbitTmp.set(
-      -this.rideE1.x * s + this.rideE2.x * c,
-      -this.rideE1.y * s + this.rideE2.y * c,
-      -this.rideE1.z * s + this.rideE2.z * c,
-    );
-    if (this.orbitTmp.lengthSq() > 1e-28) {
-      this.aimAt(this.orbitTmp.x, this.orbitTmp.y, this.orbitTmp.z);
-    }
   }
 
   private placeRide(tSys: number): void {
