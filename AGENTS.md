@@ -149,10 +149,15 @@ toy — Godus blocks on a real-sized globe.
   (`WORLD_RANGE_AU`) — same arrive family
   (heading hold, half-warp gears from
   `WORLD_BRAKE_AU`, Stop at `ARRIVE_FILL`
-  of that disk). Reticle and chart pick
-  the body; another world can be chosen
-  without leaving the host; another star
-  cannot.   The coursed / latched rocky
+  of that disk). Reticle Set course is
+  still that heading. The system chart
+  opens an orbit picker (LEO, GEO low /
+  Station, MEO, GEO, Polar, Hover);
+  confirm auto-warps and settles onto
+  that ring (`WORLD_ORBIT_*`, Kepler
+  GEO from spin and mass). Another world
+  can be chosen without leaving the host;
+  another star cannot.   The coursed / latched rocky
   world is the Goldberg globe
   (terrace, air, water — same
   shaders as the old viewer).
@@ -355,7 +360,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   The **system chart** (orbits icon next to Cosmic engineer)
   is the same rank-spaced orbits-and-moons schematic as the
   world viewer, zoomable. It appears only inside a host
-  sphere. A tap does not fly yet. **Cosmic engineer** (explorer top bar) is a dropdown of
+  sphere. A tap opens a modal of standard rings
+  (LEO, GEO low / Station, MEO, GEO, Polar, Hover).
+  Pick one and warp auto-engages; the viewpoint
+  parks on that radius and rides it (hang for GEO /
+  hover, inertial for the rest). Reticle Set course
+  stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, approach, nebulae). Sections stay
   collapsed until opened, and stay open when you pick a
@@ -548,7 +558,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   course on a world uses the same park on
   that world's disk; gears run from
   `WORLD_BRAKE_AU` down to `WORLD_RANGE_AU`
-  so the fence cannot be skipped. The survey photograph is a place law
+  so the fence cannot be skipped. A chart
+  orbit pick parks on the named ring
+  instead and then rides it. The survey photograph is a place law
   (`surveyGain`): full outside any sphere, `ARRIVE_SKY_GAIN`
   at the centre, linear in distance (dark-sky Earth, a bit
   clearer — the only galaxy light on anything in the bubble;
@@ -883,6 +895,7 @@ Code map (start here):
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
+| Host-pass orbit rings (chart pick) | `src/world/worldOrbit.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |
 | Per-cell geology (mining truth) | `src/world/geology.ts` |

@@ -47,6 +47,12 @@ import {
 import { makeGasGiant } from './gasGiant';
 import { RockyGlobe } from './rockyGlobe';
 import {
+  isHangOrbit,
+  orbitOmega,
+  orbitRadiusKpc,
+  type WorldOrbitKind,
+} from '../world/worldOrbit';
+import {
   silhouetteCloud,
   nebulaCloud,
   harvestDustVolume,
@@ -633,6 +639,10 @@ export interface GalaxyFrame {
   hostId: number | null;
   /** Luminous-tail backdrop points currently on the GPU (0 if not minted). */
   backdrop: number;
+  /** Chart-picked ring, if we are warping to it or already riding. */
+  orbit: WorldOrbitKind | null;
+  /** True once the viewpoint is on that ring. */
+  orbiting: boolean;
 }
 
 export interface RegionSelection {
@@ -771,6 +781,25 @@ export class GalaxyView {
   private selectedBodyId: string | null = null;
   /** One Goldberg globe — the coursed / latched rocky world. */
   private globe: RockyGlobe | null = null;
+  /** Chart pick: fly to this ring, then ride it. */
+  private pendingOrbit: { bodyId: string; kind: WorldOrbitKind } | null = null;
+  private riding: {
+    bodyId: string;
+    kind: WorldOrbitKind;
+    hang: boolean;
+    r: number;
+    theta0: number;
+    omega: number;
+  } | null = null;
+  private readonly rideLocal = new THREE.Vector3();
+  private readonly rideE1 = new THREE.Vector3();
+  private readonly rideE2 = new THREE.Vector3();
+  private readonly rideNorth = new THREE.Vector3();
+  private readonly orbitTmp = new THREE.Vector3();
+  private readonly orbitTmp2 = new THREE.Vector3();
+  private readonly orbitQ = new THREE.Quaternion();
+  /** Cruise reached the ring this frame — enter after bodies pose. */
+  private pendingArriveOrbit = false;
   /**
    * Close-approach subject. Latched when the course, reticle, or
    * selected star comes inside ARRIVE_RANGE_LY; released when the
@@ -1575,6 +1604,8 @@ export class GalaxyView {
     // Inside a host sphere you cannot pick a different star —
     // leave the host sphere first. Worlds use setCourseBody.
     if (this.hostObj && this.hostObj.id !== obj.id) return;
+    this.clearRide();
+    this.pendingOrbit = null;
     this.courseBodyId = null;
     this.courseObj = obj;
     const brief = this.briefFor(obj);
@@ -1602,12 +1633,146 @@ export class GalaxyView {
     if (this.mode !== 'region' || !this.hostObj) return;
     const rt = this.worldRt(bodyId);
     if (!rt) return;
+    this.clearRide();
+    this.pendingOrbit = null;
     this.courseObj = null;
     this.courseBodyId = bodyId;
     this.selectedBodyId = bodyId;
     this.courseHud = this.hudForBody(rt);
     this.select(null);
     this.wake();
+  }
+
+  /**
+   * Chart pick: hold the heading, latch warp, park on the
+   * named ring, then ride it. Reticle Set course stays
+   * the fill-park heading.
+   */
+  goToWorldOrbit(bodyId: string, kind: WorldOrbitKind): void {
+    if (this.mode !== 'region' || !this.hostObj) return;
+    const rt = this.worldRt(bodyId);
+    if (!rt) return;
+    this.setCourseBody(bodyId);
+    this.pendingArriveOrbit = false;
+    this.pendingOrbit = { bodyId, kind };
+    this.setGear(false);
+    this.setWarp(true);
+    this.wake();
+  }
+
+  private clearRide(): void {
+    this.riding = null;
+  }
+
+  /** Catalog position of a host-pass body — independent of arcCenter. */
+  private bodyCatalog(rt: HostBodyRT, out: THREE.Vector3): THREE.Vector3 {
+    const lock = this.hostObj;
+    if (!lock) return out.set(0, 0, 0);
+    const c = galToCart(lock.pos);
+    out.copy(rt.pos).multiplyScalar(KM_TO_KPC);
+    if (this.hostRoot) out.applyQuaternion(this.hostRoot.quaternion);
+    out.x += c.x;
+    out.y += c.y;
+    out.z += c.z;
+    return out;
+  }
+
+  private spinWorld(rt: HostBodyRT, out: THREE.Quaternion): THREE.Quaternion {
+    out.copy(rt.spinQ);
+    if (this.hostRoot) out.premultiply(this.hostRoot.quaternion);
+    return out;
+  }
+
+  private enterRide(tSys: number): void {
+    const pending = this.pendingOrbit;
+    if (!pending) return;
+    const rt = this.worldRt(pending.bodyId);
+    this.pendingOrbit = null;
+    this.setWarp(false);
+    if (!rt) return;
+    this.bodyCatalog(rt, this.orbitTmp);
+    this.orbitTmp2.copy(this.arcCenter).sub(this.orbitTmp);
+    if (this.orbitTmp2.lengthSq() < 1e-28) {
+      this.orientArc();
+      this.orbitTmp2.copy(this.arcFwd).negate();
+    }
+    this.orbitTmp2.normalize();
+    const r = orbitRadiusKpc(rt.spec, pending.kind);
+    const hang = isHangOrbit(pending.kind);
+    this.spinWorld(rt, this.orbitQ);
+    this.riding = {
+      bodyId: rt.spec.id,
+      kind: pending.kind,
+      hang,
+      r,
+      theta0: 0,
+      omega: hang ? 0 : orbitOmega(rt.spec, pending.kind),
+    };
+    if (hang) {
+      this.rideLocal.copy(this.orbitTmp2).applyQuaternion(this.orbitQ.clone().conjugate());
+    } else {
+      this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+      if (pending.kind === 'polar') {
+        this.rideE1.copy(this.orbitTmp2).addScaledVector(this.rideNorth, -this.orbitTmp2.dot(this.rideNorth));
+        if (this.rideE1.lengthSq() < 1e-16) {
+          this.rideE1.crossVectors(this.rideNorth, this.arcRight);
+          if (this.rideE1.lengthSq() < 1e-16) this.rideE1.crossVectors(this.rideNorth, this.worldUp);
+        }
+        this.rideE1.normalize();
+        this.rideE2.copy(this.rideNorth);
+      } else {
+        this.rideE1.copy(this.orbitTmp2).addScaledVector(this.rideNorth, -this.orbitTmp2.dot(this.rideNorth));
+        if (this.rideE1.lengthSq() < 1e-16) {
+          this.rideE1.crossVectors(this.rideNorth, this.arcRight);
+          if (this.rideE1.lengthSq() < 1e-16) {
+            this.rideE1.set(1, 0, 0).addScaledVector(this.rideNorth, -this.rideNorth.x);
+          }
+        }
+        this.rideE1.normalize();
+        this.rideE2.crossVectors(this.rideNorth, this.rideE1).normalize();
+      }
+      this.riding.theta0 = -this.riding.omega * tSys;
+    }
+    this.placeRide(tSys);
+  }
+
+  private placeRide(tSys: number): void {
+    const ride = this.riding;
+    if (!ride) return;
+    const rt = this.worldRt(ride.bodyId);
+    if (!rt || !this.hostObj) {
+      this.clearRide();
+      return;
+    }
+    this.bodyCatalog(rt, this.orbitTmp);
+    let ox: number;
+    let oy: number;
+    let oz: number;
+    if (ride.hang) {
+      this.spinWorld(rt, this.orbitQ);
+      this.orbitTmp2.copy(this.rideLocal).applyQuaternion(this.orbitQ);
+      ox = this.orbitTmp2.x * ride.r;
+      oy = this.orbitTmp2.y * ride.r;
+      oz = this.orbitTmp2.z * ride.r;
+    } else {
+      const th = ride.theta0 + ride.omega * tSys;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      ox = (this.rideE1.x * c + this.rideE2.x * s) * ride.r;
+      oy = (this.rideE1.y * c + this.rideE2.y * s) * ride.r;
+      oz = (this.rideE1.z * c + this.rideE2.z * s) * ride.r;
+    }
+    this.arcCenter.set(this.orbitTmp.x + ox, this.orbitTmp.y + oy, this.orbitTmp.z + oz);
+    if (this.hostRoot) {
+      const cart = galToCart(this.hostObj.pos);
+      this.hostRoot.position.set(
+        cart.x - this.arcCenter.x,
+        cart.y - this.arcCenter.y,
+        cart.z - this.arcCenter.z,
+      );
+      this.hostRoot.updateMatrixWorld(true);
+    }
+    if (!this.looking) this.aimAt(-ox, -oy, -oz);
   }
 
   private clearCourse(): void {
@@ -1618,7 +1783,9 @@ export class GalaxyView {
 
   /** Ease the nose onto the course star or world and keep it there. */
   private holdCourse(dt: number): void {
-    if (this.mode !== 'region' || this.looking) return;
+    if (this.mode !== 'region') return;
+    if (this.riding) return;
+    if (this.looking && !this.pendingOrbit) return;
     let dx = 0;
     let dy = 0;
     let dz = 0;
@@ -1629,6 +1796,16 @@ export class GalaxyView {
       dx = this.hostTmp.x;
       dy = this.hostTmp.y;
       dz = this.hostTmp.z;
+      const pending = this.pendingOrbit;
+      if (pending && pending.bodyId === this.courseBodyId) {
+        const park = orbitRadiusKpc(rt.spec, pending.kind);
+        const d0 = this.hostTmp.length();
+        if (d0 < park * 0.998) {
+          dx = -dx;
+          dy = -dy;
+          dz = -dz;
+        }
+      }
     } else if (this.courseObj) {
       const p = galToCart(this.courseObj.pos);
       dx = p.x - this.arcCenter.x;
@@ -2007,6 +2184,8 @@ export class GalaxyView {
   /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
   setWarp(on: boolean): void {
     if (this.mode !== 'region') return;
+    if (on && this.riding) this.clearRide();
+    if (!on && this.pendingOrbit && !this.pendingArriveOrbit) this.pendingOrbit = null;
     this.thrustOn = on && this.warpMayRun();
     this.idle = 0;
     if (this.thrustOn) this.wake(2);
@@ -2215,6 +2394,8 @@ export class GalaxyView {
     this.courseBodyId = null;
     this.focusBodyId = null;
     this.selectedBodyId = null;
+    this.pendingOrbit = null;
+    this.clearRide();
     if (this.courseHud?.bodyId) this.clearCourse();
     this.dropGlobe();
     this.clearHostBodies();
@@ -2501,6 +2682,14 @@ export class GalaxyView {
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.updateHostBodies(tSys);
+    if (this.pendingArriveOrbit && this.pendingOrbit) {
+      this.pendingArriveOrbit = false;
+      this.enterRide(tSys);
+    } else if (this.riding) {
+      this.placeRide(tSys);
+    } else {
+      this.pendingArriveOrbit = false;
+    }
     if (root) root.updateMatrixWorld(true);
     if (this.hostStar && root) {
       const camLocal = new THREE.Vector3();
@@ -2605,7 +2794,15 @@ export class GalaxyView {
 
   private moveCap(dt = this.lastDt): number | null {
     const world = this.closeWorld();
-    if (world) return this.worldCloseSpeed(this.bodyDist(world), dt);
+    if (world) {
+      const d = this.bodyDist(world);
+      const pending = this.pendingOrbit;
+      if (pending && pending.bodyId === world.spec.id) {
+        const park = orbitRadiusKpc(world.spec, pending.kind);
+        return this.worldCloseSpeed(Math.max(d, Math.abs(d - park)), dt);
+      }
+      return this.worldCloseSpeed(d, dt);
+    }
     const sub = this.closeSubject();
     if (sub) return this.closeSpeed(this.arriveDist(sub), dt);
     return null;
@@ -2879,7 +3076,7 @@ export class GalaxyView {
     }
     if (this.mode === 'region') {
       this.looking = true;
-      this.clearCourse();
+      if (!this.pendingOrbit && !this.riding) this.clearCourse();
       this.arcYaw -= dx * 0.005;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
       this.applyCam();
@@ -3032,6 +3229,10 @@ export class GalaxyView {
       this.thrustSpeed = 0;
       return;
     }
+    if (this.riding) {
+      if (this.thrustOn) this.clearRide();
+      else return;
+    }
     if (this.thrustOn && !this.warpMayRun()) this.thrustOn = false;
     this.orientArc();
     this.updateArriveSubject();
@@ -3039,12 +3240,57 @@ export class GalaxyView {
     const sign = this.thrustSign();
     const course = this.courseObj;
     const world = this.courseBodyId ? this.worldRt(this.courseBodyId) : null;
+    const pending = this.pendingOrbit;
+    const orbitPark =
+      world && pending && pending.bodyId === this.courseBodyId
+        ? orbitRadiusKpc(world.spec, pending.kind)
+        : null;
     const cap = this.moveCap(dt);
     const v = cap ?? UNIVERSE.GALAXY_WARP;
     this.thrustSpeed = this.thrustOn ? v : 0;
     if (this.thrustSpeed <= 0) return;
     let step = this.thrustSpeed * dt;
-    if (world && !this.astern) {
+    if (world && orbitPark != null && !this.astern) {
+      const d = this.bodyDist(world);
+      const park = orbitPark;
+      if (d <= park * 1.002 && d >= park * 0.998) {
+        this.pendingArriveOrbit = true;
+        this.setWarp(false);
+        return;
+      }
+      world.group.getWorldPosition(this.hostTmp);
+      if (d < park) {
+        const remain = park - d;
+        const inv = 1 / Math.max(d, 1e-18);
+        if (step >= remain) {
+          this.moveBubble(
+            -this.hostTmp.x * inv * remain,
+            -this.hostTmp.y * inv * remain,
+            -this.hostTmp.z * inv * remain,
+          );
+          this.pendingArriveOrbit = true;
+          this.setWarp(false);
+          return;
+        }
+      } else {
+        const tCa =
+          this.hostTmp.x * this.arcFwd.x +
+          this.hostTmp.y * this.arcFwd.y +
+          this.hostTmp.z * this.arcFwd.z;
+        if (tCa > 0 && step >= d - park) {
+          const inv = 1 / d;
+          const remain = d - park;
+          this.moveBubble(
+            this.hostTmp.x * inv * remain,
+            this.hostTmp.y * inv * remain,
+            this.hostTmp.z * inv * remain,
+          );
+          this.pendingArriveOrbit = true;
+          this.setWarp(false);
+          return;
+        }
+      }
+    } else if (world && !this.astern) {
       const d = this.bodyDist(world);
       const park = this.parkBodyKpc(world.spec);
       if (d <= park) {
@@ -3114,6 +3360,7 @@ export class GalaxyView {
   }
 
   private steerArc(dt: number): void {
+    if (this.riding) return;
     let mx = 0;
     let my = 0;
     let mz = 0;
@@ -3385,7 +3632,7 @@ export class GalaxyView {
       this.applyCam();
       this.wake(30);
     }
-    if (this.thrustOn || this.steerHeld()) this.wake(2);
+    if (this.thrustOn || this.steerHeld() || this.riding || this.pendingOrbit) this.wake(2);
     if (this.restIn <= 0) {
       this.perf.tick(performance.now() - f0, false);
       this.perf.markRest();
@@ -3494,6 +3741,8 @@ export class GalaxyView {
       soiRemain: soi == null ? null : Math.max(0, UNIVERSE.ARRIVE_RANGE_KPC - soi),
       hostId: this.hostObj?.id ?? null,
       backdrop: this.shownCount(),
+      orbit: this.riding?.kind ?? this.pendingOrbit?.kind ?? null,
+      orbiting: Boolean(this.riding),
     });
     this.raf = requestAnimationFrame(this.frame);
   };

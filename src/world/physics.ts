@@ -432,6 +432,25 @@ export const UNIVERSE = {
     return (this.WORLD_BRAKE_AU * this.AU_KM) / this.KPC_KM;
   },
   /**
+   * Host-pass orbit rings from the system chart. Heights are
+   * in body radii above the surface — one law, every world.
+   * LEO skims the air. Station is the same inertial family
+   * a little higher (GEO low / station-keeping: the world
+   * turns under you). GEO hangs over one face at the Kepler
+   * altitude for that spin (`a³/T² = GM/4π²`); a locked
+   * body has no useful GEO, so that pick is hover. MEO sits
+   * on the LEO→GEO lerp. Polar is LEO in a plane that
+   * contains the spin axis. Hover hangs over the arrival
+   * face, low. Gas floors the skim so the ball is not a
+   * clip. GEO_MAX clamps a slow spinner so the ring stays
+   * a world orbit, not a second heliocentric.
+   */
+  WORLD_ORBIT_LEO: 0.08,
+  WORLD_ORBIT_HOVER: 0.18,
+  WORLD_ORBIT_MEO_FRAC: 0.45,
+  WORLD_ORBIT_GEO_MAX: 12,
+  WORLD_ORBIT_GAS_FLOOR: 0.35,
+  /**
    * Host-pass orbit rings. The old system viewer used ~0.1 on a
    * black void; that is glass on the dimmed harvest. These are
    * wayfinding, not emission — readable ellipses against the

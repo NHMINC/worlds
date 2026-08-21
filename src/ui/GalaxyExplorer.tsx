@@ -14,6 +14,8 @@ import {
 } from './liveKnobs';
 import { IconOrbits } from './icons';
 import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
+import { OrbitPick } from './OrbitPick';
+import { orbitLabel } from '../world/worldOrbit';
 
 const VIEW_PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -65,6 +67,7 @@ export function GalaxyExplorer(props: Props) {
   const [knobDirty, setKnobDirty] = useState(false);
   const [menu, setMenu] = useState<null | 'view' | 'engineer'>(null);
   const [mapOpen, setMapOpen] = useState(false);
+  const [orbitPick, setOrbitPick] = useState<string | null>(null);
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
   const [rebuilding, setRebuilding] = useState<null | RebuildScope>(null);
   const [rebuildFrac, setRebuildFrac] = useState(0);
@@ -87,6 +90,8 @@ export function GalaxyExplorer(props: Props) {
     soiRemain: null,
     hostId: null,
     backdrop: 0,
+    orbit: null,
+    orbiting: false,
   });
 
   useEffect(() => {
@@ -123,6 +128,8 @@ export function GalaxyExplorer(props: Props) {
               Math.abs((prev.course?.dist ?? -1) - (f.course?.dist ?? -1)) > 1e-12 ||
               Math.abs((prev.soiRemain ?? -1) - (f.soiRemain ?? -1)) > 1e-12 ||
               prev.hostId !== f.hostId ||
+              prev.orbit !== f.orbit ||
+              prev.orbiting !== f.orbiting ||
               prev.focus?.id !== f.focus?.id ||
               prev.focus?.bodyId !== f.focus?.bodyId ||
               (f.focus != null &&
@@ -425,7 +432,11 @@ export function GalaxyExplorer(props: Props) {
             {frame.course && (
               <i className="gx-plate-dist">{formatCatalogDist(frame.course.dist)}</i>
             )}
-            {frame.course ? (
+            {frame.orbiting && frame.orbit ? (
+              <i className="gx-plate-go">{orbitLabel(frame.orbit)}</i>
+            ) : frame.orbit && frame.course ? (
+              <i className="gx-plate-go">Warping to {orbitLabel(frame.orbit)}</i>
+            ) : frame.course ? (
               <i className="gx-plate-go">Course Locked</i>
             ) : (
               <button
@@ -658,8 +669,24 @@ export function GalaxyExplorer(props: Props) {
           currentBodyId={frame.course?.bodyId ?? frame.focus?.bodyId}
           angleOf={chartAngleOf}
           zoomable
-          onTravel={(id) => viewRef.current?.setCourseBody(id)}
-          onClose={() => setMapOpen(false)}
+          closeOnTravel={false}
+          onTravel={(id) => setOrbitPick(id)}
+          onClose={() => {
+            setMapOpen(false);
+            setOrbitPick(null);
+          }}
+        />
+      )}
+      {orbitPick && chartSpec && chartSpec.bodies.some((b) => b.id === orbitPick) && (
+        <OrbitPick
+          body={chartSpec.bodies.find((b) => b.id === orbitPick)!}
+          onCancel={() => setOrbitPick(null)}
+          onPick={(kind) => {
+            const id = orbitPick;
+            setOrbitPick(null);
+            setMapOpen(false);
+            viewRef.current?.goToWorldOrbit(id, kind);
+          }}
         />
       )}
     </div>

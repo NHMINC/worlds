@@ -9,7 +9,8 @@ import { keplerPlane, type SystemSpec } from '../world/systemgen';
  * a physical scale), but every body rides its live orbital angle, so the map
  * drifts in real time. In the world viewer, tap a world to fly there. In the
  * explorer the same chart is zoomable — pinch / wheel / drag — and a tap
- * sets course on that world (heading hold, world fence, fill park).
+ * opens the orbit picker (the parent warps onto the chosen ring).
+ * Reticle Set course is still a heading hold to the fill park.
  */
 
 export interface MapMoon {
@@ -40,6 +41,8 @@ interface Props {
   onClose: () => void;
   /** Pinch / wheel zoom and drag-pan. Explorer chart. */
   zoomable?: boolean;
+  /** Explorer chart: keep the map open so the orbit picker can sit on it. */
+  closeOnTravel?: boolean;
 }
 
 const RING_MIN = 26;
@@ -190,7 +193,7 @@ export function SystemMap(props: Props) {
   const travel = (id: string) => {
     if (!props.onTravel) return;
     props.onTravel(id);
-    props.onClose();
+    if (props.closeOnTravel !== false) props.onClose();
   };
 
   const onPointerDown = (e: React.PointerEvent<SVGSVGElement>): void => {
@@ -320,7 +323,7 @@ export function SystemMap(props: Props) {
         <p className="modal-note sysmap-note">
           {zoomable
             ? props.onTravel
-              ? 'Pinch or scroll to zoom. Drag to pan. Tap a world to set course.'
+              ? 'Pinch or scroll to zoom. Drag to pan. Tap a world to pick an orbit.'
               : 'Pinch or scroll to zoom. Drag to pan.'
             : 'Tap a world to fly there.'}
         </p>
