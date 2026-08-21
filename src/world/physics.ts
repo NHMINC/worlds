@@ -425,6 +425,8 @@ export const UNIVERSE = {
    * does not dim. The floor is a dark-sky Earth night, a
    * little clearer — the band is readable, not a flood. The
    * host furnace is real starlight and is not multiplied.
+   * The catalog freezes on entry: same pins, latched viewpoint,
+   * each row's dust column baked once. Not a raster sky.
    */
   ARRIVE_SKY_GAIN: 0.08,
   /**

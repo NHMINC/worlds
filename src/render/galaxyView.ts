@@ -72,6 +72,7 @@ import {
 } from '../world/sectors';
 import { SHAPE_GLSL } from '../world/skyShape';
 import type { DustVolume } from '../world/dustVolume';
+import { extinctLook, extinctT } from '../world/extinct';
 import { PerfMeter } from './perfHud';
 import { makeStar, type StarView } from './star';
 import { prepareUniverse } from '../world/universePrep';
@@ -331,6 +332,8 @@ const SILHOUETTE_VERT = /* glsl */ `
   uniform vec3 uWhiteRef;
   uniform float uDensGain;
   uniform float uHueFloor;
+  uniform float uCatalogFrozen;
+  attribute vec3 aExt;
   varying vec3 vColor;
   varying float vVis;
   varying float vKind;
@@ -429,7 +432,8 @@ const SILHOUETTE_VERT = /* glsl */ `
       vPx = gl_PointSize;
     }
     // Extinction: march the column from the bubble to this row.
-    vec3 ext = extinctT(uCenter, position);
+    // Frozen SOI: the column is latched on aExt (same law, once).
+    vec3 ext = uCatalogFrozen > 0.5 ? aExt : extinctT(uCenter, position);
     float extLum = dot(ext, vec3(0.2126, 0.7152, 0.0722));
     vVis *= extLum;
     vColor *= ext / max(extLum, 1e-3);
@@ -922,6 +926,14 @@ export class GalaxyView {
   private hostRoot: THREE.Group | null = null;
   /** Galaxy fill on objects in the bubble — ARRIVE_SKY_GAIN, not a flood. */
   private hostFill: THREE.AmbientLight | null = null;
+  /**
+   * SOI catalog freeze. Latch uCenter on entry, bake each row's
+   * dust column onto aExt, then the vertex march sleeps.
+   * -1 = thawed. Pins stay pins.
+   */
+  private catalogFreezeI = -1;
+  private catalogFrozen = false;
+  private readonly catalogFreezeCenter = new THREE.Vector3();
   /** Kepler balls + rings — own file, not the galaxy flight. */
   private readonly host = new HostSystem();
   private hostSpec: SystemSpec | null = null;
@@ -1438,6 +1450,7 @@ export class GalaxyView {
       uDustVol: { value: tex },
       uDustOrigin: { value: new THREE.Vector3(origin[0], origin[1], origin[2]) },
       uDustInvSize: { value: new THREE.Vector3(1 / size[0], 1 / size[1], 1 / size[2]) },
+      uCatalogFrozen: { value: 0 },
     };
   }
 
@@ -1536,6 +1549,7 @@ export class GalaxyView {
     geo.setAttribute('aKind', new THREE.BufferAttribute(cloud.kind, 1));
     geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
+    this.bindExtAttr(geo, cloud.n);
     geo.setDrawRange(0, cloud.n);
     const mat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 0);
     const pts = new THREE.Points(geo, mat);
@@ -1564,6 +1578,7 @@ export class GalaxyView {
     geo.setAttribute('aKind', new THREE.BufferAttribute(cloud.kind, 1));
     geo.setAttribute('aSize', new THREE.BufferAttribute(cloud.size, 1));
     geo.setAttribute('aSeed', new THREE.BufferAttribute(cloud.pulse, 1));
+    this.bindExtAttr(geo, cloud.n);
     geo.setDrawRange(0, cloud.n);
     const emisMat = this.makeCloudMaterial(SILHOUETTE_VERT, this.silUniforms(), 1);
     const emisPts = new THREE.Points(geo, emisMat);
@@ -1702,6 +1717,7 @@ export class GalaxyView {
     geo.setAttribute('position', new THREE.BufferAttribute(cloud.pos, 3));
     geo.setAttribute('aColor', new THREE.BufferAttribute(cloud.col, 3));
     geo.setAttribute('aShine', new THREE.BufferAttribute(cloud.shine, 1));
+    this.bindExtAttr(geo, UNIVERSE.COSMIC_STAR_N_MAX);
     geo.setDrawRange(0, this.cosmicCount('star'));
     const mat = new THREE.ShaderMaterial({
       vertexShader: cosmicStarVert(extinctGlsl(UNIVERSE.GALAXY_EXTINCT_STEPS)),
@@ -1713,6 +1729,7 @@ export class GalaxyView {
         uPinCore: { value: COSMIC_STAR_PIN_CORE },
         uCenter: { value: new THREE.Vector3() },
         uWhiteRef: { value: new THREE.Vector3(...whiteRefLinear(HARVEST_WHITE_K)) },
+        uCatalogFrozen: { value: 0 },
         ...this.extinctUniforms(),
       },
       transparent: true,
@@ -1788,6 +1805,16 @@ export class GalaxyView {
       const u = mat.uniforms[name];
       if (u) u.value = value;
     }
+    if (
+      this.hostObj &&
+      (name === 'uExtinctK' ||
+        name === 'uExtinctCut' ||
+        name === 'uExtinctHard' ||
+        name === 'uExtinctAbyss' ||
+        name === 'uExtinctMax')
+    ) {
+      this.beginCatalogFreeze();
+    }
   }
 
   liveUniform(name: string): number | null {
@@ -1845,6 +1872,7 @@ export class GalaxyView {
     const tex = this.ensureDustTexture();
     const vol = harvestDustVolume(this.seed);
     this.dustWired = vol;
+    if (this.hostObj) this.beginCatalogFreeze();
     const origin = vol?.origin ?? [-1, -1, -1];
     const size = vol?.size ?? [2, 2, 2];
     for (const mat of this.cloudMats()) {
@@ -1919,10 +1947,15 @@ export class GalaxyView {
     const cy = this.arcCenter.y;
     const cz = this.arcCenter.z;
     const dim = this.skyDim();
+    const frozen = this.catalogFreezeI >= 0 || this.catalogFrozen;
+    const ox = frozen ? this.catalogFreezeCenter.x : cx;
+    const oy = frozen ? this.catalogFreezeCenter.y : cy;
+    const oz = frozen ? this.catalogFreezeCenter.z : cz;
     for (const mat of this.cloudMats()) {
-      if (mat.uniforms.uCenter) mat.uniforms.uCenter.value.set(cx, cy, cz);
+      if (mat.uniforms.uCenter) mat.uniforms.uCenter.value.set(ox, oy, oz);
       if (mat.uniforms.uScale) mat.uniforms.uScale.value = 1;
       if (mat.uniforms.uSkyDim) mat.uniforms.uSkyDim.value = dim;
+      if (mat.uniforms.uCatalogFrozen) mat.uniforms.uCatalogFrozen.value = this.catalogFrozen ? 1 : 0;
     }
     if (this.hostFill) this.hostFill.intensity = dim;
   }
@@ -4033,6 +4066,7 @@ export class GalaxyView {
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
     this.detachHostStar();
+    this.thawCatalog();
     this.disposeArcStars();
     this.disposeCosmic();
     this.pickRing.geometry.dispose();
@@ -4485,6 +4519,7 @@ export class GalaxyView {
     this.hostStarId = -1;
     this.hostFill = null;
     this.navMode = null;
+    this.thawCatalog();
   }
 
   private detachHostFurnace(): void {
@@ -4521,6 +4556,128 @@ export class GalaxyView {
     this.starVis.needsUpdate = true;
   }
 
+  private bindExtAttr(geo: THREE.BufferGeometry, n: number): Float32Array {
+    const have = geo.getAttribute('aExt');
+    if (have) return have.array as Float32Array;
+    const ext = new Float32Array(Math.max(1, n) * 3);
+    for (let i = 0; i < n; i++) {
+      ext[i * 3] = 1;
+      ext[i * 3 + 1] = 1;
+      ext[i * 3 + 2] = 1;
+    }
+    const attr = new THREE.BufferAttribute(ext, 3);
+    attr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aExt', attr);
+    return ext;
+  }
+
+  private setCatalogFrozenFlag(on: boolean): void {
+    this.catalogFrozen = on;
+    for (const mat of this.cloudMats()) {
+      if (mat.uniforms.uCatalogFrozen) mat.uniforms.uCatalogFrozen.value = on ? 1 : 0;
+    }
+  }
+
+  private beginCatalogFreeze(): void {
+    this.catalogFreezeCenter.copy(this.arcCenter);
+    this.catalogFrozen = false;
+    this.catalogFreezeI = 0;
+    if (this.silGeo && this.cloud) this.bindExtAttr(this.silGeo, this.cloud.n);
+    if (this.silEmisGeo && this.nebulae) this.bindExtAttr(this.silEmisGeo, this.nebulae.n);
+    if (this.cosmicStarGeo) this.bindExtAttr(this.cosmicStarGeo, UNIVERSE.COSMIC_STAR_N_MAX);
+    this.setCatalogFrozenFlag(false);
+    this.pushMagUniforms();
+    this.wake(8);
+  }
+
+  private thawCatalog(): void {
+    this.catalogFrozen = false;
+    this.catalogFreezeI = -1;
+    this.setCatalogFrozenFlag(false);
+  }
+
+  /**
+   * Bake each catalog row's dust column from the latched SOI
+   * centre. Live march stays on until the attribute is full,
+   * then the vertex shader reads aExt.
+   */
+  private tickCatalogFreeze(): void {
+    if (!this.hostObj) {
+      if (this.catalogFreezeI >= 0 || this.catalogFrozen) this.thawCatalog();
+      return;
+    }
+    if (this.catalogFreezeI < 0) this.beginCatalogFreeze();
+    if (this.catalogFrozen) return;
+    const vol = harvestDustVolume(this.seed);
+    if (!vol) return;
+    const jobs: { pos: Float32Array; ext: THREE.BufferAttribute; n: number; look: boolean }[] = [];
+    if (this.silGeo && this.cloud) {
+      const ext = this.silGeo.getAttribute('aExt') as THREE.BufferAttribute | undefined;
+      const pos = this.silGeo.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (ext && pos) jobs.push({ pos: pos.array as Float32Array, ext, n: this.cloud.n, look: false });
+    }
+    if (this.silEmisGeo && this.nebulae) {
+      const ext = this.silEmisGeo.getAttribute('aExt') as THREE.BufferAttribute | undefined;
+      const pos = this.silEmisGeo.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (ext && pos) jobs.push({ pos: pos.array as Float32Array, ext, n: this.nebulae.n, look: false });
+    }
+    if (this.cosmicStarGeo) {
+      const ext = this.cosmicStarGeo.getAttribute('aExt') as THREE.BufferAttribute | undefined;
+      const pos = this.cosmicStarGeo.getAttribute('position') as THREE.BufferAttribute | undefined;
+      if (ext && pos) {
+        jobs.push({ pos: pos.array as Float32Array, ext, n: this.cosmicCount('star'), look: true });
+      }
+    }
+    let total = 0;
+    for (const j of jobs) total += j.n;
+    if (total <= 0) {
+      this.setCatalogFrozenFlag(true);
+      return;
+    }
+    const from: [number, number, number] = [
+      this.catalogFreezeCenter.x,
+      this.catalogFreezeCenter.y,
+      this.catalogFreezeCenter.z,
+    ];
+    let i = this.catalogFreezeI;
+    const deadline = performance.now() + 4;
+    while (i < total && performance.now() < deadline) {
+      let rest = i;
+      let job = jobs[0];
+      for (const j of jobs) {
+        if (rest < j.n) {
+          job = j;
+          break;
+        }
+        rest -= j.n;
+      }
+      const i3 = rest * 3;
+      const px = job.pos[i3];
+      const py = job.pos[i3 + 1];
+      const pz = job.pos[i3 + 2];
+      let rgb: [number, number, number];
+      if (job.look) {
+        const len = Math.hypot(px, py, pz) || 1;
+        rgb = extinctLook(vol, from, [px / len, py / len, pz / len]);
+      } else {
+        rgb = extinctT(vol, from, [px, py, pz]);
+      }
+      const arr = job.ext.array as Float32Array;
+      arr[i3] = rgb[0];
+      arr[i3 + 1] = rgb[1];
+      arr[i3 + 2] = rgb[2];
+      i++;
+    }
+    let acc = 0;
+    for (const j of jobs) {
+      if (this.catalogFreezeI < acc + j.n && i > acc) j.ext.needsUpdate = true;
+      acc += j.n;
+    }
+    this.catalogFreezeI = i;
+    if (i >= total) this.setCatalogFrozenFlag(true);
+    this.wake(2);
+  }
+
   private attachHostFurnace(lock: GalaxyObject): void {
     this.detachHostFurnace();
     this.clearHostBodies();
@@ -4534,8 +4691,10 @@ export class GalaxyView {
     this.hostStar = makeStar(star);
     this.ensureHostRoot().add(this.hostStar.group);
     this.hostStarId = lock.id;
-    // The photosphere replaces the pin — the rest of the sky stays live.
+    // The photosphere replaces the pin. The catalog freezes on
+    // this viewpoint — pins stay pins, the march sleeps.
     this.hideHarvestId(lock.id);
+    this.beginCatalogFreeze();
     if (this.hostSpec) this.buildHostBodies(this.hostSpec);
   }
 
@@ -5860,6 +6019,7 @@ export class GalaxyView {
     this.updateHostArrival(now);
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.tickGlobes(tSys);
+    this.tickCatalogFreeze();
     if (this.pendingPlace && this.applyPendingPlace(tSys)) this.applyCam();
     // Place can change this frame — write surveyGain after
     // attach so this draw matches the viewpoint.
