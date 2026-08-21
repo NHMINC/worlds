@@ -155,7 +155,22 @@ toy — Godus blocks on a real-sized globe.
   that ring at the approach face
   (`WORLD_ORBIT_*`, Kepler GEO from
   spin and mass) — first contact, never
-  through the body. Another world
+  through the body. The TRANSFER ROUTE
+  is a per-frame law, not waypoints: the
+  speed cap follows the DESTINATION
+  (departure is never held by the body
+  being left); a sightline that crosses
+  another body's (or the photosphere's)
+  graze sphere (`ROUTE_GRAZE` radii)
+  deflects to its tangent — inside the
+  sphere the aim goes tangent, so
+  departure spirals out; and a hard wall
+  at 1.12 radii clamps every move (warp,
+  zoom, strafe), entry only. Orbit rings
+  draw under a sagitta law — segments
+  chosen so the line deviates by less
+  than a quarter body radius, so bodies
+  ride their drawn lines. Another world
   can be chosen without leaving the host;
   another star cannot.   Every rocky body
   of the host grows a Goldberg globe
@@ -178,13 +193,16 @@ toy — Godus blocks on a real-sized globe.
   (`SOI_ZOOM`); on a ring it changes
   that radius. Two-finger twist rolls
   the look (`SOI_TWIST`). Center holds
-  look on the core of the body we are
-  attending (ridden / latched / coursed
-  / aimed world, else the host star)
-  and follows that core as it moves —
-  not the focus of its orbit. Offered
-  off the ground. On the ground, Sun
-  holds the furnace. Trackball is a drone
+  look on the core of the body that owns
+  the sky — the bound body (ride / world
+  latch) first, else the largest angular
+  radius above ~a Moon-in-Earth's-sky
+  disk, else the host star — and follows
+  that core as it moves (rendered
+  position, so the hold matches the
+  pixels; never the focus of an orbit).
+  Offered off the ground. On the ground,
+  Sun holds the furnace. Trackball is a drone
   around that world (else the star):
   drag rolls the body, pinch is
   altitude (`SOI_TRACK_*`); off
@@ -596,11 +614,21 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   course on a world uses the same park on
   that world's disk; gears run from
   `WORLD_BRAKE_AU` down to `WORLD_RANGE_AU`
-  so the fence cannot be skipped. A chart
-  orbit pick parks on the first contact
-  with the named ring (the approach
-  face — never through the body) and
-  then rides it. The survey photograph is a place law
+  so the fence cannot be skipped, and the
+  cap follows the destination — departure
+  is never held by the body being left. A
+  chart orbit pick parks on the first
+  contact with the named ring (the
+  approach face — never through the body)
+  and then rides it. The transfer route
+  deflects around blockers (`ROUTE_GRAZE`)
+  and a 1.12-radius wall clamps every
+  move. One clock (Unix seconds ×
+  `TIME_SCALE`), one space (catalog kpc;
+  the host root is km scaled once), two
+  unit boundaries (`orbitRadius` AU for
+  planets / km for moons; physics `a`
+  stays AU). The survey photograph is a place law
   (`surveyGain`): full outside any sphere, `ARRIVE_SKY_GAIN`
   at the centre, linear in distance (dark-sky Earth, a bit
   clearer — the only galaxy light on anything in the bubble;

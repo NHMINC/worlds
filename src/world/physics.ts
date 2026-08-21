@@ -432,6 +432,16 @@ export const UNIVERSE = {
     return (this.WORLD_BRAKE_AU * this.AU_KM) / this.KPC_KM;
   },
   /**
+   * Transfer route. A held course never flies through a body:
+   * if the sightline to the target crosses another body's (or
+   * the photosphere's) graze sphere — this many radii — the
+   * heading deflects to the tangent of that sphere, re-derived
+   * every frame (bodies ride Kepler rails; no stored waypoints).
+   * Inside the graze sphere the same formula aims tangent, so
+   * departure spirals out before bending onto the transfer.
+   */
+  ROUTE_GRAZE: 3,
+  /**
    * Host-pass orbit rings from the system chart. Heights are
    * in body radii above the surface — one law, every world.
    * LEO skims the air. Station is the same inertial family

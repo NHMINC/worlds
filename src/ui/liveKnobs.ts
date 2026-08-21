@@ -508,6 +508,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
+    id: 'routeGraze',
+    label: 'Route graze',
+    group: 'approach',
+    hint: 'how wide a berth a course gives other bodies (radii)',
+    about: 'Transfer route law. A held course whose sightline crosses another body\'s (or the photosphere\'s) sphere — this many radii — deflects to its tangent, re-derived every frame. Inside the sphere the aim goes tangent, so departure spirals out before bending onto the transfer. The hard wall at 1.12 radii is separate and applies to every move. Next frame.',
+    uniform: 'uRouteGraze',
+    min: 1.5,
+    max: 8,
+    step: 0.1,
+    read: () => UNIVERSE.ROUTE_GRAZE,
+    write: (v) => {
+      UNIVERSE.ROUTE_GRAZE = v;
+    },
+  },
+  {
     id: 'warpCross',
     label: 'Disk warp',
     group: 'approach',

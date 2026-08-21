@@ -2122,20 +2122,27 @@ export class GalaxyView {
   }
 
   /**
-   * World we are attending. Null → the host star (not the
-   * focus of a planet's orbit). Course / aim count — the
-   * WORLD_RANGE latch is not required.
+   * The body that owns the sky. A bound body (Center latch,
+   * ride, world latch) keeps priority — we are at it. Otherwise
+   * the host body with the largest angular radius above a small
+   * threshold (~a Moon-in-Earth's-sky disk): moons count the
+   * same as planets, no latch fragility. Null → the host star —
+   * never the focus of some other body's orbit.
    */
   private lookPrimaryWorld(): HostBodyRT | null {
-    const id =
-      this.lookWorldId ??
-      this.riding?.bodyId ??
-      this.worldId ??
-      this.pendingOrbit?.bodyId ??
-      this.courseBodyId ??
-      this.focusBodyId ??
-      this.selectedBodyId;
-    return this.worldRt(id);
+    const bound = this.worldRt(this.lookWorldId ?? this.riding?.bodyId ?? this.worldId);
+    if (bound) return bound;
+    let best: HostBodyRT | null = null;
+    let bestSin = 0.004;
+    for (const rt of this.hostBodies) {
+      const d = this.bodyDist(rt);
+      const sin = (Math.max(rt.spec.radius, 1) * KM_TO_KPC) / Math.max(d, 1e-18);
+      if (sin > bestSin) {
+        bestSin = sin;
+        best = rt;
+      }
+    }
+    return best;
   }
 
   private showSunLook(): boolean {
@@ -2145,8 +2152,14 @@ export class GalaxyView {
   private holdLook(): void {
     if (!this.lookHold || this.looking || !this.hostObj) return;
     const rt = this.lookHold === 'center' ? this.lookPrimaryWorld() : null;
+    // Rendered positions, not catalog differences: the hold runs
+    // after the frame's root pin, so this matches the drawn pixels
+    // exactly in every state (the catalog form carries the
+    // arcCenter ULP — ~27 km — while the eye is pinned).
     if (rt) {
-      this.bodyFromEye(rt, this.hostTmp);
+      rt.group.getWorldPosition(this.hostTmp);
+    } else if (this.hostRoot) {
+      this.hostTmp.copy(this.hostRoot.position);
     } else {
       const c = galToCart(this.hostObj.pos);
       this.hostTmp.set(
@@ -2527,29 +2540,105 @@ export class GalaxyView {
     this.courseBodyId = null;
   }
 
+  /**
+   * Transfer route: deflect the aim if the sightline to the
+   * target crosses another body's (or the photosphere's) graze
+   * sphere — ROUTE_GRAZE radii. The aim moves to the tangent of
+   * the nearest blocker, in the eye–blocker–target plane; inside
+   * a graze sphere asin saturates and the aim goes tangent, so
+   * departure spirals out before bending onto the transfer.
+   * A blocker's sphere is capped below its distance to the
+   * target, so a moon hugging its planet stays reachable.
+   * Re-derived every frame — bodies ride Kepler rails; there
+   * are no stored waypoints.
+   */
+  private routeAim(aim: THREE.Vector3, targetId: string | null): void {
+    if (!this.hostObj || !this.hostRoot) return;
+    const dT = aim.length();
+    if (!(dT > 1e-18)) return;
+    let bx = 0;
+    let by = 0;
+    let bz = 0;
+    let bestD = Infinity;
+    let bestSin = 0;
+    const consider = (rx: number, ry: number, rz: number, radiusKm: number): void => {
+      const dO = Math.hypot(rx, ry, rz);
+      if (!(dO > 1e-18) || dO >= dT || dO >= bestD) return;
+      const dOT = Math.hypot(aim.x - rx, aim.y - ry, aim.z - rz);
+      const graze = Math.min(
+        UNIVERSE.ROUTE_GRAZE * Math.max(radiusKm, 1) * KM_TO_KPC,
+        dOT * 0.9,
+      );
+      if (!(graze > 0)) return;
+      const sinMin = Math.min(1, graze / dO);
+      const cosMin = Math.sqrt(Math.max(0, 1 - sinMin * sinMin));
+      const cosA = (aim.x * rx + aim.y * ry + aim.z * rz) / (dT * dO);
+      if (cosA <= cosMin) return;
+      bestD = dO;
+      bestSin = sinMin;
+      bx = rx;
+      by = ry;
+      bz = rz;
+    };
+    for (const rt of this.hostBodies) {
+      if (rt.spec.id === targetId) continue;
+      this.bodyFromEye(rt, this.hostTmp2);
+      consider(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
+    }
+    if (targetId != null) {
+      // The photosphere blocks world courses; a star course aims at it.
+      this.hostTmp2.copy(this.hostRoot.position);
+      consider(
+        this.hostTmp2.x,
+        this.hostTmp2.y,
+        this.hostTmp2.z,
+        this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM,
+      );
+    }
+    if (!(bestD < Infinity)) return;
+    // Rotate the blocker direction out to the cone edge nearest the
+    // target: blocker-hat swung by the tangent angle toward the aim.
+    this.hostTmp2.set(bx, by, bz);
+    this.orbitTmp2.crossVectors(this.hostTmp2, aim);
+    if (this.orbitTmp2.lengthSq() < 1e-24) {
+      // Aim dead through the centre: any perpendicular plane works.
+      this.orbitTmp2.crossVectors(this.hostTmp2, this.worldUp);
+      if (this.orbitTmp2.lengthSq() < 1e-24) this.orbitTmp2.set(1, 0, 0);
+    }
+    this.orbitTmp2.normalize();
+    aim
+      .copy(this.hostTmp2)
+      .normalize()
+      .applyAxisAngle(this.orbitTmp2, Math.asin(bestSin))
+      .multiplyScalar(dT);
+  }
+
   /** Ease the nose onto the course star or world and keep it there. */
   private holdCourse(dt: number): void {
     if (this.mode !== 'region') return;
     if (this.riding || this.landed || this.drone) return;
     if (this.looking && !this.pendingOrbit) return;
-    let dx = 0;
-    let dy = 0;
-    let dz = 0;
     if (this.courseBodyId) {
       const rt = this.worldRt(this.courseBodyId);
       if (!rt) return;
-      this.bodyFromEye(rt, this.hostTmp);
-      dx = this.hostTmp.x;
-      dy = this.hostTmp.y;
-      dz = this.hostTmp.z;
+      this.bodyFromEye(rt, this.orbitTmp);
+      this.routeAim(this.orbitTmp, rt.spec.id);
     } else if (this.courseObj) {
       const p = galToCart(this.courseObj.pos);
-      dx = p.x - this.arcCenter.x;
-      dy = p.y - this.arcCenter.y;
-      dz = p.z - this.arcCenter.z;
+      this.orbitTmp.set(
+        p.x - this.arcCenter.x,
+        p.y - this.arcCenter.y,
+        p.z - this.arcCenter.z,
+      );
+      if (this.hostObj && this.courseObj.id === this.hostObj.id) {
+        this.routeAim(this.orbitTmp, null);
+      }
     } else {
       return;
     }
+    const dx = this.orbitTmp.x;
+    const dy = this.orbitTmp.y;
+    const dz = this.orbitTmp.z;
     const d = Math.hypot(dx, dy, dz);
     if (d < 1e-15) return;
     if (this.courseHud) this.courseHud.dist = d;
@@ -3341,9 +3430,19 @@ export class GalaxyView {
         }
       }
 
-      const segs = 128;
-      const pts = new Float32Array(segs * 3);
       const dispR = b.parent ? b.orbitRadius : b.orbitRadius * AU_KM;
+      // Sagitta law: enough segments that the drawn ring deviates
+      // from the true ellipse by less than a quarter body radius.
+      // A 128-gon at 1 AU sagged ~45,000 km — seven planet-widths —
+      // so bodies never sat on their lines, and a close camera saw
+      // the vertex kinks as hard angles across the sky.
+      const sagTol = Math.max(1, b.radius) * 0.25;
+      const sagTheta = Math.sqrt((8 * sagTol) / Math.max(dispR, 1e-9));
+      const segs = Math.min(
+        8192,
+        Math.max(128, Math.ceil((2 * Math.PI) / Math.max(sagTheta, 1e-4))),
+      );
+      const pts = new Float32Array(segs * 3);
       const semiMinor = dispR * Math.sqrt(1 - b.ecc * b.ecc);
       for (let i = 0; i < segs; i++) {
         const E = (i / segs) * 2 * Math.PI;
@@ -3573,8 +3672,15 @@ export class GalaxyView {
     return this.hostObj ?? this.courseObj;
   }
 
+  /**
+   * The body governing the speed cap: where we are GOING first
+   * (chart pick, then course), then the latched place. The old
+   * latched-first order capped departure by the body being left —
+   * ARRIVE_K × d(A) is a crawl at a ring, and aiming past A only
+   * shrank it further.
+   */
   private closeWorld(): HostBodyRT | null {
-    return this.worldRt(this.worldId ?? this.courseBodyId);
+    return this.worldRt(this.pendingOrbit?.bodyId ?? this.courseBodyId ?? this.worldId);
   }
 
   /**
@@ -3635,6 +3741,39 @@ export class GalaxyView {
     return null;
   }
 
+  /**
+   * Hard fence: no move crosses into a body's near shell —
+   * (1 + SOI_TRACK_MIN) × radius, the camera's lowest legal
+   * shell — or the photosphere's. The step lands on the wall
+   * instead. Entry only: leaving a shell and tangent slides
+   * stay free, and every ring parks at or above it.
+   * Returns the allowed step length along (dx,dy,dz)/len.
+   */
+  private clampHostAdvance(dx: number, dy: number, dz: number, len: number): number {
+    if (!this.hostObj || !this.hostRoot || !(len > 0)) return len;
+    const inv = 1 / len;
+    this.orbitTmp2.set(dx * inv, dy * inv, dz * inv);
+    let allowed = len;
+    const wall = 1 + UNIVERSE.SOI_TRACK_MIN;
+    for (const rt of this.hostBodies) {
+      this.bodyFromEye(rt, this.hostTmp2);
+      const t = this.firstShellHit(
+        this.hostTmp2,
+        this.orbitTmp2,
+        wall * Math.max(rt.spec.radius, 1) * KM_TO_KPC,
+      );
+      if (t != null && t < allowed) allowed = t;
+    }
+    this.hostTmp2.copy(this.hostRoot.position);
+    const tStar = this.firstShellHit(
+      this.hostTmp2,
+      this.orbitTmp2,
+      wall * Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM) * KM_TO_KPC,
+    );
+    if (tStar != null && tStar < allowed) allowed = tStar;
+    return allowed;
+  }
+
   private moveBubble(vx: number, vy: number, vz: number, _force = false): void {
     if (this.mode !== 'region') return;
     const maxV = this.moveCap();
@@ -3643,6 +3782,16 @@ export class GalaxyView {
       const len = Math.hypot(vx, vy, vz);
       if (len > max) {
         const s = max / len;
+        vx *= s;
+        vy *= s;
+        vz *= s;
+      }
+    }
+    const len = Math.hypot(vx, vy, vz);
+    if (len > 0) {
+      const allowed = this.clampHostAdvance(vx, vy, vz, len);
+      if (allowed < len) {
+        const s = allowed / len;
         vx *= s;
         vy *= s;
         vz *= s;
@@ -3752,6 +3901,16 @@ export class GalaxyView {
       const fromStar = this.arriveDist(this.hostObj);
       if (fromStar - step > lim) step = -(lim - fromStar);
     }
+    if (Math.abs(step) < 1e-18) return;
+    // The dolly obeys the same wall as every other move.
+    const sign = Math.sign(step);
+    const mag = this.clampHostAdvance(
+      this.arcFwd.x * sign,
+      this.arcFwd.y * sign,
+      this.arcFwd.z * sign,
+      Math.abs(step),
+    );
+    step = mag * sign;
     if (Math.abs(step) < 1e-18) return;
     this.arcCenter.x += this.arcFwd.x * step;
     this.arcCenter.y += this.arcFwd.y * step;
