@@ -1,8 +1,9 @@
 /**
- * Host-pass look: aim at a body core. Center picks the body
- * closest to the camera — distance, not angular size, not a
- * latched id from a prior frame. galaxyView supplies the
- * eye→body vectors (precision law); this file only chooses.
+ * Host-pass look: pick the body closest to a point — distance,
+ * not angular size, not a latched id from a prior frame.
+ * The drone's Center lock uses this on the drone eye (star
+ * wins if it is nearer). galaxyView supplies the distances;
+ * this file only chooses.
  */
 import type { HostBodyRT } from './hostSystem';
 

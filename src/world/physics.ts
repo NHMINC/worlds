@@ -505,15 +505,13 @@ export const UNIVERSE = {
    * Host-sphere camera. Pinch / wheel dollies at a fraction of
    * the subject distance (`SOI_ZOOM`); two-finger twist rolls
    * the view (`SOI_TWIST`). On a ridden ring, zoom changes that
-   * radius instead of fighting placeRide. Trackball is a drone
-   * around the primary world (else the star): drag rolls the
-   * body, pinch is altitude in body radii (`SOI_TRACK_*`), off
-   * restores the ship. The live floor is still
-   * `WORLD_ORBIT_CLEAR_KM` above the surface — SOI_TRACK_MIN
-   * alone was a tiny shell on small moons. Center holds look
-   * on the primary (a nearby world, else the star) until a
-   * look drag; Sun holds look on the furnace when the primary
-   * is a world.
+   * radius instead of fighting placeRide (`SOI_TRACK_*` is that
+   * ring cage). The drone is anti-gravity: zoom thrusts along
+   * the look, drag steers. Soft floor is the ball itself
+   * (`R × 1.002`) so it can enter air and fly between moons.
+   * Center is drone-only — lock on the nearest core and the
+   * eye rides that body (trackball). Off is free fly. Sun
+   * holds look on the furnace from the ship.
    */
   SOI_ZOOM: 0.55,
   SOI_TWIST: 1,

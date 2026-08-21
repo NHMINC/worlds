@@ -643,18 +643,23 @@ export function GalaxyExplorer(props: Props) {
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
         {inRegion && !editing && frame.hostId != null && (
           <div className="gx-look">
-            {!frame.landed && (
+            {frame.drone && (
               <button
                 type="button"
                 className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
                 aria-label="Center"
-                title="Center — hold look on this world's core"
+                aria-pressed={frame.lookHold === 'center'}
+                title={
+                  frame.lookHold === 'center'
+                    ? 'Free fly — look and zoom are yours'
+                    : 'Trackball — lock on the nearest core'
+                }
                 onClick={() => viewRef.current?.centerLook()}
               >
                 <IconCenter size={18} />
               </button>
             )}
-            {frame.showSunLook && (
+            {frame.showSunLook && !frame.drone && (
               <button
                 type="button"
                 className={`gx-look-btn${frame.lookHold === 'sun' ? ' is-on' : ''}`}
@@ -670,7 +675,11 @@ export function GalaxyExplorer(props: Props) {
               className={`gx-look-btn${frame.drone ? ' is-on' : ''}`}
               aria-label="Trackball"
               aria-pressed={frame.drone}
-              title={frame.drone ? 'Drone out — tap to return to the ship' : 'Launch drone — same look as the ship'}
+              title={
+                frame.drone
+                  ? 'Drone out — tap to return to the ship'
+                  : 'Launch drone — zoom flies, drag steers'
+              }
               onClick={() => {
                 const on = viewRef.current?.toggleDrone();
                 if (on == null) return;

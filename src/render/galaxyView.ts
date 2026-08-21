@@ -652,12 +652,11 @@ export interface GalaxyFrame {
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
   /**
-   * Look-hold (Center / Sun). Offered off the ground, including
-   * In Orbit — Center is the ridden world (else nearest);
-   * Sun is the furnace. A look drag drops the hold.
+   * Ship: Sun hold until a drag. Drone: 'center' while the
+   * drone locks on the nearest core (trackball).
    */
   lookHold: 'center' | 'sun' | null;
-  /** Drone trackball around the primary world (else the star). */
+  /** Anti-gravity drone is out. */
   drone: boolean;
   /** Sun look is offered when we are at a world. */
   showSunLook: boolean;
@@ -852,6 +851,8 @@ export class GalaxyView {
   private readonly rideNorth = new THREE.Vector3();
   private readonly orbitTmp = new THREE.Vector3();
   private readonly orbitTmp2 = new THREE.Vector3();
+  /** Nearest-core position in host-root km (drone lock / stay-out). */
+  private readonly droneCorePos = new THREE.Vector3();
   /** Scratch for look-vector slerp (attitude nudges). */
   private readonly lookSlerp = new THREE.Vector3();
   private readonly orbitQ = new THREE.Quaternion();
@@ -883,17 +884,19 @@ export class GalaxyView {
   /** Hold look on a body core or the star until a drag. */
   private lookHold: 'center' | 'sun' | null = null;
   /**
-   * Warp drone. Launched from the ship (same eye and look),
-   * then fully independent. dir is body-local radial out
-   * (position on the sphere); fwd/up are the drone look —
-   * not locked to the core. Off returns the live ship camera.
+   * Anti-gravity warp drone. Launched from the ship (same eye
+   * and look), then a free pose in host-root km. Zoom is
+   * thrust along the look; drag steers. Center locks look on
+   * the nearest core and the eye rides that body (trackball).
+   * Off returns the live ship camera.
    */
   private drone: {
-    bodyId: string | null;
-    dir: THREE.Vector3;
+    eye: THREE.Vector3;
     fwd: THREE.Vector3;
     up: THREE.Vector3;
-    h: number;
+    lock: boolean;
+    lockId: string | null;
+    rel: THREE.Vector3;
   } | null = null;
   /** Ship pose parked while the trackball is out. Off restores this. */
   private readonly shipLook = { yaw: 0, pitch: 0, roll: 0 };
@@ -2102,23 +2105,22 @@ export class GalaxyView {
   }
 
   /**
-   * Hold look on the ridden world (else the body nearest the
-   * camera) until a look drag. Offered on the ring and in
-   * free roam; not on the ground.
+   * Drone only. Toggle lock on the core nearest the drone.
+   * On: trackball — the eye rides that body and the look
+   * stays on the core. Off: free fly.
    */
   centerLook(): void {
-    if (this.mode !== 'region' || !this.hostObj || this.landed) return;
-    if (this.drone) this.setDrone(false);
-    this.lookHold = 'center';
-    this.holdLook();
+    if (this.mode !== 'region' || !this.hostObj || !this.drone) return;
+    this.drone.lock = !this.drone.lock;
+    if (this.drone.lock) this.captureDroneLock();
+    this.placeDrone();
     this.applyCam();
     this.wake();
   }
 
-  /** Hold look on the host star until a look drag. */
+  /** Hold look on the host star until a look drag. Ship only. */
   sunLook(): void {
-    if (this.mode !== 'region' || !this.hostObj) return;
-    if (this.drone) this.setDrone(false);
+    if (this.mode !== 'region' || !this.hostObj || this.drone) return;
     this.lookHold = 'sun';
     this.holdLook();
     if (this.landed) this.placeSurface();
@@ -2130,10 +2132,6 @@ export class GalaxyView {
     this.lookHold = null;
   }
 
-  /**
-   * Warp drone: launched facing the ship look, then independent.
-   * Off returns the live ship camera.
-   */
   /** Tap: on if off, off if on. Returns the new state. */
   toggleDrone(): boolean {
     this.setDrone(!this.drone);
@@ -2154,45 +2152,17 @@ export class GalaxyView {
     this.shipAt.copy(this.arcCenter);
     this.dropLookHold();
     if (!this.landed) this.orientArc();
-    const rt = nearestBody(this.host.bodies, (b) => this.bodyDist(b));
-    if (rt) {
-      this.bodyFromEye(rt, this.hostTmp);
-      const R = Math.max(rt.spec.radius, 1);
-      const minH = shellFloorKm(rt.spec) / R - 1;
-      const maxH = Math.max(minH, UNIVERSE.SOI_TRACK_MAX);
-      const dKm = Math.max(this.hostTmp.length() / KM_TO_KPC, shellFloorKm(rt.spec));
-      const h = THREE.MathUtils.clamp(dKm / R - 1, minH, maxH);
-      this.orbitTmp.copy(this.hostTmp).negate().normalize();
-      this.spinWorld(rt, this.orbitQ);
-      this.orbitTmp.applyQuaternion(this.hostTmpQ.copy(this.orbitQ).conjugate());
-      this.drone = {
-        bodyId: rt.spec.id,
-        dir: this.orbitTmp.clone(),
-        fwd: this.droneLocalLook(this.arcFwd, this.hostTmpQ),
-        up: this.droneLocalLook(this.arcUp, this.hostTmpQ),
-        h,
-      };
-    } else {
-      const maxH = UNIVERSE.SOI_TRACK_MAX;
-      const Rkm = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
-      const clear = Rkm + UNIVERSE.WORLD_ORBIT_CLEAR_KM;
-      this.hostTmp.copy(this.hostRoot.position);
-      const dKm = Math.max(this.hostTmp.length() / KM_TO_KPC, clear);
-      const h = THREE.MathUtils.clamp(dKm / Rkm - 1, clear / Rkm - 1, maxH);
-      this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate();
-      this.orbitTmp
-        .copy(this.hostRoot.position)
-        .negate()
-        .applyQuaternion(this.hostTmpQ)
-        .normalize();
-      this.drone = {
-        bodyId: null,
-        dir: this.orbitTmp.clone(),
-        fwd: this.droneLocalLook(this.arcFwd, this.hostTmpQ),
-        up: this.droneLocalLook(this.arcUp, this.hostTmpQ),
-        h,
-      };
-    }
+    this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate();
+    this.hostEyeKm(this.orbitTmp2);
+    this.drone = {
+      eye: this.orbitTmp2.clone(),
+      fwd: this.droneLocalLook(this.arcFwd, this.hostTmpQ),
+      up: this.droneLocalLook(this.arcUp, this.hostTmpQ),
+      lock: false,
+      lockId: null,
+      rel: new THREE.Vector3(),
+    };
+    this.droneStayOut();
     this.placeDrone();
     this.applyCam();
     this.wake();
@@ -2237,7 +2207,7 @@ export class GalaxyView {
   }
 
   private holdLook(): void {
-    if (!this.lookHold || this.looking || !this.hostObj) return;
+    if (this.drone || !this.lookHold || this.looking || !this.hostObj) return;
     // The course owns the nose while thrusting: cruise flies along
     // arcFwd, so a held look would drag the ship toward the LOOK
     // and the course would never depart. The hold resumes at Stop.
@@ -2283,25 +2253,13 @@ export class GalaxyView {
     const drone = this.drone;
     const root = this.hostRoot;
     if (!drone || !root || !this.hostObj) return;
-    const rt = drone.bodyId ? this.worldRt(drone.bodyId) : null;
-    if (drone.bodyId && !rt) {
-      this.setDrone(false);
-      return;
+    if (drone.lock) {
+      this.followDroneLock();
+      this.aimDroneAtCore();
     }
-    if (rt) {
-      const eyeKm = (1 + drone.h) * Math.max(rt.spec.radius, 1);
-      this.orbitTmp2.copy(drone.dir).applyQuaternion(rt.spinQ).multiplyScalar(eyeKm).add(rt.pos);
-      this.pinHostEyeKm(this.orbitTmp2);
-      this.spinWorld(rt, this.orbitQ);
-      this.arcFwd.copy(drone.fwd).applyQuaternion(this.orbitQ).normalize();
-      this.arcUp.copy(drone.up).applyQuaternion(this.orbitQ).normalize();
-    } else {
-      const Rkm = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
-      this.orbitTmp2.copy(drone.dir).multiplyScalar((1 + drone.h) * Rkm);
-      this.pinHostEyeKm(this.orbitTmp2);
-      this.arcFwd.copy(drone.fwd).applyQuaternion(root.quaternion).normalize();
-      this.arcUp.copy(drone.up).applyQuaternion(root.quaternion).normalize();
-    }
+    this.pinHostEyeKm(drone.eye);
+    this.arcFwd.copy(drone.fwd).applyQuaternion(root.quaternion).normalize();
+    this.arcUp.copy(drone.up).applyQuaternion(root.quaternion).normalize();
     this.arcRight.crossVectors(this.arcFwd, this.arcUp);
     if (this.arcRight.lengthSq() < 1e-12) {
       this.arcRight.crossVectors(this.arcFwd, this.worldUp);
@@ -2311,21 +2269,97 @@ export class GalaxyView {
     this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
   }
 
-  /** World look vector into the drone's local frame. */
-  private droneLocalLook(world: THREE.Vector3, localOfWorld: THREE.Quaternion): THREE.Vector3 {
-    this.orbitTmp2.copy(world).applyQuaternion(localOfWorld);
-    if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 0, 1);
-    return this.orbitTmp2.normalize().clone();
+  /** Camera → host-root km. Inverse of pinHostEyeKm. */
+  private hostEyeKm(out: THREE.Vector3): THREE.Vector3 {
+    const root = this.hostRoot;
+    if (!root) return out.set(0, 0, 0);
+    return out
+      .copy(root.position)
+      .negate()
+      .applyQuaternion(this.hostTmpQ.copy(root.quaternion).conjugate())
+      .multiplyScalar(1 / KM_TO_KPC);
   }
 
-  private spinDrone(axis: THREE.Vector3, ang: number): void {
+  private hostStarRadiusKm(): number {
+    return Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
+  }
+
+  /**
+   * Core nearest the drone (a world, else the star). Writes
+   * droneCorePos in host-root km.
+   */
+  private dronePickNearest(): { id: string | null; R: number } {
     const drone = this.drone;
-    if (!drone || Math.abs(ang) < 1e-12) return;
-    drone.dir.applyAxisAngle(axis, ang);
-    drone.fwd.applyAxisAngle(axis, ang);
-    drone.up.applyAxisAngle(axis, ang);
-    drone.dir.normalize();
-    drone.fwd.normalize();
+    if (!drone) {
+      this.droneCorePos.set(0, 0, 0);
+      return { id: null, R: this.hostStarRadiusKm() };
+    }
+    const rt = nearestBody(this.host.bodies, (b) => drone.eye.distanceTo(b.pos));
+    const starD = drone.eye.length();
+    if (rt && drone.eye.distanceTo(rt.pos) < starD) {
+      this.droneCorePos.copy(rt.pos);
+      return { id: rt.spec.id, R: Math.max(1, rt.spec.radius) };
+    }
+    this.droneCorePos.set(0, 0, 0);
+    return { id: null, R: this.hostStarRadiusKm() };
+  }
+
+  private droneCoreOf(id: string | null): number {
+    if (id) {
+      const rt = this.worldRt(id);
+      if (rt) {
+        this.droneCorePos.copy(rt.pos);
+        return Math.max(1, rt.spec.radius);
+      }
+    }
+    this.droneCorePos.set(0, 0, 0);
+    return this.hostStarRadiusKm();
+  }
+
+  /** Soft floor: do not go inside a ball. Atmosphere is outside R. */
+  private droneStayOut(): void {
+    const drone = this.drone;
+    if (!drone) return;
+    const n = this.dronePickNearest();
+    const min = n.R * 1.002;
+    const d = drone.eye.distanceTo(this.droneCorePos);
+    if (d >= min) return;
+    if (d < 1e-9) {
+      drone.eye.copy(this.droneCorePos).addScaledVector(drone.fwd, -min);
+      return;
+    }
+    drone.eye.sub(this.droneCorePos).multiplyScalar(min / d).add(this.droneCorePos);
+  }
+
+  private captureDroneLock(): void {
+    const drone = this.drone;
+    if (!drone) return;
+    const n = this.dronePickNearest();
+    drone.lock = true;
+    drone.lockId = n.id;
+    drone.rel.copy(drone.eye).sub(this.droneCorePos);
+    this.aimDroneAtCore();
+  }
+
+  /** Ride the locked body; hop if another core is nearer. */
+  private followDroneLock(): void {
+    const drone = this.drone;
+    if (!drone || !drone.lock) return;
+    this.droneCoreOf(drone.lockId);
+    drone.eye.copy(this.droneCorePos).add(drone.rel);
+    const n = this.dronePickNearest();
+    if (n.id === drone.lockId) return;
+    drone.lockId = n.id;
+    drone.rel.copy(drone.eye).sub(this.droneCorePos);
+  }
+
+  private aimDroneAtCore(): void {
+    const drone = this.drone;
+    if (!drone) return;
+    this.dronePickNearest();
+    this.orbitTmp.copy(this.droneCorePos).sub(drone.eye);
+    if (this.orbitTmp.lengthSq() < 1e-12) return;
+    drone.fwd.copy(this.orbitTmp).normalize();
     drone.up.addScaledVector(drone.fwd, -drone.up.dot(drone.fwd));
     if (drone.up.lengthSq() < 1e-16) {
       drone.up.crossVectors(drone.fwd, this.worldUp);
@@ -2334,11 +2368,17 @@ export class GalaxyView {
     drone.up.normalize();
   }
 
+  /** World look vector into the drone's local frame. */
+  private droneLocalLook(world: THREE.Vector3, localOfWorld: THREE.Quaternion): THREE.Vector3 {
+    this.orbitTmp2.copy(world).applyQuaternion(localOfWorld);
+    if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 0, 1);
+    return this.orbitTmp2.normalize().clone();
+  }
+
   private turnDrone(dx: number, dy: number): void {
     const drone = this.drone;
     if (!drone) return;
     const k = 0.005;
-    // Independent drone: tumble eye and look together. No look-at-core.
     this.orbitTmp.copy(drone.up);
     this.orbitTmp2.crossVectors(drone.fwd, drone.up);
     if (this.orbitTmp2.lengthSq() < 1e-16) {
@@ -2346,8 +2386,30 @@ export class GalaxyView {
       if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 1, 0);
     }
     this.orbitTmp2.normalize();
-    this.spinDrone(this.orbitTmp, -dx * k);
-    this.spinDrone(this.orbitTmp2, -dy * k);
+    if (drone.lock) {
+      this.droneCoreOf(drone.lockId);
+      drone.rel.applyAxisAngle(this.orbitTmp, -dx * k);
+      this.orbitTmp2.applyAxisAngle(this.orbitTmp, -dx * k);
+      drone.rel.applyAxisAngle(this.orbitTmp2, -dy * k);
+      drone.up.applyAxisAngle(this.orbitTmp2, -dy * k);
+      drone.eye.copy(this.droneCorePos).add(drone.rel);
+      this.droneStayOut();
+      const n = this.dronePickNearest();
+      drone.lockId = n.id;
+      drone.rel.copy(drone.eye).sub(this.droneCorePos);
+    } else {
+      drone.fwd.applyAxisAngle(this.orbitTmp, -dx * k);
+      drone.up.applyAxisAngle(this.orbitTmp, -dx * k);
+      drone.fwd.applyAxisAngle(this.orbitTmp2, -dy * k);
+      drone.up.applyAxisAngle(this.orbitTmp2, -dy * k);
+      drone.fwd.normalize();
+      drone.up.addScaledVector(drone.fwd, -drone.up.dot(drone.fwd));
+      if (drone.up.lengthSq() < 1e-16) {
+        drone.up.crossVectors(drone.fwd, this.worldUp);
+        if (drone.up.lengthSq() < 1e-16) drone.up.set(0, 1, 0);
+      }
+      drone.up.normalize();
+    }
     this.placeDrone();
     this.applyCam();
   }
@@ -4495,18 +4557,21 @@ export class GalaxyView {
 
   /**
    * Pinch / wheel. Inside an SOI this is a subject-distance
-   * dolly (or ride-radius / drone altitude). On the disk it
-   * still slides the bubble along the look.
+   * dolly (or ride-radius). The drone thrusts along its look.
+   * On the disk it still slides the bubble along the look.
    */
   private zoom(factor: number): void {
     const f = Math.max(1e-3, factor);
     if (this.drone) {
-      const drone = this.drone;
-      const rt = drone.bodyId ? this.worldRt(drone.bodyId) : null;
-      const R = rt ? Math.max(rt.spec.radius, 1) : Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
-      const minH = (rt ? shellFloorKm(rt.spec) : R + UNIVERSE.WORLD_ORBIT_CLEAR_KM) / R - 1;
-      const maxH = Math.max(minH, UNIVERSE.SOI_TRACK_MAX);
-      drone.h = THREE.MathUtils.clamp(drone.h * f, minH, maxH);
+      const n = this.dronePickNearest();
+      const d = Math.max(this.drone.eye.distanceTo(this.droneCorePos), n.R);
+      this.drone.eye.addScaledVector(this.drone.fwd, d * UNIVERSE.SOI_ZOOM * -Math.log(f));
+      this.droneStayOut();
+      if (this.drone.lock) {
+        const keep = this.dronePickNearest();
+        this.drone.lockId = keep.id;
+        this.drone.rel.copy(this.drone.eye).sub(this.droneCorePos);
+      }
       this.placeDrone();
       this.applyCam();
       this.wake();
@@ -5594,7 +5659,7 @@ export class GalaxyView {
       navHint,
       landed: this.landed,
       canLand: this.canLandNow(),
-      lookHold: this.lookHold,
+      lookHold: this.drone ? (this.drone.lock ? 'center' : null) : this.lookHold,
       drone: Boolean(this.drone),
       showSunLook: this.showSunLook(),
       worldId: this.riding?.bodyId ?? this.capturing?.bodyId ?? this.worldId ?? this.courseBodyId,
