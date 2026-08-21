@@ -943,7 +943,7 @@ export class GalaxyView {
     this.perf = new PerfMeter(this.renderer.getContext());
     // The void is black by decree — vacuum emits nothing.
     this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
-    this.camera = new THREE.PerspectiveCamera(50, 1, 0.001, regionCamFar());
+    this.camera = new THREE.PerspectiveCamera(UNIVERSE.CAM_FOV, 1, 0.001, regionCamFar());
 
     this.pickRing = this.makeRing(0xf4e4c1, 0.18);
     this.hereRing = this.makeRing(0x7ec8e3, 0.22);
@@ -3760,6 +3760,7 @@ export class GalaxyView {
       this.camera.near = 0.001;
       this.camera.far = regionCamFar();
     }
+    this.camera.fov = THREE.MathUtils.clamp(UNIVERSE.CAM_FOV, 20, 160);
     this.camera.updateProjectionMatrix();
     this.pushMagUniforms();
   }

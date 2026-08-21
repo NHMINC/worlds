@@ -192,7 +192,10 @@ toy — Godus blocks on a real-sized globe.
   wheel dollies at the subject distance
   (`SOI_ZOOM`); on a ring it changes
   that radius. Two-finger twist rolls
-  the look (`SOI_TWIST`). Center holds
+  the look (`SOI_TWIST`). Vertical field
+  is `CAM_FOV` (100°) so a prograde ride
+  still sees the sphere under the ship.
+  Center holds
   look on the core of the body that owns
   the sky — the bound body (ride / world
   latch) first, else the largest angular
@@ -435,7 +438,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   background-star brightness and count, extinction, shine,
   nebula glow) — a slide is the next frame.   Approach knobs
   (sphere radius, world sphere, world brake, galaxy dim, approach warp, close crawl,
-  park fill, heading hold, reticle range, disk warp) write
+  park fill, heading hold, reticle range, disk warp, field of view) write
   `UNIVERSE` live — a slide is the next frame, no remint.
   Rebuild knobs (survey
   floors, nebula catalog, ribbon-geometry laws): the slider is a

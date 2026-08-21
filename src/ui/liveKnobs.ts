@@ -537,6 +537,21 @@ export const LIVE_KNOBS: LiveKnob[] = [
       UNIVERSE.GALAXY_WARP_CROSS_S = v;
     },
   },
+  {
+    id: 'camFov',
+    label: 'Field of view',
+    group: 'approach',
+    hint: 'vertical field of the explorer camera (degrees)',
+    about: 'How wide the bubble sees. Inertial orbit looks prograde with the world straight down — a narrow field cuts the sphere off under the ship. 100° puts a LEO limb in the lower half. Hang / hover still face the ball. Next frame.',
+    uniform: 'uCamFov',
+    min: 40,
+    max: 140,
+    step: 1,
+    read: () => UNIVERSE.CAM_FOV,
+    write: (v) => {
+      UNIVERSE.CAM_FOV = v;
+    },
+  },
 ];
 
 export function liveKnob(id: string): LiveKnob | undefined {

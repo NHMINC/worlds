@@ -517,6 +517,15 @@ export const UNIVERSE = {
    */
   SOI_ZOOM: 0.55,
   SOI_TWIST: 1,
+  /**
+   * Vertical field of the explorer camera (degrees). Inertial
+   * ride looks prograde with the body straight down; the
+   * horizon sits at acos(R / (R+h)) below the nose. 50° only
+   * saw 25° down — LEO (h ≈ 0.22 R, horizon ≈ 35°) hid the
+   * sphere under the ship. 100° puts that limb in the lower
+   * half. Hang / hover still face the ball.
+   */
+  CAM_FOV: 100,
   SOI_TRACK_MIN: 0.12,
   SOI_TRACK_MAX: 8,
   /**
