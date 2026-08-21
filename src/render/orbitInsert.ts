@@ -2,12 +2,13 @@
  * Lock-on orbital insertion. The ship does not dive at a core and
  * pretend: the fly-to point slides forward along the chosen ring
  * so the nose (forward under autopilot) yaws onto prograde as the
- * shell is reached. Hover is the exception — it aims the hang
- * face and sits (defies gravity).
+ * shell is reached. Hang / hover are the exception — they aim the
+ * hang face and look at the full sphere (GEO and hover park nose
+ * into the body by default).
  *
  * eyeToBody is eye→body on entry and eye→aim on exit.
- * outLook is the desired nose (matches aim for inertial / hang
- * approach; capture may still face the body for hang).
+ * outLook is the desired nose (matches aim for inertial approach;
+ * hang / hover look at the body).
  * Returns blend 0 (far transfer) … 1 (at the shell).
  */
 import * as THREE from 'three';
@@ -33,7 +34,8 @@ export function planOrbitInsert(
     return 0;
   }
 
-  if (mode === 'hover') {
+  // GEO / hover: sit on the radial hang face, nose into the sphere.
+  if (mode === 'hover' || mode === 'hang') {
     const s = d > r * 1.001 ? 1 - r / d : 0;
     eyeToBody.set(bx * s, by * s, bz * s);
     outLook.set(bx, by, bz);

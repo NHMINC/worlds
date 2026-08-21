@@ -7,10 +7,11 @@
  *                shell, then a capture settle onto the rail.
  *                Turns off the moment the ring is held.
  *   orbit      — on the ring. Autopilot off. Default look is
- *                body-locked (nadir down, prograde forward —
- *                the sphere fills the lower half); a look
- *                drag frees the stick until release. The
- *                reticle is only the view-centre pip.
+ *                body-locked: inertial rings bank nadir-down /
+ *                prograde-forward (sphere in the lower half);
+ *                GEO / hover face the hang face (full sphere
+ *                ahead). A look drag frees the stick until
+ *                release. The reticle is only the view-centre pip.
  *   proximity  — left orbit by warp (free roam). Reports
  *                nearest body only; no heading hold, no
  *                guidance, no re-lock until the player picks

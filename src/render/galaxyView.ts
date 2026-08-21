@@ -2560,26 +2560,21 @@ export class GalaxyView {
     const tx = this.orbitTmp.x + this.orbitTmp2.x;
     const ty = this.orbitTmp.y + this.orbitTmp2.y;
     const tz = this.orbitTmp.z + this.orbitTmp2.z;
-    // Parked bank at capture longitude: zenith along offset, fwd prograde (or hang-east).
+    // Hang / hover: nose into the body (full sphere). Inertial:
+    // zenith along offset, fwd prograde (body below).
     if (hang) {
-      this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
       this.orbitTmp.copy(this.orbitTmp2);
       if (this.orbitTmp.lengthSq() < 1e-28) this.orbitTmp.copy(cap.dir);
       this.orbitTmp.normalize();
-      this.hostTmp.crossVectors(this.rideNorth, this.orbitTmp);
-      if (this.hostTmp.lengthSq() < 1e-16) {
-        this.hostTmp.crossVectors(this.worldUp, this.orbitTmp);
-        if (this.hostTmp.lengthSq() < 1e-16) this.hostTmp.set(1, 0, 0);
-      }
-      this.hostTmp.normalize();
+      // Look at the sphere: fwd = −radial out.
       this.easeCapturePose(
         dt,
         tx,
         ty,
         tz,
-        this.hostTmp.x,
-        this.hostTmp.y,
-        this.hostTmp.z,
+        -this.orbitTmp.x,
+        -this.orbitTmp.y,
+        -this.orbitTmp.z,
         this.orbitTmp.x,
         this.orbitTmp.y,
         this.orbitTmp.z,
@@ -2671,8 +2666,8 @@ export class GalaxyView {
 
   /**
    * Ease the eye onto the ring. Soft-seek the nose onto the
-   * parked bank (body below, prograde forward) so capture does
-   * not leave a dive-at-core look.
+   * parked look: inertial = body below / prograde forward;
+   * hang / hover = nose into the sphere.
    */
   private easeCapturePose(
     dt: number,
@@ -2871,63 +2866,47 @@ export class GalaxyView {
   }
 
   /**
-   * Aesthetic gravity lock: nose prograde (or hang-east), bank
-   * so the body is screen-down. Look-drag frees the stick; on
-   * release the next placeRide snaps back. The orbital plane
-   * is the vertical midplane — left / right halves of the ship.
+   * Default ride look. Inertial rings: aesthetic gravity lock —
+   * nose prograde, bank so the body is screen-down (orbital
+   * plane = vertical midplane). Hang / hover: nose into the
+   * body so the full sphere fills the view. Look-drag frees
+   * the stick; on release the next placeRide snaps back.
    */
   private bankRideLook(tSys: number): void {
     const ride = this.riding;
     if (!ride || this.looking || this.drone) return;
-    let fx: number;
-    let fy: number;
-    let fz: number;
-    let zx: number;
-    let zy: number;
-    let zz: number;
     if (ride.hang) {
-      // Hang: zenith = body → eye; forward = local east (N × zenith).
+      // GEO / hover: face the hang face — full sphere ahead.
       const rt = this.worldRt(ride.bodyId);
       if (!rt) return;
       this.spinWorld(rt, this.orbitQ);
       this.orbitTmp2.copy(this.rideLocal).applyQuaternion(this.orbitQ);
       const len = Math.hypot(this.orbitTmp2.x, this.orbitTmp2.y, this.orbitTmp2.z);
       if (len < 1e-18) return;
-      zx = this.orbitTmp2.x / len;
-      zy = this.orbitTmp2.y / len;
-      zz = this.orbitTmp2.z / len;
-      this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-      this.orbitTmp.crossVectors(this.rideNorth, this.orbitTmp2);
-      if (this.orbitTmp.lengthSq() < 1e-16) {
-        this.orbitTmp.crossVectors(this.worldUp, this.orbitTmp2);
-        if (this.orbitTmp.lengthSq() < 1e-16) this.orbitTmp.set(1, 0, 0);
-      }
-      this.orbitTmp.normalize();
-      fx = this.orbitTmp.x;
-      fy = this.orbitTmp.y;
-      fz = this.orbitTmp.z;
-    } else {
-      const th = ride.theta0 + ride.omega * tSys;
-      const c = Math.cos(th);
-      const s = Math.sin(th);
-      // Radial out (body below) and prograde (dθ).
-      zx = this.rideE1.x * c + this.rideE2.x * s;
-      zy = this.rideE1.y * c + this.rideE2.y * s;
-      zz = this.rideE1.z * c + this.rideE2.z * s;
-      const zlen = Math.hypot(zx, zy, zz);
-      if (zlen < 1e-18) return;
-      zx /= zlen;
-      zy /= zlen;
-      zz /= zlen;
-      fx = -this.rideE1.x * s + this.rideE2.x * c;
-      fy = -this.rideE1.y * s + this.rideE2.y * c;
-      fz = -this.rideE1.z * s + this.rideE2.z * c;
-      const flen = Math.hypot(fx, fy, fz);
-      if (flen < 1e-18) return;
-      fx /= flen;
-      fy /= flen;
-      fz /= flen;
+      this.aimAt(-this.orbitTmp2.x / len, -this.orbitTmp2.y / len, -this.orbitTmp2.z / len);
+      this.arcRoll = 0;
+      return;
     }
+    const th = ride.theta0 + ride.omega * tSys;
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    // Radial out (body below) and prograde (dθ).
+    let zx = this.rideE1.x * c + this.rideE2.x * s;
+    let zy = this.rideE1.y * c + this.rideE2.y * s;
+    let zz = this.rideE1.z * c + this.rideE2.z * s;
+    const zlen = Math.hypot(zx, zy, zz);
+    if (zlen < 1e-18) return;
+    zx /= zlen;
+    zy /= zlen;
+    zz /= zlen;
+    let fx = -this.rideE1.x * s + this.rideE2.x * c;
+    let fy = -this.rideE1.y * s + this.rideE2.y * c;
+    let fz = -this.rideE1.z * s + this.rideE2.z * c;
+    const flen = Math.hypot(fx, fy, fz);
+    if (flen < 1e-18) return;
+    fx /= flen;
+    fy /= flen;
+    fz /= flen;
     this.aimOrbitBank(fx, fy, fz, zx, zy, zz);
   }
 
@@ -3109,12 +3088,18 @@ export class GalaxyView {
       -1.45,
       1.45,
     );
-    // Bank so the body fills the lower half as insertion yaws
-    // onto prograde. Far transfer (blend ~0) looks at the shell;
-    // near contact, fwd ⊥ zenith and the plane is vertical.
-    const tgtRoll = haveZen
-      ? this.orbitBankRoll(dx, dy, dz, zenX, zenY, zenZ)
-      : this.arcRoll;
+    // Inertial: bank so the body fills the lower half as the
+    // nose yaws onto prograde. Hang / hover look into the
+    // sphere — no bank (fwd ≈ −zenith).
+    const hangLook =
+      this.pendingOrbit != null &&
+      this.pendingOrbit.bodyId != null &&
+      isHangOrbit(this.pendingOrbit.kind);
+    const tgtRoll = hangLook
+      ? 0
+      : haveZen
+        ? this.orbitBankRoll(dx, dy, dz, zenX, zenY, zenZ)
+        : this.arcRoll;
     let dYaw = tgtYaw - this.arcYaw;
     dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
     const dPitch = tgtPitch - this.arcPitch;

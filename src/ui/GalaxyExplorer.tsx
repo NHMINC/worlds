@@ -727,7 +727,12 @@ export function GalaxyExplorer(props: Props) {
                     Land
                   </button>
                 ) : frame.orbit ? (
-                  <i className="gx-plate-go">{orbitLabel(frame.orbit)} · body below</i>
+                  <i className="gx-plate-go">
+                    {orbitLabel(frame.orbit)}
+                    {frame.orbit === 'geo' || frame.orbit === 'hover'
+                      ? ' · facing body'
+                      : ' · body below'}
+                  </i>
                 ) : (
                   <i className="gx-plate-go">Free look</i>
                 )}
