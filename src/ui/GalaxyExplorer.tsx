@@ -651,8 +651,8 @@ export function GalaxyExplorer(props: Props) {
                 aria-pressed={frame.lookHold === 'center'}
                 title={
                   frame.lookHold === 'center'
-                    ? 'Free fly — planet trackball off'
-                    : 'Planet trackball — lock on the nearest core'
+                    ? 'Free fly — leave this lock'
+                    : 'Lock the body in the pip'
                 }
                 onClick={() => viewRef.current?.centerLook()}
               >

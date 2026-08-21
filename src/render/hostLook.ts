@@ -1,9 +1,9 @@
 /**
  * Host-pass look: pick the body closest to a point — distance,
- * not angular size, not a latched id from a prior frame.
- * The drone's Center lock uses this on the drone eye (star
- * wins if it is nearer). galaxyView supplies the distances;
- * this file only chooses.
+ * not angular size. Launch locks the body nearest the ship;
+ * stay-out uses the drone eye. Target lock is a latched id
+ * and does not hop. galaxyView supplies the distances; this
+ * file only chooses.
  */
 import type { HostBodyRT } from './hostSystem';
 

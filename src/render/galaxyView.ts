@@ -884,8 +884,8 @@ export class GalaxyView {
    * Anti-gravity warp drone. Launch eases up the zenith and
    * into target lock; recall eases onto the live ship (the
    * capture ease). Then a free pose in host-root km. Zoom is
-   * thrust along the look; drag steers. Target locks look on
-   * the nearest core and the eye rides that body.
+   * thrust along the look; drag steers. Target is a latched
+   * lock (launch: nearest the ship; later: the pip).
    */
   private drone: {
     eye: THREE.Vector3;
@@ -2103,14 +2103,19 @@ export class GalaxyView {
   }
 
   /**
-   * Drone only. Toggle lock on the core nearest the drone.
-   * On: trackball — the eye rides that body and the look
-   * stays on the core. Off: free fly.
+   * Drone only. Off: free fly. On: lock the body in the
+   * pip (tap or reticle). Launch already locked the body
+   * nearest the ship — this retargets; it does not hop.
    */
   centerLook(): void {
     if (this.mode !== 'region' || !this.hostObj || !this.drone || this.drone.phase) return;
-    this.drone.lock = !this.drone.lock;
-    if (this.drone.lock) this.captureDroneLock();
+    if (this.drone.lock) {
+      this.drone.lock = false;
+    } else {
+      const aim = this.droneReticleTarget();
+      if (!aim) return;
+      this.captureDroneLock(aim.id);
+    }
     this.placeDrone();
     this.applyCam();
     this.wake();
@@ -2279,23 +2284,36 @@ export class GalaxyView {
   }
 
   /**
-   * Core nearest the drone (a world, else the star). Writes
-   * droneCorePos in host-root km.
+   * Core nearest a host-km point (a world, else the star).
+   * Launch uses the ship; stay-out uses the drone. Writes
+   * droneCorePos. Lock itself never hops.
    */
-  private dronePickNearest(): { id: string | null; R: number } {
-    const drone = this.drone;
-    if (!drone) {
-      this.droneCorePos.set(0, 0, 0);
-      return { id: null, R: this.hostStarRadiusKm() };
-    }
-    const rt = nearestBody(this.host.bodies, (b) => drone.eye.distanceTo(b.pos));
-    const starD = drone.eye.length();
-    if (rt && drone.eye.distanceTo(rt.pos) < starD) {
+  private dronePickNearestFrom(eye: THREE.Vector3): { id: string | null; R: number } {
+    const rt = nearestBody(this.host.bodies, (b) => eye.distanceTo(b.pos));
+    const starD = eye.length();
+    if (rt && eye.distanceTo(rt.pos) < starD) {
       this.droneCorePos.copy(rt.pos);
       return { id: rt.spec.id, R: Math.max(1, rt.spec.radius) };
     }
     this.droneCorePos.set(0, 0, 0);
     return { id: null, R: this.hostStarRadiusKm() };
+  }
+
+  /** Body (or the star) in the centre pip. Null if the pip is empty. */
+  private droneReticleTarget(): { id: string | null } | null {
+    if (this.focusBodyId && this.worldRt(this.focusBodyId)) return { id: this.focusBodyId };
+    if (this.selectedBodyId && this.worldRt(this.selectedBodyId)) return { id: this.selectedBodyId };
+    const root = this.hostRoot;
+    if (!root) return null;
+    const d = root.position.length();
+    if (d < 1e-18) return { id: null };
+    const inv = 1 / d;
+    const dot =
+      root.position.x * inv * this.arcFwd.x +
+      root.position.y * inv * this.arcFwd.y +
+      root.position.z * inv * this.arcFwd.z;
+    if (dot >= Math.cos(0.028)) return { id: null };
+    return null;
   }
 
   private droneCoreOf(id: string | null): number {
@@ -2314,7 +2332,7 @@ export class GalaxyView {
   private droneStayOut(): void {
     const drone = this.drone;
     if (!drone) return;
-    const n = this.dronePickNearest();
+    const n = this.dronePickNearestFrom(drone.eye);
     const min = n.R * 1.002;
     const d = drone.eye.distanceTo(this.droneCorePos);
     if (d >= min) return;
@@ -2325,32 +2343,28 @@ export class GalaxyView {
     drone.eye.sub(this.droneCorePos).multiplyScalar(min / d).add(this.droneCorePos);
   }
 
-  private captureDroneLock(): void {
+  private captureDroneLock(id: string | null): void {
     const drone = this.drone;
     if (!drone) return;
-    const n = this.dronePickNearest();
     drone.lock = true;
-    drone.lockId = n.id;
+    drone.lockId = id;
+    this.droneCoreOf(id);
     drone.rel.copy(drone.eye).sub(this.droneCorePos);
     this.aimDroneAtCore();
   }
 
-  /** Ride the locked body; hop if another core is nearer. */
+  /** Ride the locked body. The id does not hop. */
   private followDroneLock(): void {
     const drone = this.drone;
     if (!drone || !drone.lock) return;
     this.droneCoreOf(drone.lockId);
     drone.eye.copy(this.droneCorePos).add(drone.rel);
-    const n = this.dronePickNearest();
-    if (n.id === drone.lockId) return;
-    drone.lockId = n.id;
-    drone.rel.copy(drone.eye).sub(this.droneCorePos);
   }
 
   private aimDroneAtCore(): void {
     const drone = this.drone;
     if (!drone) return;
-    this.dronePickNearest();
+    this.droneCoreOf(drone.lockId);
     this.orbitTmp.copy(this.droneCorePos).sub(drone.eye);
     if (this.orbitTmp.lengthSq() < 1e-12) return;
     drone.fwd.copy(this.orbitTmp).normalize();
@@ -2394,8 +2408,7 @@ export class GalaxyView {
       drone.up.applyAxisAngle(this.orbitTmp2, -dy * k);
       drone.eye.copy(this.droneCorePos).add(drone.rel);
       this.droneStayOut();
-      const n = this.dronePickNearest();
-      drone.lockId = n.id;
+      this.droneCoreOf(drone.lockId);
       drone.rel.copy(drone.eye).sub(this.droneCorePos);
     } else {
       drone.fwd.applyAxisAngle(this.orbitTmp, -dx * k);
@@ -2418,7 +2431,7 @@ export class GalaxyView {
   private beginDroneLaunch(): void {
     const drone = this.drone;
     if (!drone) return;
-    const n = this.dronePickNearest();
+    const n = this.dronePickNearestFrom(drone.eye);
     drone.lockId = n.id;
     this.orbitTmp.copy(drone.eye).sub(this.droneCorePos);
     let d = this.orbitTmp.length();
@@ -2455,7 +2468,7 @@ export class GalaxyView {
     const slack = Math.max(drone.rel.length() * 0.03, 1);
     if (err > slack) return;
     drone.phase = null;
-    this.captureDroneLock();
+    this.captureDroneLock(drone.lockId);
   }
 
   private tickDroneHome(dt: number): void {
@@ -4830,13 +4843,14 @@ export class GalaxyView {
     const f = Math.max(1e-3, factor);
     if (this.drone) {
       if (this.drone.phase) return;
-      const n = this.dronePickNearest();
+      const n = this.drone.lock
+        ? { R: this.droneCoreOf(this.drone.lockId) }
+        : this.dronePickNearestFrom(this.drone.eye);
       const d = Math.max(this.drone.eye.distanceTo(this.droneCorePos), n.R);
       this.drone.eye.addScaledVector(this.drone.fwd, d * UNIVERSE.SOI_ZOOM * -Math.log(f));
       this.droneStayOut();
       if (this.drone.lock) {
-        const keep = this.dronePickNearest();
-        this.drone.lockId = keep.id;
+        this.droneCoreOf(this.drone.lockId);
         this.drone.rel.copy(this.drone.eye).sub(this.droneCorePos);
       }
       this.placeDrone();
@@ -5535,7 +5549,7 @@ export class GalaxyView {
       this.grownCount = 0;
       return;
     }
-    this.orientArc();
+    if (!this.landed && !this.drone) this.orientArc();
     const lx = this.arcFwd.x;
     const ly = this.arcFwd.y;
     const lz = this.arcFwd.z;

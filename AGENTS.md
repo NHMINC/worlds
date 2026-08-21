@@ -206,17 +206,20 @@ toy — Godus blocks on a real-sized globe.
   the ship. Looking around is the
   drone. Trackball on launches it:
   it lifts along the zenith and the
-  look eases onto the nearest core
-  (target mode) at the capture rate
-  (`ORBIT_CAPTURE`, `DRONE_LIFT`).
-  Trackball off flies it home onto
-  the live ship camera — the same
-  arrival ease, not a cut. Zoom
+  look eases onto the body nearest
+  the ship (target lock) at the
+  capture rate (`ORBIT_CAPTURE`,
+  `DRONE_LIFT`). That lock stays
+  until Target is tapped off or
+  the drone goes home. Target on
+  from free fly locks the body in
+  the pip. Trackball off flies it
+  home onto the live ship camera —
+  the same arrival ease, not a cut.
+  Zoom
   in / out is thrust along the look
   (enter air, mooch between moons);
-  drag steers. Target on is planet
-  trackball — lock on the nearest
-  core, ride that body. Target off
+  drag steers. Target off
   is free fly. The star is the
   furnace — no look-at-sun control.
   On the ground,
@@ -437,9 +440,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   look back. Pinch zooms the ring
   radius; twist rolls. The ship looks
   ahead. Trackball launches (lift +
-  target lock) and returns (capture
-  ease onto the ship); Target is
-  planet trackball vs free fly.
+  a latched lock on the body nearest
+  the ship) and returns (capture
+  ease onto the ship); Target stays
+  on that id until tapped off, or
+  locks the body in the pip.
   Land sets down on
   that face; Take off returns to the ring. Reticle Set course
   stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
