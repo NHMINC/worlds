@@ -204,9 +204,14 @@ toy — Godus blocks on a real-sized globe.
   full-ahead to that pitch. The ship
   looks ahead; that look moves with
   the ship. Looking around is the
-  drone. Trackball on launches it
-  (facing the ship); Trackball off
-  returns the live ship camera. Zoom
+  drone. Trackball on launches it:
+  it lifts along the zenith and the
+  look eases onto the nearest core
+  (target mode) at the capture rate
+  (`ORBIT_CAPTURE`, `DRONE_LIFT`).
+  Trackball off flies it home onto
+  the live ship camera — the same
+  arrival ease, not a cut. Zoom
   in / out is thrust along the look
   (enter air, mooch between moons);
   drag steers. Target on is planet
@@ -431,9 +436,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   drag takes the stick — release does not snap the
   look back. Pinch zooms the ring
   radius; twist rolls. The ship looks
-  ahead. Trackball launches / returns
-  the drone; Target is planet trackball
-  vs free fly.
+  ahead. Trackball launches (lift +
+  target lock) and returns (capture
+  ease onto the ship); Target is
+  planet trackball vs free fly.
   Land sets down on
   that face; Take off returns to the ring. Reticle Set course
   stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
@@ -659,8 +665,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   every star and planet is — we just do not mesh them.
 
 Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
-ring; land walks the terrace; the SOI drone is free fly plus a
-Target trackball. The sculpt
+ring; land walks the terrace; the SOI drone launches on a
+zenith lift into Target lock and recalls on the capture ease.
+The sculpt
 brush, the unseeded night shell, and the water-capture photographs
 are retired.
 The app lives at `http://localhost:5173/` (`npm run dev`).

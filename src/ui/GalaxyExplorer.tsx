@@ -157,6 +157,7 @@ export function GalaxyExplorer(props: Props) {
     canLand: false,
     lookHold: null,
     drone: false,
+    dronePhase: null,
     worldId: null,
   });
 
@@ -207,6 +208,7 @@ export function GalaxyExplorer(props: Props) {
               prev.canLand !== f.canLand ||
               prev.lookHold !== f.lookHold ||
               prev.drone !== f.drone ||
+              prev.dronePhase !== f.dronePhase ||
               prev.worldId !== f.worldId ||
               prev.focus?.id !== f.focus?.id ||
               prev.focus?.bodyId !== f.focus?.bodyId ||
@@ -641,7 +643,7 @@ export function GalaxyExplorer(props: Props) {
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
         {inRegion && !editing && frame.hostId != null && (
           <div className="gx-look">
-            {frame.drone && (
+            {frame.drone && !frame.dronePhase && (
               <button
                 type="button"
                 className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
@@ -663,9 +665,13 @@ export function GalaxyExplorer(props: Props) {
               aria-label="Trackball"
               aria-pressed={frame.drone}
               title={
-                frame.drone
-                  ? 'Return to the ship'
-                  : 'Launch drone — ship stays looking ahead'
+                frame.dronePhase === 'home'
+                  ? 'Landing on the ship…'
+                  : frame.dronePhase === 'launch'
+                    ? 'Lifting into target…'
+                    : frame.drone
+                      ? 'Return to the ship'
+                      : 'Launch drone — lift into target lock'
               }
               onClick={() => {
                 const on = viewRef.current?.toggleDrone();

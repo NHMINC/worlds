@@ -655,6 +655,8 @@ export interface GalaxyFrame {
   lookHold: 'center' | null;
   /** Anti-gravity drone is out. */
   drone: boolean;
+  /** Launch lift / home capture. Null once the drone is free. */
+  dronePhase: 'launch' | 'home' | null;
   /** Latched / ridden / landed world, if any. */
   worldId: string | null;
 }
@@ -879,11 +881,11 @@ export class GalaxyView {
   /** Leftover ship look-hold. Target lock lives on the drone. */
   private lookHold: 'center' | null = null;
   /**
-   * Anti-gravity warp drone. Launched from the ship (same eye
-   * and look), then a free pose in host-root km. Zoom is
-   * thrust along the look; drag steers. Center locks look on
-   * the nearest core and the eye rides that body (trackball).
-   * Off returns the live ship camera.
+   * Anti-gravity warp drone. Launch eases up the zenith and
+   * into target lock; recall eases onto the live ship (the
+   * capture ease). Then a free pose in host-root km. Zoom is
+   * thrust along the look; drag steers. Target locks look on
+   * the nearest core and the eye rides that body.
    */
   private drone: {
     eye: THREE.Vector3;
@@ -892,6 +894,7 @@ export class GalaxyView {
     lock: boolean;
     lockId: string | null;
     rel: THREE.Vector3;
+    phase: 'launch' | 'home' | null;
   } | null = null;
   /** Ship pose parked while the trackball is out. Off restores this. */
   private readonly shipLook = { yaw: 0, pitch: 0, roll: 0 };
@@ -2043,7 +2046,7 @@ export class GalaxyView {
    * joins the spinning frame — you stand on the turning world.
    */
   land(): void {
-    if (this.drone) this.setDrone(false);
+    if (this.drone) this.setDrone(false, false);
     if (this.mode !== 'region' || !this.hostObj) return;
     const id = this.riding?.bodyId ?? this.worldId;
     const rt = this.worldRt(id);
@@ -2083,7 +2086,7 @@ export class GalaxyView {
 
   /** Rise from the landing spot back onto the ring we left. */
   takeOff(): void {
-    if (this.drone) this.setDrone(false);
+    if (this.drone) this.setDrone(false, false);
     if (!this.landed || this.mode !== 'region') return;
     const rt = this.worldRt(this.worldId ?? this.courseBodyId);
     const kind = this.landKind ?? 'hover';
@@ -2105,7 +2108,7 @@ export class GalaxyView {
    * stays on the core. Off: free fly.
    */
   centerLook(): void {
-    if (this.mode !== 'region' || !this.hostObj || !this.drone) return;
+    if (this.mode !== 'region' || !this.hostObj || !this.drone || this.drone.phase) return;
     this.drone.lock = !this.drone.lock;
     if (this.drone.lock) this.captureDroneLock();
     this.placeDrone();
@@ -2123,14 +2126,22 @@ export class GalaxyView {
     return Boolean(this.drone);
   }
 
-  setDrone(on: boolean): void {
+  setDrone(on: boolean, ease = true): void {
     if (this.mode !== 'region' || !this.hostObj || !this.hostRoot) return;
-    if (on === Boolean(this.drone)) return;
     if (!on) {
-      this.drone = null;
-      this.restoreShipCam();
+      if (!this.drone) return;
+      if (!ease || this.drone.phase === 'home') {
+        this.drone = null;
+        this.restoreShipCam();
+        return;
+      }
+      this.drone.lock = false;
+      this.drone.phase = 'home';
+      this.drone.rel.set(-1, 0, 0);
+      this.wake();
       return;
     }
+    if (this.drone) return;
     this.shipLook.yaw = this.arcYaw;
     this.shipLook.pitch = this.arcPitch;
     this.shipLook.roll = this.arcRoll;
@@ -2146,8 +2157,10 @@ export class GalaxyView {
       lock: false,
       lockId: null,
       rel: new THREE.Vector3(),
+      phase: 'launch',
     };
     this.droneStayOut();
+    this.beginDroneLaunch();
     this.placeDrone();
     this.applyCam();
     this.wake();
@@ -2234,7 +2247,7 @@ export class GalaxyView {
     const drone = this.drone;
     const root = this.hostRoot;
     if (!drone || !root || !this.hostObj) return;
-    if (drone.lock) {
+    if (drone.lock && !drone.phase) {
       this.followDroneLock();
       this.aimDroneAtCore();
     }
@@ -2364,7 +2377,7 @@ export class GalaxyView {
 
   private turnDrone(dx: number, dy: number): void {
     const drone = this.drone;
-    if (!drone) return;
+    if (!drone || drone.phase) return;
     const k = 0.005;
     this.orbitTmp.copy(drone.up);
     this.orbitTmp2.crossVectors(drone.fwd, drone.up);
@@ -2399,6 +2412,265 @@ export class GalaxyView {
     }
     this.placeDrone();
     this.applyCam();
+  }
+
+  /** Park the lift dest: zenith hop, look at that core. */
+  private beginDroneLaunch(): void {
+    const drone = this.drone;
+    if (!drone) return;
+    const n = this.dronePickNearest();
+    drone.lockId = n.id;
+    this.orbitTmp.copy(drone.eye).sub(this.droneCorePos);
+    let d = this.orbitTmp.length();
+    if (d < 1e-6) {
+      this.orbitTmp.copy(drone.up);
+      d = n.R;
+    }
+    this.orbitTmp.multiplyScalar(1 / Math.max(d, 1e-9));
+    const hover = Math.max(d - n.R, 0);
+    const lift = Math.max(n.R, hover) * UNIVERSE.DRONE_LIFT;
+    drone.rel.copy(this.orbitTmp).multiplyScalar(d + lift);
+  }
+
+  private tickDrone(dt: number): void {
+    const drone = this.drone;
+    if (!drone) return;
+    if (drone.phase === 'launch') this.tickDroneLaunch(dt);
+    else if (drone.phase === 'home') this.tickDroneHome(dt);
+    this.placeDrone();
+  }
+
+  private tickDroneLaunch(dt: number): void {
+    const drone = this.drone;
+    if (!drone) return;
+    this.droneCoreOf(drone.lockId);
+    this.lookSlerp.copy(this.droneCorePos).add(drone.rel);
+    this.orbitTmp.copy(this.droneCorePos).sub(this.lookSlerp);
+    if (this.orbitTmp.lengthSq() < 1e-12) return;
+    this.orbitTmp.normalize();
+    this.orbitTmp2.copy(drone.rel);
+    if (this.orbitTmp2.lengthSq() < 1e-12) this.orbitTmp2.copy(drone.up);
+    this.orbitTmp2.normalize();
+    const err = this.easeDronePose(dt, this.lookSlerp, this.orbitTmp, this.orbitTmp2);
+    const slack = Math.max(drone.rel.length() * 0.03, 1);
+    if (err > slack) return;
+    drone.phase = null;
+    this.captureDroneLock();
+  }
+
+  private tickDroneHome(dt: number): void {
+    const drone = this.drone;
+    if (!drone) return;
+    if (!this.fillShipPoseKm(this.lookSlerp, this.orbitTmp, this.orbitTmp2)) {
+      this.setDrone(false, false);
+      return;
+    }
+    if (drone.rel.x < 0) drone.rel.x = Math.max(2, drone.eye.distanceTo(this.lookSlerp) * 0.008);
+    const err = this.easeDronePose(dt, this.lookSlerp, this.orbitTmp, this.orbitTmp2);
+    if (err > drone.rel.x) return;
+    this.setDrone(false, false);
+  }
+
+  /** Exponential ease, same family as orbit capture. Returns leftover km. */
+  private easeDronePose(
+    dt: number,
+    eye: THREE.Vector3,
+    fwd: THREE.Vector3,
+    up: THREE.Vector3,
+  ): number {
+    const drone = this.drone;
+    if (!drone) return 0;
+    const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
+    drone.eye.lerp(eye, k);
+    drone.fwd.lerp(fwd, k);
+    drone.up.lerp(up, k);
+    if (drone.fwd.lengthSq() < 1e-16) drone.fwd.copy(fwd);
+    else drone.fwd.normalize();
+    this.droneOrthonormalUp();
+    this.droneStayOut();
+    return drone.eye.distanceTo(eye);
+  }
+
+  /**
+   * Live ship camera in host-root km + look. The recall target —
+   * the pose restoreShipCam would cut to.
+   */
+  private fillShipPoseKm(eye: THREE.Vector3, fwd: THREE.Vector3, up: THREE.Vector3): boolean {
+    const root = this.hostRoot;
+    if (!root || !this.hostObj) return false;
+    const tSys = (this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE;
+    this.hostTmpQ.copy(root.quaternion).conjugate();
+    if (this.riding) {
+      if (!this.rideEyeKm(tSys, eye)) return false;
+      if (this.rideLookFree) this.shipLookLocal(fwd, up);
+      else this.rideBankLookLocal(tSys, fwd, up);
+      return true;
+    }
+    if (this.landed) {
+      const rt = this.worldRt(this.worldId ?? this.courseBodyId);
+      if (!rt) return false;
+      const globe = this.globeOf(rt.spec.id);
+      const gR = globe?.ready ? globe.groundR(this.surfDir) : 1;
+      const eyeKm = (gR + this.sEyeH) * Math.max(rt.spec.radius, 1);
+      eye.copy(this.surfDir).applyQuaternion(rt.spinQ).multiplyScalar(eyeKm).add(rt.pos);
+      this.spinWorld(rt, this.orbitQ);
+      this.surfBasis(this.surfDir, this.surfEast, this.surfNorth);
+      this.hostTmp
+        .copy(this.surfNorth)
+        .multiplyScalar(Math.cos(this.sYaw))
+        .addScaledVector(this.surfEast, Math.sin(this.sYaw));
+      this.hostTmp
+        .multiplyScalar(Math.cos(this.sPitch))
+        .addScaledVector(this.surfDir, Math.sin(this.sPitch));
+      fwd.copy(this.hostTmp).applyQuaternion(this.orbitQ).applyQuaternion(this.hostTmpQ);
+      if (fwd.lengthSq() < 1e-16) fwd.set(0, 0, 1);
+      else fwd.normalize();
+      up.copy(this.surfDir).applyQuaternion(this.orbitQ).applyQuaternion(this.hostTmpQ);
+      if (up.lengthSq() < 1e-16) up.set(0, 1, 0);
+      else up.normalize();
+      return true;
+    }
+    const cart = galToCart(this.hostObj.pos);
+    eye
+      .set(this.shipAt.x - cart.x, this.shipAt.y - cart.y, this.shipAt.z - cart.z)
+      .applyQuaternion(this.hostTmpQ)
+      .multiplyScalar(1 / KM_TO_KPC);
+    this.shipLookLocal(fwd, up);
+    return true;
+  }
+
+  private rideEyeKm(tSys: number, out: THREE.Vector3): boolean {
+    const ride = this.riding;
+    const root = this.hostRoot;
+    if (!ride || !this.hostObj || !root) return false;
+    let ox: number;
+    let oy: number;
+    let oz: number;
+    if (ride.bodyId == null) {
+      const th = ride.theta0 + ride.omega * tSys;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      ox = (this.rideE1.x * c + this.rideE2.x * s) * ride.r;
+      oy = (this.rideE1.y * c + this.rideE2.y * s) * ride.r;
+      oz = (this.rideE1.z * c + this.rideE2.z * s) * ride.r;
+      out
+        .set(ox, oy, oz)
+        .applyQuaternion(this.hostTmpQ.copy(root.quaternion).conjugate())
+        .multiplyScalar(1 / KM_TO_KPC);
+      return true;
+    }
+    const rt = this.worldRt(ride.bodyId);
+    if (!rt) return false;
+    if (ride.hang) {
+      this.spinWorld(rt, this.orbitQ);
+      this.hostTmp.copy(this.rideLocal).applyQuaternion(this.orbitQ);
+      ox = this.hostTmp.x * ride.r;
+      oy = this.hostTmp.y * ride.r;
+      oz = this.hostTmp.z * ride.r;
+    } else {
+      const th = ride.theta0 + ride.omega * tSys;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      ox = (this.rideE1.x * c + this.rideE2.x * s) * ride.r;
+      oy = (this.rideE1.y * c + this.rideE2.y * s) * ride.r;
+      oz = (this.rideE1.z * c + this.rideE2.z * s) * ride.r;
+    }
+    out
+      .set(ox, oy, oz)
+      .applyQuaternion(this.hostTmpQ.copy(root.quaternion).conjugate())
+      .multiplyScalar(1 / KM_TO_KPC)
+      .add(rt.pos);
+    return true;
+  }
+
+  /** Current ride bank look (arrival attitude) into host-local. */
+  private rideBankLookLocal(tSys: number, fwd: THREE.Vector3, up: THREE.Vector3): void {
+    const ride = this.riding;
+    const root = this.hostRoot;
+    if (!ride || !root) {
+      this.shipLookLocal(fwd, up);
+      return;
+    }
+    if (ride.hang) {
+      const rt = this.worldRt(ride.bodyId);
+      if (!rt) {
+        this.shipLookLocal(fwd, up);
+        return;
+      }
+      this.spinWorld(rt, this.orbitQ);
+      this.hostTmp.copy(this.rideLocal).applyQuaternion(this.orbitQ);
+      if (this.hostTmp.lengthSq() < 1e-18) {
+        this.shipLookLocal(fwd, up);
+        return;
+      }
+      this.hostTmp.normalize();
+      fwd.copy(this.hostTmp).negate();
+      up.copy(this.hostTmp);
+    } else {
+      const th = ride.theta0 + ride.omega * tSys;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      up.set(
+        this.rideE1.x * c + this.rideE2.x * s,
+        this.rideE1.y * c + this.rideE2.y * s,
+        this.rideE1.z * c + this.rideE2.z * s,
+      );
+      if (up.lengthSq() < 1e-18) {
+        this.shipLookLocal(fwd, up);
+        return;
+      }
+      up.normalize();
+      fwd.set(
+        -this.rideE1.x * s + this.rideE2.x * c,
+        -this.rideE1.y * s + this.rideE2.y * c,
+        -this.rideE1.z * s + this.rideE2.z * c,
+      );
+      if (fwd.lengthSq() < 1e-18) {
+        this.shipLookLocal(fwd, up);
+        return;
+      }
+      fwd.normalize();
+      const rt = ride.bodyId != null ? this.worldRt(ride.bodyId) : null;
+      if (rt && isLimbOrbit(ride.kind)) this.limbParkFwd(rt, ride.kind, fwd, up, fwd);
+    }
+    this.hostTmpQ.copy(root.quaternion).conjugate();
+    fwd.applyQuaternion(this.hostTmpQ);
+    up.applyQuaternion(this.hostTmpQ);
+    if (fwd.lengthSq() < 1e-16) fwd.set(0, 0, 1);
+    else fwd.normalize();
+    if (up.lengthSq() < 1e-16) up.set(0, 1, 0);
+    else up.normalize();
+  }
+
+  /** Parked ship look (yaw/pitch/roll at launch) into host-local. */
+  private shipLookLocal(fwd: THREE.Vector3, up: THREE.Vector3): void {
+    const root = this.hostRoot;
+    const cp = Math.cos(this.shipLook.pitch);
+    fwd.set(
+      cp * Math.sin(this.shipLook.yaw),
+      Math.sin(this.shipLook.pitch),
+      cp * Math.cos(this.shipLook.yaw),
+    );
+    this.hostTmp.crossVectors(fwd, this.worldUp);
+    if (this.hostTmp.lengthSq() < 1e-10) this.hostTmp.set(1, 0, 0);
+    else this.hostTmp.normalize();
+    up.crossVectors(this.hostTmp, fwd).normalize();
+    const roll = this.shipLook.roll;
+    if (Math.abs(roll) > 1e-8) {
+      const c = Math.cos(roll);
+      const s = Math.sin(roll);
+      this.hostTmp2.copy(up);
+      up.copy(this.hostTmp).multiplyScalar(s).addScaledVector(this.hostTmp2, c).normalize();
+    }
+    if (root) {
+      this.hostTmpQ.copy(root.quaternion).conjugate();
+      fwd.applyQuaternion(this.hostTmpQ);
+      up.applyQuaternion(this.hostTmpQ);
+    }
+    if (fwd.lengthSq() < 1e-16) fwd.set(0, 0, 1);
+    else fwd.normalize();
+    if (up.lengthSq() < 1e-16) up.set(0, 1, 0);
+    else up.normalize();
   }
 
   private surfBasis(dir: THREE.Vector3, east: THREE.Vector3, north: THREE.Vector3): void {
@@ -3813,7 +4085,7 @@ export class GalaxyView {
 
   /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
   setWarp(on: boolean): void {
-    if (this.drone) this.setDrone(false);
+    if (this.drone) this.setDrone(false, false);
     if (this.mode !== 'region' || this.landed) return;
     if (on && (this.riding || this.capturing)) this.breakOrbit();
     // Stop cancels a body chart pick, not a star ecliptic lock —
@@ -4292,7 +4564,7 @@ export class GalaxyView {
     if (this.pendingPlace) {
       this.applyPendingPlace(tSys);
     } else if (this.drone) {
-      this.placeDrone();
+      this.tickDrone(this.lastDt);
     } else if (this.landed) {
       this.walkSurface(this.lastDt);
       this.holdLook();
@@ -4557,6 +4829,7 @@ export class GalaxyView {
   private zoom(factor: number): void {
     const f = Math.max(1e-3, factor);
     if (this.drone) {
+      if (this.drone.phase) return;
       const n = this.dronePickNearest();
       const d = Math.max(this.drone.eye.distanceTo(this.droneCorePos), n.R);
       this.drone.eye.addScaledVector(this.drone.fwd, d * UNIVERSE.SOI_ZOOM * -Math.log(f));
@@ -4667,6 +4940,7 @@ export class GalaxyView {
     if (Math.abs(d) < 1e-6) return;
     if (this.riding) this.rideLookFree = true;
     if (this.drone) {
+      if (this.drone.phase) return;
       this.drone.up.applyAxisAngle(this.drone.fwd, d);
       this.drone.up.addScaledVector(this.drone.fwd, -this.drone.up.dot(this.drone.fwd));
       if (this.drone.up.lengthSq() > 1e-16) this.drone.up.normalize();
@@ -5653,8 +5927,9 @@ export class GalaxyView {
       navHint,
       landed: this.landed,
       canLand: this.canLandNow(),
-      lookHold: this.drone?.lock ? 'center' : null,
+      lookHold: this.drone?.lock && !this.drone.phase ? 'center' : null,
       drone: Boolean(this.drone),
+      dronePhase: this.drone?.phase ?? null,
       worldId: this.riding?.bodyId ?? this.capturing?.bodyId ?? this.worldId ?? this.courseBodyId,
     });
     this.raf = requestAnimationFrame(this.frame);

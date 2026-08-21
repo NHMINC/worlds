@@ -517,11 +517,23 @@ export const UNIVERSE = {
    * (`R × 1.002`) so it can enter air and fly between moons.
    * Target is drone-only — lock on the nearest core and the
    * eye rides that body (planet trackball). Off is free fly.
+   * Launch / recall use the capture ease (`ORBIT_CAPTURE`):
+   * lift along the local zenith by `DRONE_LIFT` (a fraction of
+   * hover height, floored at that fraction of the body radius)
+   * while the look rotates onto the core; recall flies back
+   * onto the live ship and lands — the arrival sequence, not
+   * a cut.
    */
   SOI_ZOOM: 0.55,
   SOI_TWIST: 1,
   SOI_TRACK_MIN: 0.12,
   SOI_TRACK_MAX: 8,
+  /**
+   * Trackball lift. Fraction of the hover height above the
+   * nearest core, floored at this fraction of that body's
+   * radius so a skim still hops. The ease is ORBIT_CAPTURE.
+   */
+  DRONE_LIFT: 0.16,
   /**
    * Inertial park look (LEO / station / MEO / polar). The nose
    * stays near prograde; pitch down so the forward limb fills
