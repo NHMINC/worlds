@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react';
-import type { ProjectedPoint, ViewState } from '../render/engine';
+import type { ProjectedPoint } from '../render/galaxyView';
 import type { LabelRecord, ObjectRecord } from '../world/types';
 
 interface Props {
-  subscribe: (fn: (v: ViewState) => void) => () => void;
+  subscribe: (fn: () => void) => () => void;
   /** Project a geodesic cell to screen space (null before a world loads). */
   projectCell: (cell: number) => ProjectedPoint | null;
   labels: LabelRecord[];

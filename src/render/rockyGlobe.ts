@@ -57,7 +57,13 @@ export class RockyGlobe {
   private step = 0.01;
   private tideAmp = 0;
 
-  constructor(spec: BodySpec, system: SystemSpec, group: THREE.Group, placeholder: THREE.Object3D | null) {
+  constructor(
+    spec: BodySpec,
+    system: SystemSpec,
+    group: THREE.Group,
+    placeholder: THREE.Object3D | null,
+    terrain?: Map<number, number> | null,
+  ) {
     this.bodyId = spec.id;
     this.spec = spec;
     this.system = system;
@@ -66,6 +72,11 @@ export class RockyGlobe {
     const f = frequencyForSize(spec.size);
     const grid = getGrid(f);
     const levels = generateLevels(spec.seed, grid);
+    if (terrain) {
+      for (const [cell, level] of terrain) {
+        if (cell >= 0 && cell < levels.length) levels[cell] = level;
+      }
+    }
     this.grid = grid;
     this.levels = levels;
     const phys = effectivePhysics(system, spec);
@@ -94,6 +105,12 @@ export class RockyGlobe {
 
   terrainMesh(): THREE.Mesh | null {
     return this.assets?.terrain ?? null;
+  }
+
+  /** Unit cell centre, or null if the index is off the grid. */
+  cellCenter(cell: number): [number, number, number] | null {
+    if (cell < 0 || cell >= this.grid.count) return null;
+    return [this.grid.centers[cell * 3], this.grid.centers[cell * 3 + 1], this.grid.centers[cell * 3 + 2]];
   }
 
   /**

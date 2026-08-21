@@ -654,6 +654,8 @@ export interface GalaxyFrame {
   drone: boolean;
   /** Sun look is offered when the primary is a world. */
   showSunLook: boolean;
+  /** Latched / ridden / landed world, if any. */
+  worldId: string | null;
 }
 
 export interface RegionSelection {
@@ -672,11 +674,21 @@ export interface GlobePick {
   waterLevel: number;
 }
 
+export type MarkTool = 'label' | 'object';
+
+export interface ProjectedPoint {
+  x: number;
+  y: number;
+  visible: boolean;
+  alpha: number;
+}
+
 interface Callbacks {
   onSelect: (obj: GalaxyObject | null) => void;
   onFrame?: (f: GalaxyFrame) => void;
   onPlace?: (p: LastPlace) => void;
   onInspect?: (hit: GlobePick | null) => void;
+  onMark?: (tool: MarkTool, hit: GlobePick) => void;
 }
 
 export class GalaxyView {
@@ -802,6 +814,10 @@ export class GalaxyView {
   private selectedBodyId: string | null = null;
   /** Goldberg globes for every rocky body of the host. */
   private readonly globes = new Map<string, RockyGlobe>();
+  /** Absolute level overlays, keyed by body id. Applied at mint. */
+  private readonly terrainByBody = new Map<string, Map<number, number>>();
+  private terrainKey = '';
+  private markTool: MarkTool | null = null;
   /** Chart pick: fly to this ring, then ride it. */
   private pendingOrbit: { bodyId: string; kind: WorldOrbitKind } | null = null;
   private riding: {
@@ -998,6 +1014,67 @@ export class GalaxyView {
    * Viewport mood from the latched world's physics. Density is
    * how close we stand — space, a ring, the skin.
    */
+  setMarkTool(tool: MarkTool | null): void {
+    this.markTool = tool;
+  }
+
+  /**
+   * Player terrain overlays. Same addressable write as the old
+   * viewer: effectiveLevel = override ?? generated. A change
+   * remints existing globes so a loaded visit wears its sculpt.
+   */
+  setTerrainOverlays(rows: Array<{ bodyId: string; packed: number[] }>): void {
+    const key = rows
+      .map((r) => `${r.bodyId}:${r.packed.join(',')}`)
+      .sort()
+      .join('|');
+    if (key === this.terrainKey) return;
+    this.terrainKey = key;
+    this.terrainByBody.clear();
+    for (const r of rows) {
+      const m = new Map<number, number>();
+      for (let i = 0; i + 1 < r.packed.length; i += 2) m.set(r.packed[i], r.packed[i + 1]);
+      if (m.size) this.terrainByBody.set(r.bodyId, m);
+    }
+    for (const id of [...this.globes.keys()]) {
+      this.globes.get(id)?.dispose();
+      this.globes.delete(id);
+    }
+    this.wake();
+  }
+
+  /**
+   * Hex on the latched globe, in canvas pixels. Hidden on the
+   * far side; alpha fades over the limb — same facing law.
+   */
+  projectCell(bodyId: string, cell: number): ProjectedPoint {
+    const hidden: ProjectedPoint = { x: 0, y: 0, visible: false, alpha: 0 };
+    const globe = this.globeOf(bodyId);
+    const rt = this.worldRt(bodyId);
+    const dir = globe?.cellCenter(cell);
+    if (!globe || !rt || !dir || !this.hostRoot) return hidden;
+    this.hostTmp.set(dir[0], dir[1], dir[2]);
+    const r = globe.groundR(this.hostTmp);
+    this.hostTmp.multiplyScalar(r);
+    rt.group.localToWorld(this.hostTmp);
+    this.hostTmp2.copy(this.camera.position);
+    rt.group.worldToLocal(this.hostTmp2);
+    const dist = this.hostTmp2.length();
+    if (!(dist > 1e-8)) return hidden;
+    this.hostTmp2.multiplyScalar(1 / dist);
+    const facing = dir[0] * this.hostTmp2.x + dir[1] * this.hostTmp2.y + dir[2] * this.hostTmp2.z;
+    const horizon = Math.min(1, 1 / dist);
+    if (facing < horizon) return hidden;
+    this.hostTmp.project(this.camera);
+    const w = Math.max(1, this.canvas.clientWidth);
+    const h = Math.max(1, this.canvas.clientHeight);
+    const x = (this.hostTmp.x * 0.5 + 0.5) * w;
+    const y = (-this.hostTmp.y * 0.5 + 0.5) * h;
+    const visible = x > -160 && x < w + 160 && y > -80 && y < h + 80;
+    const t = Math.min(1, Math.max(0, (facing - horizon) / Math.max(1e-4, 0.12 * (1 - horizon))));
+    return { x, y, visible, alpha: t * t * (3 - 2 * t) };
+  }
+
   getMood(): { group: 'water' | 'green' | 'dry' | 'cold' | 'rock' | 'space'; density: number } {
     if (!this.hostObj) return { group: 'space', density: 0 };
     const rt = this.worldRt(this.riding?.bodyId ?? this.worldId);
@@ -2998,7 +3075,10 @@ export class GalaxyView {
     }
     const mint = (rt: HostBodyRT): void => {
       if (!this.hostSpec || this.globes.has(rt.spec.id)) return;
-      this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder));
+      this.globes.set(
+        rt.spec.id,
+        new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder, this.terrainByBody.get(rt.spec.id)),
+      );
     };
     if (prefer) {
       const first = rocky.find((rt) => rt.spec.id === prefer);
@@ -3909,8 +3989,14 @@ export class GalaxyView {
     this.wake();
     const tap = this.dragging && !this.looking && this.moved < TAP_SLOP;
     this.endPointer(e.pointerId);
-    if (tap && this.landed) this.callbacks.onInspect?.(this.pickGlobeCell(e.clientX, e.clientY));
-    else if (tap && !this.landed) this.pick(e.clientX, e.clientY);
+    if (tap && this.landed) {
+      const hit = this.pickGlobeCell(e.clientX, e.clientY);
+      if (this.markTool) {
+        if (hit) this.callbacks.onMark?.(this.markTool, hit);
+      } else {
+        this.callbacks.onInspect?.(hit);
+      }
+    } else if (tap && !this.landed) this.pick(e.clientX, e.clientY);
   };
 
   private onLostCapture = (e: PointerEvent): void => {
@@ -4601,6 +4687,7 @@ export class GalaxyView {
       lookHold: this.lookHold,
       drone: Boolean(this.drone),
       showSunLook: this.showSunLook(),
+      worldId: this.riding?.bodyId ?? this.worldId ?? this.courseBodyId,
     });
     this.raf = requestAnimationFrame(this.frame);
   };

@@ -616,8 +616,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 
 Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
 ring; land walks the terrace; the SOI drone is a look. `engine.ts` is
-leftover (labels, sculpt, reflection RTs, the unseeded night shell) —
-not a player verb. Do not retire it until overlays draw on the latched
+leftover (sculpt brush, reflection RTs, the unseeded night shell) —
+not a player verb. Do not retire it until those draw on the latched
 globe. The app lives at `http://localhost:5173/` (`npm run dev`).
 
 | Mode | Meaning |
@@ -708,11 +708,11 @@ Do not put secrets, API keys, or machine-local paths in a save.
 The physics universe does not know about the player. Mining and building
 are **overlays on the addressable grid**, not new planet types.
 
-**Now**
+**Now** (on the host-pass globe, not the isolated viewer)
 
 - Inspect a hex: composition of that column’s surface layer, from geology.
 - Place labels and objects (`city` / `town` / `landmark`) on a cell.
-- Sculpt by writing absolute levels (the same overlay mining will use).
+- Stored terrain overlays apply at globe mint (`effectiveLevel = override ?? generated`). The sculpt brush is still later.
 
 **Direction (do not invent a parallel world to get here)**
 

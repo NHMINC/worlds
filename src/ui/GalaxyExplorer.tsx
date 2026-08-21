@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
 import { lockedToStar, systemAt, type BodySpec } from '../world/systemgen';
-import { GalaxyView, type GalaxyFrame, type GalaxyPreset, type GlobePick } from '../render/galaxyView';
-import type { LastPlace } from '../world/types';
+import { GalaxyView, type GalaxyFrame, type GalaxyPreset, type GlobePick, type MarkTool } from '../render/galaxyView';
+import type { LabelRecord, LastPlace, ObjectKind, ObjectRecord, TerrainOverrideRecord } from '../world/types';
+import { db, touchSystem } from '../store/db';
+import { uuid } from '../world/rng';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
 import { AmbientMusic } from '../audio/ambient';
 import { geologyFor } from '../world/geology';
@@ -16,10 +18,12 @@ import {
   rebuildKnob,
   type RebuildScope,
 } from './liveKnobs';
-import { IconCenter, IconGlobe, IconInspect, IconMusic, IconMusicOff, IconOrbits, IconSun, IconTrackball } from './icons';
+import { IconCenter, IconGlobe, IconInspect, IconLabel, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconSun, IconTrackball } from './icons';
 import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
 import { OrbitPick } from './OrbitPick';
 import { InspectorPanel, type InspectedCell } from './InspectorPanel';
+import { LabelsOverlay } from './LabelsOverlay';
+import { PlaceDialog } from './PlaceDialog';
 import { orbitLabel } from '../world/worldOrbit';
 
 const VIEW_PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
@@ -78,6 +82,9 @@ interface Props {
   onReady?: () => void;
   onPlace?: (p: LastPlace) => void;
   onOpenVisits?: () => void;
+  /** Current visit row — overlays persist on this id. */
+  visitId?: string | null;
+  visitStarId?: number | null;
 }
 
 export function GalaxyExplorer(props: Props) {
@@ -95,6 +102,19 @@ export function GalaxyExplorer(props: Props) {
   const resumeRef = useRef(props.resume);
   resumeRef.current = props.resume;
   const inspectRef = useRef<(hit: GlobePick | null) => void>(() => {});
+  const markRef = useRef<(tool: MarkTool, hit: GlobePick) => void>(() => {});
+  const markTicks = useRef(new Set<() => void>());
+  const [markTool, setMarkTool] = useState<MarkTool | null>(null);
+  const [labels, setLabels] = useState<LabelRecord[]>([]);
+  const [objects, setObjects] = useState<ObjectRecord[]>([]);
+  const [terrain, setTerrain] = useState<TerrainOverrideRecord[]>([]);
+  const [placeDialog, setPlaceDialog] = useState<{
+    mode: MarkTool;
+    bodyId: string;
+    cell: number;
+    existingLabel?: LabelRecord;
+    existingObject?: ObjectRecord;
+  } | null>(null);
   const active = props.active !== false;
   const [ready, setReady] = useState(false);
   const [inspect, setInspect] = useState<{ body: BodySpec; cell: InspectedCell | null } | null>(null);
@@ -136,6 +156,7 @@ export function GalaxyExplorer(props: Props) {
     lookHold: null,
     drone: false,
     showSunLook: false,
+    worldId: null,
   });
 
   useEffect(() => {
@@ -155,7 +176,9 @@ export function GalaxyExplorer(props: Props) {
           onSelect: () => {},
           onPlace: (p) => placeRef.current?.(p),
           onInspect: (hit) => inspectRef.current(hit),
+          onMark: (tool, hit) => markRef.current(tool, hit),
           onFrame: (f) => {
+            for (const fn of markTicks.current) fn();
             setFrame((prev) =>
               prev.mode !== f.mode ||
               Math.abs(prev.radius - f.radius) > 0.08 ||
@@ -181,6 +204,7 @@ export function GalaxyExplorer(props: Props) {
               prev.lookHold !== f.lookHold ||
               prev.drone !== f.drone ||
               prev.showSunLook !== f.showSunLook ||
+              prev.worldId !== f.worldId ||
               prev.focus?.id !== f.focus?.id ||
               prev.focus?.bodyId !== f.focus?.bodyId ||
               (f.focus != null &&
@@ -245,6 +269,46 @@ export function GalaxyExplorer(props: Props) {
     if (props.go.place) view.restorePlace(props.go.place);
     else view.goToStar(props.go.starId);
   }, [ready, props.go]);
+
+  useEffect(() => {
+    const id = props.visitId;
+    if (!id) {
+      setLabels([]);
+      setObjects([]);
+      setTerrain([]);
+      return;
+    }
+    let cancelled = false;
+    void Promise.all([
+      db.labels.where('systemId').equals(id).toArray(),
+      db.objects.where('systemId').equals(id).toArray(),
+      db.terrain.where('systemId').equals(id).toArray(),
+    ]).then(([lbs, objs, terr]) => {
+      if (cancelled) return;
+      setLabels(lbs);
+      setObjects(objs);
+      setTerrain(terr);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.visitId]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const host = frame.hostId;
+    const mine = props.visitStarId != null && host === props.visitStarId;
+    viewRef.current?.setTerrainOverlays(mine ? terrain : []);
+  }, [ready, terrain, frame.hostId, props.visitStarId]);
+
+  useEffect(() => {
+    if (!ready) return;
+    viewRef.current?.setMarkTool(frame.landed ? markTool : null);
+  }, [ready, markTool, frame.landed]);
+
+  useEffect(() => {
+    if (!frame.landed) setMarkTool(null);
+  }, [frame.landed]);
 
   useEffect(() => {
     if (!ready) return;
@@ -418,6 +482,82 @@ export function GalaxyExplorer(props: Props) {
     });
   };
 
+  markRef.current = (tool, hit) => {
+    const existingLabel = labels.find((l) => l.bodyId === hit.bodyId && l.cell === hit.cell);
+    const existingObject = objects.find((o) => o.bodyId === hit.bodyId && o.cell === hit.cell);
+    setPlaceDialog({
+      mode: tool,
+      bodyId: hit.bodyId,
+      cell: hit.cell,
+      existingLabel: tool === 'label' ? existingLabel : undefined,
+      existingObject: tool === 'object' ? existingObject : undefined,
+    });
+  };
+
+  const subscribeMarks = useCallback((fn: () => void) => {
+    markTicks.current.add(fn);
+    return () => {
+      markTicks.current.delete(fn);
+    };
+  }, []);
+
+  const projectMark = useCallback(
+    (cell: number) => {
+      const id = frame.worldId;
+      if (!id) return null;
+      return viewRef.current?.projectCell(id, cell) ?? null;
+    },
+    [frame.worldId],
+  );
+
+  async function saveMark(text: string, kind: ObjectKind): Promise<void> {
+    const s = props.visitId;
+    const d = placeDialog;
+    if (!s || !d) return;
+    if (d.mode === 'label') {
+      if (d.existingLabel) {
+        await db.labels.update(d.existingLabel.id, { text });
+        setLabels((ls) => ls.map((l) => (l.id === d.existingLabel!.id ? { ...l, text } : l)));
+      } else {
+        const rec: LabelRecord = { id: uuid(), systemId: s, bodyId: d.bodyId, cell: d.cell, text };
+        await db.labels.add(rec);
+        setLabels((ls) => [...ls, rec]);
+      }
+    } else if (d.existingObject) {
+      await db.objects.update(d.existingObject.id, { name: text, kind });
+      setObjects((os) => os.map((o) => (o.id === d.existingObject!.id ? { ...o, name: text, kind } : o)));
+    } else {
+      const rec: ObjectRecord = { id: uuid(), systemId: s, bodyId: d.bodyId, cell: d.cell, kind, name: text };
+      await db.objects.add(rec);
+      setObjects((os) => [...os, rec]);
+    }
+    await touchSystem(s);
+    setPlaceDialog(null);
+  }
+
+  async function deleteMark(): Promise<void> {
+    const d = placeDialog;
+    if (!d) return;
+    if (d.existingLabel) {
+      await db.labels.delete(d.existingLabel.id);
+      setLabels((ls) => ls.filter((l) => l.id !== d.existingLabel!.id));
+    }
+    if (d.existingObject) {
+      await db.objects.delete(d.existingObject.id);
+      setObjects((os) => os.filter((o) => o.id !== d.existingObject!.id));
+    }
+    setPlaceDialog(null);
+  }
+
+  function markBiome(body: BodySpec): string {
+    const p = body.physics;
+    if (p.life) return 'Grassland';
+    if (p.hydrosphere.state === 'ice') return 'Snowfield';
+    if (p.hydrosphere.state === 'liquid') return 'Beach';
+    if (p.TsurfK > 330) return 'Desert';
+    return 'Mountains';
+  }
+
   useEffect(() => {
     if (!frame.landed && !frame.orbiting) setInspect(null);
   }, [frame.landed, frame.orbiting, frame.hostId]);
@@ -475,6 +615,21 @@ export function GalaxyExplorer(props: Props) {
     >
       <div ref={wrapRef} className="galaxy-stage">
         <canvas ref={canvasRef} />
+        {frame.worldId && (labels.length > 0 || objects.length > 0) && (
+          <LabelsOverlay
+            subscribe={subscribeMarks}
+            projectCell={projectMark}
+            labels={labels.filter((l) => l.bodyId === frame.worldId)}
+            objects={objects.filter((o) => o.bodyId === frame.worldId)}
+            interactive={Boolean(markTool)}
+            onEditLabel={(l) =>
+              setPlaceDialog({ mode: 'label', bodyId: l.bodyId, cell: l.cell, existingLabel: l })
+            }
+            onEditObject={(o) =>
+              setPlaceDialog({ mode: 'object', bodyId: o.bodyId, cell: o.cell, existingObject: o })
+            }
+          />
+        )}
         {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}
         {rebuilding && (
           <div className="gx-rebuild" role="status">
@@ -709,11 +864,40 @@ export function GalaxyExplorer(props: Props) {
               onClick={() => {
                 const body = viewRef.current?.inspectBody();
                 if (!body) return;
+                setMarkTool(null);
                 setInspect((cur) => (cur ? null : { body, cell: null }));
               }}
             >
               <IconInspect size={16} />
             </button>
+          )}
+          {!editing && frame.landed && props.visitId && (
+            <>
+              <button
+                type="button"
+                className={`gx-chip gx-icon${markTool === 'label' ? ' active' : ''}`}
+                aria-label="Name a place"
+                title="Name a place — tap a hex"
+                onClick={() => {
+                  setInspect(null);
+                  setMarkTool((t) => (t === 'label' ? null : 'label'));
+                }}
+              >
+                <IconLabel size={16} />
+              </button>
+              <button
+                type="button"
+                className={`gx-chip gx-icon${markTool === 'object' ? ' active' : ''}`}
+                aria-label="Place a marker"
+                title="Place a city, town, or landmark — tap a hex"
+                onClick={() => {
+                  setInspect(null);
+                  setMarkTool((t) => (t === 'object' ? null : 'object'));
+                }}
+              >
+                <IconPlace size={16} />
+              </button>
+            </>
           )}
           <div className={`gx-drop gx-drop-eng-wrap${menu === 'engineer' ? ' is-open' : ''}`}>
             <button
@@ -908,6 +1092,28 @@ export function GalaxyExplorer(props: Props) {
           physics={inspect.body.physics}
           cell={inspect.cell}
           onClose={() => setInspect(null)}
+        />
+      )}
+      {placeDialog && (
+        <PlaceDialog
+          mode={placeDialog.mode}
+          initialText={placeDialog.existingLabel?.text ?? placeDialog.existingObject?.name ?? ''}
+          initialKind={placeDialog.existingObject?.kind ?? 'city'}
+          canDelete={Boolean(placeDialog.existingLabel || placeDialog.existingObject)}
+          aiContext={(kind) => {
+            const body =
+              viewRef.current?.inspectBody() ??
+              chartSpec?.bodies.find((b) => b.id === placeDialog.bodyId);
+            return {
+              kind,
+              biome: body ? markBiome(body) : 'Mountains',
+              worldName: body?.name ?? '…',
+              existing: [...labels.map((l) => l.text), ...objects.map((o) => o.name)].slice(0, 8),
+            };
+          }}
+          onSave={(text, kind) => void saveMark(text, kind)}
+          onDelete={() => void deleteMark()}
+          onClose={() => setPlaceDialog(null)}
         />
       )}
     </div>

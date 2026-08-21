@@ -7,7 +7,7 @@ import { hideUniverseSplash, prepareUniverse } from './world/universePrep';
 import { UNIVERSE } from './world/physics';
 import type { LastPlace, SystemMeta } from './world/types';
 import { getPlace, placeFromVisit, putPlace } from './store/place';
-import { listVisits, upsertVisit, visitAlive } from './store/visits';
+import { listVisits, upsertVisit, visitAlive, visitByStar } from './store/visits';
 import { GalaxyExplorer, type ExplorerGo } from './ui/GalaxyExplorer';
 import { SystemManager } from './ui/SystemManager';
 
@@ -43,6 +43,7 @@ export default function App() {
   async function openCamp(place: LastPlace): Promise<void> {
     setLookStarId(place.starId);
     setCamp(place);
+    setSystem((await visitByStar(place.starId, place.galaxySeed)) ?? null);
     setCampReady(true);
   }
 
@@ -68,7 +69,7 @@ export default function App() {
     void putPlace(p);
     void upsertVisit(p).then((row) => {
       if (!row) return;
-      setSystem(row);
+      setSystem((cur) => (cur?.id === row.id ? cur : row));
       void listVisits().then(setSystems);
     });
   }
@@ -120,6 +121,8 @@ export default function App() {
           go={go}
           onPlace={handlePlace}
           onOpenVisits={() => setManagerOpen(true)}
+          visitId={system?.id ?? null}
+          visitStarId={system?.starId ?? lookStarId}
         />
       )}
 
