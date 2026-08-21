@@ -1,8 +1,9 @@
 /**
  * First look: we do not mint a system. We search nearby solar-circle
  * hosts for a star whose planets already include a habitable world.
- * The galaxy is not a list; this is a query. An empty save opens the
- * explorer on that star; set course writes the first visit.
+ * The galaxy is not a list; this is a query. An empty save with no
+ * camp opens the explorer on that star. Entering a host writes the
+ * camp; the next boot restores that body.
  * The walk is the host list as the mass model emitted it — no shuffle.
  */
 import { UNIVERSE } from './physics';

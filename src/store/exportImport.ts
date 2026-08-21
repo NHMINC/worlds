@@ -3,6 +3,7 @@ import { db } from './db';
 import { parseSystemExport, MAX_IMPORT_BYTES } from './parseExport';
 import { uuid } from '../world/rng';
 import type { SystemMeta } from '../world/types';
+import { getPlace, putPlace } from './place';
 
 export async function buildSystemExport(systemId: string) {
   const system = await db.systems.get(systemId);
@@ -12,8 +13,10 @@ export async function buildSystemExport(systemId: string) {
   const labels = await db.labels.where('systemId').equals(systemId).toArray();
   const objects = await db.objects.where('systemId').equals(systemId).toArray();
   const { id: _id, ...systemRest } = system;
+  const camp = await getPlace();
+  const place = camp && system.starId != null && camp.starId === system.starId ? camp : undefined;
   return {
-    formatVersion: 4 as const,
+    formatVersion: 5 as const,
     app: 'hex-world-builder' as const,
     kind: 'system' as const,
     system: systemRest,
@@ -21,6 +24,7 @@ export async function buildSystemExport(systemId: string) {
     terrain: terrain.map(({ systemId: _s, ...rest }) => rest),
     labels: labels.map(({ systemId: _s, ...rest }) => rest),
     objects: objects.map(({ systemId: _s, ...rest }) => rest),
+    place,
   };
 }
 
@@ -66,5 +70,6 @@ export async function importSystem(file: File): Promise<string> {
     await db.labels.bulkAdd(data.labels.map((l) => ({ ...l, id: uuid(), systemId: id })));
     await db.objects.bulkAdd(data.objects.map((o) => ({ ...o, id: uuid(), systemId: id })));
   });
+  if (data.place) await putPlace(data.place);
   return id;
 }

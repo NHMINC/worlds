@@ -10,8 +10,9 @@ import { hideUniverseSplash, prepareUniverse } from './world/universePrep';
 import { PALETTE } from './world/palettes';
 import { uuid } from './world/rng';
 import type {
-  BodyStateRecord, LabelRecord, ObjectKind, ObjectRecord, SystemMeta,
+  BodyStateRecord, LabelRecord, LastPlace, ObjectKind, ObjectRecord, SystemMeta,
 } from './world/types';
+import { getPlace, placeFromVisit, putPlace } from './store/place';
 import { Toolbar } from './ui/Toolbar';
 import { GalaxyExplorer } from './ui/GalaxyExplorer';
 import { SystemManager } from './ui/SystemManager';
@@ -69,6 +70,8 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [galaxyOpen, setGalaxyOpen] = useState(false);
   const [lookStarId, setLookStarId] = useState<number | null>(null);
+  const [camp, setCamp] = useState<LastPlace | null>(null);
+  const [campReady, setCampReady] = useState(false);
   const [placeDialog, setPlaceDialog] = useState<PlaceDialogState | null>(null);
   const [inspected, setInspected] = useState<InspectedCell | null>(null);
   const [musicOn, setMusicOn] = useState(false);
@@ -170,14 +173,30 @@ export default function App() {
     return objectAt(s.galaxySeed ?? UNIVERSE.CANONICAL_SEED, s.starId) != null;
   }
 
+  function placeAlive(p: LastPlace | null): LastPlace | null {
+    if (!p) return null;
+    const seed = p.galaxySeed || UNIVERSE.CANONICAL_SEED;
+    if (objectAt(seed, p.starId) == null) return null;
+    return p;
+  }
+
   async function openFreshGalaxy(): Promise<void> {
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const start = discoverHabitable();
     setLookStarId(start.starId);
+    setCamp(null);
+    setCampReady(true);
     setGalaxyOpen(true);
   }
 
-  async function boot(engine: Engine): Promise<void> {
+  async function openCamp(place: LastPlace): Promise<void> {
+    setLookStarId(place.starId);
+    setCamp(place);
+    setCampReady(true);
+    setGalaxyOpen(true);
+  }
+
+  async function boot(_engine: Engine): Promise<void> {
     const prep = prepareUniverse();
     const raw = await db.systems.orderBy('updatedAt').reverse().toArray();
     for (const s of raw) {
@@ -185,17 +204,18 @@ export default function App() {
     }
     const list = (await db.systems.orderBy('updatedAt').reverse().toArray()).filter(visitAlive);
     setSystems(list);
-    if (list.length === 0) {
-      await prep;
-      await openFreshGalaxy();
-      hideUniverseSplash();
-      return;
-    }
     await prep;
-    const lastId = localStorage.getItem(LAST_SYSTEM_KEY);
-    const target = list.find((s) => s.id === lastId) ?? list[0];
-    if (target) await openSystem(target.id, engine);
+    const saved = placeAlive(await getPlace());
+    const fromVisit = saved ?? placeAlive(list[0] ? placeFromVisit(list[0]) : null);
+    if (fromVisit) await openCamp(fromVisit);
+    else await openFreshGalaxy();
     hideUniverseSplash();
+  }
+
+  function handlePlace(p: LastPlace): void {
+    setCamp(p);
+    setLookStarId(p.starId);
+    void putPlace(p);
   }
 
   async function openSystem(id: string, engineArg?: Engine): Promise<void> {
@@ -434,13 +454,17 @@ export default function App() {
       </div>
 
       {/* Kept mounted so Return / the map icon never remint the sky. */}
+      {campReady && (
       <GalaxyExplorer
-        hereStarId={system?.starId ?? lookStarId}
+        hereStarId={lookStarId ?? camp?.starId ?? system?.starId}
         visitedStarIds={systems.map((s) => s.starId).filter((id): id is number => id != null)}
+        resume={camp}
         canClose={system != null}
         active={galaxyOpen}
         onClose={() => setGalaxyOpen(false)}
+        onPlace={handlePlace}
       />
+      )}
 
       {!galaxyOpen && (
       <Toolbar

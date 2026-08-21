@@ -2,10 +2,17 @@ import Dexie, { type Table } from 'dexie';
 import type {
   BodyStateRecord,
   LabelRecord,
+  LastPlace,
   ObjectRecord,
   SystemMeta,
   TerrainOverrideRecord,
 } from '../world/types';
+
+export type PlaceRecord = {
+  id: 'camp';
+  place: LastPlace;
+  updatedAt: number;
+};
 
 export type HarvestCacheRecord = {
   key: string;
@@ -32,6 +39,7 @@ class WorldBuilderDB extends Dexie {
   labels!: Table<LabelRecord, string>;
   objects!: Table<ObjectRecord, string>;
   harvest!: Table<HarvestCacheRecord, string>;
+  place!: Table<PlaceRecord, string>;
 
   constructor() {
     super('hex-world-builder');
@@ -75,6 +83,11 @@ class WorldBuilderDB extends Dexie {
     // every address. Player saves are untouched.
     this.version(5).stores({
       harvest: 'key, seed, kind',
+    });
+    // v6: last host-pass camp. One row. The shared sky is still
+    // the seed; this is where the player was standing.
+    this.version(6).stores({
+      place: 'id',
     });
   }
 }

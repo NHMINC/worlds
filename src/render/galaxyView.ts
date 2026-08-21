@@ -66,6 +66,7 @@ import type { DustVolume } from '../world/dustVolume';
 import { PerfMeter } from './perfHud';
 import { makeStar, type StarView } from './star';
 import { prepareUniverse } from '../world/universePrep';
+import type { LastPlace } from '../world/types';
 import {
   COSMIC_STAR_PIN,
   COSMIC_STAR_PIN_CORE,
@@ -666,6 +667,7 @@ export interface RegionSelection {
 interface Callbacks {
   onSelect: (obj: GalaxyObject | null) => void;
   onFrame?: (f: GalaxyFrame) => void;
+  onPlace?: (p: LastPlace) => void;
 }
 
 export class GalaxyView {
@@ -835,6 +837,9 @@ export class GalaxyView {
     null;
   private readonly shipLook = { yaw: 0, pitch: 0, roll: 0 };
   private pinchAngle = 0;
+  /** Boot restore: park the host, then the world, once bodies exist. */
+  private pendingPlace: LastPlace | null = null;
+  private lastPlaceKey = '';
   /**
    * Close-approach subject. Latched when the course, reticle, or
    * selected star comes inside ARRIVE_RANGE_LY; released when the
@@ -870,6 +875,7 @@ export class GalaxyView {
     seed: string,
     callbacks: Callbacks,
     hereStarId: number | null = null,
+    resume: LastPlace | null = null,
   ) {
     this.canvas = canvas;
     this.callbacks = callbacks;
@@ -905,7 +911,8 @@ export class GalaxyView {
     this.attachSilhouette();
 
     this.setHere(hereStarId);
-    this.openAtHere();
+    if (resume) this.restorePlace(resume);
+    else this.openAtHere();
     if (!this.raf) this.raf = requestAnimationFrame(this.frame);
   }
 
@@ -939,6 +946,163 @@ export class GalaxyView {
 
   setVisited(ids: number[]): void {
     this.visitedIds = ids;
+  }
+
+  /**
+   * Boot camp: the same star, the same world and ring (or the
+   * landing face), look held on that body. Kepler at live `t`
+   * — we do not freeze the clock.
+   */
+  restorePlace(place: LastPlace): void {
+    const obj = objectAt(this.seed, place.starId);
+    if (!obj) {
+      this.openAtHere();
+      return;
+    }
+    this.pendingPlace = place;
+    this.setHere(place.starId);
+    this.parkAtStar(obj);
+    this.wake();
+  }
+
+  snapshotPlace(): LastPlace | null {
+    const host = this.hostObj;
+    if (!host) return null;
+    const rt = this.worldRt(this.riding?.bodyId ?? this.worldId);
+    let dir: [number, number, number] | null = null;
+    if (this.landed) {
+      dir = [this.surfDir.x, this.surfDir.y, this.surfDir.z];
+    } else if (this.riding?.hang) {
+      dir = [this.rideLocal.x, this.rideLocal.y, this.rideLocal.z];
+    } else if (rt) {
+      this.bodyCatalog(rt, this.orbitTmp);
+      this.orbitTmp2.copy(this.arcCenter).sub(this.orbitTmp);
+      if (this.orbitTmp2.lengthSq() > 1e-28) {
+        this.spinWorld(rt, this.orbitQ);
+        this.orbitTmp2.normalize().applyQuaternion(this.hostTmpQ.copy(this.orbitQ).conjugate());
+        dir = [this.orbitTmp2.x, this.orbitTmp2.y, this.orbitTmp2.z];
+      }
+    }
+    let h: number | null = null;
+    if (this.riding && rt) {
+      const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
+      h = this.riding.r / Math.max(R, 1e-18) - 1;
+    }
+    return {
+      galaxySeed: this.seed,
+      starId: host.id,
+      bodyId: rt?.spec.id ?? null,
+      orbit: this.riding?.kind ?? (this.landed ? this.landKind : null),
+      landed: this.landed,
+      dir,
+      h,
+    };
+  }
+
+  private parkAtStar(obj: GalaxyObject): void {
+    const c = galToCart(obj.pos);
+    this.enterRegion(c.x, c.y, c.z, obj);
+    this.hostObj = obj;
+    this.setCourse(obj);
+    const park = this.parkKpc(obj);
+    let ax = c.x;
+    let ay = c.y;
+    let az = c.z;
+    const len = Math.hypot(ax, ay, az);
+    if (len < 1e-8) {
+      ax = 0;
+      ay = 0;
+      az = 1;
+    } else {
+      ax /= len;
+      ay /= len;
+      az /= len;
+    }
+    this.arcCenter.set(c.x + ax * park, c.y + ay * park, c.z + az * park);
+    this.mintAt.copy(this.arcCenter);
+    this.aimAt(-ax, -ay, -az);
+    this.applyCam();
+  }
+
+  /** True when the camp is fully applied (or abandoned). */
+  private applyPendingPlace(tSys: number): boolean {
+    const p = this.pendingPlace;
+    if (!p || !this.hostObj || this.hostObj.id !== p.starId) return true;
+    if (!this.hostRoot || !this.hostSpec) return false;
+    if (!p.bodyId) {
+      this.pendingPlace = null;
+      this.centerLook();
+      return true;
+    }
+    const rt = this.worldRt(p.bodyId);
+    if (!rt) {
+      this.pendingPlace = null;
+      this.centerLook();
+      return true;
+    }
+    this.worldId = rt.spec.id;
+    this.courseBodyId = rt.spec.id;
+    this.courseHud = this.hudForBody(rt);
+    const dir = this.dirFromPlace(p, rt);
+    if (p.landed) {
+      const globe = this.globeOf(rt.spec.id);
+      if (!globe?.ready) {
+        if (!this.riding || this.riding.bodyId !== rt.spec.id) {
+          this.beginRide(rt, p.orbit ?? 'hover', dir, tSys);
+        }
+        return false;
+      }
+      if (!this.riding || this.riding.bodyId !== rt.spec.id) {
+        this.beginRide(rt, p.orbit ?? 'hover', dir, tSys);
+      }
+      this.land();
+      if (p.dir) {
+        this.surfDir.set(p.dir[0], p.dir[1], p.dir[2]).normalize();
+        this.placeSurface();
+      }
+      this.pendingPlace = null;
+      return true;
+    }
+    const kind = p.orbit ?? 'hover';
+    this.beginRide(rt, kind, dir, tSys);
+    if (p.h != null && this.riding) {
+      const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
+      const lo = R * (1 + UNIVERSE.SOI_TRACK_MIN);
+      const hi = Math.max(R * (1 + UNIVERSE.SOI_TRACK_MAX), UNIVERSE.WORLD_RANGE_KPC * 0.8);
+      this.riding.r = THREE.MathUtils.clamp(R * (1 + p.h), lo, hi);
+    }
+    if (kind && isHangOrbit(kind) && p.dir && this.riding) {
+      this.rideLocal.set(p.dir[0], p.dir[1], p.dir[2]).normalize();
+    }
+    this.placeRide(tSys, true);
+    this.pendingPlace = null;
+    this.centerLook();
+    return true;
+  }
+
+  private dirFromPlace(p: LastPlace, rt: HostBodyRT): THREE.Vector3 {
+    if (p.dir) {
+      this.spinWorld(rt, this.orbitQ);
+      this.orbitTmp.set(p.dir[0], p.dir[1], p.dir[2]).normalize().applyQuaternion(this.orbitQ);
+      return this.orbitTmp;
+    }
+    this.bodyCatalog(rt, this.orbitTmp);
+    this.orbitTmp2.copy(this.arcCenter).sub(this.orbitTmp);
+    if (this.orbitTmp2.lengthSq() < 1e-28) {
+      this.orientArc();
+      this.orbitTmp2.copy(this.arcFwd).negate();
+    }
+    return this.orbitTmp2.normalize();
+  }
+
+  private emitPlace(): void {
+    if (this.pendingPlace || !this.callbacks.onPlace) return;
+    const p = this.snapshotPlace();
+    if (!p) return;
+    const key = `${p.starId}|${p.bodyId ?? ''}|${p.orbit ?? ''}|${p.landed ? 1 : 0}`;
+    if (key === this.lastPlaceKey) return;
+    this.lastPlaceKey = key;
+    this.callbacks.onPlace(p);
   }
 
   // ------------------------------------------------------------- region mode
@@ -2848,6 +3012,7 @@ export class GalaxyView {
     this.focusBodyId = null;
     this.selectedBodyId = null;
     this.pendingOrbit = null;
+    this.pendingPlace = null;
     this.drone = null;
     this.lookHold = null;
     this.clearRide();
@@ -3140,7 +3305,9 @@ export class GalaxyView {
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.updateHostBodies(tSys);
-    if (this.drone) {
+    if (this.pendingPlace) {
+      this.applyPendingPlace(tSys);
+    } else if (this.drone) {
       this.placeDrone();
     } else if (this.landed) {
       this.walkSurface(this.lastDt);
@@ -3164,6 +3331,7 @@ export class GalaxyView {
       this.hostStar.update(camLocal, tSys, new THREE.Vector3(1, 1, 1));
     }
     this.applyCam();
+    this.emitPlace();
     this.wake(2);
   }
 
@@ -4242,7 +4410,8 @@ export class GalaxyView {
       this.pendingOrbit ||
       this.landed ||
       this.drone ||
-      this.lookHold
+      this.lookHold ||
+      this.pendingPlace
     ) {
       this.wake(2);
     }
@@ -4284,7 +4453,9 @@ export class GalaxyView {
     this.hereRing.rotation.z = t * -0.22;
 
     this.updateHostArrival(now);
-    this.tickGlobes((this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE);
+    const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
+    this.tickGlobes(tSys);
+    if (this.pendingPlace && this.applyPendingPlace(tSys)) this.applyCam();
     // Place can change this frame — write surveyGain after
     // attach so this draw matches the viewpoint.
     const dim = this.skyDim();

@@ -5,12 +5,14 @@
 import type {
   BodyStateRecord,
   LabelRecord,
+  LastPlace,
   ObjectKind,
   ObjectRecord,
   SavedCamera,
   SystemMeta,
   TerrainOverrideRecord,
 } from '../world/types';
+import { isLastPlace } from './place';
 
 export const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
 const MAX_NAME = 200;
@@ -191,7 +193,7 @@ function parseArray<T>(v: unknown, max: number, label: string, item: (x: unknown
 
 /** Allowlisted import document. Label/object ids are discarded and reissued. */
 export interface ParsedSystemExport {
-  formatVersion: 4;
+  formatVersion: 4 | 5;
   app: 'hex-world-builder';
   kind: 'system';
   system: Omit<SystemMeta, 'id'>;
@@ -199,6 +201,7 @@ export interface ParsedSystemExport {
   terrain: Array<Omit<TerrainOverrideRecord, 'systemId'>>;
   labels: Array<Omit<LabelRecord, 'systemId' | 'id'>>;
   objects: Array<Omit<ObjectRecord, 'systemId' | 'id'>>;
+  place?: LastPlace;
 }
 
 /** Parse and allowlist a system export. Throws on anything unexpected. */
@@ -214,7 +217,12 @@ export function parseSystemExport(text: string): ParsedSystemExport {
     if (err instanceof Error && err.message === UNRECOGNIZED) throw err;
     fail(UNRECOGNIZED);
   }
-  if (!isRecord(raw) || raw.app !== 'hex-world-builder' || raw.kind !== 'system' || raw.formatVersion !== 4) {
+  if (
+    !isRecord(raw) ||
+    raw.app !== 'hex-world-builder' ||
+    raw.kind !== 'system' ||
+    (raw.formatVersion !== 4 && raw.formatVersion !== 5)
+  ) {
     fail(UNRECOGNIZED);
   }
   const system = parseSystem(raw.system);
@@ -222,8 +230,13 @@ export function parseSystemExport(text: string): ParsedSystemExport {
   const terrain = parseArray(raw.terrain, MAX_BODIES, 'terrain', parseTerrain);
   uniqueBodyIds(bodyState, 'body state');
   uniqueBodyIds(terrain, 'terrain');
+  let place: LastPlace | undefined;
+  if (raw.place !== undefined) {
+    if (!isLastPlace(raw.place)) fail('Invalid place.');
+    place = raw.place;
+  }
   return {
-    formatVersion: 4,
+    formatVersion: raw.formatVersion === 5 ? 5 : 4,
     app: 'hex-world-builder',
     kind: 'system',
     system,
@@ -231,5 +244,6 @@ export function parseSystemExport(text: string): ParsedSystemExport {
     terrain,
     labels: parseArray(raw.labels, MAX_LABELS, 'labels', parseLabel),
     objects: parseArray(raw.objects, MAX_OBJECTS, 'objects', parseObject),
+    place,
   };
 }

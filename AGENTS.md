@@ -319,13 +319,15 @@ visits only** (overlays, camera, labels). We do
   The export JSON does not carry the photograph — a friend
   regenerates the same sky from the canonical seed. The explorer stays mounted (`is-dormant` on a
   world) so opening the map does not remint or show the splash
-  again. An empty save does not write a camp: it queries nearby
+  again. An empty save with no camp queries nearby
   solar-circle hosts for a living world (`discoverHabitable`) and
-  opens the region looking at that star. Set course no longer
-  writes a visit — the host pass draws the worlds; you can
-  land and walk the latched globe. Save rows still wait.
-  Worlds also open from existing saves
-  until visits write here. Changing the grid renumbers `starId`;
+  opens the region looking at that star. Entering a host or
+  world writes the camp (`LastPlace`: star, body, ring or
+  landing face). Boot always opens the explorer there —
+  same body, same arrangement, look held on that body.
+  Time still runs; Kepler at `t` is the law. The isolated
+  viewer still opens old visit rows from the manager.
+  Changing the grid renumbers `starId`;
   old visits from the 7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
@@ -445,8 +447,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   loaded star, else `homeStar`) is a **focus highlight** parked
   in front of the camera; visited samples can mark other points
   of interest. The explorer canvas stays alive after Return /
-  set course; only the splash is once-per-load. An empty save
-  opens the same way on a discovered living host. The camera
+  set course; only the splash is once-per-load. A camp
+  restores that body; an empty save with no camp opens on a
+  discovered living host. The camera
   sits at the viewpoint centre. Gestures **slide** through
   catalog space (1:1, no `VIEW_R` stretch).   Harvest stars are
   **point sources**: a soft device-pixel Gaussian floor (so a
@@ -674,11 +677,12 @@ never store generated terrain, chemistry, or meshes.
 | Stored | Regenerated |
 |--------|-------------|
 | `SystemMeta` (seed, genVersion, camera; later `starId`) | Galaxy catalog, stellar phase, orbits, inventories, atmospheres |
+| `LastPlace` camp (star, body, ring or landing face) | Kepler pose at live `t`, host meshes, globe |
 | Sparse terrain overrides `[cell, level, …]` | Hex columns, hydrology, snow line |
 | Labels, objects (city / town / landmark, later bases) | Palettes, geology, sea state, stellar phase |
 
 **Export is first-class.** One self-contained `.tinysystem.json`
-(`formatVersion: 4`, `src/store/exportImport.ts`). Import creates a new
+(`formatVersion: 5`, `src/store/exportImport.ts`). Import creates a new
 system id and copies the overlay. A friend can load your file and stand
 on the same hex of the same world. Native iOS uses the share sheet.
 Older exports are **private bottles** — they are not objects placed into

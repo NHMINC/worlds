@@ -55,6 +55,25 @@ export type SavedCamera =
  * seed under the pinned genVersion; player changes are sparse overlays keyed
  * by (bodyId, cell) — the addressable-universe contract.
  */
+/**
+ * Last host-pass camp. The address is the star (and optional
+ * world); the arrangement is the ring or the landing face.
+ * Time still runs — Kepler at `t` is the same law, not a freeze.
+ */
+export interface LastPlace {
+  galaxySeed: string;
+  starId: number;
+  /** null = the host star (fill park). */
+  bodyId: string | null;
+  /** Ring we were riding; null at the star or a free hover. */
+  orbit: 'leo' | 'station' | 'meo' | 'geo' | 'polar' | 'hover' | null;
+  landed: boolean;
+  /** Body-local body→camera (hang face / landing spot). */
+  dir: [number, number, number] | null;
+  /** Radii above the surface when riding. */
+  h: number | null;
+}
+
 export interface SystemMeta {
   id: string;
   name: string;
@@ -110,7 +129,7 @@ export interface ObjectRecord {
 }
 
 export interface SystemExport {
-  formatVersion: 4;
+  formatVersion: 4 | 5;
   app: 'hex-world-builder';
   kind: 'system';
   system: Omit<SystemMeta, 'id'>;
@@ -118,4 +137,6 @@ export interface SystemExport {
   terrain: Array<Omit<TerrainOverrideRecord, 'systemId'>>;
   labels: Array<Omit<LabelRecord, 'systemId'>>;
   objects: Array<Omit<ObjectRecord, 'systemId'>>;
+  /** Camp when this file's star is the last place. v5. */
+  place?: LastPlace;
 }

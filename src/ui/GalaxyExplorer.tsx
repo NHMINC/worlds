@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
 import { systemAt } from '../world/systemgen';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
+import type { LastPlace } from '../world/types';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
 import {
   ENGINEER_GROUPS,
@@ -42,12 +43,15 @@ interface Props {
   galaxySeed?: string;
   hereStarId?: number | null;
   visitedStarIds?: number[];
+  /** Last camp — boot snaps here instead of the first-look park. */
+  resume?: LastPlace | null;
   /** False on an empty save — there is no system to return to. */
   canClose?: boolean;
   /** False while the explorer is kept warm but hidden. */
   active?: boolean;
   onClose: () => void;
   onReady?: () => void;
+  onPlace?: (p: LastPlace) => void;
 }
 
 export function GalaxyExplorer(props: Props) {
@@ -60,6 +64,10 @@ export function GalaxyExplorer(props: Props) {
   hereRef.current = props.hereStarId ?? null;
   const readyRef = useRef(props.onReady);
   readyRef.current = props.onReady;
+  const placeRef = useRef(props.onPlace);
+  placeRef.current = props.onPlace;
+  const resumeRef = useRef(props.resume);
+  resumeRef.current = props.resume;
   const active = props.active !== false;
   const [ready, setReady] = useState(false);
   const [engineer, setEngineer] = useState<string | null>(null);
@@ -114,6 +122,7 @@ export function GalaxyExplorer(props: Props) {
         seed,
         {
           onSelect: () => {},
+          onPlace: (p) => placeRef.current?.(p),
           onFrame: (f) => {
             setFrame((prev) =>
               prev.mode !== f.mode ||
@@ -151,6 +160,7 @@ export function GalaxyExplorer(props: Props) {
           },
         },
         hereRef.current,
+        resumeRef.current ?? null,
       );
       viewRef.current = view;
       (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView = view;
@@ -180,7 +190,6 @@ export function GalaxyExplorer(props: Props) {
   useEffect(() => {
     if (!ready) return;
     viewRef.current?.setHere(props.hereStarId ?? null);
-    viewRef.current?.openAtHere();
   }, [props.hereStarId, ready]);
 
   useEffect(() => {
@@ -196,6 +205,23 @@ export function GalaxyExplorer(props: Props) {
   useEffect(() => {
     if (ready) viewRef.current?.setVisited(props.visitedStarIds ?? []);
   }, [props.visitedStarIds, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const flush = (): void => {
+      const p = viewRef.current?.snapshotPlace();
+      if (p) placeRef.current?.(p);
+    };
+    const onVis = (): void => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, [ready]);
 
   useEffect(() => {
     return onUniverseProgress((p) => {
