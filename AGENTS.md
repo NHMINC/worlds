@@ -168,6 +168,11 @@ toy — Godus blocks on a real-sized globe.
   the viewpoint joins the spinning
   frame and hovers a few terrace
   steps above the skin (`WORLD_SURF_*`).
+  That eye is a km offset in the host
+  frame — catalog kpc cannot hold the
+  metres (an 8 kpc ULP is larger than
+  a world), so `starCart − arcCenter`
+  does not follow orbit or spin.
   Drag looks. Zoom-in latches a walk;
   zoom-out dumps it, then settles.
   WASD glides. Take off returns to

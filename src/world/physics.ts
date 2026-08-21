@@ -455,11 +455,13 @@ export const UNIVERSE = {
   WORLD_ORBIT_GAS_FLOOR: 0.35,
   /**
    * Host-pass surface. Same law as the old viewer: you hover a
-   * few terrace steps above the skin (or the sea). Zoom-in
-   * latches a forward walk; zoom-out dumps that throttle, then
-   * settles toward the ground. The rocket takes off — zoom
-   * never does. WASD glides on the tangent. Heights are body
-   * radii; pitch is the landing look (slightly down).
+   * few terrace steps above the skin (or the sea). The eye is
+   * a km offset in the host frame (orbit + spin); catalog kpc
+   * cannot hold those metres. Zoom-in latches a forward walk;
+   * zoom-out dumps that throttle, then settles toward the
+   * ground. The rocket takes off — zoom never does. WASD
+   * glides on the tangent. Heights are body radii; pitch is
+   * the landing look (slightly down).
    */
   WORLD_SURF_WALK: 2.6,
   WORLD_SURF_STOP: 5,

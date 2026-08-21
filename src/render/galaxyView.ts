@@ -1825,11 +1825,27 @@ export class GalaxyView {
     }
     const globe = this.globeOf(rt.spec.id);
     const gR = globe?.ready ? globe.groundR(this.surfDir) : 1;
-    const eyeR = (gR + this.sEyeH) * Math.max(rt.spec.radius, 1) * KM_TO_KPC;
-    this.bodyCatalog(rt, this.orbitTmp);
+    const eyeKm = (gR + this.sEyeH) * Math.max(rt.spec.radius, 1);
+    // Eye in the host-root km frame (body centre + spun hover).
+    // Catalog kpc is an ~8 kpc number; a metre there is below a
+    // ULP, so starCart − arcCenter cannot follow orbit or spin.
+    // The globe still does both in km — pin the root from this
+    // small vector. The harvest only needs the AU-scale hint.
+    this.orbitTmp2.copy(this.surfDir).applyQuaternion(rt.spinQ).multiplyScalar(eyeKm).add(rt.pos);
+    const root = this.hostRoot;
+    if (root) {
+      this.orbitTmp.copy(this.orbitTmp2).multiplyScalar(KM_TO_KPC).applyQuaternion(root.quaternion);
+      root.position.copy(this.orbitTmp).negate();
+      root.updateMatrixWorld(true);
+      const cart = galToCart(this.hostObj.pos);
+      this.arcCenter.copy(cart).add(this.orbitTmp);
+    } else {
+      this.bodyCatalog(rt, this.orbitTmp);
+      this.spinWorld(rt, this.orbitQ);
+      this.orbitTmp2.copy(this.surfDir).applyQuaternion(this.orbitQ).multiplyScalar(eyeKm * KM_TO_KPC);
+      this.arcCenter.copy(this.orbitTmp).add(this.orbitTmp2);
+    }
     this.spinWorld(rt, this.orbitQ);
-    this.orbitTmp2.copy(this.surfDir).applyQuaternion(this.orbitQ).multiplyScalar(eyeR);
-    this.arcCenter.copy(this.orbitTmp).add(this.orbitTmp2);
     this.surfBasis(this.surfDir, this.surfEast, this.surfNorth);
     this.orbitTmp
       .copy(this.surfNorth)
@@ -1846,15 +1862,6 @@ export class GalaxyView {
     if (this.arcRight.lengthSq() < 1e-12) this.arcRight.set(1, 0, 0);
     else this.arcRight.normalize();
     this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
-    if (this.hostRoot) {
-      const cart = galToCart(this.hostObj.pos);
-      this.hostRoot.position.set(
-        cart.x - this.arcCenter.x,
-        cart.y - this.arcCenter.y,
-        cart.z - this.arcCenter.z,
-      );
-      this.hostRoot.updateMatrixWorld(true);
-    }
   }
 
   /** Catalog position of a host-pass body — independent of arcCenter. */
@@ -2916,7 +2923,9 @@ export class GalaxyView {
 
     const root = this.hostRoot;
     if (root) {
-      root.position.set(dx, dy, dz);
+      // Landed eye is pinned from the km hover in placeSurface —
+      // starCart − arcCenter drops the metres at 8 kpc.
+      if (!this.landed) root.position.set(dx, dy, dz);
       this.orientHost(root);
     }
 
