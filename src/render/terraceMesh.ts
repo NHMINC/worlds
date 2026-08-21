@@ -842,10 +842,9 @@ uniform float uTempMode;
 uniform vec3 uIceColor;
 uniform float uIceFloor; // 1 when melt is impossible (no pressure: ice only sublimates)
 uniform float uSeasonGain;
-// Mirror-world capture: the engine renders the terrain from the camera's
-// reflection point beneath the water surface (engine.ts cube camera), so
-// the same Fresnel that mirrors the sky can mirror the LAND standing over
-// the shore. Alpha 0 where no terrain was hit — the analytic sky shows.
+// Mirror-world capture (retired photographs): when uEnvOn is on, land
+// near the shore can ride the same Fresnel as the analytic sky. The
+// host pass leaves this off — live reflection is Fresnel + sky.
 uniform samplerCube uEnv;
 uniform float uEnvOn;
 uniform mat3 uL2W;   // body-local -> world, for the cube lookup

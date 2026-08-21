@@ -1,7 +1,7 @@
 /**
  * AI provider interface. The only implementation today talks to xAI's
- * OpenAI-compatible chat endpoint using a key the user pastes in Settings
- * (kept in localStorage, never sent anywhere else).
+ * OpenAI-compatible chat endpoint using a key kept in localStorage
+ * (`wb_xai_key`), never sent anywhere else.
  */
 export interface NameContext {
   kind: 'place' | 'city' | 'town' | 'landmark';

@@ -1,5 +1,4 @@
 import { useEffect, useRef } from 'react';
-import type { ViewState } from '../render/engine';
 import { UNIVERSE } from '../world/physics';
 import { keplerPlane, type SystemSpec } from '../world/systemgen';
 
@@ -7,10 +6,9 @@ import { keplerPlane, type SystemSpec } from '../world/systemgen';
  * The system map: a top-down schematic of the whole star system. Orbits are
  * rank-spaced (the real spacing is geometric, so even rings read better than
  * a physical scale), but every body rides its live orbital angle, so the map
- * drifts in real time. In the world viewer, tap a world to fly there. In the
- * explorer the same chart is zoomable — pinch / wheel / drag — and a tap
- * opens the orbit picker (the parent warps onto the chosen ring).
- * Reticle Set course is still a heading hold to the fill park.
+ * drifts in real time. In the explorer the chart is zoomable — pinch / wheel
+ * / drag — and a tap opens the orbit picker (the parent warps onto the
+ * chosen ring). Reticle Set course is still a heading hold to the fill park.
  */
 
 export interface MapMoon {
@@ -35,7 +33,6 @@ interface Props {
   starColor: string;
   planets: MapPlanet[];
   currentBodyId?: string;
-  subscribe?: (fn: (v: ViewState) => void) => () => void;
   angleOf: (id: string) => number;
   onTravel?: (id: string) => void;
   onClose: () => void;
@@ -60,7 +57,7 @@ function cssColor(c: readonly number[]): string {
   return `rgb(${c.map((x) => Math.round(x * 255)).join(',')})`;
 }
 
-/** Rank-spaced rings, Earth-relative dots. Shared by both viewers. */
+/** Rank-spaced rings, Earth-relative dots. */
 export function planetsFromSpec(spec: SystemSpec, nameOf?: (id: string, fallback: string) => string): MapPlanet[] {
   const name = (id: string, fallback: string) => nameOf?.(id, fallback) ?? fallback;
   return spec.bodies
@@ -78,7 +75,7 @@ export function planetsFromSpec(spec: SystemSpec, nameOf?: (id: string, fallback
     }));
 }
 
-/** In-plane Kepler angle for the schematic. Same clock as the engine. */
+/** In-plane Kepler angle for the schematic. Same clock as the host pass. */
 export function mapAngleOf(spec: SystemSpec, bodyId: string, t: number): number {
   const b = spec.bodies.find((row) => row.id === bodyId);
   if (!b) return 0;
@@ -95,7 +92,7 @@ function clamp(v: number, lo: number, hi: number): number {
 }
 
 export function SystemMap(props: Props) {
-  const { planets, subscribe, angleOf, zoomable } = props;
+  const { planets, angleOf, zoomable } = props;
   const groupRefs = useRef(new Map<string, SVGGElement>());
   const svgRef = useRef<SVGSVGElement>(null);
   const worldRef = useRef<SVGGElement>(null);
@@ -174,7 +171,6 @@ export function SystemMap(props: Props) {
       });
     };
     apply();
-    if (subscribe) return subscribe(apply);
     let id = 0;
     const tick = (): void => {
       apply();
@@ -183,7 +179,7 @@ export function SystemMap(props: Props) {
     id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planets, subscribe, angleOf]);
+  }, [planets, angleOf]);
 
   const setRef = (id: string) => (el: SVGGElement | null) => {
     if (el) groupRefs.current.set(id, el);
