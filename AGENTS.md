@@ -189,7 +189,7 @@ toy — Godus blocks on a real-sized globe.
   dumps it, then settles. WASD glides.
   Take off returns to the ring we
   left, over that face.
-  short nebula phases are toy-stretched
+  Short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
   on as laws. Clouds are not a painted deck; aerosol opacity lives
