@@ -161,8 +161,18 @@ toy — Godus blocks on a real-sized globe.
   world is the Goldberg globe
   (terrace, air, water — same
   shaders as the old viewer).
-  Siblings stay balls. Landing
-  tools and save rows still wait;
+  Siblings stay balls. Land from a
+  ridden ring (or a latched rocky
+  world once the globe is ready):
+  the viewpoint joins the spinning
+  frame and hovers a few terrace
+  steps above the skin (`WORLD_SURF_*`).
+  Drag looks. Zoom-in latches a walk;
+  zoom-out dumps it, then settles.
+  WASD glides. Take off returns to
+  the ring we left, over that face.
+  Inspector, labels, sculpt, and
+  save rows still wait;
   short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -292,9 +302,10 @@ visits only** (overlays, camera, labels). We do
   again. An empty save does not write a camp: it queries nearby
   solar-circle hosts for a living world (`discoverHabitable`) and
   opens the region looking at that star. Set course no longer
-  writes a visit — the host pass draws the worlds; landing
-  and save rows still wait. Worlds open from existing saves
-  until then. Changing the grid renumbers `starId`;
+  writes a visit — the host pass draws the worlds; you can
+  land and walk the latched globe. Save rows still wait.
+  Worlds also open from existing saves
+  until visits write here. Changing the grid renumbers `starId`;
   old visits from the 7k-sample era are void.
 `generateSystem(seed)` remains the inner assembler and a legacy bottle
 for old files — it is not a player verb.
@@ -364,7 +375,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (LEO, GEO low / Station, MEO, GEO, Polar, Hover).
   Pick one and warp auto-engages; the viewpoint
   parks on that radius and rides it (hang for GEO /
-  hover, inertial for the rest). Reticle Set course
+  hover, inertial for the rest). Land sets down on
+  that face; Take off returns to the ring. Reticle Set course
   stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, approach, nebulae). Sections stay
@@ -573,7 +585,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (points, dots, the band). At any Unix time `t` we already know where
   every star and planet is — we just do not mesh them.
 
-Camera rigs (`src/render/engine.ts`):
+Camera rigs (`src/render/engine.ts` for old saves; host-pass land/walk lives in `galaxyView.ts`):
 
 | Mode | Meaning |
 |------|---------|

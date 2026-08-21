@@ -92,6 +92,8 @@ export function GalaxyExplorer(props: Props) {
     backdrop: 0,
     orbit: null,
     orbiting: false,
+    landed: false,
+    canLand: false,
   });
 
   useEffect(() => {
@@ -130,6 +132,8 @@ export function GalaxyExplorer(props: Props) {
               prev.hostId !== f.hostId ||
               prev.orbit !== f.orbit ||
               prev.orbiting !== f.orbiting ||
+              prev.landed !== f.landed ||
+              prev.canLand !== f.canLand ||
               prev.focus?.id !== f.focus?.id ||
               prev.focus?.bodyId !== f.focus?.bodyId ||
               (f.focus != null &&
@@ -386,24 +390,36 @@ export function GalaxyExplorer(props: Props) {
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
         {inRegion && !editing && (
           <div className="gx-helm">
-            {!frame.warp && (
+            {frame.landed ? (
               <button
                 type="button"
-                className={`gx-gear${frame.astern ? ' astern' : ''}`}
-                aria-label={frame.astern ? 'Astern' : 'Ahead'}
-                title={frame.astern ? 'Astern' : 'Ahead'}
-                onClick={() => viewRef.current?.toggleGear()}
+                className="gx-warp"
+                onClick={() => viewRef.current?.takeOff()}
               >
-                {frame.astern ? '↓' : '↑'}
+                Take off
               </button>
+            ) : (
+              <>
+                {!frame.warp && (
+                  <button
+                    type="button"
+                    className={`gx-gear${frame.astern ? ' astern' : ''}`}
+                    aria-label={frame.astern ? 'Astern' : 'Ahead'}
+                    title={frame.astern ? 'Astern' : 'Ahead'}
+                    onClick={() => viewRef.current?.toggleGear()}
+                  >
+                    {frame.astern ? '↓' : '↑'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className={`gx-warp${frame.warp ? ' stop' : ''}`}
+                  onClick={() => viewRef.current?.setWarp(!frame.warp)}
+                >
+                  {frame.warp ? 'Stop' : 'Warp'}
+                </button>
+              </>
             )}
-            <button
-              type="button"
-              className={`gx-warp${frame.warp ? ' stop' : ''}`}
-              onClick={() => viewRef.current?.setWarp(!frame.warp)}
-            >
-              {frame.warp ? 'Stop' : 'Warp'}
-            </button>
           </div>
         )}
         {inRegion && !editing && (frame.course || frame.focus) && (
@@ -429,10 +445,20 @@ export function GalaxyExplorer(props: Props) {
                 {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
               </i>
             )}
-            {frame.course && (
+            {frame.course && !frame.landed && (
               <i className="gx-plate-dist">{formatCatalogDist(frame.course.dist)}</i>
             )}
-            {frame.orbiting && frame.orbit ? (
+            {frame.landed ? (
+              <i className="gx-plate-go">On the ground</i>
+            ) : frame.canLand ? (
+              <button
+                type="button"
+                className="gx-plate-go"
+                onClick={() => viewRef.current?.land()}
+              >
+                Land
+              </button>
+            ) : frame.orbiting && frame.orbit ? (
               <i className="gx-plate-go">{orbitLabel(frame.orbit)}</i>
             ) : frame.orbit && frame.course ? (
               <i className="gx-plate-go">Warping to {orbitLabel(frame.orbit)}</i>
@@ -497,6 +523,7 @@ export function GalaxyExplorer(props: Props) {
                     type="button"
                     role="menuitem"
                     className="gx-drop-item"
+                    disabled={frame.landed}
                     onClick={() => {
                       viewRef.current?.setPreset(p.id);
                       setMenu(null);

@@ -643,6 +643,10 @@ export interface GalaxyFrame {
   orbit: WorldOrbitKind | null;
   /** True once the viewpoint is on that ring. */
   orbiting: boolean;
+  /** Standing on the latched rocky globe. */
+  landed: boolean;
+  /** Globe is ready and we can set down from this place. */
+  canLand: boolean;
 }
 
 export interface RegionSelection {
@@ -800,6 +804,18 @@ export class GalaxyView {
   private readonly orbitQ = new THREE.Quaternion();
   /** Cruise reached the ring this frame — enter after bodies pose. */
   private pendingArriveOrbit = false;
+  /** On the skin of the latched rocky globe. */
+  private landed = false;
+  /** Ring to restore on take-off. */
+  private landKind: WorldOrbitKind | null = null;
+  private readonly surfDir = new THREE.Vector3(0, 0, 1);
+  private readonly surfEast = new THREE.Vector3(1, 0, 0);
+  private readonly surfNorth = new THREE.Vector3(0, 1, 0);
+  private sYaw = 0;
+  private sPitch = UNIVERSE.WORLD_SURF_PITCH;
+  private sEyeH = 0.03;
+  private sEyeHTarget = 0.03;
+  private sWalk = 0;
   /**
    * Close-approach subject. Latched when the course, reticle, or
    * selected star comes inside ARRIVE_RANGE_LY; released when the
@@ -929,6 +945,9 @@ export class GalaxyView {
    * pinned when the dive is a star.
    */
   enterRegion(x: number, y: number, z: number, select: GalaxyObject | null = null): void {
+    this.leaveSurface();
+    this.clearRide();
+    this.pendingOrbit = null;
     this.mode = 'region';
     this.arcCenter.set(x, y, z);
     this.mintAt.set(x, y, z);
@@ -1604,6 +1623,7 @@ export class GalaxyView {
     // Inside a host sphere you cannot pick a different star —
     // leave the host sphere first. Worlds use setCourseBody.
     if (this.hostObj && this.hostObj.id !== obj.id) return;
+    this.leaveSurface();
     this.clearRide();
     this.pendingOrbit = null;
     this.courseBodyId = null;
@@ -1633,6 +1653,7 @@ export class GalaxyView {
     if (this.mode !== 'region' || !this.hostObj) return;
     const rt = this.worldRt(bodyId);
     if (!rt) return;
+    this.leaveSurface();
     this.clearRide();
     this.pendingOrbit = null;
     this.courseObj = null;
@@ -1662,6 +1683,173 @@ export class GalaxyView {
 
   private clearRide(): void {
     this.riding = null;
+  }
+
+  private leaveSurface(): void {
+    this.landed = false;
+    this.sWalk = 0;
+  }
+
+  private canLandNow(): boolean {
+    if (this.landed) return false;
+    const id = this.riding?.bodyId ?? this.worldId;
+    const rt = this.worldRt(id);
+    if (!rt || rt.spec.kind !== 'rocky') return false;
+    if (!this.globe || this.globe.bodyId !== rt.spec.id || !this.globe.ready) return false;
+    return true;
+  }
+
+  /**
+   * Set down on the skin under the camera. The viewpoint
+   * joins the spinning frame — you stand on the turning world.
+   */
+  land(): void {
+    if (this.mode !== 'region' || !this.hostObj) return;
+    const id = this.riding?.bodyId ?? this.worldId;
+    const rt = this.worldRt(id);
+    if (!rt || !this.canLandNow() || !this.globe) return;
+    this.landKind = this.riding?.kind ?? 'hover';
+    this.clearRide();
+    this.pendingOrbit = null;
+    this.pendingArriveOrbit = false;
+    this.setWarp(false);
+    this.bodyCatalog(rt, this.orbitTmp);
+    this.orbitTmp2.copy(this.arcCenter).sub(this.orbitTmp);
+    if (this.orbitTmp2.lengthSq() < 1e-28) {
+      this.orientArc();
+      this.orbitTmp2.copy(this.arcFwd).negate();
+    }
+    this.orbitTmp2.normalize();
+    this.spinWorld(rt, this.orbitQ);
+    this.surfDir.copy(this.orbitTmp2).applyQuaternion(this.orbitQ.clone().conjugate());
+    this.surfBasis(this.surfDir, this.surfEast, this.surfNorth);
+    this.orbitTmp.copy(this.arcUp).applyQuaternion(this.orbitQ.clone().conjugate());
+    this.sYaw = Math.atan2(this.orbitTmp.dot(this.surfEast), this.orbitTmp.dot(this.surfNorth));
+    this.sPitch = UNIVERSE.WORLD_SURF_PITCH;
+    this.sEyeH = this.sEyeHTarget = Math.max(this.globe.terraceStep * 0.6, this.globe.terraceStep * 4);
+    this.sWalk = 0;
+    this.landed = true;
+    this.courseBodyId = rt.spec.id;
+    this.worldId = rt.spec.id;
+    this.courseHud = this.hudForBody(rt);
+    this.placeSurface();
+    this.applyCam();
+    this.wake();
+  }
+
+  /** Rise from the landing spot back onto the ring we left. */
+  takeOff(): void {
+    if (!this.landed || this.mode !== 'region') return;
+    const rt = this.worldRt(this.worldId ?? this.courseBodyId);
+    const kind = this.landKind ?? 'hover';
+    this.leaveSurface();
+    if (!rt) return;
+    this.spinWorld(rt, this.orbitQ);
+    this.orbitTmp2.copy(this.surfDir).applyQuaternion(this.orbitQ);
+    const tSys = (this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE;
+    this.beginRide(rt, kind, this.orbitTmp2, tSys);
+    this.courseBodyId = rt.spec.id;
+    this.courseHud = this.hudForBody(rt);
+    this.applyCam();
+    this.wake();
+  }
+
+  private surfBasis(dir: THREE.Vector3, east: THREE.Vector3, north: THREE.Vector3): void {
+    east.set(-dir.y, dir.x, 0);
+    if (east.lengthSq() < 1e-8) east.set(1, 0, 0);
+    east.normalize();
+    north.crossVectors(dir, east);
+  }
+
+  private applySurfaceZoom(logZoom: number): void {
+    if (logZoom > 0) {
+      this.sWalk = Math.min(1, this.sWalk + logZoom * UNIVERSE.WORLD_SURF_WALK);
+    } else if (this.sWalk > 0.02) {
+      this.sWalk = Math.max(0, this.sWalk + logZoom * UNIVERSE.WORLD_SURF_STOP);
+    } else {
+      this.sWalk = 0;
+      if (!this.globe) return;
+      const lo = Math.max(0.004, this.globe.terraceStep * 0.6);
+      this.sEyeHTarget = Math.min(
+        UNIVERSE.WORLD_SURF_EYE_MAX,
+        Math.max(lo, this.sEyeHTarget * Math.exp(logZoom * UNIVERSE.WORLD_SURF_HEIGHT)),
+      );
+    }
+    this.wake();
+  }
+
+  private walkSurface(dt: number): void {
+    if (!this.landed) return;
+    if (Math.abs(this.sEyeH - this.sEyeHTarget) > this.sEyeHTarget * 0.001) {
+      this.sEyeH += (this.sEyeHTarget - this.sEyeH) * (1 - Math.exp(-dt * 10));
+    }
+    let mF = 0;
+    let mR = 0;
+    if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) mF += 1;
+    if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) mF -= 1;
+    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mR += 1;
+    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mR -= 1;
+    const boost = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 3 : 1;
+    mF = mF * boost + this.sWalk;
+    mR *= boost;
+    const mag = Math.hypot(mF, mR);
+    if (mag <= 1e-4) return;
+    this.surfBasis(this.surfDir, this.surfEast, this.surfNorth);
+    const cy = Math.cos(this.sYaw);
+    const sy = Math.sin(this.sYaw);
+    this.orbitTmp
+      .copy(this.surfNorth)
+      .multiplyScalar(cy)
+      .addScaledVector(this.surfEast, sy);
+    this.orbitTmp2
+      .set(0, 0, 0)
+      .addScaledVector(this.surfNorth, (cy * mF - sy * mR) / mag)
+      .addScaledVector(this.surfEast, (sy * mF + cy * mR) / mag);
+    const ang = (0.06 + 2.4 * this.sEyeH) * Math.min(3, mag) * dt;
+    this.surfDir.multiplyScalar(Math.cos(ang)).addScaledVector(this.orbitTmp2, Math.sin(ang)).normalize();
+    this.surfBasis(this.surfDir, this.surfEast, this.surfNorth);
+    this.orbitTmp.addScaledVector(this.surfDir, -this.orbitTmp.dot(this.surfDir)).normalize();
+    this.sYaw = Math.atan2(this.orbitTmp.dot(this.surfEast), this.orbitTmp.dot(this.surfNorth));
+  }
+
+  private placeSurface(): void {
+    if (!this.landed || !this.hostObj) return;
+    const rt = this.worldRt(this.worldId ?? this.courseBodyId);
+    if (!rt) {
+      this.leaveSurface();
+      return;
+    }
+    const gR = this.globe && this.globe.bodyId === rt.spec.id ? this.globe.groundR(this.surfDir) : 1;
+    const eyeR = (gR + this.sEyeH) * Math.max(rt.spec.radius, 1) * KM_TO_KPC;
+    this.bodyCatalog(rt, this.orbitTmp);
+    this.spinWorld(rt, this.orbitQ);
+    this.orbitTmp2.copy(this.surfDir).applyQuaternion(this.orbitQ).multiplyScalar(eyeR);
+    this.arcCenter.copy(this.orbitTmp).add(this.orbitTmp2);
+    this.surfBasis(this.surfDir, this.surfEast, this.surfNorth);
+    this.orbitTmp
+      .copy(this.surfNorth)
+      .multiplyScalar(Math.cos(this.sYaw))
+      .addScaledVector(this.surfEast, Math.sin(this.sYaw));
+    this.orbitTmp2
+      .copy(this.orbitTmp)
+      .multiplyScalar(Math.cos(this.sPitch))
+      .addScaledVector(this.surfDir, Math.sin(this.sPitch));
+    this.orbitTmp2.applyQuaternion(this.orbitQ);
+    this.arcFwd.copy(this.orbitTmp2).normalize();
+    this.arcUp.copy(this.surfDir).applyQuaternion(this.orbitQ).normalize();
+    this.arcRight.crossVectors(this.arcFwd, this.arcUp);
+    if (this.arcRight.lengthSq() < 1e-12) this.arcRight.set(1, 0, 0);
+    else this.arcRight.normalize();
+    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+    if (this.hostRoot) {
+      const cart = galToCart(this.hostObj.pos);
+      this.hostRoot.position.set(
+        cart.x - this.arcCenter.x,
+        cart.y - this.arcCenter.y,
+        cart.z - this.arcCenter.z,
+      );
+      this.hostRoot.updateMatrixWorld(true);
+    }
   }
 
   /** Catalog position of a host-pass body — independent of arcCenter. */
@@ -1697,23 +1885,28 @@ export class GalaxyView {
       this.orbitTmp2.copy(this.arcFwd).negate();
     }
     this.orbitTmp2.normalize();
-    const r = orbitRadiusKpc(rt.spec, pending.kind);
-    const hang = isHangOrbit(pending.kind);
+    this.beginRide(rt, pending.kind, this.orbitTmp2, tSys);
+  }
+
+  /** dirCatalog is body → camera, unit. */
+  private beginRide(rt: HostBodyRT, kind: WorldOrbitKind, dirCatalog: THREE.Vector3, tSys: number): void {
+    const r = orbitRadiusKpc(rt.spec, kind);
+    const hang = isHangOrbit(kind);
     this.spinWorld(rt, this.orbitQ);
     this.riding = {
       bodyId: rt.spec.id,
-      kind: pending.kind,
+      kind,
       hang,
       r,
       theta0: 0,
-      omega: hang ? 0 : orbitOmega(rt.spec, pending.kind),
+      omega: hang ? 0 : orbitOmega(rt.spec, kind),
     };
     if (hang) {
-      this.rideLocal.copy(this.orbitTmp2).applyQuaternion(this.orbitQ.clone().conjugate());
+      this.rideLocal.copy(dirCatalog).applyQuaternion(this.orbitQ.clone().conjugate());
     } else {
       this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-      if (pending.kind === 'polar') {
-        this.rideE1.copy(this.orbitTmp2).addScaledVector(this.rideNorth, -this.orbitTmp2.dot(this.rideNorth));
+      if (kind === 'polar') {
+        this.rideE1.copy(dirCatalog).addScaledVector(this.rideNorth, -dirCatalog.dot(this.rideNorth));
         if (this.rideE1.lengthSq() < 1e-16) {
           this.rideE1.crossVectors(this.rideNorth, this.arcRight);
           if (this.rideE1.lengthSq() < 1e-16) this.rideE1.crossVectors(this.rideNorth, this.worldUp);
@@ -1721,7 +1914,7 @@ export class GalaxyView {
         this.rideE1.normalize();
         this.rideE2.copy(this.rideNorth);
       } else {
-        this.rideE1.copy(this.orbitTmp2).addScaledVector(this.rideNorth, -this.orbitTmp2.dot(this.rideNorth));
+        this.rideE1.copy(dirCatalog).addScaledVector(this.rideNorth, -dirCatalog.dot(this.rideNorth));
         if (this.rideE1.lengthSq() < 1e-16) {
           this.rideE1.crossVectors(this.rideNorth, this.arcRight);
           if (this.rideE1.lengthSq() < 1e-16) {
@@ -1784,7 +1977,7 @@ export class GalaxyView {
   /** Ease the nose onto the course star or world and keep it there. */
   private holdCourse(dt: number): void {
     if (this.mode !== 'region') return;
-    if (this.riding) return;
+    if (this.riding || this.landed) return;
     if (this.looking && !this.pendingOrbit) return;
     let dx = 0;
     let dy = 0;
@@ -1898,6 +2091,7 @@ export class GalaxyView {
   }
 
   setPreset(p: GalaxyPreset): void {
+    if (this.landed) return;
     this.wake();
     if (p === 'home') {
       const obj = this.hereObj ?? this.home;
@@ -2183,7 +2377,7 @@ export class GalaxyView {
 
   /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
   setWarp(on: boolean): void {
-    if (this.mode !== 'region') return;
+    if (this.mode !== 'region' || this.landed) return;
     if (on && this.riding) this.clearRide();
     if (!on && this.pendingOrbit && !this.pendingArriveOrbit) this.pendingOrbit = null;
     this.thrustOn = on && this.warpMayRun();
@@ -2242,7 +2436,7 @@ export class GalaxyView {
   }
 
   private applyCam(): void {
-    this.orientArc();
+    if (!this.landed) this.orientArc();
     this.camera.position.set(0, 0, 0);
     this.camera.up.copy(this.arcUp);
     this.arcLook.copy(this.arcFwd);
@@ -2396,6 +2590,7 @@ export class GalaxyView {
     this.selectedBodyId = null;
     this.pendingOrbit = null;
     this.clearRide();
+    this.leaveSurface();
     if (this.courseHud?.bodyId) this.clearCourse();
     this.dropGlobe();
     this.clearHostBodies();
@@ -2682,7 +2877,10 @@ export class GalaxyView {
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.updateHostBodies(tSys);
-    if (this.pendingArriveOrbit && this.pendingOrbit) {
+    if (this.landed) {
+      this.walkSurface(this.lastDt);
+      this.placeSurface();
+    } else if (this.pendingArriveOrbit && this.pendingOrbit) {
       this.pendingArriveOrbit = false;
       this.enterRide(tSys);
     } else if (this.riding) {
@@ -2863,6 +3061,10 @@ export class GalaxyView {
    * at the centre; the bubble moves).
    */
   private zoom(factor: number): void {
+    if (this.landed) {
+      this.applySurfaceZoom(-Math.log(Math.max(1e-3, factor)));
+      return;
+    }
     this.idle = 0;
     this.orientArc();
     const dir = factor < 1 ? 1 : -1;
@@ -3069,13 +3271,27 @@ export class GalaxyView {
     this.lastY = e.clientY;
     this.moved += Math.hypot(dx, dy);
     this.idle = 0;
-    const strafe = this.mode === 'region' && (this.panBtn === 1 || this.panBtn === 2 || e.shiftKey);
+    const strafe =
+      this.mode === 'region' &&
+      !this.landed &&
+      (this.panBtn === 1 || this.panBtn === 2 || e.shiftKey);
     if (strafe) {
       this.strafePixels(dx, dy);
       return;
     }
     if (this.mode === 'region') {
       this.looking = true;
+      if (this.landed) {
+        this.sYaw += dx * UNIVERSE.WORLD_SURF_STEER;
+        this.sPitch = THREE.MathUtils.clamp(
+          this.sPitch - dy * UNIVERSE.WORLD_SURF_STEER,
+          -1.35,
+          1.35,
+        );
+        this.placeSurface();
+        this.applyCam();
+        return;
+      }
       if (!this.pendingOrbit && !this.riding) this.clearCourse();
       this.arcYaw -= dx * 0.005;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
@@ -3103,7 +3319,7 @@ export class GalaxyView {
     this.wake();
     const tap = this.dragging && !this.looking && this.moved < TAP_SLOP;
     this.endPointer(e.pointerId);
-    if (tap) this.pick(e.clientX, e.clientY);
+    if (tap && !this.landed) this.pick(e.clientX, e.clientY);
   };
 
   private onLostCapture = (e: PointerEvent): void => {
@@ -3121,12 +3337,21 @@ export class GalaxyView {
   private onWheel = (e: WheelEvent): void => {
     this.wake();
     e.preventDefault();
-    this.zoom(Math.exp(e.deltaY * ZOOM_WHEEL_SENS));
+    if (this.landed) this.applySurfaceZoom(-e.deltaY * 0.0016);
+    else this.zoom(Math.exp(e.deltaY * ZOOM_WHEEL_SENS));
     this.idle = 0;
   };
 
   private onKeyDown = (e: KeyboardEvent): void => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (this.landed) {
+      if (this.isSurfaceKey(e.code)) {
+        e.preventDefault();
+        this.keys.add(e.code);
+        this.wake();
+      }
+      return;
+    }
     if (this.mode === 'region' && !e.repeat) {
       if (e.code === 'ArrowUp') {
         e.preventDefault();
@@ -3162,10 +3387,25 @@ export class GalaxyView {
   };
 
   private onKeyUp = (e: KeyboardEvent): void => {
-    if (!this.keys.has(e.code) && !this.isSteerKey(e.code)) return;
+    if (!this.keys.has(e.code) && !this.isSteerKey(e.code) && !this.isSurfaceKey(e.code)) return;
     this.keys.delete(e.code);
     this.wake();
   };
+
+  private isSurfaceKey(code: string): boolean {
+    return (
+      code === 'KeyW' ||
+      code === 'KeyA' ||
+      code === 'KeyS' ||
+      code === 'KeyD' ||
+      code === 'ArrowUp' ||
+      code === 'ArrowDown' ||
+      code === 'ArrowLeft' ||
+      code === 'ArrowRight' ||
+      code === 'ShiftLeft' ||
+      code === 'ShiftRight'
+    );
+  }
 
   private isSteerKey(code: string): boolean {
     return (
@@ -3225,6 +3465,11 @@ export class GalaxyView {
    */
   private cruise(dt: number): void {
     if (this.mode !== 'region') {
+      this.thrustOn = false;
+      this.thrustSpeed = 0;
+      return;
+    }
+    if (this.landed) {
       this.thrustOn = false;
       this.thrustSpeed = 0;
       return;
@@ -3360,7 +3605,7 @@ export class GalaxyView {
   }
 
   private steerArc(dt: number): void {
-    if (this.riding) return;
+    if (this.riding || this.landed) return;
     let mx = 0;
     let my = 0;
     let mz = 0;
@@ -3632,7 +3877,9 @@ export class GalaxyView {
       this.applyCam();
       this.wake(30);
     }
-    if (this.thrustOn || this.steerHeld() || this.riding || this.pendingOrbit) this.wake(2);
+    if (this.thrustOn || this.steerHeld() || this.riding || this.pendingOrbit || this.landed) {
+      this.wake(2);
+    }
     if (this.restIn <= 0) {
       this.perf.tick(performance.now() - f0, false);
       this.perf.markRest();
@@ -3699,7 +3946,8 @@ export class GalaxyView {
       for (const rt of this.hostBodies) {
         rt.group.getWorldPosition(this.hostTmp);
         const surf = cam.distanceTo(this.hostTmp) - rt.spec.radius * KM_TO_KPC;
-        if (surf > 0) near = Math.min(near, surf * 0.35);
+        const k = this.landed && rt.spec.id === this.worldId ? 0.12 : 0.35;
+        if (surf > 0) near = Math.min(near, surf * k);
       }
       const near0 = this.camera.near;
       const far0 = this.camera.far;
@@ -3741,8 +3989,10 @@ export class GalaxyView {
       soiRemain: soi == null ? null : Math.max(0, UNIVERSE.ARRIVE_RANGE_KPC - soi),
       hostId: this.hostObj?.id ?? null,
       backdrop: this.shownCount(),
-      orbit: this.riding?.kind ?? this.pendingOrbit?.kind ?? null,
+      orbit: this.riding?.kind ?? this.pendingOrbit?.kind ?? this.landKind,
       orbiting: Boolean(this.riding),
+      landed: this.landed,
+      canLand: this.canLandNow(),
     });
     this.raf = requestAnimationFrame(this.frame);
   };

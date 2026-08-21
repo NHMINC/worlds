@@ -1,7 +1,8 @@
 /**
  * One rocky globe for the host pass. Same terrace, air, and water
  * as the isolated viewer — no second planet. Built on a world
- * course / latch; siblings stay balls. No landing tools, no
+ * course / latch; siblings stay balls. Landing walks this
+ * skin — same terrace law as the mesh. No inspector, no
  * reflection RTs, no torch.
  */
 import * as THREE from 'three';
@@ -18,7 +19,7 @@ import {
   waveClock,
 } from '../world/physics';
 import { effectivePhysics, lockedToStar, type BodySpec, type SystemSpec } from '../world/systemgen';
-import { TerraceJob, makeTerrainMaterial, makeWaterMaterial } from './terraceMesh';
+import { TerraceJob, makeTerrainMaterial, makeWaterMaterial, skinLevel, terrace } from './terraceMesh';
 import { makeSkyShellMaterials } from './atmosphere';
 
 const TERRACE_ROUNDING = 0.3;
@@ -50,6 +51,8 @@ export class RockyGlobe {
   private readonly tmpQ = new THREE.Quaternion();
   private job: TerraceJob | null;
   private assets: GlobeAssets | null = null;
+  private readonly grid: GeoGrid;
+  private readonly levels: Uint8Array;
   private waterLevel = 0;
   private step = 0.01;
   private tideAmp = 0;
@@ -63,6 +66,8 @@ export class RockyGlobe {
     const f = frequencyForSize(spec.size);
     const grid = getGrid(f);
     const levels = generateLevels(spec.seed, grid);
+    this.grid = grid;
+    this.levels = levels;
     const phys = effectivePhysics(system, spec);
     const sea = spec.seaLevel ?? phys.sea01;
     this.waterLevel = waterLevelFor(sea);
@@ -80,6 +85,24 @@ export class RockyGlobe {
 
   get ready(): boolean {
     return this.assets != null;
+  }
+
+  /** Terrace step in body radii — hover height is a few of these. */
+  get terraceStep(): number {
+    return this.step;
+  }
+
+  /**
+   * Terrain-skin radius under a body-local direction. Same
+   * terrace the mesh is built from, floored at the sea.
+   */
+  groundR(dir: THREE.Vector3): number {
+    const r =
+      1 +
+      (terrace(skinLevel(this.grid, this.levels, dir.x, dir.y, dir.z), TERRACE_ROUNDING) -
+        this.waterLevel) *
+        this.step;
+    return Math.max(r, 1);
   }
 
   /** Spend a slice of the frame. True when the globe is on the group. */
