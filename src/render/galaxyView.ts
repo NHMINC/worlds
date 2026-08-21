@@ -47,6 +47,7 @@ import { RockyGlobe } from './rockyGlobe';
 import { HostSystem, type HostBodyRT } from './hostSystem';
 import { nearestBody } from './hostLook';
 import { type HostNavMode } from './hostNav';
+import { planOrbitInsert, type InsertMode } from './orbitInsert';
 import {
   clearRadiusKm,
   isHangOrbit,
@@ -836,6 +837,8 @@ export class GalaxyView {
    * the contract the HUD and look system obey.
    */
   private navMode: HostNavMode = null;
+  /** Lock-on insertion blend 0…1 (far transfer → at the shell). */
+  private insertBlend = 0;
   private readonly rideLocal = new THREE.Vector3();
   private readonly rideE1 = new THREE.Vector3();
   private readonly rideE2 = new THREE.Vector3();
@@ -2695,6 +2698,7 @@ export class GalaxyView {
     this.pendingOrbit = null;
     this.pendingArriveOrbit = false;
     this.navMode = 'orbit';
+    this.insertBlend = 0;
     this.thrustOn = false;
     this.thrustSpeed = 0;
     if (hang) {
@@ -2748,6 +2752,7 @@ export class GalaxyView {
     this.pendingOrbit = null;
     this.pendingArriveOrbit = false;
     this.navMode = 'orbit';
+    this.insertBlend = 0;
     this.thrustOn = false;
     this.thrustSpeed = 0;
     const th = this.riding.theta0 + this.riding.omega * tSys;
@@ -2907,22 +2912,19 @@ export class GalaxyView {
       .multiplyScalar(dT);
   }
 
-  /** Ease the nose onto the Lock-on target. Off in orbit / proximity / capture. */
+  /** Ease the nose onto the Lock-on insertion. Off in orbit / proximity / capture. */
   private holdCourse(dt: number): void {
     if (this.navMode !== 'lock') return;
     if (this.mode !== 'region') return;
     if (this.riding || this.landed || this.drone || this.capturing) return;
     if (this.looking && !this.pendingOrbit) return;
+    let insertBlend = 0;
     if (this.courseBodyId) {
       const rt = this.worldRt(this.courseBodyId);
       if (!rt) return;
       this.bodyFromEye(rt, this.orbitTmp);
-      // Chart lock: aim at the near-side ring point, not the core —
-      // the transfer never dives through the ball to get onto the rail.
       if (this.pendingOrbit && this.pendingOrbit.bodyId === rt.spec.id) {
-        const ring = orbitRadiusKpc(rt.spec, this.pendingOrbit.kind);
-        const d = this.orbitTmp.length();
-        if (d > ring * 1.001) this.orbitTmp.multiplyScalar(1 - ring / d);
+        insertBlend = this.applyPendingInsert(rt, this.pendingOrbit.kind, this.orbitTmp);
       }
       this.routeAim(this.orbitTmp, rt.spec.id);
     } else if (this.courseObj) {
@@ -2932,18 +2934,12 @@ export class GalaxyView {
         p.y - this.arcCenter.y,
         p.z - this.arcCenter.z,
       );
-      // Star ecliptic lock: aim at the near-side shell, not the core.
       if (
         this.pendingOrbit &&
         this.pendingOrbit.bodyId == null &&
         this.pendingOrbit.kind === 'ecliptic'
       ) {
-        const star = this.hostSpec?.star ?? {
-          radius: Math.max(1e-6, this.courseObj.star.radius) * UNIVERSE.RSUN_KM,
-        };
-        const ring = starOrbitRadiusKpc(star, this.parkKpc(this.courseObj));
-        const d = this.orbitTmp.length();
-        if (d > ring * 1.001) this.orbitTmp.multiplyScalar(1 - ring / d);
+        insertBlend = this.applyStarInsert(this.courseObj, this.orbitTmp);
       }
       if (this.hostObj && this.courseObj.id === this.hostObj.id) {
         this.routeAim(this.orbitTmp, null);
@@ -2957,6 +2953,7 @@ export class GalaxyView {
     const d = Math.hypot(dx, dy, dz);
     if (d < 1e-15) return;
     if (this.courseHud) this.courseHud.dist = d;
+    this.insertBlend = insertBlend;
     const tgtYaw = Math.atan2(dx, dz);
     const tgtPitch = THREE.MathUtils.clamp(
       Math.asin(THREE.MathUtils.clamp(dy / d, -1, 1)),
@@ -2972,6 +2969,56 @@ export class GalaxyView {
     this.arcPitch += dPitch * k;
     this.applyCam();
     this.wake();
+  }
+
+  /**
+   * Rewrite eye→body into an insertion fly-to for the pending
+   * body ring. Returns the 0…1 insert blend.
+   */
+  private applyPendingInsert(rt: HostBodyRT, kind: WorldOrbitKind, eyeToBody: THREE.Vector3): number {
+    const r = orbitRadiusKpc(rt.spec, kind);
+    const mode = this.insertModeOf(kind);
+    this.spinWorld(rt, this.orbitQ);
+    this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+    return planOrbitInsert(
+      eyeToBody,
+      r,
+      this.rideNorth,
+      mode,
+      UNIVERSE.ORBIT_INSERT,
+      this.orbitTmp2,
+      this.rideE1,
+      this.rideE2,
+    );
+  }
+
+  /** Star ecliptic insertion. eyeToBody → fly-to; returns blend. */
+  private applyStarInsert(obj: GalaxyObject, eyeToBody: THREE.Vector3): number {
+    const star = this.hostSpec?.star ?? {
+      radius: Math.max(1e-6, obj.star.radius) * UNIVERSE.RSUN_KM,
+    };
+    const r = starOrbitRadiusKpc(star, this.parkKpc(obj));
+    if (this.hostRoot) {
+      this.rideNorth.set(0, 0, 1).applyQuaternion(this.hostRoot.quaternion);
+    } else {
+      this.rideNorth.copy(this.worldUp);
+    }
+    return planOrbitInsert(
+      eyeToBody,
+      r,
+      this.rideNorth,
+      'inertial',
+      UNIVERSE.ORBIT_INSERT,
+      this.orbitTmp2,
+      this.rideE1,
+      this.rideE2,
+    );
+  }
+
+  private insertModeOf(kind: WorldOrbitKind): InsertMode {
+    if (kind === 'hover') return 'hover';
+    if (isHangOrbit(kind)) return 'hang';
+    return 'inertial';
   }
 
   canPick(): boolean {
@@ -3338,6 +3385,7 @@ export class GalaxyView {
     this.pendingArriveOrbit = false;
     this.capturing = null;
     this.navMode = 'proximity';
+    this.insertBlend = 0;
     if (!leftId) return;
     const rt = this.worldRt(leftId);
     if (!rt) return;
@@ -5057,11 +5105,20 @@ export class GalaxyView {
       }
     } else if (this.navMode === 'lock' && this.pendingOrbit) {
       const ring = orbitLabel(this.pendingOrbit.kind);
+      const inserting = this.insertBlend > 0.55;
       if (this.pendingOrbit.bodyId == null) {
-        navHint = `${this.courseHud?.name ?? this.hostSpec?.star.name ?? 'Star'} · ${ring}`;
+        const name = this.courseHud?.name ?? this.hostSpec?.star.name ?? 'Star';
+        navHint = inserting ? `Inserting ${name} · ${ring}` : `${name} · ${ring}`;
       } else {
         const rt = this.worldRt(this.pendingOrbit.bodyId);
-        navHint = rt ? `${rt.spec.name} · ${ring}` : ring;
+        const name = rt?.spec.name;
+        navHint = inserting
+          ? name
+            ? `Inserting ${name} · ${ring}`
+            : `Inserting · ${ring}`
+          : name
+            ? `${name} · ${ring}`
+            : ring;
       }
     }
     this.callbacks.onFrame?.({

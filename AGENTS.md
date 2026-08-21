@@ -954,6 +954,7 @@ Code map (start here):
 | Host solar system (Kepler balls + rings under the sphere) | `src/render/hostSystem.ts` |
 | Host look (Center = nearest body core) | `src/render/hostLook.ts` |
 | Host nav modes (lock-on / in orbit / proximity) | `src/render/hostNav.ts` |
+| Host orbit insertion (prograde approach) | `src/render/orbitInsert.ts` |
 | Host-pass rocky globes (every rocky body) | `src/render/rockyGlobe.ts` |
 | Visits (camp → SystemMeta by starId) | `src/store/visits.ts` |
 | Cosmic background (decreed outer shell) | `src/render/cosmicBg.ts` |

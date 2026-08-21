@@ -388,6 +388,13 @@ export const UNIVERSE = {
    * ends and In Orbit begins.
    */
   ORBIT_CAPTURE: 1.4,
+  /**
+   * Lock-on insertion window in ring radii. Over this approach
+   * the fly-to point slides forward along the rail so the nose
+   * yaws onto prograde (or the hang face) before contact — a
+   * planned insertion, not a dive at the core.
+   */
+  ORBIT_INSERT: 6,
   ARRIVE_WARP: 0.001,
   ARRIVE_K: 1.2,
   ARRIVE_FILL: 0.22,

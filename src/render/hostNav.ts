@@ -3,8 +3,9 @@
  *
  *   lock       — calculated trajectory into a chosen orbit
  *                (body ring, or star ecliptic). Graze-safe
- *                heading, warp approach, capture burn onto the
- *                rail. Turns off the moment the ring is held.
+ *                insertion that yaws onto prograde before the
+ *                shell, then a capture settle onto the rail.
+ *                Turns off the moment the ring is held.
  *   orbit      — on the ring. Autopilot off. Cameras free;
  *                the reticle is only the view-centre pip.
  *   proximity  — left orbit by warp (free roam). Reports
