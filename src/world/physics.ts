@@ -428,6 +428,13 @@ export const UNIVERSE = {
    */
   ARRIVE_SKY_GAIN: 0.08,
   /**
+   * SOI sky bake. Face size of the cubemap we mint on entry
+   * (one face a frame so the live catalog still draws the
+   * approach). The harvest then sleeps; surveyGain still
+   * multiplies this photograph. Not a remint.
+   */
+  HOST_SKY_N: 512,
+  /**
    * World fence inside the host sphere. A place, not the
    * body's radius — park is the size law (ARRIVE_FILL).
    * 0.02 AU is a few million km: the ball is already a
@@ -2002,8 +2009,9 @@ export function starEyeFlux(L: number, d: number): number {
  * Survey photograph gain at catalog distance `d` from an SOI
  * centre. 1 outside ARRIVE_RANGE; ARRIVE_SKY_GAIN at the
  * centre; linear in between. A place law — lock, gear, and
- * fly-around do not enter. Camera, ship, planet, pin: same
- * sample of the same sphere.
+ * fly-around do not enter. Inside the sphere this multiplies
+ * the baked cubemap the same way it multiplied the live
+ * harvest. Camera, ship, planet, pin: same sample.
  */
 export function surveyGain(dKpc: number): number {
   const R = UNIVERSE.ARRIVE_RANGE_KPC;
