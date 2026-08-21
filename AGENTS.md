@@ -208,9 +208,9 @@ toy — Godus blocks on a real-sized globe.
   drag steers. Target on is planet
   trackball — lock on the nearest
   core, ride that body. Target off
-  is free fly. Sun faces the furnace
-  once, then freeform (launches the
-  drone if needed). On the ground,
+  is free fly. The star is the
+  furnace — no look-at-sun control.
+  On the ground,
   zoom-in latches a walk; zoom-out
   dumps it, then settles. WASD glides.
   Take off returns to the ring we
@@ -429,8 +429,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   radius; twist rolls. The ship looks
   ahead. Trackball launches / returns
   the drone; Target is planet trackball
-  vs free fly; Sun faces the furnace
-  then freeform.
+  vs free fly.
   Land sets down on
   that face; Take off returns to the ring. Reticle Set course
   stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
@@ -656,7 +655,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 
 Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
 ring; land walks the terrace; the SOI drone is free fly plus a
-Target trackball and a Sun snap. The sculpt
+Target trackball. The sculpt
 brush, the unseeded night shell, and the water-capture photographs
 are retired.
 The app lives at `http://localhost:5173/` (`npm run dev`).

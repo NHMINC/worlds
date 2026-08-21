@@ -511,8 +511,6 @@ export const UNIVERSE = {
    * (`R × 1.002`) so it can enter air and fly between moons.
    * Target is drone-only — lock on the nearest core and the
    * eye rides that body (planet trackball). Off is free fly.
-   * Sun is a tap: face the furnace, then freeform (launches
-   * the drone if the ship is still looking ahead).
    */
   SOI_ZOOM: 0.55,
   SOI_TWIST: 1,

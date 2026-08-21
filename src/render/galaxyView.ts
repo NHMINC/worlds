@@ -651,15 +651,10 @@ export interface GalaxyFrame {
   landed: boolean;
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
-  /**
-   * Drone planet-trackball while Center is on. Sun is a tap
-   * (face the furnace, then freeform) — it does not hold.
-   */
-  lookHold: 'center' | 'sun' | null;
+  /** Drone planet-trackball while Target is on. */
+  lookHold: 'center' | null;
   /** Anti-gravity drone is out. */
   drone: boolean;
-  /** Sun snap is offered inside a host sphere. */
-  showSunLook: boolean;
   /** Latched / ridden / landed world, if any. */
   worldId: string | null;
 }
@@ -881,8 +876,8 @@ export class GalaxyView {
   private sWalk = 0;
   /** Roll around the look. Catalog yaw/pitch have no twist. */
   private arcRoll = 0;
-  /** Hold look on a body core or the star until a drag. */
-  private lookHold: 'center' | 'sun' | null = null;
+  /** Leftover ship look-hold. Target lock lives on the drone. */
+  private lookHold: 'center' | null = null;
   /**
    * Anti-gravity warp drone. Launched from the ship (same eye
    * and look), then a free pose in host-root km. Zoom is
@@ -2118,21 +2113,6 @@ export class GalaxyView {
     this.wake();
   }
 
-  /**
-   * Face the host star, then freeform. A tap, not a hold.
-   * Launches the drone if the ship is still looking ahead.
-   */
-  sunLook(): void {
-    if (this.mode !== 'region' || !this.hostObj) return;
-    if (!this.drone) this.setDrone(true);
-    if (!this.drone) return;
-    this.drone.lock = false;
-    this.aimDroneAtSun();
-    this.placeDrone();
-    this.applyCam();
-    this.wake();
-  }
-
   private dropLookHold(): void {
     this.lookHold = null;
   }
@@ -2207,16 +2187,12 @@ export class GalaxyView {
     this.wake();
   }
 
-  private showSunLook(): boolean {
-    return Boolean(this.hostObj);
-  }
-
   private holdLook(): void {
     if (this.drone || !this.lookHold || this.looking || !this.hostObj) return;
     // The course owns the nose while thrusting: cruise flies along
     // arcFwd, so a held look would drag the ship toward the LOOK
     // and the course would never depart. The hold resumes at Stop.
-    // In Orbit thrust is off — Center / Sun may own the look.
+    // In Orbit thrust is off — a leftover ship hold may own the look.
     if (this.thrustOn && !this.landed && (this.courseBodyId || this.courseObj)) {
       return;
     }
@@ -2363,16 +2339,6 @@ export class GalaxyView {
     if (!drone) return;
     this.dronePickNearest();
     this.orbitTmp.copy(this.droneCorePos).sub(drone.eye);
-    if (this.orbitTmp.lengthSq() < 1e-12) return;
-    drone.fwd.copy(this.orbitTmp).normalize();
-    this.droneOrthonormalUp();
-  }
-
-  /** Look at the host star (origin in host-root km), then freeform. */
-  private aimDroneAtSun(): void {
-    const drone = this.drone;
-    if (!drone) return;
-    this.orbitTmp.copy(drone.eye).negate();
     if (this.orbitTmp.lengthSq() < 1e-12) return;
     drone.fwd.copy(this.orbitTmp).normalize();
     this.droneOrthonormalUp();
@@ -5682,7 +5648,6 @@ export class GalaxyView {
       canLand: this.canLandNow(),
       lookHold: this.drone?.lock ? 'center' : null,
       drone: Boolean(this.drone),
-      showSunLook: this.showSunLook(),
       worldId: this.riding?.bodyId ?? this.capturing?.bodyId ?? this.worldId ?? this.courseBodyId,
     });
     this.raf = requestAnimationFrame(this.frame);

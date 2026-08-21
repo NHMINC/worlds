@@ -18,7 +18,7 @@ import {
   rebuildKnob,
   type RebuildScope,
 } from './liveKnobs';
-import { IconCenter, IconGlobe, IconInspect, IconLabel, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconSun, IconTrackball } from './icons';
+import { IconCenter, IconGlobe, IconInspect, IconLabel, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconTrackball } from './icons';
 import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
 import { OrbitPick } from './OrbitPick';
 import { InspectorPanel, type InspectedCell } from './InspectorPanel';
@@ -157,7 +157,6 @@ export function GalaxyExplorer(props: Props) {
     canLand: false,
     lookHold: null,
     drone: false,
-    showSunLook: false,
     worldId: null,
   });
 
@@ -208,7 +207,6 @@ export function GalaxyExplorer(props: Props) {
               prev.canLand !== f.canLand ||
               prev.lookHold !== f.lookHold ||
               prev.drone !== f.drone ||
-              prev.showSunLook !== f.showSunLook ||
               prev.worldId !== f.worldId ||
               prev.focus?.id !== f.focus?.id ||
               prev.focus?.bodyId !== f.focus?.bodyId ||
@@ -657,17 +655,6 @@ export function GalaxyExplorer(props: Props) {
                 onClick={() => viewRef.current?.centerLook()}
               >
                 <IconCenter size={18} />
-              </button>
-            )}
-            {frame.showSunLook && (
-              <button
-                type="button"
-                className="gx-look-btn"
-                aria-label="Sun"
-                title="Face the sun, then free fly"
-                onClick={() => viewRef.current?.sunLook()}
-              >
-                <IconSun size={18} />
               </button>
             )}
             <button
