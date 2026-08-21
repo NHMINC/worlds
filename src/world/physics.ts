@@ -434,25 +434,34 @@ export const UNIVERSE = {
   /**
    * Transfer route. A held course never flies through a body:
    * if the sightline to the target crosses another body's (or
-   * the photosphere's) graze sphere — this many radii — the
-   * heading deflects to the tangent of that sphere, re-derived
-   * every frame (bodies ride Kepler rails; no stored waypoints).
-   * Inside the graze sphere the same formula aims tangent, so
-   * departure spirals out before bending onto the transfer.
+   * the photosphere's) graze sphere — this many radii, or the
+   * absolute clear shell (`WORLD_ORBIT_CLEAR_KM`), whichever is
+   * larger — the heading deflects to the tangent of that sphere,
+   * re-derived every frame (bodies ride Kepler rails; no stored
+   * waypoints). Inside the graze sphere the same formula aims
+   * tangent, so departure spirals out before bending onto the
+   * transfer.
    */
   ROUTE_GRAZE: 3,
   /**
+   * Absolute clearance above any surface (km). Named orbits,
+   * the near-shell fence, and the transfer graze never put the
+   * eye closer than this — small moons used to park at a
+   * fraction of a body radius and read as "inside" the ball.
+   */
+  WORLD_ORBIT_CLEAR_KM: 10_000,
+  /**
    * Host-pass orbit rings from the system chart. Heights are
-   * in body radii above the surface — one law, every world.
-   * LEO skims the air. Station is the same inertial family
-   * a little higher (GEO low / station-keeping: the world
-   * turns under you). GEO hangs over one face at the Kepler
-   * altitude for that spin (`a³/T² = GM/4π²`); a locked
-   * body has no useful GEO, so that pick is hover. MEO sits
-   * on the LEO→GEO lerp. Polar is LEO in a plane that
-   * contains the spin axis. Hover hangs over the arrival
-   * face. Gas floors the skim so the ball is not a
-   * clip. GEO_MAX clamps a slow spinner so the ring stays
+   * in body radii above the surface — one law, every world —
+   * then floored by `WORLD_ORBIT_CLEAR_KM`. LEO skims the air.
+   * Station is the same inertial family a little higher (GEO
+   * low / station-keeping: the world turns under you). GEO
+   * hangs over one face at the Kepler altitude for that spin
+   * (`a³/T² = GM/4π²`); a locked body has no useful GEO, so
+   * that pick is hover. MEO sits on the LEO→GEO lerp. Polar
+   * is LEO in a plane that contains the spin axis. Hover hangs
+   * over the arrival face. Gas floors the skim so the ball is
+   * not a clip. GEO_MAX clamps a slow spinner so the ring stays
    * a world orbit, not a second heliocentric. Heights are
    * framing altitudes on the toy globe — a true ISS skim
    * reads as scraping the terrace.
@@ -486,9 +495,12 @@ export const UNIVERSE = {
    * radius instead of fighting placeRide. Trackball is a drone
    * around the primary world (else the star): drag rolls the
    * body, pinch is altitude in body radii (`SOI_TRACK_*`), off
-   * restores the ship. Center holds look on the primary (a
-   * nearby world, else the star) until a look drag; Sun holds
-   * look on the furnace when the primary is a world.
+   * restores the ship. The live floor is still
+   * `WORLD_ORBIT_CLEAR_KM` above the surface — SOI_TRACK_MIN
+   * alone was a tiny shell on small moons. Center holds look
+   * on the primary (a nearby world, else the star) until a
+   * look drag; Sun holds look on the furnace when the primary
+   * is a world.
    */
   SOI_ZOOM: 0.55,
   SOI_TWIST: 1,

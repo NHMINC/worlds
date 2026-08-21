@@ -10,7 +10,7 @@
  * Home parks on the loaded star; Back restores the previous pose.
  */
 import * as THREE from 'three';
-import { UNIVERSE, classify, starIrradiance, starIrradianceDisplay, surveyGain } from '../world/physics';
+import { UNIVERSE, classify, surveyGain } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
 import {
   aimLocks,
@@ -44,12 +44,13 @@ import {
   type BodySpec,
   type SystemSpec,
 } from '../world/systemgen';
-import { makeGasGiant } from './gasGiant';
 import { RockyGlobe } from './rockyGlobe';
 import {
+  clearRadiusKm,
   isHangOrbit,
   orbitOmega,
   orbitRadiusKpc,
+  shellFloorKm,
   type WorldOrbitKind,
 } from '../world/worldOrbit';
 import {
@@ -245,13 +246,48 @@ export type GalaxyPreset = 'face' | 'edge' | 'home' | 'back';
 const KM_TO_KPC = 1 / UNIVERSE.KPC_KM;
 const AU_KM = UNIVERSE.AU_KM;
 
-/** Tier-0 world in the host pass — same Kepler pose as the engine. */
+/** Shared unit sphere for cleanroom host balls. */
+const HOST_BALL_GEO = new THREE.SphereGeometry(1, 32, 24);
+
+/** Latitude-band texture so each world reads as a ball, not a flat tint. */
+function hostBallTexture(rgb: [number, number, number]): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 32;
+  const g = c.getContext('2d')!;
+  const [r, gv, b] = rgb.map((x) => Math.round(Math.min(1, Math.max(0, x)) * 255));
+  g.fillStyle = `rgb(${r},${gv},${b})`;
+  g.fillRect(0, 0, 64, 32);
+  const dark = `rgb(${(r * 0.55) | 0},${(gv * 0.55) | 0},${(b * 0.55) | 0})`;
+  const lite = `rgb(${Math.min(255, (r * 1.15) | 0)},${Math.min(255, (gv * 1.15) | 0)},${Math.min(255, (b * 1.15) | 0)})`;
+  for (let y = 0; y < 32; y += 4) {
+    g.fillStyle = y % 8 === 0 ? dark : lite;
+    g.fillRect(0, y, 64, 2);
+  }
+  g.strokeStyle = 'rgba(255,255,255,0.35)';
+  g.beginPath();
+  g.moveTo(32, 0);
+  g.lineTo(32, 32);
+  g.stroke();
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function makeHostBall(rgb: [number, number, number]): THREE.Mesh {
+  return new THREE.Mesh(
+    HOST_BALL_GEO,
+    new THREE.MeshLambertMaterial({ map: hostBallTexture(rgb) }),
+  );
+}
+
+/** Tier-0 world in the host pass — same Kepler pose as the clock. */
 interface HostBodyRT {
   spec: BodySpec;
   group: THREE.Group;
-  orbitLine: THREE.LineLoop;
-  gasMat: THREE.ShaderMaterial | null;
-  /** Lambert stand-in until the latched globe is ready. */
+  orbitLine: THREE.Line;
+  /** Cleanroom stand-in (textured unit sphere). RockyGlobe later. */
   placeholder: THREE.Object3D | null;
   orbX: THREE.Vector3;
   orbY: THREE.Vector3;
@@ -1141,29 +1177,19 @@ export class GalaxyView {
     this.courseHud = this.hudForBody(rt);
     const dir = this.dirFromPlace(p, rt);
     if (p.landed) {
-      const globe = this.globeOf(rt.spec.id);
-      if (!globe?.ready) {
-        if (!this.riding || this.riding.bodyId !== rt.spec.id) {
-          this.beginRide(rt, p.orbit ?? 'hover', dir, tSys);
-        }
-        return false;
-      }
-      if (!this.riding || this.riding.bodyId !== rt.spec.id) {
-        this.beginRide(rt, p.orbit ?? 'hover', dir, tSys);
-      }
-      this.land();
-      if (p.dir) {
-        this.surfDir.set(p.dir[0], p.dir[1], p.dir[2]).normalize();
-        this.placeSurface();
-      }
+      // Cleanroom: no RockyGlobe — park on hover instead of hanging
+      // forever waiting for a terrace that will not mint.
+      const kind = p.orbit ?? 'hover';
+      this.beginRide(rt, kind, dir, tSys);
       this.pendingPlace = null;
+      this.centerLook();
       return true;
     }
     const kind = p.orbit ?? 'hover';
     this.beginRide(rt, kind, dir, tSys);
     if (p.h != null && this.riding) {
       const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
-      const lo = R * (1 + UNIVERSE.SOI_TRACK_MIN);
+      const lo = shellFloorKm(rt.spec) * KM_TO_KPC;
       const hi = Math.max(R * (1 + UNIVERSE.SOI_TRACK_MAX), UNIVERSE.WORLD_RANGE_KPC * 0.8);
       this.riding.r = THREE.MathUtils.clamp(R * (1 + p.h), lo, hi);
     }
@@ -2094,23 +2120,24 @@ export class GalaxyView {
     this.shipLook.roll = this.arcRoll;
     this.dropLookHold();
     const rt = this.lookPrimaryWorld();
-    const minH = UNIVERSE.SOI_TRACK_MIN;
-    const maxH = UNIVERSE.SOI_TRACK_MAX;
     if (rt) {
-      rt.group.getWorldPosition(this.hostTmp);
-      const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
-      const d = Math.max(this.hostTmp.length(), R * (1 + minH));
-      const h = THREE.MathUtils.clamp(d / Math.max(R, 1e-18) - 1, minH, maxH);
+      this.bodyFromEye(rt, this.hostTmp);
+      const R = Math.max(rt.spec.radius, 1);
+      const minH = shellFloorKm(rt.spec) / R - 1;
+      const maxH = Math.max(minH, UNIVERSE.SOI_TRACK_MAX);
+      const dKm = Math.max(this.hostTmp.length() / KM_TO_KPC, shellFloorKm(rt.spec));
+      const h = THREE.MathUtils.clamp(dKm / R - 1, minH, maxH);
       this.orbitTmp.copy(this.hostTmp).negate().normalize();
       this.spinWorld(rt, this.orbitQ);
       this.orbitTmp.applyQuaternion(this.hostTmpQ.copy(this.orbitQ).conjugate());
       this.drone = { bodyId: rt.spec.id, dir: this.orbitTmp.clone(), h, roll: this.arcRoll };
     } else {
+      const maxH = UNIVERSE.SOI_TRACK_MAX;
       const Rkm = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
-      const R = Rkm * KM_TO_KPC;
+      const clear = Rkm + UNIVERSE.WORLD_ORBIT_CLEAR_KM;
       this.hostTmp.copy(this.hostRoot.position);
-      const d = Math.max(this.hostTmp.length(), R * (1 + minH));
-      const h = THREE.MathUtils.clamp(d / Math.max(R, 1e-18) - 1, minH, maxH);
+      const dKm = Math.max(this.hostTmp.length() / KM_TO_KPC, clear);
+      const h = THREE.MathUtils.clamp(dKm / Rkm - 1, clear / Rkm - 1, maxH);
       this.orbitTmp
         .copy(this.hostRoot.position)
         .negate()
@@ -2167,12 +2194,12 @@ export class GalaxyView {
       return;
     }
     const rt = this.lookHold === 'center' ? this.lookPrimaryWorld() : null;
-    // Rendered positions, not catalog differences: the hold runs
-    // after the frame's root pin, so this matches the drawn pixels
-    // exactly in every state (the catalog form carries the
-    // arcCenter ULP — ~27 km — while the eye is pinned).
+    // Catalog eye→body (precision law). getWorldPosition of the
+    // group matches when the root is pinned, but bodyFromEye is
+    // the same vector the course / fence already use — Center
+    // must put that core under the pip.
     if (rt) {
-      rt.group.getWorldPosition(this.hostTmp);
+      this.bodyFromEye(rt, this.hostTmp);
     } else if (this.hostRoot) {
       this.hostTmp.copy(this.hostRoot.position);
     } else {
@@ -2558,14 +2585,15 @@ export class GalaxyView {
   /**
    * Transfer route: deflect the aim if the sightline to the
    * target crosses another body's (or the photosphere's) graze
-   * sphere — ROUTE_GRAZE radii. The aim moves to the tangent of
-   * the nearest blocker, in the eye–blocker–target plane; inside
-   * a graze sphere asin saturates and the aim goes tangent, so
-   * departure spirals out before bending onto the transfer.
-   * A blocker's sphere is capped below its distance to the
-   * target, so a moon hugging its planet stays reachable.
-   * Re-derived every frame — bodies ride Kepler rails; there
-   * are no stored waypoints.
+   * sphere — max(ROUTE_GRAZE radii, clear shell). The aim moves
+   * to the tangent of the nearest blocker, in the
+   * eye–blocker–target plane; inside a graze sphere asin
+   * saturates and the aim goes tangent, so departure spirals
+   * out before bending onto the transfer. A blocker's sphere
+   * is capped below its distance to the target, so a moon
+   * hugging its planet stays reachable. Re-derived every
+   * frame — bodies ride Kepler rails; there are no stored
+   * waypoints.
    */
   private routeAim(aim: THREE.Vector3, targetId: string | null): void {
     if (!this.hostObj || !this.hostRoot) return;
@@ -2580,10 +2608,9 @@ export class GalaxyView {
       const dO = Math.hypot(rx, ry, rz);
       if (!(dO > 1e-18) || dO >= dT || dO >= bestD) return;
       const dOT = Math.hypot(aim.x - rx, aim.y - ry, aim.z - rz);
-      const graze = Math.min(
-        UNIVERSE.ROUTE_GRAZE * Math.max(radiusKm, 1) * KM_TO_KPC,
-        dOT * 0.9,
-      );
+      const R = Math.max(radiusKm, 1);
+      const grazeKm = Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
+      const graze = Math.min(grazeKm * KM_TO_KPC, dOT * 0.9);
       if (!(graze > 0)) return;
       const sinMin = Math.min(1, graze / dO);
       const cosMin = Math.sqrt(Math.max(0, 1 - sinMin * sinMin));
@@ -3209,60 +3236,26 @@ export class GalaxyView {
   }
 
   /**
-   * Every rocky body of the host grows a Goldberg globe.
-   * The coursed / latched world builds first so Land is ready
-   * at the fence; siblings share the leftover tick budget.
-   * Gas stays the existing giant.
+   * Cleanroom host: Goldberg globes and gas-giant shaders are
+   * parked. Every body is a textured sphere of true radius on
+   * the Kepler clock so orbit and size can be eyeballed. Land
+   * stays off until the globe returns.
    */
-  private tickGlobes(tSys: number): void {
+  private tickGlobes(_tSys: number): void {
     if (!this.hostSpec) {
       this.dropGlobes();
       return;
     }
-    const prefer = this.worldId ?? this.courseBodyId ?? this.riding?.bodyId ?? null;
-    const rocky: HostBodyRT[] = [];
-    for (const rt of this.hostBodies) {
-      if (rt.spec.kind !== 'rocky') continue;
-      rocky.push(rt);
-    }
-    const mint = (rt: HostBodyRT): void => {
-      if (!this.hostSpec || this.globes.has(rt.spec.id)) return;
-      this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder));
-    };
-    if (prefer) {
-      const first = rocky.find((rt) => rt.spec.id === prefer);
-      if (first) mint(first);
-    }
-    for (const rt of rocky) {
-      if (this.globes.has(rt.spec.id)) continue;
-      mint(rt);
-      break;
-    }
+    // RockyGlobe mint is commented out for the cleanroom pass.
+    // for (const rt of this.hostBodies) {
+    //   if (rt.spec.kind !== 'rocky') continue;
+    //   if (!this.globes.has(rt.spec.id)) {
+    //     this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder));
+    //   }
+    // }
     for (const id of [...this.globes.keys()]) {
-      if (!rocky.some((rt) => rt.spec.id === id)) {
-        this.globes.get(id)?.dispose();
-        this.globes.delete(id);
-      }
-    }
-    const ordered = prefer
-      ? [...rocky.filter((rt) => rt.spec.id === prefer), ...rocky.filter((rt) => rt.spec.id !== prefer)]
-      : rocky;
-    let budget = 8;
-    const L = this.hostSpec.star.luminosity;
-    for (const rt of ordered) {
-      const g = this.globes.get(rt.spec.id);
-      if (!g) continue;
-      if (!g.ready) {
-        if (budget <= 0.4) {
-          this.wake(2);
-          continue;
-        }
-        const t0 = performance.now();
-        g.tick(Math.min(6, budget));
-        budget -= performance.now() - t0;
-        this.wake(2);
-      }
-      if (g.ready) g.update(this.camera, tSys, L, rt.pos, rt.spinQ);
+      this.globes.get(id)?.dispose();
+      this.globes.delete(id);
     }
   }
 
@@ -3395,7 +3388,12 @@ export class GalaxyView {
     root.quaternion.copy(this.hostTmpQ).multiply(this.hostAlignQ);
   }
 
-  /** Kepler ellipses + stand-ins. Rocky bodies grow globes; gas is a giant. */
+  /**
+   * Cleanroom host solar system: Kepler ellipses + textured
+   * spheres sized to each body's radius. Same clock as
+   * systemAt — no RockyGlobe, no gas giant rings. One look
+   * for every world from the moment the sphere is entered.
+   */
   private buildHostBodies(spec: SystemSpec): void {
     const root = this.ensureHostRoot();
     const byId = new Map<string, HostBodyRT>();
@@ -3403,21 +3401,9 @@ export class GalaxyView {
     for (const b of spec.bodies) {
       if (!b.parent) outer = Math.max(outer, b.orbitRadius);
       const group = new THREE.Group();
-      group.scale.setScalar(b.radius);
-      let gasMat: THREE.ShaderMaterial | null = null;
-      let placeholder: THREE.Object3D | null = null;
-      if (b.kind === 'gas' && b.gas) {
-        const gg = makeGasGiant(b.gas);
-        group.add(gg.group);
-        gasMat = gg.material;
-      } else {
-        const ball = new THREE.Mesh(
-          new THREE.SphereGeometry(1, 28, 18),
-          new THREE.MeshLambertMaterial({ color: new THREE.Color(...b.meanColor) }),
-        );
-        group.add(ball);
-        placeholder = ball;
-      }
+      group.scale.setScalar(Math.max(b.radius, 1));
+      const ball = makeHostBall(b.meanColor);
+      group.add(ball);
       root.add(group);
 
       const orbX = new THREE.Vector3(1, 0, 0);
@@ -3444,32 +3430,35 @@ export class GalaxyView {
           );
         }
       }
+      // Keep the in-plane basis orthonormal — a skewed basis
+      // drew parallelogram "ellipses" with hard corners.
+      orbX.normalize();
+      orbY.addScaledVector(orbX, -orbY.dot(orbX)).normalize();
 
       const dispR = b.parent ? b.orbitRadius : b.orbitRadius * AU_KM;
-      // Sagitta law: enough segments that the drawn ring deviates
-      // from the true ellipse by less than a quarter body radius.
-      // A 128-gon at 1 AU sagged ~45,000 km — seven planet-widths —
-      // so bodies never sat on their lines, and a close camera saw
-      // the vertex kinks as hard angles across the sky.
+      // Sagitta law: enough segments that the drawn ring stays
+      // within a quarter body radius of the true ellipse. Sample
+      // with the same keplerPlane closed form the body rides.
       const sagTol = Math.max(1, b.radius) * 0.25;
       const sagTheta = Math.sqrt((8 * sagTol) / Math.max(dispR, 1e-9));
       const segs = Math.min(
         8192,
-        Math.max(128, Math.ceil((2 * Math.PI) / Math.max(sagTheta, 1e-4))),
+        Math.max(256, Math.ceil((2 * Math.PI) / Math.max(sagTheta, 1e-4))),
       );
-      const pts = new Float32Array(segs * 3);
-      const semiMinor = dispR * Math.sqrt(1 - b.ecc * b.ecc);
-      for (let i = 0; i < segs; i++) {
-        const E = (i / segs) * 2 * Math.PI;
-        const xo = dispR * (Math.cos(E) - b.ecc);
-        const yo = semiMinor * Math.sin(E);
-        pts[i * 3] = orbX.x * xo + orbY.x * yo;
-        pts[i * 3 + 1] = orbX.y * xo + orbY.y * yo;
-        pts[i * 3 + 2] = orbX.z * xo + orbY.z * yo;
+      const pts = new Float32Array((segs + 1) * 3);
+      const P = Math.max(1e-6, b.orbitPeriod);
+      for (let i = 0; i <= segs; i++) {
+        const tSample = (i / segs) * P;
+        const { xo, yo } = keplerPlane(b.orbitRadius, b.orbitPeriod, b.orbitPhase, b.ecc, tSample);
+        const x = b.parent ? xo : xo * AU_KM;
+        const y = b.parent ? yo : yo * AU_KM;
+        pts[i * 3] = orbX.x * x + orbY.x * y;
+        pts[i * 3 + 1] = orbX.y * x + orbY.y * y;
+        pts[i * 3 + 2] = orbX.z * x + orbY.z * y;
       }
       const lineGeo = new THREE.BufferGeometry();
       lineGeo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
-      const orbitLine = new THREE.LineLoop(
+      const orbitLine = new THREE.Line(
         lineGeo,
         new THREE.LineBasicMaterial({
           color: 0xd4e4f8,
@@ -3486,8 +3475,7 @@ export class GalaxyView {
         spec: b,
         group,
         orbitLine,
-        gasMat,
-        placeholder,
+        placeholder: ball,
         orbX,
         orbY,
         tiltQ,
@@ -3507,10 +3495,16 @@ export class GalaxyView {
       root?.remove(rt.orbitLine);
       rt.group.traverse((o) => {
         const mesh = o as THREE.Mesh;
-        if (mesh.geometry) mesh.geometry.dispose();
+        // Shared HOST_BALL_GEO — do not dispose it.
+        if (mesh.geometry && mesh.geometry !== HOST_BALL_GEO) mesh.geometry.dispose();
         const mat = mesh.material;
-        if (Array.isArray(mat)) for (const m of mat) m.dispose();
-        else mat?.dispose();
+        const kill = (m: THREE.Material) => {
+          const mapped = m as THREE.MeshLambertMaterial;
+          if (mapped.map) mapped.map.dispose();
+          m.dispose();
+        };
+        if (Array.isArray(mat)) for (const m of mat) kill(m);
+        else if (mat) kill(mat);
       });
       rt.orbitLine.geometry.dispose();
       (rt.orbitLine.material as THREE.Material).dispose();
@@ -3523,7 +3517,6 @@ export class GalaxyView {
   private updateHostBodies(t: number): void {
     const byId = new Map<string, HostBodyRT>();
     for (const rt of this.hostBodies) byId.set(rt.spec.id, rt);
-    const L = this.hostSpec?.star.luminosity ?? 1;
     for (const rt of this.hostBodies) {
       const b = rt.spec;
       const { xo, yo } = keplerPlane(b.orbitRadius, b.orbitPeriod, b.orbitPhase, b.ecc, t);
@@ -3557,14 +3550,6 @@ export class GalaxyView {
       rt.spinQ.premultiply(rt.tiltQ);
       rt.group.position.copy(rt.pos);
       rt.group.quaternion.copy(rt.spinQ);
-
-      if (rt.gasMat) {
-        const qInv = this.hostTmpQ.copy(rt.spinQ).conjugate();
-        const lightL = this.hostTmp.copy(rt.pos).multiplyScalar(-1).normalize().applyQuaternion(qInv);
-        (rt.gasMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
-        const aPhys = Math.max(rt.pos.length() / AU_KM, 0.02);
-        rt.gasMat.uniforms.uSunIrr.value = starIrradianceDisplay(starIrradiance(L, aPhys));
-      }
     }
     this.hostRoot?.updateMatrixWorld(true);
     const cam = this.camera.position;
@@ -3757,35 +3742,48 @@ export class GalaxyView {
   }
 
   /**
-   * Hard fence: no move crosses into a body's near shell —
-   * (1 + SOI_TRACK_MIN) × radius, the camera's lowest legal
-   * shell — or the photosphere's. The step lands on the wall
-   * instead. Entry only: leaving a shell and tangent slides
-   * stay free, and every ring parks at or above it.
-   * Returns the allowed step length along (dx,dy,dz)/len.
+   * Hard fence: no move crosses into a body's clear shell —
+   * shellFloorKm (absolute 10,000 km above the surface, or the
+   * SOI relative floor) — or the photosphere's. The step lands
+   * on the wall instead. If we are already inside, only steps
+   * that climb out are allowed (the old miss-when-inside let
+   * a park through a world keep sinking). Entry only: leaving
+   * a shell and tangent slides stay free, and every ring parks
+   * at or above it. Returns the allowed step length along
+   * (dx,dy,dz)/len.
    */
   private clampHostAdvance(dx: number, dy: number, dz: number, len: number): number {
     if (!this.hostObj || !this.hostRoot || !(len > 0)) return len;
     const inv = 1 / len;
     this.orbitTmp2.set(dx * inv, dy * inv, dz * inv);
     let allowed = len;
-    const wall = 1 + UNIVERSE.SOI_TRACK_MIN;
+    const fence = (rx: number, ry: number, rz: number, wallKm: number): void => {
+      this.hostTmp.set(rx, ry, rz);
+      const R = wallKm * KM_TO_KPC;
+      const d2 = this.hostTmp.lengthSq();
+      const R2 = R * R;
+      if (d2 < R2) {
+        // Inside: only allow motion that increases distance
+        // (dir · bodyDir < 0 — bodyDir is eye→body).
+        const closing = this.orbitTmp2.dot(this.hostTmp);
+        if (closing > 0) allowed = 0;
+        return;
+      }
+      const t = this.firstShellHit(this.hostTmp, this.orbitTmp2, R);
+      if (t != null && t < allowed) allowed = t;
+    };
     for (const rt of this.hostBodies) {
       this.bodyFromEye(rt, this.hostTmp2);
-      const t = this.firstShellHit(
-        this.hostTmp2,
-        this.orbitTmp2,
-        wall * Math.max(rt.spec.radius, 1) * KM_TO_KPC,
-      );
-      if (t != null && t < allowed) allowed = t;
+      fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, shellFloorKm(rt.spec));
     }
     this.hostTmp2.copy(this.hostRoot.position);
-    const tStar = this.firstShellHit(
-      this.hostTmp2,
-      this.orbitTmp2,
-      wall * Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM) * KM_TO_KPC,
+    const starR = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
+    fence(
+      this.hostTmp2.x,
+      this.hostTmp2.y,
+      this.hostTmp2.z,
+      starR + UNIVERSE.WORLD_ORBIT_CLEAR_KM,
     );
-    if (tStar != null && tStar < allowed) allowed = tStar;
     return allowed;
   }
 
@@ -3858,7 +3856,11 @@ export class GalaxyView {
     const f = Math.max(1e-3, factor);
     if (this.drone) {
       const drone = this.drone;
-      drone.h = THREE.MathUtils.clamp(drone.h * f, UNIVERSE.SOI_TRACK_MIN, UNIVERSE.SOI_TRACK_MAX);
+      const rt = drone.bodyId ? this.worldRt(drone.bodyId) : null;
+      const R = rt ? Math.max(rt.spec.radius, 1) : Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
+      const minH = (rt ? shellFloorKm(rt.spec) : R + UNIVERSE.WORLD_ORBIT_CLEAR_KM) / R - 1;
+      const maxH = Math.max(minH, UNIVERSE.SOI_TRACK_MAX);
+      drone.h = THREE.MathUtils.clamp(drone.h * f, minH, maxH);
       this.placeDrone();
       this.applyCam();
       this.wake();
@@ -3890,7 +3892,7 @@ export class GalaxyView {
     const rt = this.worldRt(ride?.bodyId);
     if (!ride || !rt) return;
     const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
-    const lo = R * (1 + UNIVERSE.SOI_TRACK_MIN);
+    const lo = shellFloorKm(rt.spec) * KM_TO_KPC;
     const hi = Math.max(R * (1 + UNIVERSE.SOI_TRACK_MAX), UNIVERSE.WORLD_RANGE_KPC * 0.8);
     ride.r = THREE.MathUtils.clamp(ride.r * factor, lo, hi);
     this.wake();
@@ -3906,7 +3908,7 @@ export class GalaxyView {
     let step = d * UNIVERSE.SOI_ZOOM * log;
     if (step > 0) {
       const fence = world
-        ? Math.max(world.spec.radius, 1) * KM_TO_KPC * (1 + UNIVERSE.SOI_TRACK_MIN)
+        ? shellFloorKm(world.spec) * KM_TO_KPC
         : this.hostObj
           ? this.parkKpc(this.hostObj)
           : 0;
@@ -4349,8 +4351,10 @@ export class GalaxyView {
   }
 
   private parkBodyKpc(b: BodySpec): number {
+    const clear = clearRadiusKm(b) * KM_TO_KPC;
     const R = Math.max(1, b.radius) * KM_TO_KPC;
-    return R / Math.max(1e-8, Math.tan(this.fillHalfAngle()));
+    const fill = R / Math.max(1e-8, Math.tan(this.fillHalfAngle()));
+    return Math.max(clear, fill);
   }
 
   /**

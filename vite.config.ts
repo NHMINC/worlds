@@ -1,36 +1,6 @@
-import { writeFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-
-/** Dev-only sink: `?verify` POSTs its report here → /tmp/verify.json. */
-function verifySink(): Plugin {
-  return {
-    name: 'verify-sink',
-    apply: 'serve',
-    configureServer(server) {
-      server.middlewares.use('/__verify', (req, res) => {
-        if (req.method !== 'POST') {
-          res.statusCode = 405;
-          res.end();
-          return;
-        }
-        let body = '';
-        req.on('data', (c: Buffer) => {
-          body += c.toString();
-        });
-        req.on('end', () => {
-          try {
-            writeFileSync('/tmp/verify.json', body);
-          } catch {
-            /* sink is best-effort */
-          }
-          res.end('ok');
-        });
-      });
-    },
-  };
-}
 
 /** GitHub Pages cannot set CSP HTTP headers; inject a meta policy on the production build only (dev HMR needs eval / websockets). */
 const CSP = [
@@ -93,6 +63,6 @@ export default defineConfig(({ command }) => ({
         ],
       },
     }),
-    ...(command === 'build' ? [securityMeta()] : [verifySink()]),
+    ...(command === 'build' ? [securityMeta()] : []),
   ],
 }));

@@ -2,6 +2,8 @@
  * Host-pass orbits. The chart names a ring; the viewpoint
  * rides that ring. Heights and ω come from the body
  * (radius, density, spin, air) — not a preset per class.
+ * Every named ring is floored by WORLD_ORBIT_CLEAR_KM above
+ * the surface so a small moon never parks inside its ball.
  */
 import { UNIVERSE, airExtinction } from './physics';
 import type { BodySpec } from './systemgen';
@@ -95,7 +97,7 @@ function hoverHeightRel(body: BodySpec): number {
   return Math.max(UNIVERSE.WORLD_ORBIT_HOVER, gasFloor(body));
 }
 
-/** Altitude in body radii above the surface. */
+/** Altitude in body radii above the surface (before the clear floor). */
 export function orbitHeightRel(body: BodySpec, kind: WorldOrbitKind): number {
   const leo = leoHeightRel(body);
   switch (kind) {
@@ -116,8 +118,20 @@ export function orbitHeightRel(body: BodySpec, kind: WorldOrbitKind): number {
   }
 }
 
+/** Body radius + absolute clear floor (km from centre). */
+export function clearRadiusKm(body: { radius: number }): number {
+  return Math.max(body.radius, 1) + UNIVERSE.WORLD_ORBIT_CLEAR_KM;
+}
+
+/** Lowest legal camera shell about a body (km from centre). */
+export function shellFloorKm(body: { radius: number }): number {
+  const R = Math.max(body.radius, 1);
+  return Math.max(clearRadiusKm(body), R * (1 + UNIVERSE.SOI_TRACK_MIN));
+}
+
 export function orbitRadiusKm(body: BodySpec, kind: WorldOrbitKind): number {
-  return (1 + orbitHeightRel(body, kind)) * Math.max(body.radius, 1);
+  const R = Math.max(body.radius, 1);
+  return Math.max(clearRadiusKm(body), (1 + orbitHeightRel(body, kind)) * R);
 }
 
 export function orbitRadiusKpc(body: BodySpec, kind: WorldOrbitKind): number {
@@ -126,9 +140,9 @@ export function orbitRadiusKpc(body: BodySpec, kind: WorldOrbitKind): number {
 
 /** Mean-motion ω (rad / universe-second) at that ring. */
 export function orbitOmega(body: BodySpec, kind: WorldOrbitKind): number {
+  const aM = orbitRadiusKm(body, kind) * 1000;
   const Rm = Math.max(body.radius, 1) * 1000;
-  const a = (1 + orbitHeightRel(body, kind)) * Rm;
   const M = body.physics.densityRel * UNIVERSE.RHO_EARTH * (4 / 3) * Math.PI * Rm * Rm * Rm;
   const mu = UNIVERSE.G_SI * Math.max(M, 1);
-  return Math.sqrt(mu / (a * a * a));
+  return Math.sqrt(mu / (aM * aM * aM));
 }

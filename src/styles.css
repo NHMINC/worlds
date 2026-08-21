@@ -715,26 +715,6 @@ body,
   border-radius: 6px;
 }
 
-/* `?verify=N` choreography report (src/dev/verify.ts). */
-.gx-verify {
-  position: fixed;
-  left: 8px;
-  top: calc(56px + env(safe-area-inset-top));
-  z-index: 40;
-  max-width: min(520px, calc(100vw - 16px));
-  max-height: calc(100vh - 140px);
-  overflow: auto;
-  margin: 0;
-  padding: 8px 10px;
-  background: rgba(6, 10, 16, 0.88);
-  color: rgba(214, 226, 240, 0.95);
-  font: 10.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  border: 1px solid rgba(150, 172, 205, 0.25);
-  border-radius: 8px;
-  white-space: pre-wrap;
-  pointer-events: auto;
-}
-
 /* Flush to the canvas corner. Stars already paint here — do not lift
    for the home-indicator inset; that left a starfield gap under the line. */
 .gx-hud-perf {
@@ -853,12 +833,13 @@ body,
   pointer-events: none;
 }
 
+/* Centre pip: black cross with a white edge so it reads on every sky. */
 .gx-pip {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 1;
@@ -867,18 +848,21 @@ body,
 .gx-pip::after {
   content: '';
   position: absolute;
-  background: rgba(244, 228, 193, 0.55);
+  background: #0a0a0a;
+  box-shadow:
+    0 0 0 1px #fff,
+    0 0 0 2px rgba(0, 0, 0, 0.55);
 }
 .gx-pip::before {
-  left: 5px;
+  left: 6px;
   top: 0;
   width: 2px;
-  height: 12px;
+  height: 14px;
 }
 .gx-pip::after {
   left: 0;
-  top: 5px;
-  width: 12px;
+  top: 6px;
+  width: 14px;
   height: 2px;
 }
 
@@ -887,30 +871,33 @@ body,
   width: 26px;
   height: 26px;
   transform: translate(-50%, -50%);
-  border: 1px solid rgba(244, 228, 193, 0.45);
+  border: 1px solid #fff;
   border-radius: 50%;
   pointer-events: none;
   z-index: 1;
-  box-shadow: 0 0 0 5px rgba(244, 228, 193, 0.04);
+  box-shadow:
+    0 0 0 1px #0a0a0a,
+    inset 0 0 0 1px #0a0a0a;
 }
 .gx-reticle.dark {
   width: 34px;
   height: 34px;
-  border-color: rgba(244, 228, 193, 0.92);
+  border-color: #fff;
   box-shadow:
-    0 0 0 1px rgba(244, 228, 193, 0.25),
-    0 0 12px rgba(244, 228, 193, 0.2);
+    0 0 0 1px #0a0a0a,
+    inset 0 0 0 1px #0a0a0a;
 }
 .gx-reticle.dark::before,
 .gx-reticle.dark::after {
   content: '';
   position: absolute;
-  background: rgba(244, 228, 193, 0.9);
+  background: #0a0a0a;
+  box-shadow: 0 0 0 1px #fff;
 }
 .gx-reticle.dark::before {
   left: 50%;
   top: -5px;
-  width: 1px;
+  width: 2px;
   height: 8px;
   transform: translateX(-50%);
 }
@@ -918,7 +905,7 @@ body,
   left: -5px;
   top: 50%;
   width: 8px;
-  height: 1px;
+  height: 2px;
   transform: translateY(-50%);
 }
 

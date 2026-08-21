@@ -246,24 +246,6 @@ export function GalaxyExplorer(props: Props) {
     viewRef.current?.setHere(props.hereStarId ?? null);
   }, [props.hereStarId, ready]);
 
-  // `?verify=N`: owner-requested SOI camera choreography — samples
-  // catalog systems and asserts Center / zoom / drone / ride aim on
-  // the live view. On demand only; not CI, not a gate.
-  useEffect(() => {
-    if (!ready) return;
-    const n = new URLSearchParams(window.location.search).get('verify');
-    if (n == null) return;
-    let cancelled = false;
-    void import('../dev/verify').then((m) => {
-      if (cancelled || !viewRef.current) return;
-      void m.runVerify(viewRef.current, seed, Math.min(8, Math.max(1, Number(n) || 3)));
-    });
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
-
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !ready) return;
