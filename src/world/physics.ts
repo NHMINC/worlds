@@ -517,17 +517,20 @@ export const UNIVERSE = {
    */
   SOI_ZOOM: 0.55,
   SOI_TWIST: 1,
-  /**
-   * Vertical field of the explorer camera (degrees). Inertial
-   * ride looks prograde with the body straight down; the
-   * horizon sits at acos(R / (R+h)) below the nose. 50° only
-   * saw 25° down — LEO (h ≈ 0.22 R, horizon ≈ 35°) hid the
-   * sphere under the ship. 100° puts that limb in the lower
-   * half. Hang / hover still face the ball.
-   */
-  CAM_FOV: 100,
   SOI_TRACK_MIN: 0.12,
   SOI_TRACK_MAX: 8,
+  /**
+   * Inertial park look (LEO / station / MEO / polar). The nose
+   * stays near prograde; pitch down so the forward limb fills
+   * this fraction of the bottom of the frame. Horizon is
+   * acos(R/(R+h)) below prograde; the look sits
+   * CAM_FOV × (½ − this) above that limb. GEO / hover still
+   * face the ball. Insertion eases from full-ahead to this
+   * pitch as the fly-to slides onto the rail.
+   */
+  ORBIT_LIMB_FILL: 0.3,
+  /** Vertical field of the explorer camera (degrees). */
+  CAM_FOV: 50,
   /**
    * Host-pass orbit rings. The old system viewer used ~0.1 on a
    * black void; that is glass on the dimmed harvest. These are

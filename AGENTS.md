@@ -192,10 +192,12 @@ toy — Godus blocks on a real-sized globe.
   wheel dollies at the subject distance
   (`SOI_ZOOM`); on a ring it changes
   that radius. Two-finger twist rolls
-  the look (`SOI_TWIST`). Vertical field
-  is `CAM_FOV` (100°) so a prograde ride
-  still sees the sphere under the ship.
-  Center holds
+  the look (`SOI_TWIST`). Inertial parks
+  (LEO / station / MEO / polar) pitch
+  the look so the forward limb fills
+  `ORBIT_LIMB_FILL` (30%) of the bottom
+  of the frame; insertion eases from
+  full-ahead to that pitch. Center holds
   look on the core of the body that owns
   the sky — the bound body (ride / world
   latch) first, else the largest angular
@@ -417,11 +419,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (LEO, GEO low / Station, MEO, GEO, Polar, Hover).
   Pick one and warp auto-engages; the viewpoint
   parks on that radius and rides it (hang for GEO /
-  hover, inertial for the rest). Arrival look is the
-  aesthetic bank (nadir down / prograde, or hang face
-  on GEO / hover). A look drag takes the stick —
-  the ring does not hold nadir, and release does not
-  snap the look back. Pinch zooms the ring
+  hover, inertial for the rest). Arrival look on
+  LEO / station / MEO / polar pitches down so the
+  top of the sphere fills the bottom 30% of the
+  frame (`ORBIT_LIMB_FILL`); that pitch eases in
+  as the insertion blend goes from full-ahead to
+  the rail. GEO / hover face the hang face. A look
+  drag takes the stick — release does not snap the
+  look back. Pinch zooms the ring
   radius; twist rolls. Center holds look on that world;
   Sun finds the furnace. Trackball is a drone around the
   body — off is the ship again. Land sets down on
@@ -438,7 +443,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   background-star brightness and count, extinction, shine,
   nebula glow) — a slide is the next frame.   Approach knobs
   (sphere radius, world sphere, world brake, galaxy dim, approach warp, close crawl,
-  park fill, heading hold, reticle range, disk warp, field of view) write
+  park fill, heading hold, reticle range, disk warp) write
   `UNIVERSE` live — a slide is the next frame, no remint.
   Rebuild knobs (survey
   floors, nebula catalog, ribbon-geometry laws): the slider is a

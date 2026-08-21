@@ -23,6 +23,25 @@ export function isHangOrbit(kind: WorldOrbitKind): boolean {
   return kind === 'geo' || kind === 'hover';
 }
 
+/** Inertial world rings that park with the limb in the lower frame. */
+export function isLimbOrbit(kind: WorldOrbitKind): boolean {
+  return kind === 'leo' || kind === 'station' || kind === 'meo' || kind === 'polar';
+}
+
+/**
+ * Pitch from prograde toward the body so the forward limb
+ * fills `fill` of the bottom of a `fovDeg` frame. Horizon is
+ * acos(R/d) below prograde; the look sits `fov*(½−fill)`
+ * above that limb.
+ */
+export function orbitLimbPitch(R: number, d: number, fovDeg: number, fill: number): number {
+  const ratio = Math.min(0.999999, Math.max(0, R / Math.max(d, 1e-18)));
+  const horizon = Math.acos(ratio);
+  const fov = (fovDeg * Math.PI) / 180;
+  const limbFromLook = fov * (0.5 - fill);
+  return Math.min(Math.PI * 0.49, Math.max(0, horizon - limbFromLook));
+}
+
 export function orbitLabel(kind: WorldOrbitKind): string {
   switch (kind) {
     case 'leo':

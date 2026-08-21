@@ -51,7 +51,9 @@ import { planOrbitInsert, type InsertMode } from './orbitInsert';
 import {
   clearRadiusKm,
   isHangOrbit,
+  isLimbOrbit,
   orbitLabel,
+  orbitLimbPitch,
   orbitOmega,
   orbitRadiusKpc,
   shellFloorKm,
@@ -2518,6 +2520,7 @@ export class GalaxyView {
     };
     this.navMode = 'lock';
     this.dropLookHold();
+    this.aimLimbParkLook(rt, pending.kind, this.orbitTmp2);
     this.tickCapture(this.lastDt || 1 / 60, tSys);
   }
 
@@ -2588,14 +2591,15 @@ export class GalaxyView {
         this.orbitTmp.z,
       );
     } else {
+      this.limbParkFwd(rt, cap.kind, this.rideE2, this.rideE1, this.lookSlerp);
       this.easeCapturePose(
         dt,
         tx,
         ty,
         tz,
-        this.rideE2.x,
-        this.rideE2.y,
-        this.rideE2.z,
+        this.lookSlerp.x,
+        this.lookSlerp.y,
+        this.lookSlerp.z,
         this.rideE1.x,
         this.rideE1.y,
         this.rideE1.z,
@@ -2875,10 +2879,10 @@ export class GalaxyView {
   }
 
   /**
-   * Arrival ride look. Inertial rings: aesthetic gravity lock —
-   * nose prograde, bank so the body is screen-down (orbital
-   * plane = vertical midplane). Hang / hover: nose into the
-   * body so the full sphere fills the view. A look drag takes
+   * Arrival ride look. Inertial rings (LEO / station / MEO /
+   * polar): prograde, pitched so the forward limb fills
+   * ORBIT_LIMB_FILL of the bottom of the frame, banked nadir-
+   * down. Hang / hover: nose into the body. A look drag takes
    * the stick; release leaves that heading.
    */
   private bankRideLook(tSys: number): void {
@@ -2918,7 +2922,71 @@ export class GalaxyView {
     fx /= flen;
     fy /= flen;
     fz /= flen;
+    const rt = ride.bodyId != null ? this.worldRt(ride.bodyId) : null;
+    if (rt && isLimbOrbit(ride.kind)) {
+      this.lookSlerp.set(fx, fy, fz);
+      this.orbitTmp.set(zx, zy, zz);
+      this.limbParkFwd(rt, ride.kind, this.lookSlerp, this.orbitTmp, this.lookSlerp);
+      fx = this.lookSlerp.x;
+      fy = this.lookSlerp.y;
+      fz = this.lookSlerp.z;
+    }
     this.aimOrbitBank(fx, fy, fz, zx, zy, zz);
+  }
+
+  /**
+   * Park look for an inertial limb ring: prograde pitched toward
+   * the body so the forward limb fills ORBIT_LIMB_FILL.
+   */
+  private limbParkFwd(
+    rt: HostBodyRT,
+    kind: WorldOrbitKind,
+    prograde: THREE.Vector3,
+    zenith: THREE.Vector3,
+    out: THREE.Vector3,
+  ): void {
+    if (!isLimbOrbit(kind)) {
+      out.copy(prograde);
+      return;
+    }
+    const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
+    const d = orbitRadiusKpc(rt.spec, kind);
+    const p = orbitLimbPitch(R, d, this.camera.fov, UNIVERSE.ORBIT_LIMB_FILL);
+    const c = Math.cos(p);
+    const s = Math.sin(p);
+    out.set(
+      prograde.x * c - zenith.x * s,
+      prograde.y * c - zenith.y * s,
+      prograde.z * c - zenith.z * s,
+    );
+    if (out.lengthSq() < 1e-16) out.copy(prograde);
+    else out.normalize();
+  }
+
+  /** Write the parked limb look (capture start — matches the insert ease). */
+  private aimLimbParkLook(rt: HostBodyRT, kind: WorldOrbitKind, zenith: THREE.Vector3): void {
+    if (!isLimbOrbit(kind) || this.looking) return;
+    this.spinWorld(rt, this.orbitQ);
+    this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+    this.rideE1.copy(zenith);
+    if (this.rideE1.lengthSq() < 1e-16) return;
+    this.rideE1.normalize();
+    this.rideE2.crossVectors(this.rideNorth, this.rideE1);
+    if (this.rideE2.lengthSq() < 1e-16) {
+      this.orientArc();
+      this.rideE2.crossVectors(this.arcRight, this.rideE1);
+    }
+    if (this.rideE2.lengthSq() < 1e-16) return;
+    this.rideE2.normalize();
+    this.limbParkFwd(rt, kind, this.rideE2, this.rideE1, this.lookSlerp);
+    this.aimOrbitBank(
+      this.lookSlerp.x,
+      this.lookSlerp.y,
+      this.lookSlerp.z,
+      this.rideE1.x,
+      this.rideE1.y,
+      this.rideE1.z,
+    );
   }
 
   private clearCourse(): void {
@@ -3743,8 +3811,10 @@ export class GalaxyView {
   private applyCam(): void {
     if (!this.landed && !this.drone) this.orientArc();
     this.camera.position.set(0, 0, 0);
-    this.camera.up.copy(this.arcUp);
-    this.arcLook.copy(this.arcFwd);
+    if (!this.applyInsertLimbCam()) {
+      this.camera.up.copy(this.arcUp);
+      this.arcLook.copy(this.arcFwd);
+    }
     this.camera.lookAt(this.arcLook);
     this.theta = this.arcYaw;
     this.phi = Math.PI / 2 - this.arcPitch;
@@ -3763,6 +3833,45 @@ export class GalaxyView {
     this.camera.fov = THREE.MathUtils.clamp(UNIVERSE.CAM_FOV, 20, 160);
     this.camera.updateProjectionMatrix();
     this.pushMagUniforms();
+  }
+
+  /**
+   * Lock-on insertion: heading stays the fly-to (warp must not
+   * dive). The rendered look eases from that ahead aim toward
+   * the parked limb pitch as insertBlend goes 0→1.
+   */
+  private applyInsertLimbCam(): boolean {
+    if (this.looking || this.landed || this.drone || this.riding || this.capturing) return false;
+    const pending = this.pendingOrbit;
+    if (this.navMode !== 'lock' || !pending?.bodyId || !isLimbOrbit(pending.kind)) return false;
+    const blend = this.insertBlend;
+    if (blend < 1e-4) return false;
+    const rt = this.worldRt(pending.bodyId);
+    if (!rt) return false;
+    this.bodyFromEye(rt, this.orbitTmp);
+    const len = this.orbitTmp.length();
+    if (len < 1e-18) return false;
+    const zx = -this.orbitTmp.x / len;
+    const zy = -this.orbitTmp.y / len;
+    const zz = -this.orbitTmp.z / len;
+    const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
+    const d = orbitRadiusKpc(rt.spec, pending.kind);
+    const pitch = orbitLimbPitch(R, d, this.camera.fov, UNIVERSE.ORBIT_LIMB_FILL) * blend;
+    if (pitch < 1e-6) return false;
+    const c = Math.cos(pitch);
+    const s = Math.sin(pitch);
+    this.arcLook.set(
+      this.arcFwd.x * c - zx * s,
+      this.arcFwd.y * c - zy * s,
+      this.arcFwd.z * c - zz * s,
+    );
+    if (this.arcLook.lengthSq() < 1e-16) return false;
+    this.arcLook.normalize();
+    this.orbitTmp2.set(zx, zy, zz);
+    this.orbitTmp2.addScaledVector(this.arcLook, -this.orbitTmp2.dot(this.arcLook));
+    if (this.orbitTmp2.lengthSq() < 1e-16) this.camera.up.copy(this.arcUp);
+    else this.camera.up.copy(this.orbitTmp2.normalize());
+    return true;
   }
 
   private arriveDist(obj: GalaxyObject): number {
