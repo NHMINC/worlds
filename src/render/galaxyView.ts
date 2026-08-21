@@ -648,11 +648,11 @@ export interface GalaxyFrame {
   landed: boolean;
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
-  /** Look-hold: Center (primary) or Sun, until a look drag. */
+  /** Look-hold: Center (body core, off the ground) or Sun, until a look drag. */
   lookHold: 'center' | 'sun' | null;
   /** Drone trackball around the primary world (else the star). */
   drone: boolean;
-  /** Sun look is offered when the primary is a world. */
+  /** Sun look is offered when we are at a world. */
   showSunLook: boolean;
   /** Latched / ridden / landed world, if any. */
   worldId: string | null;
@@ -848,8 +848,10 @@ export class GalaxyView {
   private sWalk = 0;
   /** Roll around the look. Catalog yaw/pitch have no twist. */
   private arcRoll = 0;
-  /** Hold look on the primary or the star until a drag. */
+  /** Hold look on a body core or the star until a drag. */
   private lookHold: 'center' | 'sun' | null = null;
+  /** World Center latched; null follows the host star. */
+  private lookWorldId: string | null = null;
   /**
    * Trackball drone. bodyId null is the host star. dir is
    * body-local (ecliptic for the star); h is radii above the
@@ -2011,6 +2013,7 @@ export class GalaxyView {
     this.sEyeH = this.sEyeHTarget = Math.max(globe.terraceStep * 0.6, globe.terraceStep * 4);
     this.sWalk = 0;
     this.landed = true;
+    if (this.lookHold === 'center') this.dropLookHold();
     this.courseBodyId = rt.spec.id;
     this.worldId = rt.spec.id;
     this.courseHud = this.hudForBody(rt);
@@ -2038,16 +2041,17 @@ export class GalaxyView {
   }
 
   /**
-   * Hold look on the primary: a nearby / ridden world, else the
-   * star. On the ground the world is underfoot, so Center is the
-   * sun. A look drag lets go.
+   * Hold look on the core of the body we are attending —
+   * ridden / latched / coursed / aimed world, else the host
+   * star — and follow that core as it moves. Offered off the
+   * ground. A look drag lets go.
    */
   centerLook(): void {
-    if (this.mode !== 'region' || !this.hostObj) return;
+    if (this.mode !== 'region' || !this.hostObj || this.landed) return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'center';
+    this.lookWorldId = this.lookPrimaryWorld()?.spec.id ?? null;
     this.holdLook();
-    if (this.landed) this.placeSurface();
     this.applyCam();
     this.wake();
   }
@@ -2057,10 +2061,16 @@ export class GalaxyView {
     if (this.mode !== 'region' || !this.hostObj) return;
     if (this.drone) this.setDrone(false);
     this.lookHold = 'sun';
+    this.lookWorldId = null;
     this.holdLook();
     if (this.landed) this.placeSurface();
     this.applyCam();
     this.wake();
+  }
+
+  private dropLookHold(): void {
+    this.lookHold = null;
+    this.lookWorldId = null;
   }
 
   /**
@@ -2082,7 +2092,7 @@ export class GalaxyView {
     this.shipLook.yaw = this.arcYaw;
     this.shipLook.pitch = this.arcPitch;
     this.shipLook.roll = this.arcRoll;
-    this.lookHold = null;
+    this.dropLookHold();
     const rt = this.lookPrimaryWorld();
     const minH = UNIVERSE.SOI_TRACK_MIN;
     const maxH = UNIVERSE.SOI_TRACK_MAX;
@@ -2113,28 +2123,42 @@ export class GalaxyView {
     this.wake();
   }
 
-  /** Nearby / ridden / landed world. Null → the star is primary. */
+  /**
+   * World we are attending. Null → the host star (not the
+   * focus of a planet's orbit). Course / aim count — the
+   * WORLD_RANGE latch is not required.
+   */
   private lookPrimaryWorld(): HostBodyRT | null {
-    const id = this.riding?.bodyId ?? this.worldId;
+    const id =
+      this.lookWorldId ??
+      this.riding?.bodyId ??
+      this.worldId ??
+      this.pendingOrbit?.bodyId ??
+      this.courseBodyId ??
+      this.focusBodyId ??
+      this.selectedBodyId;
     return this.worldRt(id);
   }
 
   private showSunLook(): boolean {
-    return Boolean(this.hostObj && this.lookPrimaryWorld() && !this.landed);
+    return Boolean(this.hostObj && this.lookPrimaryWorld());
   }
 
   private holdLook(): void {
     if (!this.lookHold || this.looking || !this.hostObj) return;
-    const sun = this.lookHold === 'sun' || this.landed || !this.lookPrimaryWorld();
-    if (sun) {
-      if (!this.hostRoot) return;
-      this.hostTmp.copy(this.hostRoot.position);
-      if (this.hostTmp.lengthSq() < 1e-32) return;
+    const rt = this.lookHold === 'center' ? this.lookPrimaryWorld() : null;
+    if (rt) {
+      this.bodyCatalog(rt, this.hostTmp);
+      this.hostTmp.sub(this.arcCenter);
     } else {
-      const rt = this.lookPrimaryWorld();
-      if (!rt) return;
-      rt.group.getWorldPosition(this.hostTmp);
+      const c = galToCart(this.hostObj.pos);
+      this.hostTmp.set(
+        c.x - this.arcCenter.x,
+        c.y - this.arcCenter.y,
+        c.z - this.arcCenter.z,
+      );
     }
+    if (this.hostTmp.lengthSq() < 1e-32) return;
     if (this.landed) this.aimSurfaceAt(this.hostTmp);
     else this.aimAt(this.hostTmp.x, this.hostTmp.y, this.hostTmp.z);
   }
@@ -3130,7 +3154,7 @@ export class GalaxyView {
     this.pendingOrbit = null;
     this.pendingPlace = null;
     this.drone = null;
-    this.lookHold = null;
+    this.dropLookHold();
     this.clearRide();
     this.leaveSurface();
     if (this.courseHud?.bodyId) this.clearCourse();
@@ -3915,7 +3939,7 @@ export class GalaxyView {
     }
     if (this.mode === 'region') {
       this.looking = true;
-      this.lookHold = null;
+      this.dropLookHold();
       if (this.drone) {
         this.turnDrone(dx, dy);
         return;
