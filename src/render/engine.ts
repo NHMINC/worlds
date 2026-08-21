@@ -275,27 +275,6 @@ export class Engine {
   private tmpQ2 = new THREE.Quaternion();
   /** Headlamp brightness, eased so dusk fades it in rather than snapping. */
   private torchLevel = 0;
-  /**
-   * The water's mirror world: a cube camera parked at the main camera's
-   * reflection point beneath the sea surface, rendering the terrain layer
-   * only. The water shader samples it along Fresnel-reflected rays, so land
-   * standing over the shore appears IN the water — the sky component stays
-   * analytic (scattering law), this capture supplies what the sky cannot:
-   * geometry. Lazily built; only runs in surface mode.
-   */
-  private reflRT?: THREE.WebGLCubeRenderTarget;
-  private reflCam?: THREE.CubeCamera;
-  /**
-   * The water-column capture: a screen-sized float target holding the
-   * terrain's COLOR (rgb) and body-local DISTANCE (alpha, 0 = no ground).
-   * The water shader refracts that bottom through the sea by Beer–Lambert
-   * so shallows show sand and open ocean is opaque water — never a window
-   * onto the sky. Lazily built; only runs in surface mode.
-   */
-  private colRT?: THREE.WebGLRenderTarget;
-  private tmpM4 = new THREE.Matrix4();
-  private tmpC = new THREE.Color();
-  private tmpSz = new THREE.Vector2();
   private tmpAirT = new THREE.Vector3(1, 1, 1);
 
   constructor(canvas: HTMLCanvasElement, callbacks: EngineCallbacks) {
@@ -742,10 +721,6 @@ export class Engine {
     terrainMat.uniforms.uWarpFreq.value = 2.2 / rt.grid!.cellSpacing();
     const terrain = new THREE.Mesh(geometry, terrainMat);
     terrain.renderOrder = 0;
-    // Layer 1 is what the water's reflection camera sees: terrain only, so
-    // the mirror capture holds land against a transparent sky (the water
-    // shader falls back to the analytic scattering sky where alpha is 0).
-    terrain.layers.enable(1);
     root.add(terrain);
 
     let waterMat: THREE.ShaderMaterial | undefined;
@@ -1508,8 +1483,6 @@ export class Engine {
     window.removeEventListener('keyup', this.onKeyUp);
     this.starView?.dispose();
     this.starView = null;
-    this.reflRT?.dispose();
-    this.colRT?.dispose();
     this.renderer.dispose();
   }
 
@@ -2054,91 +2027,6 @@ export class Engine {
     // foam, and the render-only tide use the same celestial t as pose.
     const shaderT = waveClock(tSys);
 
-    // The water's mirror world: from the ground, park the reflection camera
-    // at the eye's image point beneath the sea surface (mirror across the
-    // sea sphere — locally a flat mirror: same ray from the center, radius
-    // 2·R_sea − r) and photograph the terrain layer against a transparent
-    // sky. The water shader samples this along its Fresnel-reflected rays;
-    // where nothing was captured, the analytic scattering sky shows through.
-    if (this.mode === 'surface') {
-      const hereRt = this.bodies.get(this.orbitBodyId ?? '');
-      const hereAssets = hereRt ? hereRt.tier2 ?? hereRt.tier1 : undefined;
-      if (hereRt && hereAssets?.waterMat) {
-        if (!this.reflCam || !this.reflRT) {
-          this.reflRT = new THREE.WebGLCubeRenderTarget(512);
-          this.reflCam = new THREE.CubeCamera(0.002, 60, this.reflRT);
-          for (const c of this.reflCam.children) (c as THREE.Camera).layers.set(1);
-          this.scene.add(this.reflCam);
-        }
-        const d = this.tmpV.copy(this.camera.position).sub(hereRt.pos);
-        const r = Math.max(d.length(), 1e-9);
-        const seaScale = hereAssets.water?.scale.x ?? 1;
-        const seaR = hereRt.spec.radius * seaScale;
-        this.reflCam.position.copy(hereRt.pos).addScaledVector(d, (2 * seaR - r) / r);
-        // A reflection contains nothing from beneath its mirror: clip the
-        // terrain below the sea sphere for this pass, or the underwater
-        // beach slope occludes the coast and the mirror fills with seabed.
-        for (const a of [hereRt.tier1, hereRt.tier2]) {
-          if (a) a.terrainMat.uniforms.uMirrorClip.value = seaScale;
-        }
-        const bg = this.scene.background;
-        this.scene.background = null;
-        this.renderer.getClearColor(this.tmpC);
-        const a0 = this.renderer.getClearAlpha();
-        this.renderer.setClearColor(0x000000, 0);
-        this.reflCam.update(this.renderer, this.scene);
-        this.renderer.setClearColor(this.tmpC, a0);
-        this.scene.background = bg;
-        for (const a of [hereRt.tier1, hereRt.tier2]) {
-          if (a) a.terrainMat.uniforms.uMirrorClip.value = 0;
-        }
-
-        // The water-column capture: photograph the terrain (color +
-        // distance packed in alpha) through the main camera. The water
-        // shader refracts that bottom through the sea — optical depth
-        // kills the sand in deep water, so the sea is a surface with a
-        // bottom, not a window onto whatever happens to sit behind it.
-        if (!this.colRT) {
-          this.colRT = new THREE.WebGLRenderTarget(2, 2, {
-            type: THREE.HalfFloatType,
-            depthBuffer: true,
-            stencilBuffer: false,
-          });
-        }
-        this.renderer.getDrawingBufferSize(this.tmpSz);
-        if (this.colRT.width !== this.tmpSz.x || this.colRT.height !== this.tmpSz.y) {
-          this.colRT.setSize(this.tmpSz.x, this.tmpSz.y);
-        }
-        const qInvCol = this.tmpQ.copy(hereRt.spinQ).conjugate();
-        const camCol = this.tmpV2
-          .copy(this.camera.position)
-          .sub(hereRt.pos)
-          .applyQuaternion(qInvCol)
-          .divideScalar(hereRt.spec.radius);
-        for (const a of [hereRt.tier1, hereRt.tier2]) {
-          if (!a) continue;
-          a.terrainMat.uniforms.uWriteCol.value = 1;
-          (a.terrainMat.uniforms.uCamPos.value as THREE.Vector3).copy(camCol);
-        }
-        const bg1 = this.scene.background;
-        this.scene.background = null;
-        this.renderer.getClearColor(this.tmpC);
-        const a1 = this.renderer.getClearAlpha();
-        this.renderer.setClearColor(0x000000, 0);
-        const mask = this.camera.layers.mask;
-        this.camera.layers.set(1); // terrain only
-        this.renderer.setRenderTarget(this.colRT);
-        this.renderer.render(this.scene, this.camera);
-        this.renderer.setRenderTarget(null);
-        this.camera.layers.mask = mask;
-        this.renderer.setClearColor(this.tmpC, a1);
-        this.scene.background = bg1;
-        for (const a of [hereRt.tier1, hereRt.tier2]) {
-          if (a) a.terrainMat.uniforms.uWriteCol.value = 0;
-        }
-      }
-    }
-
     this.tmpAirT.set(1, 1, 1);
     const starL = this.system?.star.luminosity ?? 1;
 
@@ -2263,34 +2151,6 @@ export class Engine {
           assets.waterMat.uniforms.uTorch.value = torch;
           if (torch > 0) {
             (assets.waterMat.uniforms.uTorchDir.value as THREE.Vector3).copy(torchDirL);
-          }
-          // Both captures are valid only for the body we stand on, and only
-          // while standing (surface mode is when they're shot): the cube was
-          // taken from THIS eye's reflection point, the distance map through
-          // THIS frame's camera.
-          const here = isHere && this.mode === 'surface';
-          const colOn = here && this.colRT ? 1 : 0;
-          assets.waterMat.uniforms.uColOn.value = colOn;
-          if (colOn) {
-            assets.waterMat.uniforms.uColT.value = this.colRT!.texture;
-            (assets.waterMat.uniforms.uScr.value as THREE.Vector2).set(
-              this.colRT!.width,
-              this.colRT!.height,
-            );
-            assets.waterMat.uniforms.uDistScale.value = rt.spec.radius;
-          }
-          const envOn = here && this.reflRT ? 1 : 0;
-          assets.waterMat.uniforms.uEnvOn.value = envOn;
-          if (envOn) {
-            assets.waterMat.uniforms.uEnv.value = this.reflRT!.texture;
-            (assets.waterMat.uniforms.uL2W.value as THREE.Matrix3).setFromMatrix4(
-              this.tmpM4.makeRotationFromQuaternion(rt.spinQ),
-            );
-            (assets.waterMat.uniforms.uReflC.value as THREE.Vector3)
-              .copy(this.reflCam!.position)
-              .sub(rt.pos)
-              .applyQuaternion(qInv)
-              .divideScalar(rt.spec.radius);
           }
         }
         if (assets.atmoMat) {

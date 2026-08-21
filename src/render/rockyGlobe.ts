@@ -2,7 +2,7 @@
  * One rocky globe for the host pass. Same terrace, air, and water
  * as the isolated viewer. Every rocky body of the host grows
  * one of these; landing walks the latched world's skin.
- * Inspect reads this grid. Water reflection captures and the torch stay later.
+ * Inspect reads this grid. The torch stays later.
  */
 import * as THREE from 'three';
 import { frequencyForSize, getGrid, type GeoGrid } from '../world/geodesic';

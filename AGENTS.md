@@ -189,7 +189,6 @@ toy — Godus blocks on a real-sized globe.
   dumps it, then settles. WASD glides.
   Take off returns to the ring we
   left, over that face.
-  Water reflection captures still wait;
   short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -610,9 +609,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   every star and planet is — we just do not mesh them.
 
 Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
-ring; land walks the terrace; the SOI drone is a look. `engine.ts` is leftover (water reflection captures) — not a player
-verb. The sculpt brush and the unseeded night shell never belonged
-on the host pass and are retired.
+ring; land walks the terrace; the SOI drone is a look. `engine.ts` is leftover — not a player verb. The sculpt brush, the
+unseeded night shell, and the water-capture photographs are retired.
 The app lives at `http://localhost:5173/` (`npm run dev`).
 
 | Mode | Meaning |
@@ -758,13 +756,11 @@ The sea is a **surface**, not a window onto the framebuffer.
   If opacity is “whatever is behind this pixel,” open ocean vanishes
   against the sky and drowned hills draw the horizon. That was a real bug;
   do not reintroduce it.
-- **Refraction is colour**, not transparency: capture terrain colour +
-  distance, Beer–Lambert the bottom through the column, tint so shallows
-  read as *under* water. Short columns must not become a hole in the sky.
-- **Reflections are Fresnel** on top of that body: cube-capture of land
-  near the shore, analytic scattering sky elsewhere. A convex sea only
-  images content above the local horizontal; far-field lookups must not
-  smear beyond-horizon terrain onto the water (lumpy horizon).
+- **Refraction is colour**, not transparency: hydrosphere surf / deep
+  plus murk so shallows read as *under* water. Do not punch a hole in
+  the sky. A photographed seabed column is later, if we want it.
+- **Reflections are Fresnel** on top of that body, mixing the analytic
+  scattering sky. A land-in-water photograph is later, if we want it.
 - **Sunglint** is Cox–Munk facet slope on the liquid (`waveSlope`,
   `UNIVERSE.WAVE_SLOPE_*`), not a painted disc. Calm / airless seas are a
   tight mirror; wind (sea-state energy) opens a glitter path elongated in
