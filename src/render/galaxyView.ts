@@ -1745,7 +1745,9 @@ export class GalaxyView {
       name === 'uArriveFill' ||
       name === 'uArriveHold' ||
       name === 'uAimRange' ||
-      name === 'uWarpCross'
+      name === 'uWarpCross' ||
+      name === 'uWorldBrake' ||
+      name === 'uWorldBrakeGain'
     ) {
       return;
     }
