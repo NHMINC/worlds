@@ -479,14 +479,12 @@ body,
 
 /* ------------------------------------------------------------- system map */
 
+/* The chart is a square. Size it against BOTH axes (portrait,
+ * landscape, any desktop window) and let the modal hug it —
+ * a width-only square overflowed a short landscape viewport. */
 .sysmap-modal {
-  width: 560px;
+  width: auto;
   background: #0b101c;
-}
-
-.sysmap-modal.is-zoom {
-  width: min(720px, calc(100vw - 16px));
-  max-height: calc(100vh - 36px);
   overflow: hidden;
 }
 
@@ -494,23 +492,30 @@ body,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   margin-bottom: 6px;
 }
 
 .sysmap-head h2 {
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sysmap {
   display: block;
-  width: 100%;
   aspect-ratio: 1 / 1;
+  margin: 0 auto;
+  width: min(516px, calc(100vw - 84px), calc(100vh - 176px));
+  width: min(516px, calc(100vw - 84px), calc(100dvh - 176px));
 }
 
 .sysmap.is-zoom {
+  width: min(676px, calc(100vw - 84px), calc(100vh - 176px));
+  width: min(676px, calc(100vw - 84px), calc(100dvh - 176px));
   touch-action: none;
   cursor: grab;
-  overflow: hidden;
 }
 
 .sm-ring {
@@ -568,9 +573,15 @@ body,
   z-index: 14;
 }
 
+/* Wide enough for two columns when the viewport allows (landscape
+ * phones, desktop) so the list does not scroll a short screen. */
+.orbit-pick {
+  width: min(560px, 100%);
+}
+
 .orbit-pick-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
   gap: 8px;
 }
 
