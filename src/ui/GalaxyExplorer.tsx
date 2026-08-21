@@ -647,24 +647,24 @@ export function GalaxyExplorer(props: Props) {
               <button
                 type="button"
                 className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
-                aria-label="Center"
+                aria-label="Target"
                 aria-pressed={frame.lookHold === 'center'}
                 title={
                   frame.lookHold === 'center'
-                    ? 'Free fly — look and zoom are yours'
-                    : 'Trackball — lock on the nearest core'
+                    ? 'Free fly — planet trackball off'
+                    : 'Planet trackball — lock on the nearest core'
                 }
                 onClick={() => viewRef.current?.centerLook()}
               >
                 <IconCenter size={18} />
               </button>
             )}
-            {frame.showSunLook && !frame.drone && (
+            {frame.showSunLook && (
               <button
                 type="button"
-                className={`gx-look-btn${frame.lookHold === 'sun' ? ' is-on' : ''}`}
+                className="gx-look-btn"
                 aria-label="Sun"
-                title="Sun — hold look on the star"
+                title="Face the sun, then free fly"
                 onClick={() => viewRef.current?.sunLook()}
               >
                 <IconSun size={18} />
@@ -677,8 +677,8 @@ export function GalaxyExplorer(props: Props) {
               aria-pressed={frame.drone}
               title={
                 frame.drone
-                  ? 'Drone out — tap to return to the ship'
-                  : 'Launch drone — zoom flies, drag steers'
+                  ? 'Return to the ship'
+                  : 'Launch drone — ship stays looking ahead'
               }
               onClick={() => {
                 const on = viewRef.current?.toggleDrone();

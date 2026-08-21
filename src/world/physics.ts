@@ -509,9 +509,10 @@ export const UNIVERSE = {
    * ring cage). The drone is anti-gravity: zoom thrusts along
    * the look, drag steers. Soft floor is the ball itself
    * (`R × 1.002`) so it can enter air and fly between moons.
-   * Center is drone-only — lock on the nearest core and the
-   * eye rides that body (trackball). Off is free fly. Sun
-   * holds look on the furnace from the ship.
+   * Target is drone-only — lock on the nearest core and the
+   * eye rides that body (planet trackball). Off is free fly.
+   * Sun is a tap: face the furnace, then freeform (launches
+   * the drone if the ship is still looking ahead).
    */
   SOI_ZOOM: 0.55,
   SOI_TWIST: 1,

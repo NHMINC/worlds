@@ -197,19 +197,20 @@ toy — Godus blocks on a real-sized globe.
   the look so the forward limb fills
   `ORBIT_LIMB_FILL` (30%) of the bottom
   of the frame; insertion eases from
-  full-ahead to that pitch. Sun holds
-  the furnace from the ship. Trackball
-  is an anti-gravity warp drone: it
-  launches facing the ship look, then
-  flies free. Zoom in / out is thrust
-  along the look (enter air, mooch
-  between moons); drag steers. Center
-  is drone-only — lock on the core
-  nearest the drone and the eye rides
-  that body (trackball). Toggle Center
-  off and it is free flying again. Off
-  the drone icon brings it home — the
-  live ship camera. On the ground,
+  full-ahead to that pitch. The ship
+  looks ahead; that look moves with
+  the ship. Looking around is the
+  drone. Trackball on launches it
+  (facing the ship); Trackball off
+  returns the live ship camera. Zoom
+  in / out is thrust along the look
+  (enter air, mooch between moons);
+  drag steers. Target on is planet
+  trackball — lock on the nearest
+  core, ride that body. Target off
+  is free fly. Sun faces the furnace
+  once, then freeform (launches the
+  drone if needed). On the ground,
   zoom-in latches a walk; zoom-out
   dumps it, then settles. WASD glides.
   Take off returns to the ring we
@@ -425,11 +426,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   the rail. GEO / hover face the hang face. A look
   drag takes the stick — release does not snap the
   look back. Pinch zooms the ring
-  radius; twist rolls. Sun finds the furnace.
-  Trackball is an anti-gravity drone: launch
-  facing the ship; zoom thrusts along the look;
-  drag steers; Center locks on the nearest
-  core (trackball); off returns the live ship camera.
+  radius; twist rolls. The ship looks
+  ahead. Trackball launches / returns
+  the drone; Target is planet trackball
+  vs free fly; Sun faces the furnace
+  then freeform.
   Land sets down on
   that face; Take off returns to the ring. Reticle Set course
   stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
@@ -655,7 +656,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 
 Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
 ring; land walks the terrace; the SOI drone is free fly plus a
-Center trackball. The sculpt
+Target trackball and a Sun snap. The sculpt
 brush, the unseeded night shell, and the water-capture photographs
 are retired.
 The app lives at `http://localhost:5173/` (`npm run dev`).

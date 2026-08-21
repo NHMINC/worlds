@@ -652,13 +652,13 @@ export interface GalaxyFrame {
   /** Globe is ready and we can set down from this place. */
   canLand: boolean;
   /**
-   * Ship: Sun hold until a drag. Drone: 'center' while the
-   * drone locks on the nearest core (trackball).
+   * Drone planet-trackball while Center is on. Sun is a tap
+   * (face the furnace, then freeform) — it does not hold.
    */
   lookHold: 'center' | 'sun' | null;
   /** Anti-gravity drone is out. */
   drone: boolean;
-  /** Sun look is offered when we are at a world. */
+  /** Sun snap is offered inside a host sphere. */
   showSunLook: boolean;
   /** Latched / ridden / landed world, if any. */
   worldId: string | null;
@@ -2118,12 +2118,17 @@ export class GalaxyView {
     this.wake();
   }
 
-  /** Hold look on the host star until a look drag. Ship only. */
+  /**
+   * Face the host star, then freeform. A tap, not a hold.
+   * Launches the drone if the ship is still looking ahead.
+   */
   sunLook(): void {
-    if (this.mode !== 'region' || !this.hostObj || this.drone) return;
-    this.lookHold = 'sun';
-    this.holdLook();
-    if (this.landed) this.placeSurface();
+    if (this.mode !== 'region' || !this.hostObj) return;
+    if (!this.drone) this.setDrone(true);
+    if (!this.drone) return;
+    this.drone.lock = false;
+    this.aimDroneAtSun();
+    this.placeDrone();
     this.applyCam();
     this.wake();
   }
@@ -2203,7 +2208,7 @@ export class GalaxyView {
   }
 
   private showSunLook(): boolean {
-    return Boolean(this.hostObj && this.host.bodies.length > 0);
+    return Boolean(this.hostObj);
   }
 
   private holdLook(): void {
@@ -2360,6 +2365,22 @@ export class GalaxyView {
     this.orbitTmp.copy(this.droneCorePos).sub(drone.eye);
     if (this.orbitTmp.lengthSq() < 1e-12) return;
     drone.fwd.copy(this.orbitTmp).normalize();
+    this.droneOrthonormalUp();
+  }
+
+  /** Look at the host star (origin in host-root km), then freeform. */
+  private aimDroneAtSun(): void {
+    const drone = this.drone;
+    if (!drone) return;
+    this.orbitTmp.copy(drone.eye).negate();
+    if (this.orbitTmp.lengthSq() < 1e-12) return;
+    drone.fwd.copy(this.orbitTmp).normalize();
+    this.droneOrthonormalUp();
+  }
+
+  private droneOrthonormalUp(): void {
+    const drone = this.drone;
+    if (!drone) return;
     drone.up.addScaledVector(drone.fwd, -drone.up.dot(drone.fwd));
     if (drone.up.lengthSq() < 1e-16) {
       drone.up.crossVectors(drone.fwd, this.worldUp);
@@ -5659,7 +5680,7 @@ export class GalaxyView {
       navHint,
       landed: this.landed,
       canLand: this.canLandNow(),
-      lookHold: this.drone ? (this.drone.lock ? 'center' : null) : this.lookHold,
+      lookHold: this.drone?.lock ? 'center' : null,
       drone: Boolean(this.drone),
       showSunLook: this.showSunLook(),
       worldId: this.riding?.bodyId ?? this.capturing?.bodyId ?? this.worldId ?? this.courseBodyId,
