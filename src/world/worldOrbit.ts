@@ -4,14 +4,16 @@
  * (radius, density, spin, air) — not a preset per class.
  * Every named ring is floored by WORLD_ORBIT_CLEAR_KM above
  * the surface so a small moon never parks inside its ball.
+ * Star Lock-on uses `ecliptic`: fill-safe Kepler ring in the
+ * system's ecliptic plane (not a chart pick).
  */
 import { UNIVERSE, airExtinction } from './physics';
 import type { BodySpec } from './systemgen';
 
-export type WorldOrbitKind = 'leo' | 'station' | 'meo' | 'geo' | 'polar' | 'hover';
+export type WorldOrbitKind = 'leo' | 'station' | 'meo' | 'geo' | 'polar' | 'hover' | 'ecliptic';
 
 export interface WorldOrbitOption {
-  kind: WorldOrbitKind;
+  kind: Exclude<WorldOrbitKind, 'ecliptic'>;
   label: string;
   hint: string;
 }
@@ -35,6 +37,8 @@ export function orbitLabel(kind: WorldOrbitKind): string {
       return 'Polar';
     case 'hover':
       return 'Hover';
+    case 'ecliptic':
+      return 'Ecliptic';
   }
 }
 
@@ -99,6 +103,7 @@ function hoverHeightRel(body: BodySpec): number {
 
 /** Altitude in body radii above the surface (before the clear floor). */
 export function orbitHeightRel(body: BodySpec, kind: WorldOrbitKind): number {
+  if (kind === 'ecliptic') return 0;
   const leo = leoHeightRel(body);
   switch (kind) {
     case 'leo':
@@ -130,6 +135,7 @@ export function shellFloorKm(body: { radius: number }): number {
 }
 
 export function orbitRadiusKm(body: BodySpec, kind: WorldOrbitKind): number {
+  if (kind === 'ecliptic') return clearRadiusKm(body);
   const R = Math.max(body.radius, 1);
   return Math.max(clearRadiusKm(body), (1 + orbitHeightRel(body, kind)) * R);
 }
@@ -144,5 +150,24 @@ export function orbitOmega(body: BodySpec, kind: WorldOrbitKind): number {
   const Rm = Math.max(body.radius, 1) * 1000;
   const M = body.physics.densityRel * UNIVERSE.RHO_EARTH * (4 / 3) * Math.PI * Rm * Rm * Rm;
   const mu = UNIVERSE.G_SI * Math.max(M, 1);
+  return Math.sqrt(mu / (aM * aM * aM));
+}
+
+/**
+ * Default host-star orbit: ecliptic plane, at the ARRIVE_FILL
+ * park (safe above the photosphere clear shell). Kepler ω from
+ * GM☉ · mass.
+ */
+export function starOrbitRadiusKpc(
+  star: { radius: number },
+  fillParkKpc: number,
+): number {
+  const clear = (Math.max(star.radius, 1) + UNIVERSE.WORLD_ORBIT_CLEAR_KM) / UNIVERSE.KPC_KM;
+  return Math.max(clear, fillParkKpc);
+}
+
+export function starOrbitOmega(star: { mass: number }, aKpc: number): number {
+  const aM = Math.max(aKpc, 1e-18) * UNIVERSE.KPC_KM * 1000;
+  const mu = UNIVERSE.GM_SUN * Math.max(star.mass, 0.08);
   return Math.sqrt(mu / (aM * aM * aM));
 }

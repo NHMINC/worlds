@@ -54,6 +54,8 @@ import {
   orbitOmega,
   orbitRadiusKpc,
   shellFloorKm,
+  starOrbitOmega,
+  starOrbitRadiusKpc,
   type WorldOrbitKind,
 } from '../world/worldOrbit';
 import {
@@ -799,9 +801,9 @@ export class GalaxyView {
   private filter: GalaxyFilter = 'all';
   private selected: GalaxyObject | null = null;
   /**
-   * Set course = a heading hold: keep the nose on this star while
-   * flying. A look drag releases it (the pilot has the stick); a
-   * teleport (enterRegion) releases it. Warp parks at ARRIVE_FILL.
+   * Set course = Lock-on to a star's ecliptic park. Warp closes
+   * on the fill-safe shell; capture burns into the Kepler ring
+   * and Lock-on becomes In Orbit.
    */
   private courseObj: GalaxyObject | null = null;
   private courseHud: GalaxyFocus | null = null;
@@ -817,10 +819,11 @@ export class GalaxyView {
   /** Goldberg globes for every rocky body of the host. */
   private readonly globes = new Map<string, RockyGlobe>();
   private markTool: MarkTool | null = null;
-  /** Chart pick: fly to first contact with this ring, then ride it. */
-  private pendingOrbit: { bodyId: string; kind: WorldOrbitKind } | null = null;
+  /** Chart / star lock: fly to first contact with this ring, then ride it. bodyId null = host star ecliptic. */
+  private pendingOrbit: { bodyId: string | null; kind: WorldOrbitKind } | null = null;
   private riding: {
-    bodyId: string;
+    /** null = host-star ecliptic. */
+    bodyId: string | null;
     kind: WorldOrbitKind;
     hang: boolean;
     r: number;
@@ -847,7 +850,7 @@ export class GalaxyView {
    * before In Orbit. Null when not capturing.
    */
   private capturing: {
-    bodyId: string;
+    bodyId: string | null;
     kind: WorldOrbitKind;
     dir: THREE.Vector3;
   } | null = null;
@@ -1115,7 +1118,11 @@ export class GalaxyView {
     this.enterRegion(c.x, c.y, c.z, obj);
     this.hostObj = obj;
     this.setCourse(obj);
-    const park = this.parkKpc(obj);
+    const star = {
+      radius: Math.max(1e-6, obj.star.radius) * UNIVERSE.RSUN_KM,
+      mass: Math.max(0.08, obj.star.mass),
+    };
+    const park = starOrbitRadiusKpc(star, this.parkKpc(obj));
     let ax = c.x;
     let ay = c.y;
     let az = c.z;
@@ -1133,6 +1140,8 @@ export class GalaxyView {
     this.mintAt.copy(this.arcCenter);
     this.aimAt(-ax, -ay, -az);
     this.applyCam();
+    // Drop into the ecliptic ring (In Orbit) once the host frame exists.
+    this.pendingArriveOrbit = true;
   }
 
   /** True when the camp is fully applied (or abandoned). */
@@ -1141,6 +1150,14 @@ export class GalaxyView {
     if (!p || !this.hostObj || this.hostObj.id !== p.starId) return true;
     if (!this.hostRoot || !this.hostSpec) return false;
     if (!p.bodyId) {
+      // Star camp → ecliptic hold.
+      if (this.hostRoot) {
+        this.hostTmp.copy(this.hostRoot.position).negate().normalize();
+      } else {
+        this.orientArc();
+        this.hostTmp.copy(this.arcFwd).negate();
+      }
+      this.beginStarRide(this.hostTmp, tSys);
       this.pendingPlace = null;
       return true;
     }
@@ -1892,7 +1909,8 @@ export class GalaxyView {
   }
 
   /**
-   * Set course: enter Lock-on on a star (fill-park heading).
+   * Set course: Lock-on to a star's ecliptic orbit (fill-safe
+   * shell). Capture onto the Kepler ring ends Lock-on → In Orbit.
    * Chart orbit picks use goToWorldOrbit. A look drag hands the
    * stick back; it does not remove the close star.
    */
@@ -1904,9 +1922,10 @@ export class GalaxyView {
     this.leaveSurface();
     this.clearRide();
     this.dropLookHold();
-    this.pendingOrbit = null;
     this.courseBodyId = null;
     this.courseObj = obj;
+    this.pendingArriveOrbit = false;
+    this.pendingOrbit = { bodyId: null, kind: 'ecliptic' };
     this.navMode = 'lock';
     const brief = this.briefFor(obj);
     const st = obj.star;
@@ -2426,9 +2445,36 @@ export class GalaxyView {
   private enterRide(tSys: number): void {
     const pending = this.pendingOrbit;
     if (!pending) return;
-    const rt = this.worldRt(pending.bodyId);
     this.pendingOrbit = null;
     this.setWarp(false);
+    if (pending.bodyId == null) {
+      // Host-star ecliptic.
+      if (!this.hostObj) return;
+      if (this.hostRoot) {
+        this.hostTmp.copy(this.hostRoot.position).negate().normalize();
+      } else {
+        const c = galToCart(this.hostObj.pos);
+        this.hostTmp.set(
+          this.arcCenter.x - c.x,
+          this.arcCenter.y - c.y,
+          this.arcCenter.z - c.z,
+        );
+        if (this.hostTmp.lengthSq() < 1e-28) {
+          this.orientArc();
+          this.hostTmp.copy(this.arcFwd).negate();
+        } else this.hostTmp.normalize();
+      }
+      this.capturing = {
+        bodyId: null,
+        kind: 'ecliptic',
+        dir: this.hostTmp.clone(),
+      };
+      this.navMode = 'lock';
+      this.dropLookHold();
+      this.tickCapture(this.lastDt || 1 / 60, tSys);
+      return;
+    }
+    const rt = this.worldRt(pending.bodyId);
     if (!rt) return;
     this.bodyFromEye(rt, this.orbitTmp2).negate();
     if (this.orbitTmp2.lengthSq() < 1e-28) {
@@ -2454,6 +2500,10 @@ export class GalaxyView {
   private tickCapture(dt: number, tSys: number): void {
     const cap = this.capturing;
     if (!cap || !this.hostObj) return;
+    if (cap.bodyId == null) {
+      this.tickStarCapture(dt, tSys, cap.dir);
+      return;
+    }
     const rt = this.worldRt(cap.bodyId);
     if (!rt) {
       this.capturing = null;
@@ -2490,12 +2540,84 @@ export class GalaxyView {
     const tx = this.orbitTmp.x + this.orbitTmp2.x;
     const ty = this.orbitTmp.y + this.orbitTmp2.y;
     const tz = this.orbitTmp.z + this.orbitTmp2.z;
+    const lookErr = this.easeCapturePose(dt, tx, ty, tz, hang, rt);
+    const posErr = Math.hypot(tx - this.arcCenter.x, ty - this.arcCenter.y, tz - this.arcCenter.z);
+    const slack = Math.max(r * 0.002, 1e-18);
+    if (posErr <= slack && lookErr < 0.04) {
+      this.capturing = null;
+      this.beginRide(rt, cap.kind, cap.dir, tSys);
+    }
+    this.applyCam();
+    this.wake();
+  }
+
+  /** Capture onto the host-star ecliptic ring. */
+  private tickStarCapture(dt: number, tSys: number, dir: THREE.Vector3): void {
+    if (!this.hostObj) return;
+    const star = this.hostSpec?.star ?? {
+      radius: Math.max(1, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
+      mass: Math.max(0.08, this.hostObj.star.mass),
+    };
+    const r = starOrbitRadiusKpc(star, this.parkKpc(this.hostObj));
+    this.prepareStarRideBasis(dir);
+    this.orbitTmp2.copy(this.rideE1).multiplyScalar(r);
+    const c = galToCart(this.hostObj.pos);
+    const tx = c.x + this.orbitTmp2.x;
+    const ty = c.y + this.orbitTmp2.y;
+    const tz = c.z + this.orbitTmp2.z;
+    this.orbitTmp.copy(this.rideE2);
+    const lookErr = this.easeCapturePose(dt, tx, ty, tz, false, null);
+    const posErr = Math.hypot(tx - this.arcCenter.x, ty - this.arcCenter.y, tz - this.arcCenter.z);
+    const slack = Math.max(r * 0.002, 1e-18);
+    if (posErr <= slack && lookErr < 0.04) {
+      this.capturing = null;
+      this.beginStarRide(dir, tSys);
+    }
+    this.applyCam();
+    this.wake();
+  }
+
+  /** Ecliptic plane basis: pole from host frame, arrival projected in-plane. */
+  private prepareStarRideBasis(dirCatalog: THREE.Vector3): void {
+    if (this.hostRoot) {
+      this.rideNorth.set(0, 0, 1).applyQuaternion(this.hostRoot.quaternion);
+    } else {
+      this.rideNorth.copy(this.worldUp);
+    }
+    this.rideE1.copy(dirCatalog);
+    if (this.rideE1.lengthSq() < 1e-16) {
+      this.orientArc();
+      this.rideE1.copy(this.arcFwd).negate();
+    }
+    this.rideE1.normalize();
+    this.rideE1.addScaledVector(this.rideNorth, -this.rideE1.dot(this.rideNorth));
+    if (this.rideE1.lengthSq() < 1e-16) {
+      this.rideE1.crossVectors(this.rideNorth, this.arcRight);
+      if (this.rideE1.lengthSq() < 1e-16) this.rideE1.crossVectors(this.rideNorth, this.worldUp);
+    }
+    this.rideE1.normalize();
+    this.rideE2.crossVectors(this.rideNorth, this.rideE1);
+    if (this.rideE2.lengthSq() < 1e-16) this.rideE2.crossVectors(this.rideE1, this.worldUp);
+    this.rideE2.normalize();
+  }
+
+  /**
+   * Ease arcCenter toward (tx,ty,tz) and the nose toward hang→body
+   * or inertial tangent (rideE2). Returns remaining look error.
+   */
+  private easeCapturePose(
+    dt: number,
+    tx: number,
+    ty: number,
+    tz: number,
+    hang: boolean,
+    rt: HostBodyRT | null,
+  ): number {
     const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
     this.arcCenter.x += (tx - this.arcCenter.x) * k;
     this.arcCenter.y += (ty - this.arcCenter.y) * k;
     this.arcCenter.z += (tz - this.arcCenter.z) * k;
-    if (this.hostRoot) {
-      // Keep the host root honest with the eased catalog eye.
+    if (this.hostRoot && this.hostObj) {
       const cart = galToCart(this.hostObj.pos);
       this.orbitTmp.set(
         this.arcCenter.x - cart.x,
@@ -2505,44 +2627,27 @@ export class GalaxyView {
       this.hostRoot.position.copy(this.orbitTmp).negate();
       this.hostRoot.updateMatrixWorld(true);
     }
-    // Desired look: body (hang) or orbital tangent (inertial).
-    if (hang) {
-      this.bodyFromEye(rt, this.orbitTmp);
-    } else {
-      this.orbitTmp.set(
-        this.rideE2.x,
-        this.rideE2.y,
-        this.rideE2.z,
-      );
-    }
+    if (hang && rt) this.bodyFromEye(rt, this.orbitTmp);
+    else this.orbitTmp.copy(this.rideE2);
     const dx = this.orbitTmp.x;
     const dy = this.orbitTmp.y;
     const dz = this.orbitTmp.z;
     const dAim = Math.hypot(dx, dy, dz);
-    let lookErr = 0;
-    if (dAim > 1e-15) {
-      const tgtYaw = Math.atan2(dx, dz);
-      const tgtPitch = THREE.MathUtils.clamp(
-        Math.asin(THREE.MathUtils.clamp(dy / dAim, -1, 1)),
-        -1.45,
-        1.45,
-      );
-      let dYaw = tgtYaw - this.arcYaw;
-      dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
-      const dPitch = tgtPitch - this.arcPitch;
-      lookErr = Math.abs(dYaw) + Math.abs(dPitch);
-      const hk = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
-      this.arcYaw += dYaw * hk;
-      this.arcPitch += dPitch * hk;
-    }
-    const posErr = Math.hypot(tx - this.arcCenter.x, ty - this.arcCenter.y, tz - this.arcCenter.z);
-    const slack = Math.max(r * 0.002, 1e-18);
-    if (posErr <= slack && lookErr < 0.04) {
-      this.capturing = null;
-      this.beginRide(rt, cap.kind, cap.dir, tSys);
-    }
-    this.applyCam();
-    this.wake();
+    if (!(dAim > 1e-15)) return 0;
+    const tgtYaw = Math.atan2(dx, dz);
+    const tgtPitch = THREE.MathUtils.clamp(
+      Math.asin(THREE.MathUtils.clamp(dy / dAim, -1, 1)),
+      -1.45,
+      1.45,
+    );
+    let dYaw = tgtYaw - this.arcYaw;
+    dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
+    const dPitch = tgtPitch - this.arcPitch;
+    const lookErr = Math.abs(dYaw) + Math.abs(dPitch);
+    const hk = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
+    this.arcYaw += dYaw * hk;
+    this.arcPitch += dPitch * hk;
+    return lookErr;
   }
 
   /** dirCatalog is body → camera at first contact, unit. The ring starts there. */
@@ -2612,17 +2717,86 @@ export class GalaxyView {
     }
   }
 
+  /**
+   * Latch the host-star ecliptic ring. dirCatalog is star → camera
+   * at first contact (projected into the ecliptic). Kepler ω from
+   * GM☉ · mass at the fill-safe radius.
+   */
+  private beginStarRide(dirCatalog: THREE.Vector3, tSys: number): void {
+    if (!this.hostObj) return;
+    const star = this.hostSpec?.star ?? {
+      radius: Math.max(1e-6, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
+      mass: Math.max(0.08, this.hostObj.star.mass),
+    };
+    const r = starOrbitRadiusKpc(star, this.parkKpc(this.hostObj));
+    const omega = starOrbitOmega(star, r);
+    this.prepareStarRideBasis(dirCatalog);
+    this.riding = {
+      bodyId: null,
+      kind: 'ecliptic',
+      hang: false,
+      r,
+      theta0: -omega * tSys,
+      omega,
+    };
+    this.placeRide(tSys);
+    this.capturing = null;
+    this.dropLookHold();
+    this.courseObj = null;
+    this.courseBodyId = null;
+    this.courseHud = null;
+    this.pendingOrbit = null;
+    this.pendingArriveOrbit = false;
+    this.navMode = 'orbit';
+    this.thrustOn = false;
+    this.thrustSpeed = 0;
+    const th = this.riding.theta0 + this.riding.omega * tSys;
+    const c = Math.cos(th);
+    const s = Math.sin(th);
+    this.orbitTmp.set(
+      -this.rideE1.x * s + this.rideE2.x * c,
+      -this.rideE1.y * s + this.rideE2.y * c,
+      -this.rideE1.z * s + this.rideE2.z * c,
+    );
+    if (this.orbitTmp.lengthSq() > 1e-28) {
+      this.aimAt(this.orbitTmp.x, this.orbitTmp.y, this.orbitTmp.z);
+    }
+  }
+
   private placeRide(tSys: number): void {
     const ride = this.riding;
-    if (!ride) return;
-    const rt = this.worldRt(ride.bodyId);
-    if (!rt || !this.hostObj) {
+    if (!ride || !this.hostObj) {
       this.clearRide();
       return;
     }
     let ox: number;
     let oy: number;
     let oz: number;
+    if (ride.bodyId == null) {
+      // Host-star ecliptic — offset from the photosphere origin.
+      const th = ride.theta0 + ride.omega * tSys;
+      const c = Math.cos(th);
+      const s = Math.sin(th);
+      ox = (this.rideE1.x * c + this.rideE2.x * s) * ride.r;
+      oy = (this.rideE1.y * c + this.rideE2.y * s) * ride.r;
+      oz = (this.rideE1.z * c + this.rideE2.z * s) * ride.r;
+      if (this.hostRoot) {
+        this.orbitTmp2
+          .set(ox, oy, oz)
+          .applyQuaternion(this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate())
+          .multiplyScalar(1 / KM_TO_KPC);
+        this.pinHostEyeKm(this.orbitTmp2);
+      } else {
+        const cart = galToCart(this.hostObj.pos);
+        this.arcCenter.set(cart.x + ox, cart.y + oy, cart.z + oz);
+      }
+      return;
+    }
+    const rt = this.worldRt(ride.bodyId);
+    if (!rt) {
+      this.clearRide();
+      return;
+    }
     if (ride.hang) {
       this.spinWorld(rt, this.orbitQ);
       this.orbitTmp2.copy(this.rideLocal).applyQuaternion(this.orbitQ);
@@ -2758,6 +2932,19 @@ export class GalaxyView {
         p.y - this.arcCenter.y,
         p.z - this.arcCenter.z,
       );
+      // Star ecliptic lock: aim at the near-side shell, not the core.
+      if (
+        this.pendingOrbit &&
+        this.pendingOrbit.bodyId == null &&
+        this.pendingOrbit.kind === 'ecliptic'
+      ) {
+        const star = this.hostSpec?.star ?? {
+          radius: Math.max(1e-6, this.courseObj.star.radius) * UNIVERSE.RSUN_KM,
+        };
+        const ring = starOrbitRadiusKpc(star, this.parkKpc(this.courseObj));
+        const d = this.orbitTmp.length();
+        if (d > ring * 1.001) this.orbitTmp.multiplyScalar(1 - ring / d);
+      }
       if (this.hostObj && this.courseObj.id === this.hostObj.id) {
         this.routeAim(this.orbitTmp, null);
       }
@@ -3169,9 +3356,16 @@ export class GalaxyView {
     if (this.drone) this.setDrone(false);
     if (this.mode !== 'region' || this.landed) return;
     if (on && (this.riding || this.capturing)) this.breakOrbit();
-    if (!on && this.navMode === 'lock' && this.pendingOrbit && !this.pendingArriveOrbit && !this.capturing) {
+    // Stop cancels a body chart pick, not a star ecliptic lock —
+    // that pending is the Lock-on destination itself.
+    if (
+      !on &&
+      this.navMode === 'lock' &&
+      this.pendingOrbit?.bodyId != null &&
+      !this.pendingArriveOrbit &&
+      !this.capturing
+    ) {
       this.pendingOrbit = null;
-      // Heading-only lock may remain (course still set).
       if (!this.courseObj && !this.courseBodyId) this.navMode = null;
     }
     this.thrustOn = on && this.warpMayRun();
@@ -3852,8 +4046,26 @@ export class GalaxyView {
   /** Pinch on a ridden ring changes that radius. placeRide owns the pose. */
   private zoomRide(factor: number): void {
     const ride = this.riding;
-    const rt = this.worldRt(ride?.bodyId);
-    if (!ride || !rt) return;
+    if (!ride) return;
+    if (ride.bodyId == null) {
+      if (!this.hostObj) return;
+      const star = this.hostSpec?.star ?? {
+        radius: Math.max(1e-6, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
+      };
+      const lo = (Math.max(star.radius, 1) + UNIVERSE.WORLD_ORBIT_CLEAR_KM) / UNIVERSE.KPC_KM;
+      const hi = Math.max(lo * 40, this.parkKpc(this.hostObj) * 8);
+      ride.r = THREE.MathUtils.clamp(ride.r * factor, lo, hi);
+      ride.omega = starOrbitOmega(
+        this.hostSpec?.star ?? {
+          mass: Math.max(0.08, this.hostObj.star.mass),
+        },
+        ride.r,
+      );
+      this.wake();
+      return;
+    }
+    const rt = this.worldRt(ride.bodyId);
+    if (!rt) return;
     const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
     const lo = shellFloorKm(rt.spec) * KM_TO_KPC;
     const hi = Math.max(R * (1 + UNIVERSE.SOI_TRACK_MAX), UNIVERSE.WORLD_RANGE_KPC * 0.8);
@@ -4386,8 +4598,19 @@ export class GalaxyView {
       }
     } else if (this.hostObj && !this.astern && course) {
       const d = this.arriveDist(course);
-      const park = this.parkKpc(course);
+      const star =
+        this.hostSpec?.star ??
+        ({
+          radius: Math.max(1e-6, course.star.radius) * UNIVERSE.RSUN_KM,
+          mass: Math.max(0.08, course.star.mass),
+        } as const);
+      const ecliptic =
+        this.pendingOrbit?.bodyId == null && this.pendingOrbit?.kind === 'ecliptic';
+      const park = ecliptic
+        ? starOrbitRadiusKpc(star, this.parkKpc(course))
+        : this.parkKpc(course);
       if (d <= park) {
+        if (ecliptic) this.pendingArriveOrbit = true;
         this.setWarp(false);
         return;
       }
@@ -4404,6 +4627,7 @@ export class GalaxyView {
           (c.y - this.arcCenter.y) * inv * remain,
           (c.z - this.arcCenter.z) * inv * remain,
         );
+        if (ecliptic) this.pendingArriveOrbit = true;
         this.setWarp(false);
         return;
       }
@@ -4814,19 +5038,31 @@ export class GalaxyView {
         : null;
     let navHint: string | null = null;
     if (this.navMode === 'orbit' && this.riding) {
-      const rt = this.worldRt(this.riding.bodyId);
       const ring = orbitLabel(this.riding.kind);
-      navHint = rt ? `${rt.spec.name} · ${ring}` : ring;
+      if (this.riding.bodyId == null) {
+        navHint = `${this.hostSpec?.star.name ?? 'Star'} · ${ring}`;
+      } else {
+        const rt = this.worldRt(this.riding.bodyId);
+        navHint = rt ? `${rt.spec.name} · ${ring}` : ring;
+      }
     } else if (this.navMode === 'proximity' && nearRt) {
       navHint = nearRt.spec.name;
     } else if (this.navMode === 'lock' && this.capturing) {
-      const rt = this.worldRt(this.capturing.bodyId);
       const ring = orbitLabel(this.capturing.kind);
-      navHint = rt ? `Capturing ${rt.spec.name} · ${ring}` : `Capturing · ${ring}`;
+      if (this.capturing.bodyId == null) {
+        navHint = `Capturing ${this.hostSpec?.star.name ?? 'star'} · ${ring}`;
+      } else {
+        const rt = this.worldRt(this.capturing.bodyId);
+        navHint = rt ? `Capturing ${rt.spec.name} · ${ring}` : `Capturing · ${ring}`;
+      }
     } else if (this.navMode === 'lock' && this.pendingOrbit) {
-      const rt = this.worldRt(this.pendingOrbit.bodyId);
       const ring = orbitLabel(this.pendingOrbit.kind);
-      navHint = rt ? `${rt.spec.name} · ${ring}` : ring;
+      if (this.pendingOrbit.bodyId == null) {
+        navHint = `${this.courseHud?.name ?? this.hostSpec?.star.name ?? 'Star'} · ${ring}`;
+      } else {
+        const rt = this.worldRt(this.pendingOrbit.bodyId);
+        navHint = rt ? `${rt.spec.name} · ${ring}` : ring;
+      }
     }
     this.callbacks.onFrame?.({
       mode: this.mode,

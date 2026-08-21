@@ -2,7 +2,7 @@
  * Host-pass autopilot modes. Exclusive — one at a time.
  *
  *   lock       — calculated trajectory into a chosen orbit
- *                (body ring, later star ecliptic). Graze-safe
+ *                (body ring, or star ecliptic). Graze-safe
  *                heading, warp approach, capture burn onto the
  *                rail. Turns off the moment the ring is held.
  *   orbit      — on the ring. Autopilot off. Cameras free;

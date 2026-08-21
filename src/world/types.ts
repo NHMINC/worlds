@@ -65,8 +65,8 @@ export interface LastPlace {
   starId: number;
   /** null = the host star (fill park). */
   bodyId: string | null;
-  /** Ring we were riding; null at the star or a free hover. */
-  orbit: 'leo' | 'station' | 'meo' | 'geo' | 'polar' | 'hover' | null;
+  /** Ring we were riding; null at a free hover. `ecliptic` = host star. */
+  orbit: 'leo' | 'station' | 'meo' | 'geo' | 'polar' | 'hover' | 'ecliptic' | null;
   landed: boolean;
   /** Body-local body→camera (hang face / landing spot). */
   dir: [number, number, number] | null;
