@@ -1,23 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
-import { lockedToStar, systemAt, type BodySpec } from '../world/systemgen';
+import { systemAt, type BodySpec } from '../world/systemgen';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset, type GlobePick, type MarkTool } from '../render/galaxyView';
 import type { LabelRecord, LastPlace, ObjectKind, ObjectRecord, SessionSnap } from '../world/types';
 import { db, touchSystem } from '../store/db';
 import { uuid } from '../world/rng';
-import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
 import { AmbientMusic } from '../audio/ambient';
 import { geologyFor } from '../world/geology';
 import { insolationAt, localTemp01, METERS_PER_LEVEL } from '../world/toygen';
-import {
-  ENGINEER_GROUPS,
-  atDefault,
-  knobDefault,
-  knobsInGroup,
-  liveKnob,
-  rebuildKnob,
-  type RebuildScope,
-} from './liveKnobs';
 import { IconCenter, IconGlobe, IconInspect, IconLabel, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconTrackball } from './icons';
 import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
 import { OrbitPick } from './OrbitPick';
@@ -25,7 +15,9 @@ import { InspectorPanel, type InspectedCell } from './InspectorPanel';
 import { LabelsOverlay } from './LabelsOverlay';
 import { PlaceDialog } from './PlaceDialog';
 import { isHangOrbit, orbitLabel } from '../world/worldOrbit';
+import { lockedToStar } from '../world/systemgen';
 import { navModeLabel } from '../render/hostNav';
+import { useEngineer } from './EngineerPanel';
 
 const VIEW_PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
   { id: 'face', label: 'Face-on' },
@@ -108,9 +100,9 @@ export function GalaxyExplorer(props: Props) {
   resumeRef.current = props.resume;
   const resumeSessionRef = useRef(props.resumeSession);
   resumeSessionRef.current = props.resumeSession;
+  const markTicks = useRef(new Set<() => void>());
   const inspectRef = useRef<(hit: GlobePick | null) => void>(() => {});
   const markRef = useRef<(tool: MarkTool, hit: GlobePick) => void>(() => {});
-  const markTicks = useRef(new Set<() => void>());
   const [markTool, setMarkTool] = useState<MarkTool | null>(null);
   const [labels, setLabels] = useState<LabelRecord[]>([]);
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
@@ -127,16 +119,15 @@ export function GalaxyExplorer(props: Props) {
   const [musicOn, setMusicOn] = useState(false);
   const [volume, setVolume] = useState(0.7);
   const musicRef = useRef<AmbientMusic | null>(null);
-  const [engineer, setEngineer] = useState<string | null>(null);
-  const [knobVal, setKnobVal] = useState(0);
-  const [knobDirty, setKnobDirty] = useState(false);
   const [menu, setMenu] = useState<null | 'view' | 'engineer'>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [orbitPick, setOrbitPick] = useState<string | null>(null);
-  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
-  const [rebuilding, setRebuilding] = useState<null | RebuildScope>(null);
-  const [rebuildFrac, setRebuildFrac] = useState(0);
-  const [rebuildLabel, setRebuildLabel] = useState('');
+  const eng = useEngineer(
+    () => viewRef.current,
+    seed,
+    menu === 'engineer',
+    () => setMenu((m) => (m === 'engineer' ? null : 'engineer')),
+  );
   const [frame, setFrame] = useState<GalaxyFrame>({
     mode: 'region',
     theta: 0,
@@ -162,8 +153,6 @@ export function GalaxyExplorer(props: Props) {
     navHint: null,
     canLeaveOrbit: false,
     departing: false,
-    landed: false,
-    canLand: false,
     lookHold: null,
     drone: false,
     dronePhase: null,
@@ -216,8 +205,6 @@ export function GalaxyExplorer(props: Props) {
               prev.navHint !== f.navHint ||
               prev.canLeaveOrbit !== f.canLeaveOrbit ||
               prev.departing !== f.departing ||
-              prev.landed !== f.landed ||
-              prev.canLand !== f.canLand ||
               prev.lookHold !== f.lookHold ||
               prev.drone !== f.drone ||
               prev.dronePhase !== f.dronePhase ||
@@ -311,12 +298,12 @@ export function GalaxyExplorer(props: Props) {
 
   useEffect(() => {
     if (!ready) return;
-    viewRef.current?.setMarkTool(frame.landed ? markTool : null);
-  }, [ready, markTool, frame.landed]);
+    viewRef.current?.setMarkTool(frame.drone ? markTool : null);
+  }, [ready, markTool, frame.drone]);
 
   useEffect(() => {
-    if (!frame.landed) setMarkTool(null);
-  }, [frame.landed]);
+    if (!frame.drone) setMarkTool(null);
+  }, [frame.drone]);
 
   useEffect(() => {
     if (!ready) return;
@@ -335,13 +322,6 @@ export function GalaxyExplorer(props: Props) {
       document.removeEventListener('visibilitychange', onVis);
     };
   }, [ready]);
-
-  useEffect(() => {
-    return onUniverseProgress((p) => {
-      setRebuildFrac(p.frac);
-      setRebuildLabel(p.label);
-    });
-  }, []);
 
   const [perfText, setPerfText] = useState('');
   useEffect(() => {
@@ -381,106 +361,6 @@ export function GalaxyExplorer(props: Props) {
   useEffect(() => {
     if (frame.focus?.id == null && frame.hostId == null) setMapOpen(false);
   }, [frame.focus?.id, frame.hostId]);
-
-  function openKnob(id: string): void {
-    const live = liveKnob(id);
-    if (live) {
-      setKnobVal(viewRef.current?.liveUniform(live.uniform) ?? live.read());
-      setKnobDirty(false);
-      setEngineer(id);
-      return;
-    }
-    const rebuild = rebuildKnob(id);
-    if (!rebuild) return;
-    setKnobVal(rebuild.read());
-    setKnobDirty(false);
-    setEngineer(id);
-  }
-
-  function slideKnob(id: string, raw: number): void {
-    const v = Number(raw);
-    const live = liveKnob(id);
-    if (live) {
-      setKnobVal(v);
-      setKnobDirty(false);
-      live.write?.(v);
-      viewRef.current?.setLiveUniform(live.uniform, v);
-      return;
-    }
-    const rebuild = rebuildKnob(id);
-    if (!rebuild) return;
-    setKnobVal(v);
-    setKnobDirty(Math.abs(v - rebuild.read()) > rebuild.step * 0.25);
-  }
-
-  function pickSetting(id: string): void {
-    if (!id) return;
-    openKnob(id);
-    setMenu('engineer');
-  }
-
-  function closeKnob(): void {
-    setKnobDirty(false);
-    setEngineer(null);
-  }
-
-  function cancelRebuild(): void {
-    const k = engineer ? rebuildKnob(engineer) : undefined;
-    setKnobDirty(false);
-    if (k) setKnobVal(k.read());
-  }
-
-  function toggleGroup(id: string): void {
-    setOpenGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function resetToDefault(): void {
-    if (!spec || !engineer || rebuilding) return;
-    const v = knobDefault(spec);
-    if (live) {
-      setKnobVal(v);
-      live.write?.(v);
-      viewRef.current?.setLiveUniform(live.uniform, v);
-      return;
-    }
-    if (rebuild) {
-      setKnobVal(v);
-      setKnobDirty(Math.abs(v - rebuild.read()) > rebuild.step * 0.25);
-    }
-  }
-
-  async function confirmRebuild(id: string): Promise<void> {
-    const k = rebuildKnob(id);
-    const view = viewRef.current;
-    if (!k || !view || rebuilding) return;
-    k.write(knobVal);
-    setRebuildFrac(0);
-    setRebuildLabel(
-      k.scope === 'harvest' ? 'Walking the disk…' : k.scope === 'nebula' ? 'Collecting nebulae…' : 'Baking the fog…',
-    );
-    setRebuilding(k.scope);
-    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-    try {
-      if (k.scope === 'harvest') {
-        await remintUniverse(seed);
-        view.replaceSky();
-      } else if (k.scope === 'nebula') {
-        await rebakeUniverseNebulae(seed);
-        view.replaceNebulae();
-      } else {
-        rebakeUniverseDust(seed);
-        view.replaceDust();
-      }
-    } finally {
-      setRebuilding(null);
-      setKnobDirty(false);
-    }
-  }
 
   inspectRef.current = (hit) => {
     const body = viewRef.current?.inspectBody();
@@ -568,8 +448,8 @@ export function GalaxyExplorer(props: Props) {
   }
 
   useEffect(() => {
-    if (!frame.landed && !frame.orbiting) setInspect(null);
-  }, [frame.landed, frame.orbiting, frame.hostId]);
+    if (!frame.orbiting && !frame.drone) setInspect(null);
+  }, [frame.orbiting, frame.drone, frame.hostId]);
 
   async function toggleMusic(): Promise<void> {
     if (!musicOn) {
@@ -590,11 +470,7 @@ export function GalaxyExplorer(props: Props) {
   }
 
   const inRegion = frame.mode === 'region';
-  const live = engineer ? liveKnob(engineer) : undefined;
-  const rebuild = engineer ? rebuildKnob(engineer) : undefined;
-  const spec = live ?? rebuild;
-  const isDefault = Boolean(spec && atDefault(spec, knobVal));
-  const editing = Boolean(spec);
+  const editing = eng.editing;
   const chartId = frame.focus?.id ?? frame.hostId;
   const chartSpec = useMemo(() => {
     if (chartId == null) return null;
@@ -640,20 +516,7 @@ export function GalaxyExplorer(props: Props) {
           />
         )}
         {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}
-        {rebuilding && (
-          <div className="gx-rebuild" role="status">
-            <b>
-              {rebuildLabel ||
-                (rebuilding === 'harvest'
-                  ? 'Walking the disk…'
-                  : rebuilding === 'nebula'
-                    ? 'Collecting nebulae…'
-                    : 'Baking the fog…')}
-            </b>
-            <progress max={100} value={Math.round(rebuildFrac * 100)} />
-            <em>{Math.round(rebuildFrac * 100)}%</em>
-          </div>
-        )}
+        {eng.progress}
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
         {inRegion && !editing && frame.hostId != null && (
           <div className="gx-look">
@@ -702,15 +565,7 @@ export function GalaxyExplorer(props: Props) {
         )}
         {inRegion && !editing && (
           <div className="gx-helm">
-            {frame.landed ? (
-              <button
-                type="button"
-                className="gx-warp"
-                onClick={() => viewRef.current?.takeOff()}
-              >
-                Take off
-              </button>
-            ) : frame.departing ? (
+            {frame.departing ? (
               <button
                 type="button"
                 className="gx-warp gx-leave"
@@ -765,17 +620,7 @@ export function GalaxyExplorer(props: Props) {
               <>
                 <b>{frame.navHint ?? 'Orbit'}</b>
                 <em>{navModeLabel('orbit')}</em>
-                {frame.landed ? (
-                  <i className="gx-plate-go">On the ground</i>
-                ) : frame.canLand ? (
-                  <button
-                    type="button"
-                    className="gx-plate-go"
-                    onClick={() => viewRef.current?.land()}
-                  >
-                    Land
-                  </button>
-                ) : frame.orbit ? (
+                {frame.orbit ? (
                   <i className="gx-plate-go">
                     {orbitLabel(frame.orbit)}
                     {isHangOrbit(frame.orbit)
@@ -827,23 +672,13 @@ export function GalaxyExplorer(props: Props) {
                     {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
                   </i>
                 )}
-                {frame.course && !frame.landed && (
+                {frame.course && (
                   <i className="gx-plate-dist">{formatCatalogDist(frame.course.dist)}</i>
                 )}
                 {frame.navHint && frame.navMode === 'lock' && (
                   <i>{frame.navHint}</i>
                 )}
-                {frame.landed ? (
-                  <i className="gx-plate-go">On the ground</i>
-                ) : frame.canLand ? (
-                  <button
-                    type="button"
-                    className="gx-plate-go"
-                    onClick={() => viewRef.current?.land()}
-                  >
-                    Land
-                  </button>
-                ) : frame.orbiting && frame.orbit ? (
+                {frame.orbiting && frame.orbit ? (
                   <i className="gx-plate-go">{orbitLabel(frame.orbit)}</i>
                 ) : frame.orbit && frame.course ? (
                   <i className="gx-plate-go">Lock-on · {orbitLabel(frame.orbit)}</i>
@@ -911,7 +746,7 @@ export function GalaxyExplorer(props: Props) {
                     type="button"
                     role="menuitem"
                     className="gx-drop-item"
-                    disabled={frame.landed || frame.drone}
+                    disabled={frame.drone}
                     onClick={() => {
                       viewRef.current?.setPreset(p.id);
                       setMenu(null);
@@ -952,12 +787,12 @@ export function GalaxyExplorer(props: Props) {
               <IconOrbits size={16} />
             </button>
           )}
-          {!editing && (frame.landed || frame.orbiting) && viewRef.current?.inspectBody() && (
+          {!editing && (frame.orbiting || frame.drone) && viewRef.current?.inspectBody() && (
             <button
               type="button"
               className={`gx-chip gx-icon${inspect ? ' active' : ''}`}
               aria-label="Inspect"
-              title="Inspect — tap a hex when landed"
+              title={frame.drone ? 'Inspect — tap a hex from the drone' : 'Inspect this world'}
               onClick={() => {
                 const body = viewRef.current?.inspectBody();
                 if (!body) return;
@@ -968,13 +803,13 @@ export function GalaxyExplorer(props: Props) {
               <IconInspect size={16} />
             </button>
           )}
-          {!editing && frame.landed && props.visitId && (
+          {!editing && frame.drone && props.visitId && (
             <>
               <button
                 type="button"
                 className={`gx-chip gx-icon${markTool === 'label' ? ' active' : ''}`}
                 aria-label="Name a place"
-                title="Name a place — tap a hex"
+                title="Name a place — tap a hex from the drone"
                 onClick={() => {
                   setInspect(null);
                   setMarkTool((t) => (t === 'label' ? null : 'label'));
@@ -986,7 +821,7 @@ export function GalaxyExplorer(props: Props) {
                 type="button"
                 className={`gx-chip gx-icon${markTool === 'object' ? ' active' : ''}`}
                 aria-label="Place a marker"
-                title="Place a city, town, or landmark — tap a hex"
+                title="Place a city, town, or landmark — tap a hex from the drone"
                 onClick={() => {
                   setInspect(null);
                   setMarkTool((t) => (t === 'object' ? null : 'object'));
@@ -996,53 +831,7 @@ export function GalaxyExplorer(props: Props) {
               </button>
             </>
           )}
-          <div className={`gx-drop gx-drop-eng-wrap${menu === 'engineer' ? ' is-open' : ''}`}>
-            <button
-              type="button"
-              className={`gx-chip${menu === 'engineer' ? ' active' : ''}`}
-              aria-haspopup="menu"
-              aria-expanded={menu === 'engineer'}
-              disabled={Boolean(rebuilding)}
-              onClick={() => {
-                viewRef.current?.setWarp(false);
-                setMenu((m) => (m === 'engineer' ? null : 'engineer'));
-              }}
-            >
-              Cosmic engineer
-            </button>
-            {menu === 'engineer' && (
-              <div className="gx-drop-menu gx-drop-eng" role="menu" aria-label="Cosmic engineer">
-                {ENGINEER_GROUPS.map((g) => {
-                  const open = openGroups.has(g.id);
-                  return (
-                    <div key={g.id} className="gx-eng-group">
-                      <button
-                        type="button"
-                        className={`gx-eng-group-label${open ? ' is-open' : ''}`}
-                        aria-expanded={open}
-                        onClick={() => toggleGroup(g.id)}
-                      >
-                        {g.label}
-                      </button>
-                      {open &&
-                        knobsInGroup(g.id).map((k) => (
-                          <button
-                            key={k.id}
-                            type="button"
-                            role="menuitem"
-                            className={`gx-eng-item${k.remint ? ' is-rebuild' : ''}${engineer === k.id ? ' is-on' : ''}`}
-                            onClick={() => pickSetting(k.id)}
-                          >
-                            <b>{k.label}</b>
-                            <i>{k.hint}</i>
-                          </button>
-                        ))}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          {eng.chip}
           {!editing && frame.inView && (
             <button
               type="button"
@@ -1081,79 +870,7 @@ export function GalaxyExplorer(props: Props) {
         </div>
       </header>
 
-      {spec && engineer && (
-        <footer className="galaxy-bottom is-eng">
-          <div className="gx-eng">
-            <div className="gx-eng-top">
-              <div>
-                <div className="gx-kicker">Cosmic engineer</div>
-                <b className="gx-eng-name">{spec.label}</b>
-              </div>
-              <button
-                type="button"
-                className="gx-chip gx-close"
-                disabled={Boolean(rebuilding)}
-                onClick={closeKnob}
-              >
-                Close
-              </button>
-            </div>
-            <p className="gx-eng-about">{spec.about}</p>
-            <div className="gx-eng-slider">
-              <input
-                type="range"
-                min={spec.min}
-                max={spec.max}
-                step={spec.step}
-                value={knobVal}
-                disabled={Boolean(rebuilding)}
-                onChange={(e) => slideKnob(engineer, Number(e.target.value))}
-              />
-              <em>
-                {spec.step >= 1
-                  ? String(Math.round(knobVal))
-                  : knobVal.toFixed(
-                      spec.step >= 0.01 ? (knobVal >= 10 ? 1 : 2) : spec.step >= 0.001 ? 3 : 4,
-                    )}
-              </em>
-            </div>
-            {(!isDefault || (rebuild && knobDirty)) && (
-              <div className="gx-eng-actions">
-                {!isDefault && (
-                  <button
-                    type="button"
-                    className="gx-chip gx-eng-reset"
-                    disabled={Boolean(rebuilding)}
-                    onClick={resetToDefault}
-                  >
-                    Reset to default
-                  </button>
-                )}
-                {rebuild && knobDirty && (
-                  <>
-                    <button
-                      type="button"
-                      className="gx-chip gx-eng-go"
-                      disabled={Boolean(rebuilding)}
-                      onClick={() => void confirmRebuild(engineer)}
-                    >
-                      Rebuild
-                    </button>
-                    <button
-                      type="button"
-                      className="gx-chip"
-                      disabled={Boolean(rebuilding)}
-                      onClick={cancelRebuild}
-                    >
-                      Cancel
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </footer>
-      )}
+      {eng.panel}
 
       {mapOpen && chartSpec && (
         <SystemMap

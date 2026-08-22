@@ -57,11 +57,16 @@ toy — Godus blocks on a real-sized globe.
   a closed-form clock. Never `Math.random`, `crypto.getRandomValues`,
   `Date.now`, or a walking PRNG stream for the catalog, a system,
   terrain, geology, dust, nebulae, or the cosmic photograph. Same
-  inputs, same universe, every player, every time. A `mulberry32`
-  stream through `generateSystem` / `objectAt` is leftover debt:
-  do not add draws; new laws hash the address. Allowed rolls live
-  *outside* the universe only: a listen seed for the music (never
-  the system seed),   a UUID for a save row.
+  inputs, same universe, every player, every time. Gen v17 paid
+  the walking-stream debt: `generateSystem` / `systemAt` and body
+  physics draw `hashU(address:salt)` — order-free, so a new law
+  never moves its neighbours and no draw is kept "for stream
+  discipline". `mulberry32` survives only as an atomic block
+  seeding a construction (noise permutation tables; the galaxy's
+  short per-slot birth streams) — never a stream laws are
+  inserted into. Allowed rolls live *outside* the universe only:
+  a listen seed for the music (never the system seed), a UUID
+  for a save row.
 - **Archetypes are outputs, never inputs.** There is no `if (iceball)` /
   `if (hothouse)` / `if (pulsar)` generator switch. Iceballs, O stars,
   pulsars, H II regions, and living paradises are attractor regions of
@@ -89,7 +94,8 @@ toy — Godus blocks on a real-sized globe.
   The explorer asks `objectsNear` for the volume it occupies; within
   a cell the IMF is stratified so zooming in is “include more slots,”
   not “load a bigger array.”
-- **Named constants live in `UNIVERSE` (`src/world/physics.ts`).** Spatial
+- **Named constants live in `UNIVERSE` (`src/world/universe.ts`,
+  re-exported by `physics.ts`).** Spatial
   scale is SI (`AU_KM`, `RSUN_KM`, `REARTH_KM`, `KPC_KM`). Time default
   is 1:1; `TIME_SCALE` is a live observer rate (time-lapse), not a hidden
   gearbox. Hex coarseness (`MAX_FINE_F`) is the remaining toy. Keep every
@@ -256,11 +262,8 @@ toy — Godus blocks on a real-sized globe.
   drag steers. Target off
   is free fly. The star is the
   furnace — no look-at-sun control.
-  On the ground,
-  zoom-in latches a walk; zoom-out
-  dumps it, then settles. WASD glides.
-  Take off returns to the ring we
-  left, over that face.
+  Old landed saves rise onto the
+  ring they stood under.
   Short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -485,9 +488,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Target stays on that id until
   tapped off, or locks the body in
   the pip.
-  Land sets down on
-  that face; Take off returns to the ring. Reticle Set course
-  stays autopilot to the fill park (warp-ahead;
+  Reticle Set course
+  stays autopilot to the film park (warp-ahead;
   a look drag aborts). **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, approach, nebulae). Sections stay
@@ -747,8 +749,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 
 Camera is the live vehicle. Ship pose (`flight.ts`) is catalog
 kpc in or out of a sphere. The drone (`drone.ts`) is host-km
-and meets the ship only at launch / land. Ride is a named
-ring; land walks the terrace.
+and meets the ship only at launch / dock. Ride is a named
+ring; the drone is the close look — landing and the surface
+walk are retired.
 The sculpt
 brush, the unseeded night shell, and the water-capture photographs
 are retired.
@@ -758,7 +761,7 @@ The app lives at `http://localhost:5173/` (`npm run dev`).
 |-------------|---------|
 | disk | Catalog flight. Warp, look, Face-on / Edge-on / Home. |
 | host | Inside the 0.01 ly sphere. Photosphere + planets. A chart pick rides a named ring. |
-| land | Walk the latched globe. Drag looks. Zoom walks the terrace. |
+| drone | Trackball around the orbited body. Zoom is thrust; Target locks the core. |
 
 ---
 
@@ -814,7 +817,7 @@ never store generated terrain, chemistry, or meshes.
 |--------|-------------|
 | `SystemMeta` (seed, genVersion, camera; later `starId`) | Galaxy catalog, stellar phase, orbits, inventories, atmospheres |
 | `SessionSnap` live save (ship pose, helm, drone, course) | Host meshes, globe, harvest photograph |
-| `LastPlace` camp (star, body, ring or landing face) | Kepler pose at live `t` when no session row |
+| `LastPlace` camp (star, body, ring — old landing faces read as rides) | Kepler pose at live `t` when no session row |
 | Sparse terrain overrides `[cell, level, …]` | Hex columns, hydrology, snow line |
 | Labels, objects (city / town / landmark, later bases) | Palettes, geology, sea state, stellar phase |
 
@@ -853,8 +856,11 @@ are **overlays on the addressable grid**, not new planet types.
 
 **Now** (on the host-pass globe)
 
-- Inspect a hex: composition of that column’s surface layer, from geology.
-- Place labels and objects (`city` / `town` / `landmark`) on a cell.
+- Inspect a hex from the drone: tap a cell for that column's surface
+  layer, from geology. From a ride the inspector shows the body.
+- Place labels and objects (`city` / `town` / `landmark`) on a cell —
+  the label / marker tools arm while the drone is out; a hex tap
+  places. Same addressable cells the walk used to reach.
 
 **Direction (do not invent a parallel world to get here)**
 
@@ -1060,15 +1066,26 @@ Code map (start here):
 
 | Area | Where |
 |------|--------|
-| Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
+| Charter + `UNIVERSE` knob table | `src/world/universe.ts` |
+| Body physics laws (inventory → air → seas → life) | `src/world/physics.ts` |
 | Galaxy (MW field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
-| Galaxy explorer (catalog, place, globes; routes input) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (conductor: frame loop, camera, verbs) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Survey sky GPU (harvest, nebulae, dust, cosmic, freeze) | `src/render/skySurvey.ts` |
+| Survey sky GLSL (extinction march, star PSF, fragment) | `src/render/skyShaders.ts` |
+| Voyage state machine (berth, ride, capture, depart, warp) | `src/render/voyage.ts` |
+| Orbit pilot (insertions, captures, ride placement, limb looks) | `src/render/voyagePilot.ts` |
+| Approach pilot (cruise gears, speed caps, parks, fences) | `src/render/voyageApproach.ts` |
+| Drone bridge (the DroneWorld port: cores, subject, pip) | `src/render/droneBridge.ts` |
+| Host locale (SOI place: furnace, km frame, bodies, globes) | `src/render/hostLocale.ts` |
+| Helm (pointer / key / pinch / hold-roll → verbs) | `src/render/helm.ts` |
+| Sight (reticle chance-acquire / hold; plate payloads) | `src/render/sight.ts` |
+| Session codec (module state → v1 save shapes) | `src/render/sessionCodec.ts` |
 | Ship pose + stick (catalog kpc, in or out of SOI) | `src/render/flight.ts` |
-| Trackball drone (own nav; join = launch / land) | `src/render/drone.ts` |
+| Trackball drone (own nav; join = launch / dock) | `src/render/drone.ts` |
 | Course berth + derived legs | `src/world/course.ts` |
 | Host solar system (Kepler balls + rings under the sphere) | `src/render/hostSystem.ts` |
 | Host look (Center = nearest body core) | `src/render/hostLook.ts` |
@@ -1084,7 +1101,7 @@ Code map (start here):
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
-| Host-pass orbit rings (chart pick) | `src/world/worldOrbit.ts` |
+| Orbit film laws (limb / hover / fill parks, ω, escape) | `src/world/worldOrbit.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |
 | Per-cell geology (mining truth) | `src/world/geology.ts` |

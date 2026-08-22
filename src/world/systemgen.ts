@@ -1,4 +1,4 @@
-import { mulberry32, xmur3 } from './rng';
+import { hashU } from './rng';
 import {
   UNIVERSE, classify, gasColor, gasPhysics, hazeSpec, rockyPhysics, type BodyPhysics,
 } from './physics';
@@ -26,7 +26,20 @@ import { rgbToHex, teffToRgb, type StellarState } from './stellar';
  * keeping the old behavior available for systems pinned to it.
  */
 
-export const CURRENT_GEN_VERSION = 16;
+export const CURRENT_GEN_VERSION = 17;
+
+/**
+ * The lawful draw: one uniform per (system, salt) address. v17
+ * retired the walking mulberry32 stream — a value is f(address),
+ * so a new law never moves its neighbours and no draw is ever
+ * kept "for stream discipline". Tuning a law no longer reshuffles
+ * every system; only intentional changes bump the version.
+ */
+export type SystemU = (salt: string) => number;
+
+export function systemU(seed: string): SystemU {
+  return (salt) => hashU(`system:${seed}:${salt}`);
+}
 
 export type RGB = [number, number, number];
 
@@ -134,16 +147,16 @@ const NAME_A = ['Ka', 'Sera', 'Tor', 'Ael', 'Mira', 'Or', 'Va', 'Nyx', 'Cal', 'Z
 const NAME_B = ['ra', 'lin', 'dor', 'mia', 'vos', 'the', 'ri', 'sa', 'no', 'lia', 'run', 'dis', 'wen', 'mar'];
 const NAME_C = ['', '', '', 's', 'n', 'th', 'x', 'm'];
 
-function starName(rng: () => number): string {
-  const pick = (arr: string[]) => arr[Math.floor(rng() * arr.length)];
-  return pick(NAME_A) + pick(NAME_B) + pick(NAME_C);
+function starName(u: SystemU): string {
+  const pick = (arr: string[], salt: string) => arr[Math.floor(u(salt) * arr.length)];
+  return pick(NAME_A, 'name:a') + pick(NAME_B, 'name:b') + pick(NAME_C, 'name:c');
 }
 
 /** Weighted planet count: accretion always delivers 4-15, usually 7-9. */
-function planetCount(rng: () => number): number {
+function planetCount(u: SystemU): number {
   const weights = [2, 4, 7, 10, 12, 12, 10, 7, 5, 3, 2, 1]; // counts 4..15
   const total = weights.reduce((a, b) => a + b, 0);
-  let r = rng() * total;
+  let r = u('count') * total;
   for (let i = 0; i < weights.length; i++) {
     r -= weights[i];
     if (r < 0) return 4 + i;
@@ -166,11 +179,12 @@ function rockyMeanColor(temp: number, sea: number): RGB {
 }
 
 /** Seeded obliquity: most worlds lean a little, a rare one lies sideways. */
-function rollObliquity(rng: () => number): number {
-  const r = rng();
-  if (r < 0.15) return rng() * 0.035; // near-upright
-  if (r < 0.95) return (2 + rng() * 26) * (Math.PI / 180); // 2-28°
-  return (50 + rng() * 48) * (Math.PI / 180); // the Uranus oddball
+function rollObliquity(u: SystemU, id: string): number {
+  const r = u(`${id}:obl:kind`);
+  const v = u(`${id}:obl:tilt`);
+  if (r < 0.15) return v * 0.035; // near-upright
+  if (r < 0.95) return (2 + v * 26) * (Math.PI / 180); // 2-28°
+  return (50 + v * 48) * (Math.PI / 180); // the Uranus oddball
 }
 
 // ---------------------------------------------------------------- orbits
@@ -203,7 +217,7 @@ function keplerMoonSec(aKm: number, parentMassKg: number): number {
  * of an isolated XY frame.
  */
 export function eclipticOf(seed: string): Ecliptic {
-  const u = (salt: string) => xmur3(`${seed}:ecliptic:${salt}`)() / 4294967296;
+  const u = (salt: string) => hashU(`${seed}:ecliptic:${salt}`);
   return {
     node: u('node') * Math.PI * 2,
     inc: Math.acos(2 * u('inc') - 1),
@@ -247,26 +261,28 @@ export function keplerPlane(
 
 // ---------------------------------------------------------------- generator
 
-/** Private-bottle star dice. Stream must stay bit-identical for a given seed. */
-function rollBottleStar(rng: () => number): StarSpec {
-  const starRoll = rng();
-  const Z = 0.45 + Math.pow(rng(), 1.6) * 1.9;
-  const CO = 0.5 + Math.pow(rng(), 2.5) * 1.2;
+/** Private-bottle star dice — G/K/M/F. Address-hashed like everything. */
+function rollBottleStar(u: SystemU): StarSpec {
+  const starRoll = u('star:class');
+  const Z = 0.45 + Math.pow(u('star:Z'), 1.6) * 1.9;
+  const CO = 0.5 + Math.pow(u('star:CO'), 2.5) * 1.2;
   const R = UNIVERSE.RSUN_KM;
+  const uR = u('star:R');
+  const uL = u('star:L');
   if (starRoll < 0.44) {
-    return { name: starName(rng), radius: R * (0.95 + rng() * 0.12), mass: 1, color: '#fff1c4', lightColor: '#fff4dc', luminosity: 0.9 + rng() * 0.3, metallicity: Z, carbon: CO };
+    return { name: starName(u), radius: R * (0.95 + uR * 0.12), mass: 1, color: '#fff1c4', lightColor: '#fff4dc', luminosity: 0.9 + uL * 0.3, metallicity: Z, carbon: CO };
   }
   if (starRoll < 0.72) {
-    return { name: starName(rng), radius: R * (0.78 + rng() * 0.1), mass: 0.7, color: '#ffd9a0', lightColor: '#ffe2b8', luminosity: 0.42 + rng() * 0.2, metallicity: Z, carbon: CO };
+    return { name: starName(u), radius: R * (0.78 + uR * 0.1), mass: 0.7, color: '#ffd9a0', lightColor: '#ffe2b8', luminosity: 0.42 + uL * 0.2, metallicity: Z, carbon: CO };
   }
   if (starRoll < 0.88) {
-    return { name: starName(rng), radius: R * (0.48 + rng() * 0.12), mass: 0.4, color: '#ffb28a', lightColor: '#ffc9a4', luminosity: 0.07 + rng() * 0.09, metallicity: Z, carbon: CO };
+    return { name: starName(u), radius: R * (0.48 + uR * 0.12), mass: 0.4, color: '#ffb28a', lightColor: '#ffc9a4', luminosity: 0.07 + uL * 0.09, metallicity: Z, carbon: CO };
   }
-  return { name: starName(rng), radius: R * (1.15 + rng() * 0.2), mass: 1.3, color: '#f4f6ff', lightColor: '#eef2ff', luminosity: 1.7 + rng() * 0.7, metallicity: Z, carbon: CO };
+  return { name: starName(u), radius: R * (1.15 + uR * 0.2), mass: 1.3, color: '#f4f6ff', lightColor: '#eef2ff', luminosity: 1.7 + uL * 0.7, metallicity: Z, carbon: CO };
 }
 
 /** Catalog star → bottle StarSpec. L, Z, C/O come from evolve(), not dice. */
-export function starSpecFromState(st: StellarState, rng: () => number): StarSpec {
+export function starSpecFromState(st: StellarState, u: SystemU): StarSpec {
   const rgb = st.phase === 'black_hole' ? [0.12, 0.1, 0.16] as [number, number, number]
     : st.phase === 'pulsar' || st.phase === 'neutron_star' ? [0.72, 0.82, 1] as [number, number, number]
     : teffToRgb(st.teff);
@@ -278,7 +294,7 @@ export function starSpecFromState(st: StellarState, rng: () => number): StarSpec
   ]);
   const Rsun = Math.max(1e-6, st.radius) * UNIVERSE.RSUN_KM;
   return {
-    name: starName(rng),
+    name: starName(u),
     radius: Rsun,
     mass: Math.max(0.08, st.mass),
     color: hex,
@@ -290,9 +306,9 @@ export function starSpecFromState(st: StellarState, rng: () => number): StarSpec
 }
 
 export function generateSystem(seed: string): SystemSpec {
-  const rng = mulberry32(xmur3(`system:${seed}`)());
+  const u = systemU(seed);
   // G/K/M/F dice is the private bottle. Canonical play uses systemAt.
-  return assembleSystem(seed, rng, rollBottleStar(rng));
+  return assembleSystem(seed, u, rollBottleStar(u));
 }
 
 /**
@@ -303,21 +319,23 @@ export function systemAt(galaxySeed: string, starId: number): SystemSpec {
   const obj = objectAt(galaxySeed, starId);
   if (!obj) throw new Error(`empty catalog slot ${starId}`);
   const seed = `${galaxySeed}:${starId}`;
-  const rng = mulberry32(xmur3(`system:${seed}`)());
-  return assembleSystem(seed, rng, starSpecFromState(obj.star, rng));
+  const u = systemU(seed);
+  return assembleSystem(seed, u, starSpecFromState(obj.star, u));
 }
 
 export function systemAtObject(obj: GalaxyObject, galaxySeed = UNIVERSE.CANONICAL_SEED): SystemSpec {
   return systemAt(galaxySeed, obj.id);
 }
 
-function assembleSystem(seed: string, rng: () => number, star: StarSpec): SystemSpec {
+function assembleSystem(seed: string, u: SystemU, star: StarSpec): SystemSpec {
   const L = star.luminosity;
   const Z = star.metallicity;
   const CO = star.carbon;
 
   // --- orbital skeleton: geometric accretion spacing, Kepler periods ---
-  const N = planetCount(rng);
+  // Slot draws are addressed by BIRTH rung (the accretion ladder);
+  // planet draws by final id. No draw order exists to preserve.
+  const N = planetCount(u);
   const k = Math.min(1.8, Math.max(1.22, Math.pow(A_MAX / A0, 1 / Math.max(1, N - 1))));
 
   // First pass: gas giants form where the disk is cold enough for ice cores
@@ -325,13 +343,13 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
   const orbits: number[] = [];
   const isGas: boolean[] = [];
   for (let i = 0; i < N; i++) {
-    const a = A0 * Math.pow(k, i) * (0.96 + rng() * 0.08);
+    const a = A0 * Math.pow(k, i) * (0.96 + u(`slot${i}:a`) * 0.08);
     orbits.push(a);
     const diskT = UNIVERSE.DISK_C * Math.pow(L, 0.25) * Math.pow(a, -UNIVERSE.DISK_P);
     const beyondFrost = diskT < UNIVERSE.FROST_H2O;
     // Capture odds peak just past the frost line and taper at the rim.
     const pGas = beyondFrost ? 0.72 - 0.3 * clamp01((a - FROST_AU) / (A_MAX - FROST_AU)) : 0;
-    isGas.push(rng() < pGas);
+    isGas.push(u(`slot${i}:gas`) < pGas);
   }
   // Accretion in this universe always leaves at least one giant when the
   // disk reaches past the frost line.
@@ -355,17 +373,15 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
   const aFinal = orbits.slice();
   const innerEdge = A0 * 0.8;
   for (let i = 0; i < N; i++) {
-    const roll = rng();
-    const depth = rng(); // both drawn unconditionally: stream discipline
-    if (!isGas[i] || roll >= UNIVERSE.MIGRATE_P) continue;
-    aFinal[i] = innerEdge * Math.pow(orbits[i] / innerEdge, Math.pow(depth, 1.4));
+    if (!isGas[i] || u(`slot${i}:migrate`) >= UNIVERSE.MIGRATE_P) continue;
+    aFinal[i] = innerEdge * Math.pow(orbits[i] / innerEdge, Math.pow(u(`slot${i}:depth`), 1.4));
   }
   // Casualties: each migrated giant scatters the corridor it crossed, from
   // just outside its final orbit up to its birth orbit. Some crossed bodies
   // ride the resonances and survive the passage (the Trappist lesson).
   // Undisturbed neighbors never harm each other — their ladder was born
   // stable — and a giant that is already dead sweeps nothing.
-  const luck = Array.from({ length: N }, () => rng()); // unconditional draws
+  const luck = Array.from({ length: N }, (_, i) => u(`slot${i}:luck`));
   const dead = new Array<boolean>(N).fill(false);
   for (let g = 0; g < N; g++) {
     if (!isGas[g] || aFinal[g] === orbits[g] || dead[g]) continue;
@@ -405,40 +421,40 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
     let a = finalOrbits[i];
     if (a < prevApoapsis * 1.05) a = prevApoapsis * 1.06;
     const period = keplerPlanetSec(a, star.mass);
-    const phase = rng() * 2 * Math.PI;
+    const phase = u(`${id}:phase`) * 2 * Math.PI;
     const name = `${star.name} ${ROMAN[i]}`;
 
     // Keplerian elements: mild seeded eccentricity, clamped so no orbit can
     // ever cross its inner neighbor (periapsis clears the previous apoapsis).
-    let ecc = Math.pow(rng(), 2) * 0.15;
+    let ecc = Math.pow(u(`${id}:ecc`), 2) * 0.15;
     const eccMax = 1 - (prevApoapsis * 1.05) / a;
     ecc = Math.max(0, Math.min(ecc, eccMax));
     prevApoapsis = a * (1 + ecc);
-    const inc = (1 + rng() * 5) * (Math.PI / 180);
-    const node = rng() * 2 * Math.PI;
-    const peri = rng() * 2 * Math.PI;
+    const inc = (1 + u(`${id}:inc`) * 5) * (Math.PI / 180);
+    const node = u(`${id}:node`) * 2 * Math.PI;
+    const peri = u(`${id}:peri`) * 2 * Math.PI;
 
     // Tidal locking: torque ~ 1/a^6, so the law is a radius with a narrow
     // coin-flip band just outside it. (Torque tracks stellar mass ~ L^0.25.)
     const aLock = UNIVERSE.LOCK_A * Math.pow(L, 0.25);
-    const locked = a < aLock || (a < aLock * UNIVERSE.LOCK_COIN && rng() < 0.5);
-    const obliquity = locked ? 0 : rollObliquity(rng);
-    const axialAz = rng() * 2 * Math.PI;
+    const locked = a < aLock || (a < aLock * UNIVERSE.LOCK_COIN && u(`${id}:lockCoin`) < 0.5);
+    const obliquity = locked ? 0 : rollObliquity(u, id);
+    const axialAz = u(`${id}:axialAz`) * 2 * Math.PI;
 
     if (finalGas[i]) {
-      const radius = UNIVERSE.REARTH_KM * (3.9 + rng() * 7.2);
+      const radius = UNIVERSE.REARTH_KM * (3.9 + u(`${id}:radius`) * 7.2);
       const physics = gasPhysics({ seed: bodySeed, a, radiusGL: radius, L, Z, CO });
-      const gas = gasBands(rng, physics);
+      const gas = gasBands(u, id, physics);
       bodies.push({
         id, name, kind: 'gas', seed: bodySeed, radius,
         orbitRadius: a, orbitPeriod: period, orbitPhase: phase,
         ecc, inc, node, peri,
         obliquity, axialAz,
-        spinPeriod: 3.6e4 + rng() * 2.9e4, tidallyLocked: false, parent: null,
+        spinPeriod: 3.6e4 + u(`${id}:spin`) * 2.9e4, tidallyLocked: false, parent: null,
         physics, gas, meanColor: gas.color,
       });
     } else {
-      const size = 25 + Math.round(rng() * 75);
+      const size = 25 + Math.round(u(`${id}:size`) * 75);
       const radius = UNIVERSE.REARTH_KM * (0.446 + 0.554 * (size / 100));
       const physics = rockyPhysics({ seed: bodySeed, a, radiusGL: radius, L, Z, CO, lockedToStar: locked });
       const haze = hazeSpec(physics);
@@ -447,7 +463,7 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
         orbitRadius: a, orbitPeriod: period, orbitPhase: phase,
         ecc, inc, node, peri,
         obliquity, axialAz,
-        spinPeriod: locked ? period : UNIVERSE.SEC_DAY * (0.45 + rng() * 1.8), tidallyLocked: locked, parent: null,
+        spinPeriod: locked ? period : UNIVERSE.SEC_DAY * (0.45 + u(`${id}:spin`) * 1.8), tidallyLocked: locked, parent: null,
         physics,
         size, temp: physics.temp01, seaLevel: physics.sea01,
         // A translucent shroud only tints the distant ball as much as its
@@ -463,21 +479,21 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
     const parent = bodies[bodies.length - 1];
     let moonCount = 0;
     if (locked) moonCount = 0;
-    else if (finalGas[i]) moonCount = 1 + Math.floor(rng() * Math.min(3.5, parent.radius * 0.25));
+    else if (finalGas[i]) moonCount = 1 + Math.floor(u(`${id}:moons`) * Math.min(3.5, parent.radius * 0.25));
     else {
-      const r = rng();
+      const r = u(`${id}:moons`);
       moonCount = r < 0.4 ? 1 : r < 0.52 ? 2 : 0;
     }
     for (let j = 0; j < moonCount; j++) {
       const mid = `${id}m${j}`;
       const mseed = `${seed}:${mid}`;
-      const msize = 15 + Math.round(rng() * 15);
+      const msize = 15 + Math.round(u(`${mid}:size`) * 15);
       // Moon masses span Luna to Titan, bottom-heavy (accretion makes many
       // small moons for every large one): only the biggest stay geologically
       // alive enough to outgas an atmosphere (see UNIVERSE.OUTGAS_R).
-      const mdraw = rng();
+      const mdraw = u(`${mid}:mass`);
       const mradius = Math.max(UNIVERSE.REARTH_KM * 0.14, parent.radius * (0.09 + mdraw * mdraw * 0.19));
-      const morb = parent.radius * (2.8 + 2.2 * j) + rng() * parent.radius;
+      const morb = parent.radius * (2.8 + 2.2 * j) + u(`${mid}:orbit`) * parent.radius;
       const mper = keplerMoonSec(morb, bodyMassKg(parent.radius, parent.physics.densityRel));
       // Same feeding zone as the parent: the moon's chemistry is the
       // parent's orbit's chemistry, and its own (small) gravity decides the
@@ -494,7 +510,7 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
         radius: mradius,
         orbitRadius: morb,
         orbitPeriod: mper,
-        orbitPhase: rng() * 2 * Math.PI,
+        orbitPhase: u(`${mid}:phase`) * 2 * Math.PI,
         ecc: 0, // tidal circularization
         inc: 0, // parent-equatorial (the engine applies the parent's tilt)
         node: 0,
@@ -523,27 +539,16 @@ function assembleSystem(seed: string, rng: () => number, star: StarSpec): System
  * far out), ammonia clouds run cream-tan (the warmer gas region) — the same
  * inventory the physics derived, read as color.
  */
-function gasBands(rng: () => number, physics: BodyPhysics): GasSpec {
+function gasBands(u: SystemU, id: string, physics: BodyPhysics): GasSpec {
   const color = gasColor(physics);
-  // Historical weather-shader entropy: bands, storms and hue jitter used
-  // to draw from this stream. Keep the draws so moon counts and moon
-  // seeds downstream stay put until weather is a real law.
-  const ch4 = physics.atmosphere.mix.CH4 ?? 0;
-  const nh3 = physics.atmosphere.mix.NH3 ?? 0;
-  if (ch4 + nh3 <= 1e-5) rng();
-  rng();
-  const bandCount = 5 + Math.floor(rng() * 4);
-  for (let b = 0; b < bandCount; b++) {
-    rng();
-    rng();
-  }
-  rng();
-  rng();
-  rng();
+  // The old walking stream carried ghost draws here ("historical
+  // weather-shader entropy") to keep later values put. Addressed
+  // draws need no ghosts — weather, when it becomes a law, will
+  // hash its own salts.
   return {
     color,
-    ring: rng() < 0.45,
-    ringTilt: 0.9 + rng() * 0.5,
+    ring: u(`${id}:ring`) < 0.45,
+    ringTilt: 0.9 + u(`${id}:ringTilt`) * 0.5,
     ringColor: mix(color, [1, 1, 1], 0.45),
   };
 }

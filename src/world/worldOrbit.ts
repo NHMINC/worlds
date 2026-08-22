@@ -157,6 +157,25 @@ export function clearRadiusKm(body: { radius: number }): number {
 }
 
 /**
+ * Free-fly / drone park film: half-angle at which a disk covers
+ * ARRIVE_FILL of the shorter field — min of vertical and
+ * horizontal FOV, so portrait uses the width and the ball never
+ * eats the screen. Named rings use the limb / hover films; this
+ * is the third picture, for a stop with no ring named.
+ */
+export function fillHalfAngle(fovDeg: number, aspect: number): number {
+  const vFov = (fovDeg * Math.PI) / 180;
+  const a = Math.max(1e-6, aspect);
+  const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * a);
+  return 0.5 * UNIVERSE.ARRIVE_FILL * Math.min(vFov, hFov);
+}
+
+/** Distance (same unit as R) at which a ball of radius R fills that film. */
+export function fillViewRadius(R: number, fovDeg: number, aspect: number): number {
+  return R / Math.max(1e-8, Math.tan(fillHalfAngle(fovDeg, aspect)));
+}
+
+/**
  * Hard camera wall (km from centre). The film park sits
  * outside this skin — the 10 000 km graze is a transfer
  * floor, not a park. SOI_TRACK_MIN is a drone cage, not
@@ -195,11 +214,18 @@ export function escapeSpeedKpcS(omega: number, rKpc: number): number {
 }
 
 /**
- * Host-star ecliptic: the same inertial film as a world ring.
- * Kepler ω from GM☉ · mass at that radius.
+ * Host-star ecliptic: the corner film, floored outside the
+ * corona. The world flat-horizon cap (ORBIT_VIEW_H_KM over the
+ * skin) must not apply — 10,000 km over a photosphere parked
+ * the ship inside the fire (a giant's cap even fell below the
+ * skin floor and returned a graze). A star's view skin is its
+ * drawn corona (STAR_CORONA_R photosphere radii); the ring sits
+ * just outside it. Kepler ω from GM☉ · mass at that radius.
  */
 export function starOrbitRadiusKpc(star: { radius: number }): number {
-  return limbViewRadiusKm(Math.max(star.radius, 1)) / UNIVERSE.KPC_KM;
+  const R = Math.max(star.radius, 1);
+  const want = R / Math.max(1e-8, Math.sin(orbitLimbCornerAlpha()));
+  return Math.max(R * UNIVERSE.STAR_CORONA_R * 1.05, want) / UNIVERSE.KPC_KM;
 }
 
 export function starOrbitOmega(star: { mass: number }, aKpc: number): number {

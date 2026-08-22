@@ -1,13 +1,15 @@
 /**
  * Hashing for the bottle — not a dice bag.
  *
- * Universe construction is `f(seed, address)`. Prefer a stateless
- * hash (`hashHex`, `xmur3` once, `hash(seed, i, salt)`). Do not use
+ * Universe construction is `f(seed, address)`. The lawful draw is
+ * `hashU(address)` — stateless, order-free. Do not use
  * `Math.random`, `crypto`, or a walking `mulberry32` stream for the
  * catalog, a system, terrain, dust, or the cosmic photograph.
- * `mulberry32` remains only for leftover generators that already
- * drink a stream; do not add new draws. `randomSeedString` / `uuid`
- * are player/listen labels, not the sky.
+ * `mulberry32` remains only where a fixed, atomic block of draws
+ * seeds a construction (noise permutation tables; the galaxy's
+ * short per-slot birth streams) — never a stream that laws are
+ * inserted into. `randomSeedString` / `uuid` are player/listen
+ * labels, not the sky.
  */
 /** Hash a string to a sequence of 32-bit seeds (xmur3). */
 export function xmur3(str: string): () => number {
@@ -22,6 +24,16 @@ export function xmur3(str: string): () => number {
     h ^= h >>> 16;
     return h >>> 0;
   };
+}
+
+/**
+ * One uniform in [0, 1) from a salted address — THE lawful draw.
+ * No stream, no order: a value is f(address), so adding a law
+ * never moves its neighbours and no draw ever has to be "kept
+ * for stream discipline". New generation code uses this.
+ */
+export function hashU(address: string): number {
+  return xmur3(address)() / 4294967296;
 }
 
 /** Fast deterministic PRNG (mulberry32). Returns floats in [0, 1). */
