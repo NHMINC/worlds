@@ -23,7 +23,7 @@ import { ShipFlight } from './flight';
 import { Trackball } from './drone';
 import { type Berth } from '../world/course';
 import { Voyage } from './voyage';
-import { encodePlace, encodeSession } from './sessionCodec';
+import { decodeShipVoyage, encodePlace, encodeSession } from './sessionCodec';
 import { Helm } from './helm';
 import { Sight, type GalaxyFocus } from './sight';
 import { DroneBridge } from './droneBridge';
@@ -467,30 +467,8 @@ export class GalaxyView {
   restoreSession(snap: SessionSnap): void {
     this.pendingPlace = null;
     this.pendingSession = snap;
-    this.ship.at.set(snap.at[0], snap.at[1], snap.at[2]);
-    this.ship.fwd.set(snap.fwd[0], snap.fwd[1], snap.fwd[2]);
-    this.ship.up.set(snap.up[0], snap.up[1], snap.up[2]);
-    this.ship.orthonormalize();
+    decodeShipVoyage(snap, this.ship, this.voyage);
     this.mintAt.copy(this.ship.at);
-    this.voyage.astern = snap.astern;
-    this.voyage.thrustOn = Boolean(snap.thrustOn && !snap.riding && !snap.landed && !snap.departing);
-    this.voyage.thrustSpeed = 0;
-    this.voyage.coast.set(0, 0, 0);
-    if (snap.coast) this.voyage.coast.set(snap.coast[0], snap.coast[1], snap.coast[2]);
-    this.voyage.departing = snap.departing
-      ? {
-          v: snap.departing.v,
-          vEsc: snap.departing.vEsc,
-          dir: new THREE.Vector3(
-            snap.departing.dir[0],
-            snap.departing.dir[1],
-            snap.departing.dir[2],
-          ),
-        }
-      : null;
-    this.voyage.proximity = snap.proximity;
-    this.voyage.insertBlend = snap.insertBlend;
-    this.voyage.pendingArriveOrbit = snap.pendingArriveOrbit;
     this.worldId = snap.worldId ?? snap.bodyId;
     this.bindSky();
     this.regionLabel = regionName(this.ship.at.x, this.ship.at.y, this.ship.at.z);

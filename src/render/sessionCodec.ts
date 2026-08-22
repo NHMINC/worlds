@@ -12,6 +12,38 @@ import type { Voyage } from './voyage';
 
 const v = (p: THREE.Vector3): SessionVec => [p.x, p.y, p.z];
 
+/**
+ * Pure decode: the saved ship pose and voyage motion state,
+ * copied onto the modules. Restore is a copy, not a verb — the
+ * host-frame choreography (waiting for bodies, re-deriving ring
+ * radii under current laws) stays with the conductor.
+ */
+export function decodeShipVoyage(snap: SessionSnap, ship: ShipFlight, voyage: Voyage): void {
+  ship.at.set(snap.at[0], snap.at[1], snap.at[2]);
+  ship.fwd.set(snap.fwd[0], snap.fwd[1], snap.fwd[2]);
+  ship.up.set(snap.up[0], snap.up[1], snap.up[2]);
+  ship.orthonormalize();
+  voyage.astern = snap.astern;
+  voyage.thrustOn = Boolean(snap.thrustOn && !snap.riding && !snap.landed && !snap.departing);
+  voyage.thrustSpeed = 0;
+  voyage.coast.set(0, 0, 0);
+  if (snap.coast) voyage.coast.set(snap.coast[0], snap.coast[1], snap.coast[2]);
+  voyage.departing = snap.departing
+    ? {
+        v: snap.departing.v,
+        vEsc: snap.departing.vEsc,
+        dir: new THREE.Vector3(
+          snap.departing.dir[0],
+          snap.departing.dir[1],
+          snap.departing.dir[2],
+        ),
+      }
+    : null;
+  voyage.proximity = snap.proximity;
+  voyage.insertBlend = snap.insertBlend;
+  voyage.pendingArriveOrbit = snap.pendingArriveOrbit;
+}
+
 /** Live ship / drone save — written as the pose moves. */
 export function encodeSession(args: {
   seed: string;
