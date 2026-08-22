@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
+import type { SessionDrone, SessionVec } from '../world/types';
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
@@ -153,6 +154,41 @@ export class Trackball {
     }
     this.stayOut(world);
     return 'live';
+  }
+
+  snap(rideT: number): SessionDrone {
+    const v = (p: THREE.Vector3): SessionVec => [p.x, p.y, p.z];
+    return {
+      eye: v(this.eye),
+      fwd: v(this.fwd),
+      up: v(this.up),
+      lock: this.lock,
+      lockId: this.lockId,
+      rel: v(this.rel),
+      phase: this.phase,
+      launchLeg: this.launchLeg,
+      liftEye: v(this.liftEye),
+      parkedEye: v(this.parkedEye),
+      parkedFwd: v(this.parkedFwd),
+      parkedUp: v(this.parkedUp),
+      rideT,
+    };
+  }
+
+  restore(s: SessionDrone): void {
+    this.eye.set(s.eye[0], s.eye[1], s.eye[2]);
+    this.fwd.set(s.fwd[0], s.fwd[1], s.fwd[2]);
+    this.up.set(s.up[0], s.up[1], s.up[2]);
+    this.lock = s.lock;
+    this.lockId = s.lockId;
+    this.rel.set(s.rel[0], s.rel[1], s.rel[2]);
+    this.phase = s.phase;
+    this.launchLeg = s.launchLeg;
+    this.liftEye.set(s.liftEye[0], s.liftEye[1], s.liftEye[2]);
+    this.parkedEye.set(s.parkedEye[0], s.parkedEye[1], s.parkedEye[2]);
+    this.parkedFwd.set(s.parkedFwd[0], s.parkedFwd[1], s.parkedFwd[2]);
+    this.parkedUp.set(s.parkedUp[0], s.parkedUp[1], s.parkedUp[2]);
+    this.orthonormalize();
   }
 
   applyLook(

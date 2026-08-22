@@ -4,6 +4,7 @@ import { parseSystemExport, MAX_IMPORT_BYTES } from './parseExport';
 import { uuid } from '../world/rng';
 import type { SystemMeta } from '../world/types';
 import { getPlace, putPlace } from './place';
+import { getSession, putSession } from './session';
 
 export async function buildSystemExport(systemId: string) {
   const system = await db.systems.get(systemId);
@@ -15,8 +16,11 @@ export async function buildSystemExport(systemId: string) {
   const { id: _id, ...systemRest } = system;
   const camp = await getPlace();
   const place = camp && system.starId != null && camp.starId === system.starId ? camp : undefined;
+  const live = await getSession();
+  const session =
+    live && system.starId != null && live.starId === system.starId ? live : undefined;
   return {
-    formatVersion: 5 as const,
+    formatVersion: 6 as const,
     app: 'hex-world-builder' as const,
     kind: 'system' as const,
     system: systemRest,
@@ -25,6 +29,7 @@ export async function buildSystemExport(systemId: string) {
     labels: labels.map(({ systemId: _s, ...rest }) => rest),
     objects: objects.map(({ systemId: _s, ...rest }) => rest),
     place,
+    session,
   };
 }
 
@@ -71,5 +76,6 @@ export async function importSystem(file: File): Promise<string> {
     await db.objects.bulkAdd(data.objects.map((o) => ({ ...o, id: uuid(), systemId: id })));
   });
   if (data.place) await putPlace(data.place);
+  if (data.session) await putSession(data.session);
   return id;
 }

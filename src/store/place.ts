@@ -4,7 +4,15 @@ import type { LastPlace, SavedCamera, SystemMeta } from '../world/types';
 
 export const CAMP_ID = 'camp';
 
-const ORBITS = new Set<LastPlace['orbit']>(['leo', 'station', 'meo', 'geo', 'polar', 'hover']);
+const ORBITS = new Set<LastPlace['orbit']>([
+  'leo',
+  'station',
+  'meo',
+  'geo',
+  'polar',
+  'hover',
+  'ecliptic',
+]);
 
 export function placeKey(p: LastPlace): string {
   return `${p.starId}|${p.bodyId ?? ''}|${p.orbit ?? ''}|${p.landed ? 1 : 0}`;

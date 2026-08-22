@@ -4,6 +4,7 @@ import type {
   LabelRecord,
   LastPlace,
   ObjectRecord,
+  SessionSnap,
   SystemMeta,
   TerrainOverrideRecord,
 } from '../world/types';
@@ -11,6 +12,12 @@ import type {
 export type PlaceRecord = {
   id: 'camp';
   place: LastPlace;
+  updatedAt: number;
+};
+
+export type SessionRecord = {
+  id: 'live';
+  snap: SessionSnap;
   updatedAt: number;
 };
 
@@ -40,6 +47,7 @@ class WorldBuilderDB extends Dexie {
   objects!: Table<ObjectRecord, string>;
   harvest!: Table<HarvestCacheRecord, string>;
   place!: Table<PlaceRecord, string>;
+  session!: Table<SessionRecord, string>;
 
   constructor() {
     super('hex-world-builder');
@@ -88,6 +96,10 @@ class WorldBuilderDB extends Dexie {
     // the seed; this is where the player was standing.
     this.version(6).stores({
       place: 'id',
+    });
+    // v7: live ship / drone save. One row, rewritten as you move.
+    this.version(7).stores({
+      session: 'id',
     });
   }
 }

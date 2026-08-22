@@ -74,6 +74,91 @@ export interface LastPlace {
   h: number | null;
 }
 
+/** Compact unit / catalog triple written to the live session. */
+export type SessionVec = [number, number, number];
+
+export type SessionOrbit =
+  | 'leo'
+  | 'station'
+  | 'meo'
+  | 'geo'
+  | 'polar'
+  | 'hover'
+  | 'ecliptic';
+
+/** Drone pose in host-root km. Camera is this pose while the drone is out. */
+export interface SessionDrone {
+  eye: SessionVec;
+  fwd: SessionVec;
+  up: SessionVec;
+  lock: boolean;
+  lockId: string | null;
+  rel: SessionVec;
+  phase: 'launch' | 'home' | null;
+  launchLeg: 'lift' | 'pull';
+  liftEye: SessionVec;
+  parkedEye: SessionVec;
+  parkedFwd: SessionVec;
+  parkedUp: SessionVec;
+  /** System-time at launch — ride clock stays frozen until dock. */
+  rideT: number;
+}
+
+export interface SessionRide {
+  bodyId: string | null;
+  kind: SessionOrbit;
+  hang: boolean;
+  r: number;
+  theta0: number;
+  omega: number;
+  e1: SessionVec;
+  e2: SessionVec;
+  local: SessionVec;
+}
+
+export interface SessionCourse {
+  starId: number;
+  bodyId: string | null;
+  orbit: SessionOrbit;
+}
+
+/**
+ * Live save game. Ship + drone + helm, rewritten as you move.
+ * Kepler still runs at live `t` from the stored phase — we do
+ * not freeze the clock. One row in IDB; also rides the export
+ * when that file's star is this session's host.
+ */
+export interface SessionSnap {
+  v: 1;
+  galaxySeed: string;
+  at: SessionVec;
+  fwd: SessionVec;
+  up: SessionVec;
+  thrustOn: boolean;
+  astern: boolean;
+  coast: SessionVec | null;
+  departing: { v: number; vEsc: number; dir: SessionVec } | null;
+  starId: number | null;
+  bodyId: string | null;
+  worldId: string | null;
+  orbit: SessionOrbit | null;
+  landed: boolean;
+  riding: SessionRide | null;
+  capturing: { bodyId: string | null; kind: SessionOrbit; dir: SessionVec } | null;
+  pendingOrbit: { bodyId: string | null; kind: SessionOrbit } | null;
+  pendingArriveOrbit: boolean;
+  insertBlend: number;
+  surfDir: SessionVec | null;
+  sYaw: number;
+  sPitch: number;
+  sEyeH: number;
+  landKind: SessionOrbit | null;
+  course: SessionCourse | null;
+  courseLive: boolean;
+  proximity: boolean;
+  drone: SessionDrone | null;
+}
+
 export interface SystemMeta {
   id: string;
   name: string;
@@ -129,7 +214,7 @@ export interface ObjectRecord {
 }
 
 export interface SystemExport {
-  formatVersion: 4 | 5;
+  formatVersion: 4 | 5 | 6;
   app: 'hex-world-builder';
   kind: 'system';
   system: Omit<SystemMeta, 'id'>;
@@ -139,4 +224,6 @@ export interface SystemExport {
   objects: Array<Omit<ObjectRecord, 'systemId'>>;
   /** Camp when this file's star is the last place. v5. */
   place?: LastPlace;
+  /** Live ship / drone pose when this file's star is the host. v6. */
+  session?: SessionSnap;
 }

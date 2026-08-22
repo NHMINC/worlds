@@ -652,8 +652,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   latched heading to escape speed for that body
   (`√2 ω r`, floored by `ARRIVE_K` × the place fence
   so the beat is visible, capped by sphere warp). Ease
-  is `ORBIT_CAPTURE`. Helm shows **Stop** (keep the
-  speed so far). Then free look and Warp — leftover
+  is `ORBIT_CAPTURE`. The burn is not interruptible —
+  then you float free and the helm comes back. Leftover
   speed coasts inertially until Warp or Stop. A live
   dest survives Leave; a look drag still aborts it
   after the burn.
@@ -796,13 +796,22 @@ never store generated terrain, chemistry, or meshes.
 | Stored | Regenerated |
 |--------|-------------|
 | `SystemMeta` (seed, genVersion, camera; later `starId`) | Galaxy catalog, stellar phase, orbits, inventories, atmospheres |
-| `LastPlace` camp (star, body, ring or landing face) | Kepler pose at live `t`, host meshes, globe |
+| `SessionSnap` live save (ship pose, helm, drone, course) | Host meshes, globe, harvest photograph |
+| `LastPlace` camp (star, body, ring or landing face) | Kepler pose at live `t` when no session row |
 | Sparse terrain overrides `[cell, level, …]` | Hex columns, hydrology, snow line |
 | Labels, objects (city / town / landmark, later bases) | Palettes, geology, sea state, stellar phase |
 
+The live save is one IndexedDB row (`session` / `live`), rewritten
+as you move (~every 200 ms when the pose changes, and on hide).
+Compact JSON is about 0.6 KB on a ring and about 1 KB with the
+drone out — not a world dump. Reload restores the ship, the
+drone (if it was out), and that camera. Kepler still runs at
+live `t` from the stored phase.
+
 **Export is first-class.** One self-contained `.tinysystem.json`
-(`formatVersion: 5`, `src/store/exportImport.ts`). Import creates a new
-system id and copies the overlay. A friend can load your file and stand
+(`formatVersion: 6`, `src/store/exportImport.ts`). Import creates a new
+system id and copies the overlay (and the live session when that
+file's star is the host). A friend can load your file and stand
 on the same hex of the same world. Native iOS uses the share sheet.
 Older exports are **private bottles** — they are not objects placed into
 the canonical galaxy. The shared sky is `objectAt(CANONICAL_SEED, id)`.

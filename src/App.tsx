@@ -5,8 +5,9 @@ import { objectAt } from './world/galaxy';
 import { discoverHabitable } from './world/discover';
 import { hideUniverseSplash, prepareUniverse } from './world/universePrep';
 import { UNIVERSE } from './world/physics';
-import type { LastPlace, SystemMeta } from './world/types';
+import type { LastPlace, SessionSnap, SystemMeta } from './world/types';
 import { getPlace, placeFromVisit, putPlace } from './store/place';
+import { getSession, putSession, sessionAlive, sessionToPlace } from './store/session';
 import { listVisits, upsertVisit, visitAlive, visitByStar } from './store/visits';
 import { GalaxyExplorer, type ExplorerGo } from './ui/GalaxyExplorer';
 import { SystemManager } from './ui/SystemManager';
@@ -17,6 +18,7 @@ export default function App() {
   const [managerOpen, setManagerOpen] = useState(false);
   const [lookStarId, setLookStarId] = useState<number | null>(null);
   const [camp, setCamp] = useState<LastPlace | null>(null);
+  const [session, setSession] = useState<SessionSnap | null>(null);
   const [campReady, setCampReady] = useState(false);
   const [go, setGo] = useState<ExplorerGo | null>(null);
 
@@ -56,11 +58,25 @@ export default function App() {
     const list = await listVisits();
     setSystems(list);
     await prep;
+    const live = await getSession();
+    const liveOk = live && sessionAlive(live) ? live : null;
     const saved = placeAlive(await getPlace());
     const fromVisit = saved ?? placeAlive(list[0] ? placeFromVisit(list[0]) : null);
-    if (fromVisit) await openCamp(fromVisit);
+    if (liveOk) {
+      setSession(liveOk);
+      const campFromLive = placeAlive(sessionToPlace(liveOk));
+      if (campFromLive) await openCamp(campFromLive);
+      else {
+        setLookStarId(liveOk.starId);
+        setCampReady(true);
+      }
+    } else if (fromVisit) await openCamp(fromVisit);
     else await openFreshGalaxy();
     hideUniverseSplash();
+  }
+
+  function handleSession(s: SessionSnap): void {
+    void putSession(s);
   }
 
   function handlePlace(p: LastPlace): void {
@@ -118,8 +134,10 @@ export default function App() {
           hereStarId={lookStarId ?? camp?.starId ?? system?.starId}
           visitedStarIds={systems.map((s) => s.starId).filter((id): id is number => id != null)}
           resume={camp}
+          resumeSession={session}
           go={go}
           onPlace={handlePlace}
+          onSession={handleSession}
           onOpenVisits={() => setManagerOpen(true)}
           visitId={system?.id ?? null}
         />

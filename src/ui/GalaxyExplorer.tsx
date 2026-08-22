@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
 import { lockedToStar, systemAt, type BodySpec } from '../world/systemgen';
 import { GalaxyView, type GalaxyFrame, type GalaxyPreset, type GlobePick, type MarkTool } from '../render/galaxyView';
-import type { LabelRecord, LastPlace, ObjectKind, ObjectRecord } from '../world/types';
+import type { LabelRecord, LastPlace, ObjectKind, ObjectRecord, SessionSnap } from '../world/types';
 import { db, touchSystem } from '../store/db';
 import { uuid } from '../world/rng';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
@@ -76,6 +76,9 @@ interface Props {
   visitedStarIds?: number[];
   /** Last camp — boot snaps here instead of the first-look park. */
   resume?: LastPlace | null;
+  /** Live ship / drone save — wins over the coarse camp. */
+  resumeSession?: SessionSnap | null;
+  onSession?: (s: SessionSnap) => void;
   /** Later travel (visits / import / forget) — does not remint the view. */
   go?: ExplorerGo | null;
   /** False while the explorer is kept warm but hidden. */
@@ -99,8 +102,12 @@ export function GalaxyExplorer(props: Props) {
   readyRef.current = props.onReady;
   const placeRef = useRef(props.onPlace);
   placeRef.current = props.onPlace;
+  const sessionWriteRef = useRef(props.onSession);
+  sessionWriteRef.current = props.onSession;
   const resumeRef = useRef(props.resume);
   resumeRef.current = props.resume;
+  const resumeSessionRef = useRef(props.resumeSession);
+  resumeSessionRef.current = props.resumeSession;
   const inspectRef = useRef<(hit: GlobePick | null) => void>(() => {});
   const markRef = useRef<(tool: MarkTool, hit: GlobePick) => void>(() => {});
   const markTicks = useRef(new Set<() => void>());
@@ -179,6 +186,7 @@ export function GalaxyExplorer(props: Props) {
         {
           onSelect: () => {},
           onPlace: (p) => placeRef.current?.(p),
+          onSession: (s) => sessionWriteRef.current?.(s),
           onInspect: (hit) => inspectRef.current(hit),
           onMark: (tool, hit) => markRef.current(tool, hit),
           onFrame: (f) => {
@@ -226,6 +234,7 @@ export function GalaxyExplorer(props: Props) {
         },
         hereRef.current,
         resumeRef.current ?? null,
+        resumeSessionRef.current ?? null,
       );
       viewRef.current = view;
       (window as unknown as { __galaxyView?: GalaxyView }).__galaxyView = view;
@@ -312,6 +321,7 @@ export function GalaxyExplorer(props: Props) {
   useEffect(() => {
     if (!ready) return;
     const flush = (): void => {
+      viewRef.current?.flushSession();
       const p = viewRef.current?.snapshotPlace();
       if (p) placeRef.current?.(p);
     };
@@ -700,13 +710,12 @@ export function GalaxyExplorer(props: Props) {
             ) : frame.departing ? (
               <button
                 type="button"
-                className="gx-warp stop"
-                disabled={frame.drone}
-                aria-label="Stop"
-                title="Keep this speed and fly free"
-                onClick={() => viewRef.current?.setWarp(false)}
+                className="gx-warp gx-leave"
+                disabled
+                aria-label="Leaving orbit"
+                title="Burn to escape — then you fly free"
               >
-                Stop
+                Leaving
               </button>
             ) : frame.canLeaveOrbit ? (
               <button

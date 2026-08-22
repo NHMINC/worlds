@@ -9,10 +9,12 @@ import type {
   ObjectKind,
   ObjectRecord,
   SavedCamera,
+  SessionSnap,
   SystemMeta,
   TerrainOverrideRecord,
 } from '../world/types';
 import { isLastPlace } from './place';
+import { isSessionSnap } from './session';
 
 export const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
 const MAX_NAME = 200;
@@ -193,7 +195,7 @@ function parseArray<T>(v: unknown, max: number, label: string, item: (x: unknown
 
 /** Allowlisted import document. Label/object ids are discarded and reissued. */
 export interface ParsedSystemExport {
-  formatVersion: 4 | 5;
+  formatVersion: 4 | 5 | 6;
   app: 'hex-world-builder';
   kind: 'system';
   system: Omit<SystemMeta, 'id'>;
@@ -202,6 +204,7 @@ export interface ParsedSystemExport {
   labels: Array<Omit<LabelRecord, 'systemId' | 'id'>>;
   objects: Array<Omit<ObjectRecord, 'systemId' | 'id'>>;
   place?: LastPlace;
+  session?: SessionSnap;
 }
 
 /** Parse and allowlist a system export. Throws on anything unexpected. */
@@ -221,7 +224,7 @@ export function parseSystemExport(text: string): ParsedSystemExport {
     !isRecord(raw) ||
     raw.app !== 'hex-world-builder' ||
     raw.kind !== 'system' ||
-    (raw.formatVersion !== 4 && raw.formatVersion !== 5)
+    (raw.formatVersion !== 4 && raw.formatVersion !== 5 && raw.formatVersion !== 6)
   ) {
     fail(UNRECOGNIZED);
   }
@@ -235,8 +238,13 @@ export function parseSystemExport(text: string): ParsedSystemExport {
     if (!isLastPlace(raw.place)) fail('Invalid place.');
     place = raw.place;
   }
+  let session: SessionSnap | undefined;
+  if (raw.session !== undefined) {
+    if (!isSessionSnap(raw.session)) fail('Invalid session.');
+    session = raw.session;
+  }
   return {
-    formatVersion: raw.formatVersion === 5 ? 5 : 4,
+    formatVersion: raw.formatVersion === 6 ? 6 : raw.formatVersion === 5 ? 5 : 4,
     app: 'hex-world-builder',
     kind: 'system',
     system,
@@ -245,5 +253,6 @@ export function parseSystemExport(text: string): ParsedSystemExport {
     labels: parseArray(raw.labels, MAX_LABELS, 'labels', parseLabel),
     objects: parseArray(raw.objects, MAX_OBJECTS, 'objects', parseObject),
     place,
+    session,
   };
 }
