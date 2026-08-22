@@ -1978,9 +1978,9 @@ export class GalaxyView {
 
   /**
    * Set course: Lock-on to a star's ecliptic orbit (fill-safe
-   * shell). Capture onto the Kepler ring ends Lock-on → In Orbit.
-   * Chart orbit picks use goToWorldOrbit. A look drag hands the
-   * stick back; it does not remove the close star.
+   * shell) and warp-ahead. Capture onto the Kepler ring ends
+   * Lock-on → In Orbit. Chart orbit picks use goToWorldOrbit.
+   * A look drag aborts the lock and stops warp.
    */
   setCourse(obj: GalaxyObject): void {
     if (this.mode !== 'region') return;
@@ -2013,7 +2013,7 @@ export class GalaxyView {
     };
     this.select(null);
     this.selectedBodyId = null;
-    this.wake();
+    this.beginAutopilot();
   }
 
   /** Set course on a world of the current host — Lock-on heading. */
@@ -2032,7 +2032,7 @@ export class GalaxyView {
     this.navMode = 'lock';
     this.courseHud = this.hudForBody(rt);
     this.select(null);
-    this.wake();
+    this.beginAutopilot();
   }
 
   /**
@@ -2049,9 +2049,26 @@ export class GalaxyView {
     this.pendingOrbit = { bodyId, kind };
     this.navMode = 'lock';
     this.resetRoutePlot();
+    this.beginAutopilot();
+  }
+
+  /** Lock-on is warp-ahead until a look drag aborts it. */
+  private beginAutopilot(): void {
+    this.navMode = 'lock';
+    if (this.thrustOn) this.setWarp(false);
     this.setGear(false);
     this.setWarp(true);
     this.wake();
+  }
+
+  /** Finger drag during lock-on: drop the heading and stop warp. */
+  private abortAutopilot(): void {
+    if (this.navMode !== 'lock') return;
+    this.pendingOrbit = null;
+    this.pendingArriveOrbit = false;
+    this.insertBlend = 0;
+    this.clearCourse();
+    if (this.thrustOn) this.setWarp(false);
   }
 
   private clearRide(): void {
@@ -3544,7 +3561,7 @@ export class GalaxyView {
     if (this.navMode !== 'lock') return;
     if (this.mode !== 'region') return;
     if (this.riding || this.landed || this.drone || this.capturing) return;
-    if (this.looking && !this.pendingOrbit) return;
+    if (this.looking) return;
     let insertBlend = 0;
     // Eye→body before insert rewrite — zenith = radial out (−eye→body).
     let zenX = 0;
@@ -5376,6 +5393,7 @@ export class GalaxyView {
       const pts = [...this.pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
       const ang = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
+      this.abortAutopilot();
       if (this.pinch0 > 0) {
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
@@ -5429,7 +5447,7 @@ export class GalaxyView {
         this.applyCam();
         return;
       }
-      if (!this.pendingOrbit && !this.riding) this.clearCourse();
+      this.abortAutopilot();
       if (this.riding) this.rideLookFree = true;
       this.orientArc();
       this.spinLook(this.arcFwd, this.arcUp, dx, dy);

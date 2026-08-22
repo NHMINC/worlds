@@ -452,7 +452,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Heading hold',
     group: 'approach',
     hint: 'how fast the nose eases onto the course (1/s)',
-    about: 'Set course eases the nose onto the star or world at this rate and keeps it there while flying. A look drag hands the stick back. Next frame.',
+    about: 'Set course eases the nose onto the star or world at this rate, latches warp-ahead, and keeps the heading. A look drag aborts the lock and stops warp. Next frame.',
     uniform: 'uArriveHold',
     min: 0.5,
     max: 8,

@@ -102,8 +102,9 @@ toy — Godus blocks on a real-sized globe.
   density field + IMF + closed-form stellar clock instead); interstellar
   travel is warp at `GALAXY_WARP`, never clamped between the stars.
   The reticle plate only names an object inside `AIM_RANGE_KPC`
-  (1 kpc). Set course is a heading hold (`ARRIVE_HOLD`): the plate
-  reads Course Locked; a look drag hands the stick back. On a
+  (1 kpc). Set course is autopilot: heading hold (`ARRIVE_HOLD`)
+  and warp-ahead. The plate reads Course Locked. A look drag
+  (or pinch / twist) aborts — heading and warp. On a
   locked course warp stays warp until `ARRIVE_BRAKE_LY` (50 ly),
   then half of disk warp until a frame would hit the fence,
   then half again, down to the sphere speed limit — longest
@@ -448,7 +449,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   locks the body in the pip.
   Land sets down on
   that face; Take off returns to the ring. Reticle Set course
-  stays a heading hold to the fill park. **Cosmic engineer** (explorer top bar) is a dropdown of
+  stays autopilot to the fill park (warp-ahead;
+  a look drag aborts). **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, approach, nebulae). Sections stay
   collapsed until opened, and stay open when you pick a
@@ -631,9 +633,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (`SOI_TWIST`), catalog and sphere. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
-  `AIM_RANGE_KPC`. Set course holds the heading
-  (nose only — bank waits for the insert window);
-  the plate
+  `AIM_RANGE_KPC`. Set course is autopilot:
+  heading hold (nose only — bank waits for the
+  insert window) plus warp-ahead. A look drag
+  aborts both. The plate
   shows live distance in AU / ly / kpc. Inside a sphere
   a corner overlay names the remaining distance to the fence.
   From

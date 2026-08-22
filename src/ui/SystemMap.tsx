@@ -8,7 +8,7 @@ import { keplerPlane, type SystemSpec } from '../world/systemgen';
  * a physical scale), but every body rides its live orbital angle, so the map
  * drifts in real time. In the explorer the chart is zoomable — pinch / wheel
  * / drag — and a tap opens the orbit picker (the parent warps onto the
- * chosen ring). Reticle Set course is still a heading hold to the fill park.
+ * chosen ring). Reticle Set course is autopilot to the fill park.
  */
 
 export interface MapMoon {
