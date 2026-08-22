@@ -1,27 +1,14 @@
 /**
- * Host-pass autopilot modes. Exclusive — one at a time.
+ * HUD labels derived from course + place.
  *
- *   lock       — calculated trajectory into a chosen orbit
- *                (body ring, or star ecliptic). Graze-safe
- *                insertion that yaws onto prograde before the
- *                shell, then a capture settle onto the rail.
- *                Turns off the moment the ring is held.
- *   orbit      — on the ring. Autopilot off. Inertial rings
- *                (LEO / station / MEO / polar) pitch the look
- *                down so the forward limb fills the bottom
- *                ~30% of the frame; GEO / hover face the hang
- *                face. A look drag takes the stick and keeps
- *                it — release does not snap back. The reticle
- *                is only the view-centre pip.
- *   proximity  — left orbit by warp (free roam). Reports
- *                nearest body only; no heading hold, no
- *                guidance, no re-lock until the player picks
- *                a course. Speed is not capped by the body
- *                you just left — only an active course is.
- *   null       — free cruise (no lock, not on a ring, not
- *                post-break).
+ *   lock       — a live berth: exit / leave / cruise / insert / capture
+ *   orbit      — on the dest ring. Autopilot off.
+ *   proximity  — left a ring with no dest (free roam)
+ *   null       — free cruise
  *
- * Place laws (host sphere, world fence) are separate from this.
+ * Place laws (host sphere, world fence) are separate. The
+ * course object is the source of truth; this file only names
+ * the mode for the plate.
  */
 import type { WorldOrbitKind } from '../world/worldOrbit';
 

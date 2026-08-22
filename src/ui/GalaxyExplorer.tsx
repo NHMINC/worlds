@@ -365,8 +365,8 @@ export function GalaxyExplorer(props: Props) {
   }, [mapOpen]);
 
   useEffect(() => {
-    if (frame.hostId == null) setMapOpen(false);
-  }, [frame.hostId]);
+    if (frame.focus?.id == null && frame.hostId == null) setMapOpen(false);
+  }, [frame.focus?.id, frame.hostId]);
 
   function openKnob(id: string): void {
     const live = liveKnob(id);
@@ -581,7 +581,7 @@ export function GalaxyExplorer(props: Props) {
   const spec = live ?? rebuild;
   const isDefault = Boolean(spec && atDefault(spec, knobVal));
   const editing = Boolean(spec);
-  const chartId = frame.hostId;
+  const chartId = frame.focus?.id ?? frame.hostId;
   const chartSpec = useMemo(() => {
     if (chartId == null) return null;
     try {
@@ -701,6 +701,7 @@ export function GalaxyExplorer(props: Props) {
                     className={`gx-gear${frame.astern ? ' astern' : ''}`}
                     aria-label={frame.astern ? 'Astern' : 'Ahead'}
                     title={frame.astern ? 'Astern' : 'Ahead'}
+                    disabled={frame.drone}
                     onClick={() => viewRef.current?.toggleGear()}
                   >
                     {frame.astern ? '↓' : '↑'}
@@ -709,6 +710,7 @@ export function GalaxyExplorer(props: Props) {
                 <button
                   type="button"
                   className={`gx-warp${frame.warp ? ' stop' : ''}`}
+                  disabled={frame.drone}
                   onClick={() => viewRef.current?.setWarp(!frame.warp)}
                 >
                   {frame.warp ? 'Stop' : 'Warp'}
@@ -800,9 +802,10 @@ export function GalaxyExplorer(props: Props) {
                   <button
                     type="button"
                     className="gx-plate-go"
+                    disabled={frame.drone}
                     onClick={() => {
                       const view = viewRef.current;
-                      if (!view) return;
+                      if (!view || frame.drone) return;
                       const body = view.focusedBodyId();
                       if (body) view.setCourseBody(body);
                       else {

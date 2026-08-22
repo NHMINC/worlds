@@ -375,8 +375,9 @@ export const UNIVERSE = {
    * and capture rate) so the fence cannot be skipped,
    * Stop when that world's disk covers ARRIVE_FILL.
    * Look drag releases the heading, not the world.
-   * Another world can be picked without leaving the
-   * host; another star cannot. Survey gain stays the
+   * Another world or another star can be named
+   * without leaving the host — SOI is a place.
+   * Survey gain stays the
    * host-sphere law. The ball stays a ball.
    */
   AIM_RANGE_KPC: 1,
@@ -527,9 +528,9 @@ export const UNIVERSE = {
    * Launch / recall use the capture ease (`ORBIT_CAPTURE`):
    * lift along the local zenith by `DRONE_LIFT` (a fraction of
    * hover height, floored at that fraction of the body radius)
-   * while the look rotates onto the core; recall flies back
-   * onto the live ship and lands — the arrival sequence, not
-   * a cut.
+   * while the look rotates onto the core; recall flies a
+   * line to the parked ship and docks the camera — drone
+   * law, not orbit capture.
    */
   SOI_ZOOM: 0.55,
   SOI_TWIST: 1,
@@ -538,7 +539,8 @@ export const UNIVERSE = {
   /**
    * Trackball lift. Fraction of the hover height above the
    * nearest core, floored at this fraction of that body's
-   * radius so a skim still hops. The ease is ORBIT_CAPTURE.
+   * radius so a skim still hops. Launch / home ease is the
+   * drone's own rate, not ORBIT_CAPTURE.
    */
   DRONE_LIFT: 0.16,
   /**

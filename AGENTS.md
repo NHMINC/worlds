@@ -102,9 +102,15 @@ toy — Godus blocks on a real-sized globe.
   density field + IMF + closed-form stellar clock instead); interstellar
   travel is warp at `GALAXY_WARP`, never clamped between the stars.
   The reticle plate only names an object inside `AIM_RANGE_KPC`
-  (1 kpc). Set course is autopilot: heading hold (`ARRIVE_HOLD`)
-  and warp-ahead. The plate reads Course Locked. A look drag
-  (or pinch / twist) aborts — heading and warp. On a
+  (1 kpc). Set course names a **berth** (`starId`, `bodyId | null`,
+  ring) and runs a ship-only pipeline of derived legs (exit
+  ring → leave SOI → catalog cruise → enter → insert →
+  capture → in orbit). The plate reads Course Locked. A look
+  drag (or pinch / twist) aborts the route and warp. Stop
+  kills thrust only — Warp again resumes the same dest.
+  The chart opens on the focused harvest star (else the
+  host). You may name another star from inside an SOI; the
+  sphere is a place, not a “you may not set course” wall. On a
   locked course warp stays warp until `ARRIVE_BRAKE_LY` (50 ly),
   then half of disk warp until a frame would hit the fence,
   then half again, down to the sphere speed limit — longest
@@ -176,8 +182,9 @@ toy — Godus blocks on a real-sized globe.
   chosen so the line deviates by less
   than a quarter body radius, so bodies
   ride their drawn lines. Another world
-  can be chosen without leaving the host;
-  another star cannot.   Every rocky body
+  or another star can be named without
+  leaving the current ring — ExitRing
+  then LeaveSoi keep the dest.   Every rocky body
   of the host grows a Goldberg globe
   (terrace, air, water — same
   shaders as the old viewer). The
@@ -202,22 +209,26 @@ toy — Godus blocks on a real-sized globe.
   (LEO / station / MEO / polar) pitch
   the look so the forward limb fills
   `ORBIT_LIMB_FILL` (30%) of the bottom
-  of the frame; insertion eases from
-  full-ahead to that pitch. The ship
-  looks ahead; that look moves with
-  the ship. Looking around is the
-  drone. Trackball on launches it:
-  it lifts along the zenith and the
-  look eases onto the body nearest
-  the ship (target lock) at the
-  capture rate (`ORBIT_CAPTURE`,
-  `DRONE_LIFT`). That lock stays
-  until Target is tapped off or
-  the drone goes home. Target on
-  from free fly locks the body in
-  the pip. Trackball off flies it
-  home onto the live ship camera —
-  the same arrival ease, not a cut.
+  of the frame; insertion eases that
+  pitch as a **ship attitude** (no
+  second camera). The ship looks
+  ahead; that look *is* the camera
+  when the ship is live. The
+  trackball is an independent drone
+  (`drone.ts`) — own look / zoom-
+  thrust / twist / Target. The only
+  join is launch / land. Trackball
+  on parks the ship and lifts along
+  the zenith into lock on the body
+  nearest the ship (`DRONE_LIFT`).
+  That lock stays until Target is
+  tapped off or the drone goes home.
+  Home flies a line to the parked
+  ship, then docks the camera onto
+  that frozen pose — not the ship's
+  orbit-entry bank. While the drone
+  is out, Set course and Warp are
+  no-ops (they do not home it).
   Zoom
   in / out is thrust along the look
   (enter air, mooch between moons);
@@ -625,18 +636,20 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   ahead / astern when stopped so you can back off a park.
   Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
   quietly unless that gear points inward. A tap, not a hold.
-  Drag looks on the current camera — ship
-  and trackball share that stick (yaw
-  around up, pitch around fwd × up; no
-  galactic-north Euler). Two-finger twist rolls the
-  look — clockwise fingers, clockwise roll
-  (`SOI_TWIST`), catalog and sphere. After a pinch, the surviving
+  Drag looks: the **ship** stick (yaw around
+  current up, pitch around fwd × up, twist
+  around the nose) lives in `flight.ts`.
+  The **drone** stick is its own in
+  `drone.ts` — they do not share a
+  `stick.ts`. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
-  `AIM_RANGE_KPC`. Set course is autopilot:
-  heading hold (nose only — bank waits for the
-  insert window) plus warp-ahead. A look drag
-  aborts both. The plate
+  `AIM_RANGE_KPC`. Set course is a berth
+  pipeline (`course.ts`): heading hold
+  (nose only — bank waits for the insert
+  window) plus warp-ahead. A look drag
+  aborts the route. Stop kills thrust
+  only. The plate
   shows live distance in AU / ly / kpc. Inside a sphere
   a corner overlay names the remaining distance to the fence.
   From
@@ -684,9 +697,10 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (points, dots, the band). At any Unix time `t` we already know where
   every star and planet is — we just do not mesh them.
 
-Camera rigs live on the host pass (`galaxyView.ts`). Ride is a named
-ring; land walks the terrace; the SOI drone launches on a
-zenith lift into Target lock and recalls on the capture ease.
+Camera is the live vehicle. Ship pose (`flight.ts`) is catalog
+kpc in or out of a sphere. The drone (`drone.ts`) is host-km
+and meets the ship only at launch / land. Ride is a named
+ring; land walks the terrace.
 The sculpt
 brush, the unseeded night shell, and the water-capture photographs
 are retired.
@@ -995,10 +1009,13 @@ Code map (start here):
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
-| Galaxy explorer (stars + nebulae + dust + cosmic shell + host pass) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (catalog, place, globes; routes input) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Ship pose + stick (catalog kpc, in or out of SOI) | `src/render/flight.ts` |
+| Trackball drone (own nav; join = launch / land) | `src/render/drone.ts` |
+| Course berth + derived legs | `src/world/course.ts` |
 | Host solar system (Kepler balls + rings under the sphere) | `src/render/hostSystem.ts` |
 | Host look (Center = nearest body core) | `src/render/hostLook.ts` |
-| Host nav modes (lock-on / in orbit / proximity) | `src/render/hostNav.ts` |
+| Host nav HUD (derived from course + place) | `src/render/hostNav.ts` |
 | Host orbit insertion (prograde approach) | `src/render/orbitInsert.ts` |
 | Host-pass rocky globes (every rocky body) | `src/render/rockyGlobe.ts` |
 | SOI catalog freeze (dust column bake) | `src/world/extinct.ts` |
