@@ -256,11 +256,8 @@ toy — Godus blocks on a real-sized globe.
   drag steers. Target off
   is free fly. The star is the
   furnace — no look-at-sun control.
-  On the ground,
-  zoom-in latches a walk; zoom-out
-  dumps it, then settles. WASD glides.
-  Take off returns to the ring we
-  left, over that face.
+  Old landed saves rise onto the
+  ring they stood under.
   Short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
   plate tectonics, and **weather** are out of scope until we take them
@@ -485,9 +482,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Target stays on that id until
   tapped off, or locks the body in
   the pip.
-  Land sets down on
-  that face; Take off returns to the ring. Reticle Set course
-  stays autopilot to the fill park (warp-ahead;
+  Reticle Set course
+  stays autopilot to the film park (warp-ahead;
   a look drag aborts). **Cosmic engineer** (explorer top bar) is a dropdown of
   laws grouped by use (cosmic background, galactic dust,
   harvest survey, starlight, approach, nebulae). Sections stay
@@ -747,8 +743,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 
 Camera is the live vehicle. Ship pose (`flight.ts`) is catalog
 kpc in or out of a sphere. The drone (`drone.ts`) is host-km
-and meets the ship only at launch / land. Ride is a named
-ring; land walks the terrace.
+and meets the ship only at launch / dock. Ride is a named
+ring; the drone is the close look — landing and the surface
+walk are retired.
 The sculpt
 brush, the unseeded night shell, and the water-capture photographs
 are retired.
@@ -758,7 +755,7 @@ The app lives at `http://localhost:5173/` (`npm run dev`).
 |-------------|---------|
 | disk | Catalog flight. Warp, look, Face-on / Edge-on / Home. |
 | host | Inside the 0.01 ly sphere. Photosphere + planets. A chart pick rides a named ring. |
-| land | Walk the latched globe. Drag looks. Zoom walks the terrace. |
+| drone | Trackball around the orbited body. Zoom is thrust; Target locks the core. |
 
 ---
 
@@ -814,7 +811,7 @@ never store generated terrain, chemistry, or meshes.
 |--------|-------------|
 | `SystemMeta` (seed, genVersion, camera; later `starId`) | Galaxy catalog, stellar phase, orbits, inventories, atmospheres |
 | `SessionSnap` live save (ship pose, helm, drone, course) | Host meshes, globe, harvest photograph |
-| `LastPlace` camp (star, body, ring or landing face) | Kepler pose at live `t` when no session row |
+| `LastPlace` camp (star, body, ring — old landing faces read as rides) | Kepler pose at live `t` when no session row |
 | Sparse terrain overrides `[cell, level, …]` | Hex columns, hydrology, snow line |
 | Labels, objects (city / town / landmark, later bases) | Palettes, geology, sea state, stellar phase |
 
@@ -853,8 +850,10 @@ are **overlays on the addressable grid**, not new planet types.
 
 **Now** (on the host-pass globe)
 
-- Inspect a hex: composition of that column’s surface layer, from geology.
-- Place labels and objects (`city` / `town` / `landmark`) on a cell.
+- Inspect the orbited world (body physics; per-hex inspection returns
+  when the drone can pick cells — walking is retired).
+- Labels and objects (`city` / `town` / `landmark`) still render on
+  their cells; placing new ones waits for the drone pick.
 
 **Direction (do not invent a parallel world to get here)**
 

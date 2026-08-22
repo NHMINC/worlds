@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UNIVERSE } from '../world/physics';
-import { lockedToStar, systemAt, type BodySpec } from '../world/systemgen';
-import { GalaxyView, type GalaxyFrame, type GalaxyPreset, type GlobePick, type MarkTool } from '../render/galaxyView';
+import { systemAt, type BodySpec } from '../world/systemgen';
+import { GalaxyView, type GalaxyFrame, type GalaxyPreset } from '../render/galaxyView';
 import type { LabelRecord, LastPlace, ObjectKind, ObjectRecord, SessionSnap } from '../world/types';
 import { db, touchSystem } from '../store/db';
 import { uuid } from '../world/rng';
 import { remintUniverse, rebakeUniverseDust, rebakeUniverseNebulae, onUniverseProgress } from '../world/universePrep';
 import { AmbientMusic } from '../audio/ambient';
-import { geologyFor } from '../world/geology';
-import { insolationAt, localTemp01, METERS_PER_LEVEL } from '../world/toygen';
 import {
   ENGINEER_GROUPS,
   atDefault,
@@ -18,7 +16,7 @@ import {
   rebuildKnob,
   type RebuildScope,
 } from './liveKnobs';
-import { IconCenter, IconGlobe, IconInspect, IconLabel, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconTrackball } from './icons';
+import { IconCenter, IconGlobe, IconInspect, IconMusic, IconMusicOff, IconOrbits, IconTrackball } from './icons';
 import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
 import { OrbitPick } from './OrbitPick';
 import { InspectorPanel, type InspectedCell } from './InspectorPanel';
@@ -46,21 +44,6 @@ export function formatCatalogDist(kpc: number): string {
   const km = d * UNIVERSE.KPC_KM;
   if (km >= 1) return `${km >= 100 ? km.toFixed(0) : km.toFixed(1)} km`;
   return `${Math.max(0, km * 1000).toFixed(0)} m`;
-}
-
-function cellInspect(body: BodySpec, hit: GlobePick): InspectedCell {
-  const geo = geologyFor(body.seed, body.physics, hit.waterLevel);
-  const locked = lockedToStar(body);
-  const span = locked ? UNIVERSE.TEMP_SPAN_LOCKED : UNIVERSE.TEMP_SPAN_SPIN;
-  const insol = insolationAt(hit.dir[0], hit.dir[1], hit.dir[2], locked);
-  const t01 = localTemp01(body.temp ?? body.physics.temp01, span, insol);
-  return {
-    cell: hit.cell,
-    level: hit.level,
-    elevationM: (hit.level - hit.waterLevel) * METERS_PER_LEVEL,
-    localK: UNIVERSE.T_COLD + t01 * (UNIVERSE.T_HOT - UNIVERSE.T_COLD),
-    elements: geo.at(hit.dir[0], hit.dir[1], hit.dir[2], hit.level),
-  };
 }
 
 export interface ExplorerGo {
@@ -108,14 +91,11 @@ export function GalaxyExplorer(props: Props) {
   resumeRef.current = props.resume;
   const resumeSessionRef = useRef(props.resumeSession);
   resumeSessionRef.current = props.resumeSession;
-  const inspectRef = useRef<(hit: GlobePick | null) => void>(() => {});
-  const markRef = useRef<(tool: MarkTool, hit: GlobePick) => void>(() => {});
   const markTicks = useRef(new Set<() => void>());
-  const [markTool, setMarkTool] = useState<MarkTool | null>(null);
   const [labels, setLabels] = useState<LabelRecord[]>([]);
   const [objects, setObjects] = useState<ObjectRecord[]>([]);
   const [placeDialog, setPlaceDialog] = useState<{
-    mode: MarkTool;
+    mode: 'label' | 'object';
     bodyId: string;
     cell: number;
     existingLabel?: LabelRecord;
@@ -162,8 +142,6 @@ export function GalaxyExplorer(props: Props) {
     navHint: null,
     canLeaveOrbit: false,
     departing: false,
-    landed: false,
-    canLand: false,
     lookHold: null,
     drone: false,
     dronePhase: null,
@@ -187,8 +165,6 @@ export function GalaxyExplorer(props: Props) {
           onSelect: () => {},
           onPlace: (p) => placeRef.current?.(p),
           onSession: (s) => sessionWriteRef.current?.(s),
-          onInspect: (hit) => inspectRef.current(hit),
-          onMark: (tool, hit) => markRef.current(tool, hit),
           onFrame: (f) => {
             for (const fn of markTicks.current) fn();
             setFrame((prev) =>
@@ -216,8 +192,6 @@ export function GalaxyExplorer(props: Props) {
               prev.navHint !== f.navHint ||
               prev.canLeaveOrbit !== f.canLeaveOrbit ||
               prev.departing !== f.departing ||
-              prev.landed !== f.landed ||
-              prev.canLand !== f.canLand ||
               prev.lookHold !== f.lookHold ||
               prev.drone !== f.drone ||
               prev.dronePhase !== f.dronePhase ||
@@ -308,15 +282,6 @@ export function GalaxyExplorer(props: Props) {
       cancelled = true;
     };
   }, [props.visitId]);
-
-  useEffect(() => {
-    if (!ready) return;
-    viewRef.current?.setMarkTool(frame.landed ? markTool : null);
-  }, [ready, markTool, frame.landed]);
-
-  useEffect(() => {
-    if (!frame.landed) setMarkTool(null);
-  }, [frame.landed]);
 
   useEffect(() => {
     if (!ready) return;
@@ -482,27 +447,6 @@ export function GalaxyExplorer(props: Props) {
     }
   }
 
-  inspectRef.current = (hit) => {
-    const body = viewRef.current?.inspectBody();
-    if (!body) return;
-    setInspect({
-      body,
-      cell: hit && hit.bodyId === body.id ? cellInspect(body, hit) : null,
-    });
-  };
-
-  markRef.current = (tool, hit) => {
-    const existingLabel = labels.find((l) => l.bodyId === hit.bodyId && l.cell === hit.cell);
-    const existingObject = objects.find((o) => o.bodyId === hit.bodyId && o.cell === hit.cell);
-    setPlaceDialog({
-      mode: tool,
-      bodyId: hit.bodyId,
-      cell: hit.cell,
-      existingLabel: tool === 'label' ? existingLabel : undefined,
-      existingObject: tool === 'object' ? existingObject : undefined,
-    });
-  };
-
   const subscribeMarks = useCallback((fn: () => void) => {
     markTicks.current.add(fn);
     return () => {
@@ -568,8 +512,8 @@ export function GalaxyExplorer(props: Props) {
   }
 
   useEffect(() => {
-    if (!frame.landed && !frame.orbiting) setInspect(null);
-  }, [frame.landed, frame.orbiting, frame.hostId]);
+    if (!frame.orbiting) setInspect(null);
+  }, [frame.orbiting, frame.hostId]);
 
   async function toggleMusic(): Promise<void> {
     if (!musicOn) {
@@ -630,7 +574,7 @@ export function GalaxyExplorer(props: Props) {
             projectCell={projectMark}
             labels={labels.filter((l) => l.bodyId === frame.worldId)}
             objects={objects.filter((o) => o.bodyId === frame.worldId)}
-            interactive={Boolean(markTool)}
+            interactive={false}
             onEditLabel={(l) =>
               setPlaceDialog({ mode: 'label', bodyId: l.bodyId, cell: l.cell, existingLabel: l })
             }
@@ -702,15 +646,7 @@ export function GalaxyExplorer(props: Props) {
         )}
         {inRegion && !editing && (
           <div className="gx-helm">
-            {frame.landed ? (
-              <button
-                type="button"
-                className="gx-warp"
-                onClick={() => viewRef.current?.takeOff()}
-              >
-                Take off
-              </button>
-            ) : frame.departing ? (
+            {frame.departing ? (
               <button
                 type="button"
                 className="gx-warp gx-leave"
@@ -765,17 +701,7 @@ export function GalaxyExplorer(props: Props) {
               <>
                 <b>{frame.navHint ?? 'Orbit'}</b>
                 <em>{navModeLabel('orbit')}</em>
-                {frame.landed ? (
-                  <i className="gx-plate-go">On the ground</i>
-                ) : frame.canLand ? (
-                  <button
-                    type="button"
-                    className="gx-plate-go"
-                    onClick={() => viewRef.current?.land()}
-                  >
-                    Land
-                  </button>
-                ) : frame.orbit ? (
+                {frame.orbit ? (
                   <i className="gx-plate-go">
                     {orbitLabel(frame.orbit)}
                     {isHangOrbit(frame.orbit)
@@ -827,23 +753,13 @@ export function GalaxyExplorer(props: Props) {
                     {(frame.course ?? frame.focus)!.life ? ' · life' : ''}
                   </i>
                 )}
-                {frame.course && !frame.landed && (
+                {frame.course && (
                   <i className="gx-plate-dist">{formatCatalogDist(frame.course.dist)}</i>
                 )}
                 {frame.navHint && frame.navMode === 'lock' && (
                   <i>{frame.navHint}</i>
                 )}
-                {frame.landed ? (
-                  <i className="gx-plate-go">On the ground</i>
-                ) : frame.canLand ? (
-                  <button
-                    type="button"
-                    className="gx-plate-go"
-                    onClick={() => viewRef.current?.land()}
-                  >
-                    Land
-                  </button>
-                ) : frame.orbiting && frame.orbit ? (
+                {frame.orbiting && frame.orbit ? (
                   <i className="gx-plate-go">{orbitLabel(frame.orbit)}</i>
                 ) : frame.orbit && frame.course ? (
                   <i className="gx-plate-go">Lock-on · {orbitLabel(frame.orbit)}</i>
@@ -911,7 +827,7 @@ export function GalaxyExplorer(props: Props) {
                     type="button"
                     role="menuitem"
                     className="gx-drop-item"
-                    disabled={frame.landed || frame.drone}
+                    disabled={frame.drone}
                     onClick={() => {
                       viewRef.current?.setPreset(p.id);
                       setMenu(null);
@@ -952,49 +868,20 @@ export function GalaxyExplorer(props: Props) {
               <IconOrbits size={16} />
             </button>
           )}
-          {!editing && (frame.landed || frame.orbiting) && viewRef.current?.inspectBody() && (
+          {!editing && frame.orbiting && viewRef.current?.inspectBody() && (
             <button
               type="button"
               className={`gx-chip gx-icon${inspect ? ' active' : ''}`}
               aria-label="Inspect"
-              title="Inspect — tap a hex when landed"
+              title="Inspect this world"
               onClick={() => {
                 const body = viewRef.current?.inspectBody();
                 if (!body) return;
-                setMarkTool(null);
                 setInspect((cur) => (cur ? null : { body, cell: null }));
               }}
             >
               <IconInspect size={16} />
             </button>
-          )}
-          {!editing && frame.landed && props.visitId && (
-            <>
-              <button
-                type="button"
-                className={`gx-chip gx-icon${markTool === 'label' ? ' active' : ''}`}
-                aria-label="Name a place"
-                title="Name a place — tap a hex"
-                onClick={() => {
-                  setInspect(null);
-                  setMarkTool((t) => (t === 'label' ? null : 'label'));
-                }}
-              >
-                <IconLabel size={16} />
-              </button>
-              <button
-                type="button"
-                className={`gx-chip gx-icon${markTool === 'object' ? ' active' : ''}`}
-                aria-label="Place a marker"
-                title="Place a city, town, or landmark — tap a hex"
-                onClick={() => {
-                  setInspect(null);
-                  setMarkTool((t) => (t === 'object' ? null : 'object'));
-                }}
-              >
-                <IconPlace size={16} />
-              </button>
-            </>
           )}
           <div className={`gx-drop gx-drop-eng-wrap${menu === 'engineer' ? ' is-open' : ''}`}>
             <button

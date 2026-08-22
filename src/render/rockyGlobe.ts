@@ -1,7 +1,7 @@
 /**
  * One rocky globe for the host pass. Same terrace, air, and water
  * laws as the shared shaders. Every rocky body of the host grows
- * one of these; landing walks the latched world's skin.
+ * one of these; the drone flies the latched world's skin.
  * Inspect reads this grid. The torch stays later.
  */
 import * as THREE from 'three';

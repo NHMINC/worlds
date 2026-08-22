@@ -57,6 +57,15 @@ export class Voyage {
   pendingArriveOrbit = false;
   /** Left a ring with no dest — HUD Free roam. */
   proximity = false;
+  /**
+   * Ride frame: hang face (body-local) or the inertial plane
+   * basis E1/E2 with its north. Owned with the ride; the
+   * geometry that fills them stays with the viewer.
+   */
+  readonly rideLocal = new THREE.Vector3();
+  readonly rideE1 = new THREE.Vector3();
+  readonly rideE2 = new THREE.Vector3();
+  readonly rideNorth = new THREE.Vector3();
 
   /** Live dest ring — the Course owns it, nobody shadows it. */
   destOrbit(): { bodyId: string | null; kind: WorldOrbitKind } | null {
