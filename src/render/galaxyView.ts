@@ -2426,15 +2426,15 @@ export class GalaxyView {
   private turnDrone(dx: number, dy: number): void {
     const drone = this.drone;
     if (!drone || drone.phase) return;
-    const k = 0.005;
-    this.orbitTmp.copy(drone.up);
-    this.orbitTmp2.crossVectors(drone.fwd, drone.up);
-    if (this.orbitTmp2.lengthSq() < 1e-16) {
-      this.orbitTmp2.set(1, 0, 0).addScaledVector(drone.fwd, -drone.fwd.x);
-      if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 1, 0);
-    }
-    this.orbitTmp2.normalize();
     if (drone.lock) {
+      const k = 0.005;
+      this.orbitTmp.copy(drone.up);
+      this.orbitTmp2.crossVectors(drone.fwd, drone.up);
+      if (this.orbitTmp2.lengthSq() < 1e-16) {
+        this.orbitTmp2.set(1, 0, 0).addScaledVector(drone.fwd, -drone.fwd.x);
+        if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 1, 0);
+      }
+      this.orbitTmp2.normalize();
       this.droneCoreOf(drone.lockId);
       drone.rel.applyAxisAngle(this.orbitTmp, -dx * k);
       this.orbitTmp2.applyAxisAngle(this.orbitTmp, -dx * k);
@@ -2445,17 +2445,7 @@ export class GalaxyView {
       this.droneCoreOf(drone.lockId);
       drone.rel.copy(drone.eye).sub(this.droneCorePos);
     } else {
-      drone.fwd.applyAxisAngle(this.orbitTmp, -dx * k);
-      drone.up.applyAxisAngle(this.orbitTmp, -dx * k);
-      drone.fwd.applyAxisAngle(this.orbitTmp2, -dy * k);
-      drone.up.applyAxisAngle(this.orbitTmp2, -dy * k);
-      drone.fwd.normalize();
-      drone.up.addScaledVector(drone.fwd, -drone.up.dot(drone.fwd));
-      if (drone.up.lengthSq() < 1e-16) {
-        drone.up.crossVectors(drone.fwd, this.worldUp);
-        if (drone.up.lengthSq() < 1e-16) drone.up.set(0, 1, 0);
-      }
-      drone.up.normalize();
+      this.spinLook(drone.fwd, drone.up, dx, dy);
     }
     this.placeDrone();
     this.applyCam();
@@ -4237,6 +4227,45 @@ export class GalaxyView {
     this.applyRollToBasis(this.arcRoll);
   }
 
+  /**
+   * Screen-relative look. Same stick as the trackball: yaw
+   * around the current up, pitch around fwd × up. No pole
+   * stops, no galactic-north Euler.
+   */
+  private spinLook(fwd: THREE.Vector3, up: THREE.Vector3, dx: number, dy: number): void {
+    const k = 0.005;
+    this.orbitTmp.copy(up);
+    this.orbitTmp2.crossVectors(fwd, up);
+    if (this.orbitTmp2.lengthSq() < 1e-16) {
+      this.orbitTmp2.set(1, 0, 0).addScaledVector(fwd, -fwd.x);
+      if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 1, 0);
+    }
+    this.orbitTmp2.normalize();
+    fwd.applyAxisAngle(this.orbitTmp, -dx * k);
+    up.applyAxisAngle(this.orbitTmp, -dx * k);
+    fwd.applyAxisAngle(this.orbitTmp2, -dy * k);
+    up.applyAxisAngle(this.orbitTmp2, -dy * k);
+    fwd.normalize();
+    up.addScaledVector(fwd, -up.dot(fwd));
+    if (up.lengthSq() < 1e-16) {
+      up.crossVectors(fwd, this.worldUp);
+      if (up.lengthSq() < 1e-16) up.set(0, 1, 0);
+    }
+    up.normalize();
+  }
+
+  /** Write yaw / pitch / roll from a look basis. */
+  private writeLookFrom(fwd: THREE.Vector3, up: THREE.Vector3): void {
+    this.aimAt(fwd.x, fwd.y, fwd.z);
+    const cp = Math.cos(this.arcPitch);
+    this.orbitTmp.set(cp * Math.sin(this.arcYaw), Math.sin(this.arcPitch), cp * Math.cos(this.arcYaw));
+    this.orbitTmp2.crossVectors(this.orbitTmp, this.worldUp);
+    if (this.orbitTmp2.lengthSq() < 1e-10) this.orbitTmp2.set(1, 0, 0);
+    else this.orbitTmp2.normalize();
+    this.orbitTmp.crossVectors(this.orbitTmp2, this.orbitTmp).normalize();
+    this.arcRoll = Math.atan2(-up.dot(this.orbitTmp2), up.dot(this.orbitTmp));
+  }
+
   /** Twist the current look basis around the nose. */
   private applyRollToBasis(roll: number): void {
     if (Math.abs(roll) < 1e-8) return;
@@ -5399,8 +5428,9 @@ export class GalaxyView {
       }
       if (!this.pendingOrbit && !this.riding) this.clearCourse();
       if (this.riding) this.rideLookFree = true;
-      this.arcYaw -= dx * 0.005;
-      this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dy * 0.005, -1.45, 1.45);
+      this.orientArc();
+      this.spinLook(this.arcFwd, this.arcUp, dx, dy);
+      this.writeLookFrom(this.arcFwd, this.arcUp);
       this.applyCam();
       return;
     }

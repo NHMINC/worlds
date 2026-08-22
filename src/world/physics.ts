@@ -517,7 +517,8 @@ export const UNIVERSE = {
    * On a ridden ring, zoom changes that
    * radius instead of fighting placeRide (`SOI_TRACK_*` is that
    * ring cage). The drone is anti-gravity: zoom thrusts along
-   * the look, drag steers. Soft floor is the ball itself
+   * the look, drag steers — the same screen-relative stick
+   * as ship flight. Soft floor is the ball itself
    * (`R × 1.002`) so it can enter air and fly between moons.
    * Target is drone-only — a latched lock. Launch locks the
    * body nearest the ship; after that it stays on that id.
