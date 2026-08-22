@@ -20,7 +20,7 @@ type LaunchLeg = 'lift' | 'pull';
 
 export type DroneWorld = {
   nearestFrom(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number };
-  /** Body the ship is riding, else the latched world, else nearest. */
+  /** Core of the body the ship is orbiting (star only if that berth is the star). */
   subject(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number };
   coreOf(id: string | null, out: THREE.Vector3): number;
   /** km from core so the disk covers ARRIVE_FILL of the shorter FOV. */

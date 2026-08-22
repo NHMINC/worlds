@@ -224,7 +224,9 @@ toy — Godus blocks on a real-sized globe.
   on parks the ship, lifts along
   ship-up facing forward
   (`DRONE_LIFT`), backs away from the
-  orbited body until its disk covers
+  body the ship is orbiting (a world
+  ring — the star only if that is the
+  berth) until its disk covers
   `ARRIVE_FILL` of the shorter field,
   then locks trackball on that core.
   That lock stays until Target is

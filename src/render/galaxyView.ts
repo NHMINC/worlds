@@ -2230,16 +2230,31 @@ export class GalaxyView {
     };
   }
 
-  /** Body the ship is riding (or the star), else the latched world. */
+  /**
+   * Core the drone backs off from and locks: the body the ship
+   * is on (capture / ride / latched world). `null` is the star
+   * only when there is no world in that chain.
+   */
+  private droneOrbitId(): string | null {
+    return (
+      this.capturing?.bodyId ??
+      this.pendingOrbit?.bodyId ??
+      this.riding?.bodyId ??
+      this.worldId ??
+      this.courseBodyId ??
+      null
+    );
+  }
+
   private droneSubject(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number } {
-    if (this.riding) {
-      const R = this.droneCoreOf(this.riding.bodyId);
-      return { id: this.riding.bodyId, pos: this.droneCorePos, R };
+    const id = this.droneOrbitId();
+    if (id && this.worldRt(id)) {
+      const R = this.droneCoreOf(id);
+      return { id, pos: this.droneCorePos, R };
     }
-    const latched = this.worldId ?? this.courseBodyId;
-    if (latched && this.worldRt(latched)) {
-      const R = this.droneCoreOf(latched);
-      return { id: latched, pos: this.droneCorePos, R };
+    if (id == null && (this.riding || this.pendingOrbit || this.capturing)) {
+      const R = this.droneCoreOf(null);
+      return { id: null, pos: this.droneCorePos, R };
     }
     const n = this.dronePickNearestFrom(eye);
     return { id: n.id, pos: this.droneCorePos, R: n.R };

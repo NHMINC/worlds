@@ -523,9 +523,11 @@ export const UNIVERSE = {
    * itself (`R × 1.002`) so it can enter air and fly between
    * moons. Target is drone-only — a latched lock. Launch
    * lifts out of the ship facing forward (`DRONE_LIFT`),
-   * backs away from the orbited body until that disk covers
-   * `ARRIVE_FILL` of the shorter field, then locks trackball
-   * on that core. The lock stays on that id. Tap Target off
+   * backs away from the body the ship is orbiting (a world
+   * ring, not the star unless the berth is the star) until
+   * that disk covers `ARRIVE_FILL` of the shorter field, then
+   * locks trackball on that core. The lock stays on that id.
+   * Tap Target off
    * to free fly; tap on to lock the body in the pip. The
    * lock does not hop. Recall flies a line to the parked
    * ship and docks the camera — drone law, not orbit capture.
