@@ -55,6 +55,7 @@ import {
   isLimbOrbit,
   orbitLabel,
   orbitLimbPitch,
+  escapeSpeedKpcS,
   orbitOmega,
   orbitRadiusKpc,
   shellFloorKm,
@@ -659,6 +660,8 @@ export interface GalaxyFrame {
   navHint: string | null;
   /** On a ring or capturing — Leave orbit, not Warp. */
   canLeaveOrbit: boolean;
+  /** Escape burn after Leave orbit — Stop keeps the speed so far. */
+  departing: boolean;
   /** Standing on the latched rocky globe. */
   landed: boolean;
   /** Globe is ready and we can set down from this place. */
@@ -820,6 +823,12 @@ export class GalaxyView {
   /** Helm gear: false = ahead (along the nose), true = astern. */
   private astern = false;
   private thrustSpeed = 0;
+  /**
+   * Leave-orbit burn: ease to escape along a latched heading.
+   * Then `coast` holds that velocity until Warp or Stop.
+   */
+  private departing: { v: number; vEsc: number; dir: THREE.Vector3 } | null = null;
+  private readonly coast = new THREE.Vector3();
   private idle = 0;
   private lastT = performance.now();
   private lastDt = 1 / 60;
@@ -2180,6 +2189,7 @@ export class GalaxyView {
       return;
     }
     if (this.drone) return;
+    this.clearDepart();
     const tSys = (this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE;
     this.droneRideT = tSys;
     this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate();
@@ -3196,7 +3206,7 @@ export class GalaxyView {
   private holdCourse(dt: number): void {
     if (!this.route.live && this.navMode !== 'lock') return;
     if (this.mode !== 'region') return;
-    if (this.riding || this.landed || this.drone || this.capturing) return;
+    if (this.riding || this.landed || this.drone || this.capturing || this.departing) return;
     if (this.looking) return;
     let insertBlend = 0;
     // Eye→body before insert rewrite — zenith = radial out (−eye→body).
@@ -3718,18 +3728,86 @@ export class GalaxyView {
   }
 
   /**
-   * Player verb: drop the rail into free space. Warp stays off
-   * until they latch it. A live dest is kept (LeaveSoi / cruise
-   * after they Warp). No dest → proximity.
+   * Player verb: drop the rail and burn to escape speed for
+   * that body (√2 × circular, floored by the place crawl so
+   * the burn is a beat). Warp stays off until the speed is
+   * reached. A live dest is kept. No dest → proximity.
    */
   leaveOrbit(): void {
     if (this.drone || this.landed) return;
     if (!this.riding && !this.capturing) return;
+    const vEsc = this.departEscapeSpeed();
     this.breakOrbit();
     this.thrustOn = false;
     this.thrustSpeed = 0;
+    this.coast.set(0, 0, 0);
+    this.ship.orthonormalize();
+    this.departing = {
+      v: 0,
+      vEsc,
+      dir: this.ship.fwd.clone(),
+    };
     this.applyCam();
     this.wake();
+  }
+
+  /** √2 ω r, floored by ARRIVE_K × the place fence, capped by sphere warp. */
+  private departEscapeSpeed(): number {
+    let omega = 0;
+    let r = 0;
+    let fence = UNIVERSE.ARRIVE_RANGE_KPC;
+    if (this.riding) {
+      omega = this.riding.omega;
+      r = this.riding.r;
+      fence = this.riding.bodyId != null ? UNIVERSE.WORLD_RANGE_KPC : UNIVERSE.ARRIVE_RANGE_KPC;
+    } else if (this.capturing) {
+      if (this.capturing.bodyId == null) {
+        const obj = this.hostObj;
+        if (obj) {
+          r = this.arriveDist(obj);
+          const star = this.hostSpec?.star ?? {
+            mass: Math.max(0.08, obj.star.mass),
+          };
+          omega = starOrbitOmega(star, r);
+        }
+        fence = UNIVERSE.ARRIVE_RANGE_KPC;
+      } else {
+        const rt = this.worldRt(this.capturing.bodyId);
+        if (rt) {
+          r = this.bodyDist(rt);
+          omega = orbitOmega(rt.spec, this.capturing.kind);
+        }
+        fence = UNIVERSE.WORLD_RANGE_KPC;
+      }
+    }
+    const kepler = escapeSpeedKpcS(omega, r);
+    const floor = UNIVERSE.ARRIVE_K * Math.max(fence, r);
+    const cap = UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP;
+    return Math.min(cap, Math.max(kepler, floor));
+  }
+
+  private clearDepart(): void {
+    this.departing = null;
+    this.coast.set(0, 0, 0);
+  }
+
+  private finishDepart(): void {
+    const d = this.departing;
+    if (!d) return;
+    this.coast.copy(d.dir).multiplyScalar(d.v);
+    this.departing = null;
+  }
+
+  private tickDepart(dt: number): void {
+    const d = this.departing;
+    if (!d) return;
+    const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
+    d.v += (d.vEsc - d.v) * k;
+    this.ship.fwd.copy(d.dir);
+    this.ship.orthonormalize();
+    this.moveBubble(d.dir.x * d.v * dt, d.dir.y * d.v * dt, d.dir.z * d.v * dt, true);
+    this.applyCam();
+    if (d.vEsc - d.v <= d.vEsc * 0.03 + 1e-18) this.finishDepart();
   }
 
   /**
@@ -3766,8 +3844,12 @@ export class GalaxyView {
   setWarp(on: boolean): void {
     if (this.drone) return;
     if (this.mode !== 'region' || this.landed) return;
+    if (this.departing) {
+      if (!on) this.finishDepart();
+      return;
+    }
     if (on && (this.riding || this.capturing)) return;
-    // Stop kills thrust only. Drag (abortAutopilot) drops the course.
+    this.coast.set(0, 0, 0);
     this.thrustOn = on && this.warpMayRun();
     this.idle = 0;
     if (this.thrustOn) this.wake(2);
@@ -4468,9 +4550,9 @@ export class GalaxyView {
     return allowed;
   }
 
-  private moveBubble(vx: number, vy: number, vz: number, _force = false): void {
+  private moveBubble(vx: number, vy: number, vz: number, force = false): void {
     if (this.mode !== 'region') return;
-    const maxV = this.moveCap();
+    const maxV = force ? null : this.moveCap();
     if (maxV != null) {
       const max = maxV * Math.max(this.lastDt, 1 / 120);
       const len = Math.hypot(vx, vy, vz);
@@ -4782,7 +4864,7 @@ export class GalaxyView {
         this.applyCam();
         return;
       }
-      if (this.riding || this.capturing) return;
+      if (this.riding || this.capturing || this.departing) return;
       this.abortAutopilot();
       this.ship.look(dx, dy);
       this.applyCam();
@@ -4837,6 +4919,13 @@ export class GalaxyView {
         e.preventDefault();
         this.keys.add(e.code);
         this.wake();
+      }
+      return;
+    }
+    if (this.departing) {
+      if (!e.repeat && (e.code === 'KeyS' || e.code === 'ArrowDown')) {
+        e.preventDefault();
+        this.setWarp(false);
       }
       return;
     }
@@ -4996,6 +5085,20 @@ export class GalaxyView {
     if (this.landed || this.drone) {
       this.thrustOn = false;
       this.thrustSpeed = 0;
+      this.clearDepart();
+      return;
+    }
+    if (this.departing) {
+      this.tickDepart(dt);
+      this.updateArriveSubject();
+      this.updateWorldSubject();
+      return;
+    }
+    if (!this.thrustOn && this.coast.lengthSq() > 0) {
+      this.moveBubble(this.coast.x * dt, this.coast.y * dt, this.coast.z * dt, true);
+      this.applyCam();
+      this.updateArriveSubject();
+      this.updateWorldSubject();
       return;
     }
     if (this.riding) {
@@ -5103,7 +5206,7 @@ export class GalaxyView {
   /** A/D, ←/→, and a still hold on the left/right of the screen roll. */
   private tickRoll(dt: number): void {
     if (this.landed) return;
-    if (!this.drone && (this.riding || this.capturing)) return;
+    if (!this.drone && (this.riding || this.capturing || this.departing)) return;
     const s = this.rollSign();
     if (!s) return;
     this.abortAutopilot();
@@ -5367,6 +5470,8 @@ export class GalaxyView {
     }
     if (
       this.thrustOn ||
+      this.departing ||
+      this.coast.lengthSq() > 0 ||
       this.steerHeld() ||
       this.riding ||
       this.pendingOrbit ||
@@ -5549,6 +5654,7 @@ export class GalaxyView {
       nearestBodyId: nearRt?.spec.id ?? null,
       navHint,
       canLeaveOrbit: Boolean(this.riding || this.capturing),
+      departing: Boolean(this.departing),
       landed: this.landed,
       canLand: this.canLandNow(),
       lookHold: this.drone?.lock && !this.drone.phase ? 'center' : null,

@@ -398,6 +398,14 @@ export const UNIVERSE = {
    */
   ORBIT_INSERT: 6,
   ARRIVE_WARP: 0.001,
+  /**
+   * Close-crawl beat (fence / this). Leave-orbit escape
+   * floors √2 ω r by the same number × the place fence —
+   * SI unbound speed is invisible in catalog kpc at
+   * TIME_SCALE 1; this is the visible "safely sped up."
+   * Cap is ARRIVE_WARP × GALAXY_WARP so the SOI is not
+   * a one-frame skip.
+   */
   ARRIVE_K: 1.2,
   ARRIVE_FILL: 0.22,
   ARRIVE_RANGE_LY: 0.01,

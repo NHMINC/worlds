@@ -648,10 +648,15 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   stop. A smaller helm bubble overlapping Warp also toggles
   ahead / astern when stopped so you can back off a park.
   On a ridden ring (or capture) Warp and the gear hide —
-  **Leave orbit** drops the rail into free space (no
-  thrust). Then look around the system or the galaxy and
-  Warp. A live dest survives Leave; a look drag still
-  aborts it.
+  **Leave orbit** drops the rail and burns along the
+  latched heading to escape speed for that body
+  (`√2 ω r`, floored by `ARRIVE_K` × the place fence
+  so the beat is visible, capped by sphere warp). Ease
+  is `ORBIT_CAPTURE`. Helm shows **Stop** (keep the
+  speed so far). Then free look and Warp — leftover
+  speed coasts inertially until Warp or Stop. A live
+  dest survives Leave; a look drag still aborts it
+  after the burn.
   Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
   quietly unless that gear points inward. A tap, not a hold.
   Drag looks in flight: the **ship** stick

@@ -154,6 +154,7 @@ export function GalaxyExplorer(props: Props) {
     nearestBodyId: null,
     navHint: null,
     canLeaveOrbit: false,
+    departing: false,
     landed: false,
     canLand: false,
     lookHold: null,
@@ -206,6 +207,7 @@ export function GalaxyExplorer(props: Props) {
               prev.nearestBodyId !== f.nearestBodyId ||
               prev.navHint !== f.navHint ||
               prev.canLeaveOrbit !== f.canLeaveOrbit ||
+              prev.departing !== f.departing ||
               prev.landed !== f.landed ||
               prev.canLand !== f.canLand ||
               prev.lookHold !== f.lookHold ||
@@ -695,13 +697,24 @@ export function GalaxyExplorer(props: Props) {
               >
                 Take off
               </button>
+            ) : frame.departing ? (
+              <button
+                type="button"
+                className="gx-warp stop"
+                disabled={frame.drone}
+                aria-label="Stop"
+                title="Keep this speed and fly free"
+                onClick={() => viewRef.current?.setWarp(false)}
+              >
+                Stop
+              </button>
             ) : frame.canLeaveOrbit ? (
               <button
                 type="button"
                 className="gx-warp gx-leave"
                 disabled={frame.drone}
                 aria-label="Leave orbit"
-                title="Leave orbit — free flight, then warp"
+                title="Leave orbit — burn to escape, then fly free"
                 onClick={() => viewRef.current?.leaveOrbit()}
               >
                 Leave

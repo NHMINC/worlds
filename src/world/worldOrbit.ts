@@ -173,6 +173,14 @@ export function orbitOmega(body: BodySpec, kind: WorldOrbitKind): number {
 }
 
 /**
+ * Unbound speed at radius r: √2 × circular (ω r), catalog kpc / s.
+ * Leave-orbit floors this by ARRIVE_K × the place fence.
+ */
+export function escapeSpeedKpcS(omega: number, rKpc: number): number {
+  return Math.SQRT2 * Math.abs(omega) * Math.max(rKpc, 0);
+}
+
+/**
  * Default host-star orbit: ecliptic plane, at the ARRIVE_FILL
  * park (safe above the photosphere clear shell). Kepler ω from
  * GM☉ · mass.
