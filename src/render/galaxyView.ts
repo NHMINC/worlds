@@ -25,6 +25,7 @@ import { ShipFlight } from './flight';
 import { Trackball, type DroneWorld } from './drone';
 import { type Berth } from '../world/course';
 import { Voyage } from './voyage';
+import { encodePlace, encodeSession } from './sessionCodec';
 import {
   clearRadiusKm,
   coerceOrbitKind,
@@ -50,7 +51,7 @@ import {
 } from '../world/sectors';
 import { PerfMeter } from './perfHud';
 import { prepareUniverse } from '../world/universePrep';
-import type { LastPlace, SessionSnap, SessionVec } from '../world/types';
+import type { LastPlace, SessionSnap } from '../world/types';
 /** Park “here” this far ahead of the camera (catalog kpc). */
 const FOCUS_PARK = 0.35;
 const ZOOM_WHEEL_SENS = 0.0008;
@@ -604,70 +605,25 @@ export class GalaxyView {
       const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
       h = this.voyage.riding.r / Math.max(R, 1e-18) - 1;
     }
-    return {
-      galaxySeed: this.seed,
+    return encodePlace({
+      seed: this.seed,
       starId: host.id,
       bodyId: rt?.spec.id ?? null,
-      orbit: this.voyage.riding?.kind ?? null,
-      landed: false,
+      voyage: this.voyage,
       dir,
       h,
-    };
+    });
   }
 
   snapshotSession(): SessionSnap {
-    const v = (p: THREE.Vector3): SessionVec => [p.x, p.y, p.z];
-    const ride = this.voyage.riding;
-    return {
-      v: 1,
-      galaxySeed: this.seed,
-      at: v(this.ship.at),
-      fwd: v(this.ship.fwd),
-      up: v(this.ship.up),
-      thrustOn: this.voyage.thrustOn,
-      astern: this.voyage.astern,
-      coast: this.voyage.coast.lengthSq() > 0 ? v(this.voyage.coast) : null,
-      departing: this.voyage.departing
-        ? { v: this.voyage.departing.v, vEsc: this.voyage.departing.vEsc, dir: v(this.voyage.departing.dir) }
-        : null,
-      starId: this.locale.obj?.id ?? null,
-      bodyId: this.voyage.riding?.bodyId ?? this.voyage.capturing?.bodyId ?? null,
+    return encodeSession({
+      seed: this.seed,
+      ship: this.ship,
+      voyage: this.voyage,
+      hostId: this.locale.obj?.id ?? null,
       worldId: this.worldId,
-      orbit: this.voyage.riding?.kind ?? this.voyage.capturing?.kind ?? null,
-      landed: false,
-      riding: ride
-        ? {
-            bodyId: ride.bodyId,
-            kind: ride.kind,
-            hang: ride.hang,
-            r: ride.r,
-            theta0: ride.theta0,
-            omega: ride.omega,
-            e1: v(this.voyage.rideE1),
-            e2: v(this.voyage.rideE2),
-            local: v(this.voyage.rideLocal),
-          }
-        : null,
-      capturing: this.voyage.capturing
-        ? {
-            bodyId: this.voyage.capturing.bodyId,
-            kind: this.voyage.capturing.kind,
-            dir: v(this.voyage.capturing.dir),
-          }
-        : null,
-      pendingOrbit: this.destOrbit(),
-      pendingArriveOrbit: this.voyage.pendingArriveOrbit,
-      insertBlend: this.voyage.insertBlend,
-      surfDir: null,
-      sYaw: 0,
-      sPitch: 0,
-      sEyeH: 0,
-      landKind: null,
-      course: this.voyage.route.dest,
-      courseLive: this.voyage.route.live,
-      proximity: this.voyage.proximity,
       drone: this.drone ? this.drone.snap(this.droneRideT) : null,
-    };
+    });
   }
 
   flushSession(): void {
