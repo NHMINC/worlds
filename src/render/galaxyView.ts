@@ -354,11 +354,6 @@ export class GalaxyView {
   /** Goldberg globes for every rocky body of the host. */
   private readonly globes = new Map<string, RockyGlobe>();
   private markTool: MarkTool | null = null;
-  /**
-   * Session shadow of the dest ring. Live dest is
-   * `route.destOrbit()` — this copy is restore-only.
-   */
-  private pendingOrbit: { bodyId: string | null; kind: WorldOrbitKind } | null = null;
   private riding: {
     /** null = host-star ecliptic. */
     bodyId: string | null;
@@ -369,9 +364,8 @@ export class GalaxyView {
     omega: number;
   } | null = null;
   /**
-   * Exclusive autopilot mode. See `hostNav.ts`. Derived helpers
-   * (`pendingOrbit`, `riding`) still drive the physics; this is
-   * the contract the HUD and look system obey.
+   * HUD label, derived once per frame from `route.navMode()` —
+   * never written by transitions. See `hostNav.ts`.
    */
   private navMode: HostNavMode = null;
   private drone: Trackball | null = null;
@@ -583,9 +577,6 @@ export class GalaxyView {
       : null;
     this.proximity = snap.proximity;
     this.insertBlend = snap.insertBlend;
-    this.pendingOrbit = snap.pendingOrbit
-      ? { bodyId: snap.pendingOrbit.bodyId, kind: coerceOrbitKind(snap.pendingOrbit.kind) }
-      : null;
     this.pendingArriveOrbit = snap.pendingArriveOrbit;
     this.worldId = snap.worldId ?? snap.bodyId;
     this.sYaw = snap.sYaw;
@@ -614,10 +605,12 @@ export class GalaxyView {
         this.courseHud = this.hudForStar(dest);
       }
       this.courseBodyId = snap.course.bodyId;
-      if (snap.courseLive) {
+      // Legacy saves could hold a dest ring with courseLive unset —
+      // the route is the one owner now, so either revives it.
+      if (snap.courseLive || snap.pendingOrbit) {
         this.route.begin({
           ...snap.course,
-          orbit: coerceOrbitKind(snap.course.orbit),
+          orbit: coerceOrbitKind(snap.pendingOrbit?.kind ?? snap.course.orbit),
         });
       }
     }
@@ -869,7 +862,7 @@ export class GalaxyView {
       if (!globe?.ready) return false;
       this.landKind = coerceOrbitKind(p.orbit ?? 'hover');
       this.clearRide();
-      this.pendingOrbit = null;
+      this.route.arrive();
       this.pendingArriveOrbit = false;
       this.capturing = null;
       this.surfDir.set(p.dir?.[0] ?? 0, p.dir?.[1] ?? 0, p.dir?.[2] ?? 1);
@@ -880,7 +873,6 @@ export class GalaxyView {
       this.sEyeH = this.sEyeHTarget = Math.max(globe.terraceStep * 0.6, globe.terraceStep * 4);
       this.sWalk = 0;
       this.landed = true;
-      this.navMode = null;
       this.placeSurface();
       this.pendingPlace = null;
       return true;
@@ -941,7 +933,6 @@ export class GalaxyView {
       this.rideE1.set(s.riding.e1[0], s.riding.e1[1], s.riding.e1[2]);
       this.rideE2.set(s.riding.e2[0], s.riding.e2[1], s.riding.e2[2]);
       this.rideLocal.set(s.riding.local[0], s.riding.local[1], s.riding.local[2]);
-      this.navMode = 'orbit';
       this.placeRide(tSys);
     }
     if (s.capturing) {
@@ -961,7 +952,6 @@ export class GalaxyView {
       this.sPitch = s.sPitch;
       this.sEyeH = this.sEyeHTarget = s.sEyeH;
       this.sWalk = 0;
-      this.navMode = null;
       this.placeSurface();
     }
     if (s.drone) {
@@ -1037,7 +1027,6 @@ export class GalaxyView {
     this.leaveSurface();
     this.clearRide();
     this.route.abort();
-    this.pendingOrbit = null;
     this.pendingArriveOrbit = false;
     this.mode = 'region';
     this.ship.at.set(x, y, z);
@@ -1211,12 +1200,9 @@ export class GalaxyView {
     this.setCourseBerth({ starId, bodyId, orbit: kind });
   }
 
-  /**
-   * Live dest ring. Course owns it; `pendingOrbit` is only
-   * a restore shadow so a host teardown cannot drop lock-on.
-   */
+  /** Live dest ring — the Course owns it, nobody shadows it. */
   private destOrbit(): { bodyId: string | null; kind: WorldOrbitKind } | null {
-    return this.route.destOrbit() ?? this.pendingOrbit;
+    return this.route.destOrbit();
   }
 
   setCourseBerth(dest: Berth): void {
@@ -1232,8 +1218,6 @@ export class GalaxyView {
     this.courseObj = obj;
     this.courseBodyId = dest.bodyId;
     this.pendingArriveOrbit = false;
-    this.pendingOrbit = { bodyId: dest.bodyId, kind: coerceOrbitKind(dest.orbit) };
-    this.navMode = 'lock';
     this.resetRoutePlot();
     if (dest.bodyId) {
       const rt = this.worldRt(dest.bodyId);
@@ -1268,7 +1252,6 @@ export class GalaxyView {
   /** Lock-on is warp-ahead until a look drag aborts it. */
   private beginAutopilot(): void {
     if (this.drone) return;
-    this.navMode = 'lock';
     if (this.riding || this.capturing) {
       this.wake();
       return;
@@ -1281,8 +1264,7 @@ export class GalaxyView {
 
   /** Finger drag: drop the route and stop warp. Stop does not call this. */
   private abortAutopilot(): void {
-    if (!this.route.live && this.navMode !== 'lock') return;
-    this.pendingOrbit = null;
+    if (!this.route.live) return;
     this.pendingArriveOrbit = false;
     this.insertBlend = 0;
     this.route.abort();
@@ -1325,7 +1307,7 @@ export class GalaxyView {
     if (!this.canLandNow() || !globe) return;
     this.landKind = this.riding?.kind ?? 'hover';
     this.clearRide();
-    this.pendingOrbit = null;
+    this.route.abort();
     this.pendingArriveOrbit = false;
     this.capturing = null;
     this.setWarp(false);
@@ -1344,7 +1326,6 @@ export class GalaxyView {
     this.sEyeH = this.sEyeHTarget = Math.max(globe.terraceStep * 0.6, globe.terraceStep * 4);
     this.sWalk = 0;
     this.landed = true;
-    this.navMode = null;
     this.courseBodyId = rt.spec.id;
     this.worldId = rt.spec.id;
     this.courseHud = this.hudForBody(rt);
@@ -1810,7 +1791,6 @@ export class GalaxyView {
         kind: 'ecliptic',
         dir: this.hostTmp.clone(),
       };
-      this.navMode = 'lock';
       this.tickCapture(this.lastDt || 1 / 60, tSys);
       return;
     }
@@ -1830,7 +1810,6 @@ export class GalaxyView {
       kind: pending.kind,
       dir: this.orbitTmp2.clone(),
     };
-    this.navMode = 'lock';
     this.aimLimbParkLook(rt, pending.kind, this.orbitTmp2);
     this.tickCapture(this.lastDt || 1 / 60, tSys);
   }
@@ -1849,7 +1828,6 @@ export class GalaxyView {
     const rt = this.worldRt(cap.bodyId);
     if (!rt) {
       this.capturing = null;
-      if (this.navMode === 'lock') this.navMode = null;
       return;
     }
     const r = orbitRadiusKpc(rt.spec, cap.kind);
@@ -2080,9 +2058,7 @@ export class GalaxyView {
     this.courseObj = null;
     this.courseBodyId = null;
     this.courseHud = null;
-    this.pendingOrbit = null;
     this.pendingArriveOrbit = false;
-    this.navMode = 'orbit';
     this.insertBlend = 0;
     this.thrustOn = false;
     this.thrustSpeed = 0;
@@ -2116,9 +2092,7 @@ export class GalaxyView {
     this.courseObj = null;
     this.courseBodyId = null;
     this.courseHud = null;
-    this.pendingOrbit = null;
     this.pendingArriveOrbit = false;
-    this.navMode = 'orbit';
     this.insertBlend = 0;
     this.thrustOn = false;
     this.thrustSpeed = 0;
@@ -2344,7 +2318,6 @@ export class GalaxyView {
     this.courseObj = null;
     this.courseHud = null;
     this.courseBodyId = null;
-    if (this.navMode === 'lock') this.navMode = null;
   }
 
   /** Fresh Lock-on: clear insertion blend. */
@@ -2459,7 +2432,7 @@ export class GalaxyView {
 
   /** Ease the nose onto the Lock-on insertion. Off in orbit / proximity / capture. */
   private holdCourse(dt: number): void {
-    if (!this.route.live && this.navMode !== 'lock') return;
+    if (!this.route.live) return;
     if (this.mode !== 'region') return;
     if (this.riding || this.landed || this.drone || this.capturing || this.departing) return;
     if (this.looking) return;
@@ -3109,14 +3082,8 @@ export class GalaxyView {
     this.capturing = null;
     this.insertBlend = 0;
     this.pendingArriveOrbit = false;
-    if (!this.route.live) {
-      this.pendingOrbit = null;
-      this.proximity = true;
-      this.navMode = 'proximity';
-    } else {
-      this.navMode = 'lock';
-      this.fillCourseHud();
-    }
+    if (!this.route.live) this.proximity = true;
+    else this.fillCourseHud();
   }
 
   /** Dest survived Leave — put the plate back after In Orbit wiped it. */
@@ -3418,10 +3385,8 @@ export class GalaxyView {
     this.leaveSurface();
     if (!this.route.live) {
       this.courseBodyId = null;
-      this.pendingOrbit = null;
       this.pendingArriveOrbit = false;
       if (this.courseHud?.bodyId) this.clearCourse();
-      this.navMode = null;
     }
     this.dropGlobes();
     this.clearHostBodies();
