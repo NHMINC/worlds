@@ -221,9 +221,12 @@ toy — Godus blocks on a real-sized globe.
   (`drone.ts`) — own look / zoom-
   thrust / roll / Target. The only
   join is launch / land. Trackball
-  on parks the ship and lifts along
-  the zenith into lock on the body
-  nearest the ship (`DRONE_LIFT`).
+  on parks the ship, lifts along
+  ship-up facing forward
+  (`DRONE_LIFT`), backs away from the
+  orbited body until its disk covers
+  `ARRIVE_FILL` of the shorter field,
+  then locks trackball on that core.
   That lock stays until Target is
   tapped off or the drone goes home.
   Home flies a line to the parked
@@ -457,12 +460,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   free camera. A/D, arrows, and a hold on the
   left/right of the screen roll in flight.
   The ship looks
-  ahead. Trackball launches (lift +
-  a latched lock on the body nearest
-  the ship) and returns (capture
-  ease onto the ship); Target stays
-  on that id until tapped off, or
-  locks the body in the pip.
+  ahead. Trackball launches (lift
+  facing forward, back off until the
+  orbited body fits the frame, then
+  lock on that core) and returns
+  (fly-to-ship, then camera dock);
+  Target stays on that id until
+  tapped off, or locks the body in
+  the pip.
   Land sets down on
   that face; Take off returns to the ring. Reticle Set course
   stays autopilot to the fill park (warp-ahead;

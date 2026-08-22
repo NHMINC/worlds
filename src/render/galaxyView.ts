@@ -2219,13 +2219,36 @@ export class GalaxyView {
         const n = this.dronePickNearestFrom(eye);
         return { id: n.id, pos: this.droneCorePos, R: n.R };
       },
+      subject: (eye) => this.droneSubject(eye),
       coreOf: (id, out) => {
         const R = this.droneCoreOf(id);
         out.copy(this.droneCorePos);
         return R;
       },
+      fillKm: (R) => this.droneFillKm(R),
       reticleTarget: () => this.droneReticleTarget(),
     };
+  }
+
+  /** Body the ship is riding (or the star), else the latched world. */
+  private droneSubject(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number } {
+    if (this.riding) {
+      const R = this.droneCoreOf(this.riding.bodyId);
+      return { id: this.riding.bodyId, pos: this.droneCorePos, R };
+    }
+    const latched = this.worldId ?? this.courseBodyId;
+    if (latched && this.worldRt(latched)) {
+      const R = this.droneCoreOf(latched);
+      return { id: latched, pos: this.droneCorePos, R };
+    }
+    const n = this.dronePickNearestFrom(eye);
+    return { id: n.id, pos: this.droneCorePos, R: n.R };
+  }
+
+  /** Same fill law as the ship park: disk covers ARRIVE_FILL of the short FOV. */
+  private droneFillKm(R: number): number {
+    const r = Math.max(R, 1);
+    return r / Math.max(1e-8, Math.tan(this.fillHalfAngle()));
   }
 
   private placeDrone(): void {

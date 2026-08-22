@@ -522,14 +522,13 @@ export const UNIVERSE = {
    * along the look, drag steers. Soft floor is the ball
    * itself (`R × 1.002`) so it can enter air and fly between
    * moons. Target is drone-only — a latched lock. Launch
-   * locks the body nearest the ship; after that it stays on
-   * that id. Tap Target off to free fly; tap on to lock the
-   * body in the pip. The lock does not hop.
-   * Launch / recall: lift along the local zenith by
-   * `DRONE_LIFT` (a fraction of hover height, floored at that
-   * fraction of the body radius) while the look rotates onto
-   * the core; recall flies a line to the parked ship and
-   * docks the camera — drone law, not orbit capture.
+   * lifts out of the ship facing forward (`DRONE_LIFT`),
+   * backs away from the orbited body until that disk covers
+   * `ARRIVE_FILL` of the shorter field, then locks trackball
+   * on that core. The lock stays on that id. Tap Target off
+   * to free fly; tap on to lock the body in the pip. The
+   * lock does not hop. Recall flies a line to the parked
+   * ship and docks the camera — drone law, not orbit capture.
    */
   SOI_ZOOM: 0.55,
   /** Hold / key roll rate (rad/s). 1 ≈ 57°/s. */
@@ -537,10 +536,10 @@ export const UNIVERSE = {
   SOI_TRACK_MIN: 0.12,
   SOI_TRACK_MAX: 8,
   /**
-   * Trackball lift. Fraction of the hover height above the
-   * nearest core, floored at this fraction of that body's
-   * radius so a skim still hops. Launch / home ease is the
-   * drone's own rate, not ORBIT_CAPTURE.
+   * First launch hop, along ship-up. Fraction of hover
+   * height, floored at this fraction of the subject's
+   * radius. Pullback after that is the fill law. Launch /
+   * home ease is the drone's own rate, not ORBIT_CAPTURE.
    */
   DRONE_LIFT: 0.16,
   /**

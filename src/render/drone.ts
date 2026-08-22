@@ -16,10 +16,15 @@ const HOME_RATE = 2.2;
 const LAUNCH_RATE = 2.2;
 
 export type DronePhase = 'launch' | 'home' | null;
+type LaunchLeg = 'lift' | 'pull';
 
 export type DroneWorld = {
   nearestFrom(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number };
+  /** Body the ship is riding, else the latched world, else nearest. */
+  subject(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number };
   coreOf(id: string | null, out: THREE.Vector3): number;
+  /** km from core so the disk covers ARRIVE_FILL of the shorter FOV. */
+  fillKm(R: number): number;
   reticleTarget(): { id: string | null } | null;
 };
 
@@ -31,6 +36,8 @@ export class Trackball {
   lockId: string | null = null;
   readonly rel = new THREE.Vector3();
   phase: DronePhase = null;
+  private launchLeg: LaunchLeg = 'lift';
+  private readonly liftEye = new THREE.Vector3();
 
   /** Parked ship in host-km, frozen at launch. */
   readonly parkedEye = new THREE.Vector3();
@@ -40,12 +47,12 @@ export class Trackball {
   private readonly core = new THREE.Vector3();
   private readonly t0 = new THREE.Vector3();
   private readonly t1 = new THREE.Vector3();
-  private readonly t2 = new THREE.Vector3();
 
   /**
    * Spawn from the ship's host-km eye / look. Park that pose
-   * as the dock target. Launch eases a zenith hop into lock
-   * on the nearest core.
+   * as the dock target. Launch lifts along ship-up facing
+   * forward, backs away from the orbited body until the disk
+   * fits the frame, then locks trackball on that core.
    */
   launch(eye: THREE.Vector3, fwd: THREE.Vector3, up: THREE.Vector3, world: DroneWorld): void {
     this.eye.copy(eye);
@@ -160,33 +167,62 @@ export class Trackball {
   }
 
   private beginLaunch(world: DroneWorld): void {
-    const n = world.nearestFrom(this.eye);
+    const n = world.subject(this.eye);
     this.lockId = n.id;
     this.core.copy(n.pos);
-    this.t0.copy(this.eye).sub(this.core);
-    let d = this.t0.length();
-    if (d < 1e-6) {
-      this.t0.copy(this.up);
-      d = n.R;
-    }
-    this.t0.multiplyScalar(1 / Math.max(d, 1e-9));
+    const d = Math.max(this.eye.distanceTo(this.core), n.R);
     const hover = Math.max(d - n.R, 0);
     const lift = Math.max(n.R, hover) * UNIVERSE.DRONE_LIFT;
-    this.rel.copy(this.t0).multiplyScalar(d + lift);
+    this.liftEye.copy(this.parkedEye).addScaledVector(this.parkedUp, lift);
+    this.launchLeg = 'lift';
+  }
+
+  private beginPull(world: DroneWorld): void {
+    const R = world.coreOf(this.lockId, this.core);
+    this.t0.copy(this.eye).sub(this.core);
+    if (this.t0.lengthSq() < 1e-12) this.t0.copy(this.parkedUp);
+    if (this.t0.lengthSq() < 1e-12) this.t0.copy(this.parkedFwd).negate();
+    this.t0.normalize();
+    const fill = Math.max(world.fillKm(R), R * 1.002);
+    this.rel.copy(this.t0).multiplyScalar(fill);
+    this.launchLeg = 'pull';
   }
 
   private tickLaunch(dt: number, world: DroneWorld): void {
-    world.coreOf(this.lockId, this.core);
+    if (this.launchLeg === 'lift') {
+      const err = this.easePose(dt, LAUNCH_RATE, this.liftEye, this.parkedFwd, this.parkedUp, world);
+      const slack = Math.max(this.liftEye.distanceTo(this.parkedEye) * 0.08, 1);
+      if (err > slack) return;
+      this.beginPull(world);
+      const R = world.coreOf(this.lockId, this.core);
+      if (this.eye.distanceTo(this.core) >= world.fillKm(R) * 0.97) {
+        this.finishLaunch(world);
+      }
+      return;
+    }
+    const R = world.coreOf(this.lockId, this.core);
+    const fill = Math.max(world.fillKm(R), R * 1.002);
+    this.rel.setLength(fill);
     this.t0.copy(this.core).add(this.rel);
-    this.t1.copy(this.core).sub(this.t0);
-    if (this.t1.lengthSq() < 1e-12) return;
-    this.t1.normalize();
-    this.t2.copy(this.rel);
-    if (this.t2.lengthSq() < 1e-12) this.t2.copy(this.up);
-    this.t2.normalize();
-    const err = this.easePose(dt, LAUNCH_RATE, this.t0, this.t1, this.t2, world);
-    const slack = Math.max(this.rel.length() * 0.03, 1);
-    if (err > slack) return;
+    const dist = this.eye.distanceTo(this.t0);
+    const slack = Math.max(fill * 0.03, 1);
+    if (dist > slack) {
+      this.t1.copy(this.t0).sub(this.eye);
+      const step = Math.min(dist, Math.max(dist * LAUNCH_RATE * dt, dist * 0.08));
+      if (this.t1.lengthSq() > 1e-16) {
+        this.t1.normalize();
+        this.eye.addScaledVector(this.t1, step);
+      }
+      this.fwd.copy(this.parkedFwd);
+      this.up.copy(this.parkedUp);
+      this.orthonormalize();
+      this.stayOut(world);
+      return;
+    }
+    this.finishLaunch(world);
+  }
+
+  private finishLaunch(world: DroneWorld): void {
     this.phase = null;
     this.captureLock(this.lockId, world);
   }
