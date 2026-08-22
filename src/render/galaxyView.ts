@@ -12,10 +12,9 @@
 import * as THREE from 'three';
 import { UNIVERSE, classify, surveyGain } from '../world/physics';
 import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galaxy';
-import { aimLocks, harvestGlowPx } from './galaxyStar';
+import { harvestGlowPx } from './galaxyStar';
 import { SkySurvey } from './skySurvey';
-import { classifyStar } from '../world/stellar';
-import { lockedToStar, systemAt, type BodySpec } from '../world/systemgen';
+import { lockedToStar, type BodySpec } from '../world/systemgen';
 import { type HostBodyRT } from './hostSystem';
 import { HostLocale } from './hostLocale';
 import { nearestBody } from './hostLook';
@@ -27,6 +26,9 @@ import { type Berth } from '../world/course';
 import { Voyage } from './voyage';
 import { encodePlace, encodeSession } from './sessionCodec';
 import { Helm } from './helm';
+import { Sight, RETICLE_LOCK, type GalaxyFocus } from './sight';
+
+export type { GalaxyFocus } from './sight';
 import {
   clearRadiusKm,
   coerceOrbitKind,
@@ -44,25 +46,12 @@ import {
   viewSkinKm,
   type WorldOrbitKind,
 } from '../world/worldOrbit';
-import {
-  regionName,
-  sketchMatches,
-  BIT_REMNANT,
-  type GalaxyFilterName,
-} from '../world/sectors';
+import { regionName, sketchMatches, type GalaxyFilterName } from '../world/sectors';
 import { PerfMeter } from './perfHud';
 import { prepareUniverse } from '../world/universePrep';
 import type { LastPlace, SessionSnap } from '../world/types';
 /** Park “here” this far ahead of the camera (catalog kpc). */
 const FOCUS_PARK = 0.35;
-/**
- * Reticle acquire / hold. A star has to fly through the
- * tight pip to lock; once named it stays until the look
- * leaves a wider cone. Chance to catch, then consistent.
- */
-const RETICLE_LOCK = 0.028;
-const RETICLE_HOLD = 0.045;
-
 export type GalaxyMode = 'region';
 /** Sketch filter — same names the survey packs carry. */
 export type GalaxyFilter = GalaxyFilterName;
@@ -100,23 +89,6 @@ function overviewHalfAngle(fovDeg: number, aspect: number, kind: 'face' | 'edge'
 /** Sit this far (kpc) so radius `r` fills `fill` of that half-angle. */
 function overviewDistanceKpc(r: number, halfAngle: number, fill = 0.92): number {
   return r / Math.max(1e-4, Math.tan(Math.max(1e-4, halfAngle) * fill));
-}
-
-export interface GalaxyFocus {
-  id: number;
-  /** Set when the plate names a world of that host. */
-  bodyId?: string;
-  name: string;
-  cls: string;
-  phase: string;
-  planets: number;
-  moons: number;
-  life: boolean;
-  dark: boolean;
-  /** Stage-local pixels. */
-  x: number;
-  y: number;
-  dist: number;
 }
 
 export interface GalaxyFrame {
@@ -250,11 +222,8 @@ export class GalaxyView {
   private sectorPop = 0;
   private overview = false;
   private backPose: BubblePose | null = null;
-  private lastSightAt = 0;
-  private focusObj: GalaxyObject | null = null;
-  private focusHud: GalaxyFocus | null = null;
-  private grownCount = 0;
-  private briefMemo = new Map<number, { name: string; planets: number; moons: number; life: boolean }>();
+  /** Centre reticle: chance acquire, wide hold. Owns the focus. */
+  private readonly sight: Sight;
 
   /** The survey photograph — harvest, nebulae, dust, cosmic shell. */
   private readonly sky: SkySurvey;
@@ -294,7 +263,6 @@ export class GalaxyView {
    * when we fly out. Look drag drops the heading, not this place.
    */
   private worldId: string | null = null;
-  private focusBodyId: string | null = null;
   private selectedBodyId: string | null = null;
   private navMode: HostNavMode = null;
   private drone: Trackball | null = null;
@@ -376,6 +344,19 @@ export class GalaxyView {
       setWarp: (on) => this.setWarp(on),
       setGear: (astern) => this.setGear(astern),
       warping: () => this.voyage.thrustOn,
+    });
+    this.sight = new Sight(seed, {
+      region: () => this.mode === 'region',
+      orient: () => this.orientArc(),
+      droneLive: () => Boolean(this.drone),
+      fwd: () => this.ship.fwd,
+      at: () => this.ship.at,
+      clouds: () => [this.sky.cloud, this.sky.nebulae],
+      filter: () => this.filter,
+      hostObj: () => this.locale.obj,
+      bodies: () => this.locale.sys.bodies,
+      worldRt: (id) => this.worldRt(id),
+      bodyHud: (rt) => this.hudForBody(rt),
     });
     this.attachSilhouette();
 
@@ -487,7 +468,7 @@ export class GalaxyView {
       const dest = objectAt(this.seed, snap.course.starId);
       if (dest) {
         this.courseObj = dest;
-        this.courseHud = this.hudForStar(dest);
+        this.courseHud = this.sight.starHud(dest, this.arriveDist(dest));
       }
       this.courseBodyId = snap.course.bodyId;
       // Legacy saves could hold a dest ring with courseLive unset —
@@ -853,7 +834,7 @@ export class GalaxyView {
     this.camera.updateProjectionMatrix();
     this.select(select);
     this.applyCam();
-    this.updateSight(true);
+    this.sight.update(true);
   }
 
   private shownCount(): number {
@@ -882,7 +863,7 @@ export class GalaxyView {
     this.sky.replaceSky();
     this.sectorPop = this.sky.shownCount();
     this.lastEnterMs = this.sky.cloud?.ms ?? this.lastEnterMs;
-    if (this.mode === 'region') this.updateSight(true);
+    if (this.mode === 'region') this.sight.update(true);
   }
 
   /** After a nebula rebake — drop the nebula mesh only. Stars and fog stay. */
@@ -891,7 +872,7 @@ export class GalaxyView {
     this.sky.replaceNebulae();
     this.sectorPop = this.sky.shownCount();
     this.lastEnterMs = this.sky.nebulae?.ms ?? this.lastEnterMs;
-    if (this.mode === 'region') this.updateSight(true);
+    if (this.mode === 'region') this.sight.update(true);
   }
 
   private perf!: PerfMeter;
@@ -929,7 +910,7 @@ export class GalaxyView {
     };
     considerObj(this.locale.obj);
     considerObj(this.courseObj);
-    considerObj(this.focusObj);
+    considerObj(this.sight.focusObj);
     considerObj(this.selected);
     considerObj(this.hereObj);
     // A known subject inside AIM_RANGE is the sphere we are
@@ -970,7 +951,7 @@ export class GalaxyView {
   setFilter(f: GalaxyFilter): void {
     this.wake();
     this.sky.setFilter(f);
-    if (this.mode === 'region') this.updateSight(true);
+    if (this.mode === 'region') this.sight.update(true);
   }
 
   dismiss(): void {
@@ -989,7 +970,7 @@ export class GalaxyView {
 
   /** Plate: a world of the focused / host star → equatorial berth. */
   setCourseBody(bodyId: string): void {
-    const starId = this.focusObj?.id ?? this.locale.obj?.id;
+    const starId = this.sight.focusObj?.id ?? this.locale.obj?.id;
     if (starId == null) return;
     this.setCourseBerth({ starId, bodyId, orbit: 'equatorial' });
   }
@@ -1000,7 +981,7 @@ export class GalaxyView {
    * hostObj === dest.
    */
   goToWorldOrbit(bodyId: string, kind: WorldOrbitKind): void {
-    const starId = this.focusObj?.id ?? this.locale.obj?.id;
+    const starId = this.sight.focusObj?.id ?? this.locale.obj?.id;
     if (starId == null) return;
     this.setCourseBerth({ starId, bodyId, orbit: kind });
   }
@@ -1022,31 +1003,13 @@ export class GalaxyView {
     if (dest.bodyId) {
       const rt = this.worldRt(dest.bodyId);
       this.selectedBodyId = dest.bodyId;
-      this.courseHud = rt ? this.hudForBody(rt) : this.hudForStar(obj);
+      this.courseHud = rt ? this.hudForBody(rt) : this.sight.starHud(obj, this.arriveDist(obj));
     } else {
       this.selectedBodyId = null;
-      this.courseHud = this.hudForStar(obj);
+      this.courseHud = this.sight.starHud(obj, this.arriveDist(obj));
     }
     this.select(null);
     this.beginAutopilot();
-  }
-
-  private hudForStar(obj: GalaxyObject): GalaxyFocus {
-    const brief = this.briefFor(obj);
-    const st = obj.star;
-    return {
-      id: obj.id,
-      name: brief.name,
-      cls: classifyStar(st),
-      phase: st.phase.replace(/_/g, ' '),
-      planets: brief.planets,
-      moons: brief.moons,
-      life: brief.life,
-      dark: st.phase.includes('dwarf') || st.luminosity < 0.05,
-      x: 0.5,
-      y: 0.5,
-      dist: this.arriveDist(obj),
-    };
   }
 
   /** Lock-on is warp-ahead until a look drag aborts it. */
@@ -1233,7 +1196,7 @@ export class GalaxyView {
 
   /** Body (or the star) in the centre pip. Null if the pip is empty. */
   private droneReticleTarget(): { id: string | null } | null {
-    if (this.focusBodyId && this.worldRt(this.focusBodyId)) return { id: this.focusBodyId };
+    if (this.sight.focusBodyId && this.worldRt(this.sight.focusBodyId)) return { id: this.sight.focusBodyId };
     if (this.selectedBodyId && this.worldRt(this.selectedBodyId)) return { id: this.selectedBodyId };
     const root = this.locale.root;
     if (!root) return null;
@@ -2269,7 +2232,7 @@ export class GalaxyView {
 
   /** Local catalog stars close enough to lock the reticle. Smoke / HUD. */
   grownStars(): number {
-    return this.grownCount;
+    return this.sight.grownCount;
   }
 
   /** True when the luminous harvest is on the GPU. */
@@ -2359,7 +2322,7 @@ export class GalaxyView {
       this.aimAt(-1, 0, 0);
     }
     this.applyCam();
-    this.updateSight(true);
+    this.sight.update(true);
   }
 
   private restoreBack(): void {
@@ -2374,7 +2337,7 @@ export class GalaxyView {
     this.arcPitch = p.pitch;
     this.arcRoll = p.roll;
     this.applyCam();
-    this.updateSight(true);
+    this.sight.update(true);
   }
 
   /** Open the region around a star and select it. */
@@ -2406,26 +2369,26 @@ export class GalaxyView {
     const v = this.viewCart(best);
     this.aimAt(v.x, v.y, v.z);
     this.applyCam();
-    this.updateSight(true);
+    this.sight.update(true);
     return best;
   }
 
   focusedObject(): GalaxyObject | null {
-    return this.focusObj;
+    return this.sight.focusObj;
   }
 
   focusedBodyId(): string | null {
-    return this.focusBodyId;
+    return this.sight.focusBodyId;
   }
 
   /** Chart subject: focused harvest star, else the host. */
   chartObject(): GalaxyObject | null {
-    return this.focusObj ?? this.locale.obj;
+    return this.sight.focusObj ?? this.locale.obj;
   }
 
   /** Refresh sight uniforms — smoke / tests. */
   syncArc(): void {
-    if (this.mode === 'region') this.updateSight(true);
+    if (this.mode === 'region') this.sight.update(true);
   }
 
   /** Harvest glow size (device px). f(L), not 1/d — smoke proves approach does not inflate it. */
@@ -2660,9 +2623,9 @@ export class GalaxyView {
     this.courseBodyId = dest.bodyId;
     if (dest.bodyId) {
       const rt = this.worldRt(dest.bodyId);
-      this.courseHud = rt ? this.hudForBody(rt) : this.hudForStar(obj);
+      this.courseHud = rt ? this.hudForBody(rt) : this.sight.starHud(obj, this.arriveDist(obj));
     } else {
-      this.courseHud = this.hudForStar(obj);
+      this.courseHud = this.sight.starHud(obj, this.arriveDist(obj));
     }
   }
 
@@ -2807,7 +2770,7 @@ export class GalaxyView {
       this.locale.obj = null;
       return;
     }
-    for (const cand of [this.courseObj, this.focusObj, this.selected]) {
+    for (const cand of [this.courseObj, this.sight.focusObj, this.selected]) {
       if (cand && this.arriveDist(cand) <= range) {
         this.locale.obj = cand;
         return;
@@ -2831,7 +2794,7 @@ export class GalaxyView {
       if (rt && this.bodyDist(rt) <= range) return;
       this.worldId = null;
     }
-    for (const id of [this.courseBodyId, this.focusBodyId, this.selectedBodyId]) {
+    for (const id of [this.courseBodyId, this.sight.focusBodyId, this.selectedBodyId]) {
       const rt = this.worldRt(id);
       if (rt && this.bodyDist(rt) <= range) {
         this.worldId = id;
@@ -2907,7 +2870,7 @@ export class GalaxyView {
    */
   private detachHost(): void {
     this.worldId = null;
-    this.focusBodyId = null;
+    this.sight.focusBodyId = null;
     this.selectedBodyId = null;
     this.pendingPlace = null;
     this.drone = null;
@@ -3225,9 +3188,9 @@ export class GalaxyView {
     const body = this.pickBody(cx, cy);
     if (!body) return;
     this.selectedBodyId = body.spec.id;
-    this.focusBodyId = body.spec.id;
-    this.focusHud = this.hudForBody(body);
-    this.focusObj = this.locale.obj;
+    this.sight.focusBodyId = body.spec.id;
+    this.sight.focusHud = this.hudForBody(body);
+    this.sight.focusObj = this.locale.obj;
     this.select(null);
     this.wake();
   }
@@ -3425,198 +3388,6 @@ export class GalaxyView {
 
   // --------------------------------------------------------------- sight
 
-  /**
-   * Filter the local catalog cloud and lock the centre reticle onto
-   * a visitable star. Silhouette backdrop rows are not in this cloud.
-   */
-  private updateSight(force = false): void {
-    if (this.mode !== 'region') return;
-    const now = performance.now();
-    if (!force && now - this.lastSightAt < 50) return;
-    this.lastSightAt = now;
-    this.aimReticle();
-  }
-
-  /**
-   * Centre reticle vs host worlds and local catalog points.
-   * Acquire is a tight pip (chance). Hold is a wider cone so
-   * the named object stays until the look leaves it. Bodies
-   * and harvest stars compete on the same off-axis score —
-   * a planet in the cone does not hide a star in the pip.
-   */
-  private aimReticle(): void {
-    if (this.mode !== 'region' || (!this.sky.cloud && !this.sky.nebulae)) {
-      this.focusObj = null;
-      this.focusHud = null;
-      this.focusBodyId = null;
-      this.grownCount = 0;
-      return;
-    }
-    if (!this.drone) this.orientArc();
-    const lx = this.ship.fwd.x;
-    const ly = this.ship.fwd.y;
-    const lz = this.ship.fwd.z;
-    const ox = this.ship.at.x;
-    const oy = this.ship.at.y;
-    const oz = this.ship.at.z;
-    const holdCos = Math.cos(RETICLE_HOLD);
-    const lockCos = Math.cos(RETICLE_LOCK);
-
-    const holdBody = this.focusBodyId ? this.worldRt(this.focusBodyId) : null;
-    if (holdBody) {
-      holdBody.group.getWorldPosition(this.hostTmp);
-      const dist = this.hostTmp.length();
-      if (dist > 1e-18) {
-        const inv = 1 / dist;
-        const dot = this.hostTmp.x * inv * lx + this.hostTmp.y * inv * ly + this.hostTmp.z * inv * lz;
-        if (dot >= holdCos) {
-          this.grownCount = 1;
-          this.focusObj = this.locale.obj;
-          this.focusHud = this.hudForBody(holdBody);
-          this.focusHud.dist = dist;
-          return;
-        }
-      }
-    } else if (this.focusObj && !this.focusBodyId) {
-      const c = galToCart(this.focusObj.pos);
-      const dx = c.x - ox;
-      const dy = c.y - oy;
-      const dz = c.z - oz;
-      const dist = Math.hypot(dx, dy, dz);
-      if (dist > 1e-12 && dist <= UNIVERSE.AIM_RANGE_KPC) {
-        const inv = 1 / dist;
-        const dot = dx * inv * lx + dy * inv * ly + dz * inv * lz;
-        if (dot >= holdCos) {
-          this.grownCount = 1;
-          if (this.focusHud) this.focusHud.dist = dist;
-          return;
-        }
-      }
-    }
-
-    let grown = 0;
-    let bestBody: HostBodyRT | null = null;
-    let bestId = -1;
-    let bestOff = 1;
-    let bestDist = 0;
-    let bestDim = false;
-    if (this.locale.obj) {
-      for (const rt of this.locale.sys.bodies) {
-        rt.group.getWorldPosition(this.hostTmp);
-        const dist = this.hostTmp.length();
-        if (dist < 1e-18) continue;
-        const inv = 1 / dist;
-        const dot = this.hostTmp.x * inv * lx + this.hostTmp.y * inv * ly + this.hostTmp.z * inv * lz;
-        if (dot < lockCos) continue;
-        grown++;
-        const off = 1 - dot;
-        if (off < bestOff) {
-          bestOff = off;
-          bestBody = rt;
-          bestId = -1;
-          bestDist = dist;
-        }
-      }
-    }
-    for (const cloud of [this.sky.cloud, this.sky.nebulae]) {
-      if (!cloud) continue;
-      const cat = cloud.pos;
-      const lum = cloud.lum;
-      const bits = cloud.bits;
-      const ids = cloud.ids;
-      for (let i = 0; i < cloud.n; i++) {
-        if (!sketchMatches(bits[i], this.filter)) continue;
-        const i3 = i * 3;
-        const dx = cat[i3] - ox;
-        const dy = cat[i3 + 1] - oy;
-        const dz = cat[i3 + 2] - oz;
-        const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 < 1e-12) continue;
-        const dist = Math.sqrt(d2);
-        if (dist > UNIVERSE.AIM_RANGE_KPC) continue;
-        const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
-        if (!aimLocks(lum[i], dist, dim)) continue;
-        grown++;
-        const inv = 1 / dist;
-        const dot = dx * inv * lx + dy * inv * ly + dz * inv * lz;
-        if (dot < lockCos) continue;
-        const off = 1 - dot;
-        if (off < bestOff) {
-          bestOff = off;
-          bestBody = null;
-          bestId = ids[i];
-          bestDist = dist;
-          bestDim = dim;
-        }
-      }
-    }
-    this.grownCount = grown;
-    if (bestBody) {
-      this.focusBodyId = bestBody.spec.id;
-      this.focusObj = this.locale.obj;
-      this.focusHud = this.hudForBody(bestBody);
-      this.focusHud.dist = bestDist;
-      return;
-    }
-    this.focusBodyId = null;
-    if (bestId < 0) {
-      this.focusObj = null;
-      this.focusHud = null;
-      return;
-    }
-    if (this.focusObj?.id === bestId && this.focusHud) {
-      this.focusHud.dist = bestDist;
-      this.focusHud.dark = bestDim;
-      return;
-    }
-    const hit = objectAt(this.seed, bestId);
-    if (!hit) {
-      this.focusObj = null;
-      this.focusHud = null;
-      return;
-    }
-    this.focusObj = hit;
-    const brief = this.briefFor(hit);
-    const st = hit.star;
-    this.focusHud = {
-      id: hit.id,
-      name: brief.name,
-      cls: classifyStar(st),
-      phase: st.phase.replace(/_/g, ' '),
-      planets: brief.planets,
-      moons: brief.moons,
-      life: brief.life,
-      dark: bestDim,
-      x: 0.5,
-      y: 0.5,
-      dist: bestDist,
-    };
-  }
-
-  private briefFor(obj: GalaxyObject): { name: string; planets: number; moons: number; life: boolean } {
-    const hit = this.briefMemo.get(obj.id);
-    if (hit) return hit;
-    if (this.briefMemo.size > 48) this.briefMemo.clear();
-    try {
-      const spec = systemAt(this.seed, obj.id);
-      let planets = 0;
-      let moons = 0;
-      let life = false;
-      for (const b of spec.bodies) {
-        if (b.parent) moons++;
-        else planets++;
-        if (b.physics.life) life = true;
-      }
-      const row = { name: spec.star.name, planets, moons, life };
-      this.briefMemo.set(obj.id, row);
-      return row;
-    } catch {
-      const row = { name: classifyStar(obj.star), planets: 0, moons: 0, life: false };
-      this.briefMemo.set(obj.id, row);
-      return row;
-    }
-  }
-
   // --------------------------------------------------------------- frame
 
   /** Frames left before the loop rests. The galaxy is a static
@@ -3696,8 +3467,7 @@ export class GalaxyView {
       return;
     }
     this.restIn--;
-    this.updateSight();
-    this.aimReticle();
+    this.sight.aim();
 
     const t = now * 0.001;
     this.camera.updateMatrixWorld();
@@ -3833,10 +3603,10 @@ export class GalaxyView {
       radius: Math.hypot(this.ship.at.x, this.ship.at.z),
       pickable: true,
       resolved: this.shownCount(),
-      grown: this.grownCount,
+      grown: this.sight.grownCount,
       sector: this.regionLabel,
       population: this.sectorPop,
-      focus: this.focusHud,
+      focus: this.sight.focusHud,
       course: this.courseHud,
       warp: this.voyage.thrustOn,
       astern: this.voyage.astern,
