@@ -1075,7 +1075,11 @@ Code map (start here):
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
 | Galaxy explorer (conductor: frame loop, camera, verbs) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
 | Survey sky GPU (harvest, nebulae, dust, cosmic, freeze) | `src/render/skySurvey.ts` |
+| Survey sky GLSL (extinction march, star PSF, fragment) | `src/render/skyShaders.ts` |
 | Voyage state machine (berth, ride, capture, depart, warp) | `src/render/voyage.ts` |
+| Orbit pilot (insertions, captures, ride placement, limb looks) | `src/render/voyagePilot.ts` |
+| Approach pilot (cruise gears, speed caps, parks, fences) | `src/render/voyageApproach.ts` |
+| Drone bridge (the DroneWorld port: cores, subject, pip) | `src/render/droneBridge.ts` |
 | Host locale (SOI place: furnace, km frame, bodies, globes) | `src/render/hostLocale.ts` |
 | Helm (pointer / key / pinch / hold-roll → verbs) | `src/render/helm.ts` |
 | Sight (reticle chance-acquire / hold; plate payloads) | `src/render/sight.ts` |
