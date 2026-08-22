@@ -20,18 +20,18 @@ import { HostLocale } from './hostLocale';
 import { nearestBody } from './hostLook';
 import { type HostNavMode } from './hostNav';
 import { ShipFlight } from './flight';
-import { Trackball, type DroneWorld } from './drone';
+import { Trackball } from './drone';
 import { type Berth } from '../world/course';
 import { Voyage } from './voyage';
 import { encodePlace, encodeSession } from './sessionCodec';
 import { Helm } from './helm';
-import { Sight, RETICLE_LOCK, type GalaxyFocus } from './sight';
+import { Sight, type GalaxyFocus } from './sight';
+import { DroneBridge } from './droneBridge';
 import { VoyagePilot } from './voyagePilot';
 
 export type { GalaxyFocus } from './sight';
 import {
   coerceOrbitKind,
-  fillViewRadius,
   isHangOrbit,
   orbitLabel,
   orbitOmega,
@@ -235,6 +235,8 @@ export class GalaxyView {
   private backPose: BubblePose | null = null;
   /** Centre reticle: chance acquire, wide hold. Owns the focus. */
   private readonly sight: Sight;
+  /** The drone's window on the world (DroneWorld port). */
+  private readonly bridge: DroneBridge;
 
   /** The survey photograph — harvest, nebulae, dust, cosmic shell. */
   private readonly sky: SkySurvey;
@@ -283,8 +285,6 @@ export class GalaxyView {
   private drone: Trackball | null = null;
   private readonly orbitTmp = new THREE.Vector3();
   private readonly orbitTmp2 = new THREE.Vector3();
-  /** Nearest-core position in host-root km (drone lock / stay-out). */
-  private readonly droneCorePos = new THREE.Vector3();
   /** Scratch for look-vector slerp (attitude nudges). */
   private readonly orbitQ = new THREE.Quaternion();
   /** On the skin of the latched rocky globe. */
@@ -395,6 +395,11 @@ export class GalaxyView {
       bodies: () => this.locale.sys.bodies,
       worldRt: (id) => this.worldRt(id),
       bodyHud: (rt) => this.hudForBody(rt),
+    });
+    this.bridge = new DroneBridge(this.ship, this.voyage, this.locale, this.sight, this.camera, {
+      worldId: () => this.worldId,
+      courseBodyId: () => this.courseBodyId,
+      selectedBodyId: () => this.selectedBodyId,
     });
     this.attachSilhouette();
 
@@ -1078,7 +1083,7 @@ export class GalaxyView {
    */
   centerLook(): void {
     if (this.mode !== 'region' || !this.locale.obj || !this.drone || this.drone.phase) return;
-    this.drone.toggleLock(this.droneWorld());
+    this.drone.toggleLock(this.bridge.world());
     this.placeDrone();
     this.applyCam();
     this.wake();
@@ -1113,7 +1118,7 @@ export class GalaxyView {
     const fwd = this.droneLocalLook(this.ship.fwd, this.hostTmpQ);
     const up = this.droneLocalLook(this.ship.up, this.hostTmpQ);
     this.drone = new Trackball();
-    this.drone.launch(this.orbitTmp2, fwd, up, this.droneWorld());
+    this.drone.launch(this.orbitTmp2, fwd, up, this.bridge.world());
     this.placeDrone();
     this.applyCam();
     this.wake();
@@ -1143,113 +1148,6 @@ export class GalaxyView {
     this.wake();
   }
 
-  private droneWorld(): DroneWorld {
-    return {
-      nearestFrom: (eye) => {
-        const n = this.dronePickNearestFrom(eye);
-        return { id: n.id, pos: this.droneCorePos, R: n.R };
-      },
-      subject: (eye) => this.droneSubject(eye),
-      coreOf: (id, out) => {
-        const R = this.droneCoreOf(id);
-        out.copy(this.droneCorePos);
-        return R;
-      },
-      fillKm: (R) => this.droneFillKm(R),
-      reticleTarget: () => this.droneReticleTarget(),
-    };
-  }
-
-  /**
-   * Core the drone backs off from and locks: the body the ship
-   * is on (capture / ride / latched world). `null` is the star
-   * only when there is no world in that chain.
-   */
-  private droneOrbitId(): string | null {
-    return (
-      this.voyage.capturing?.bodyId ??
-      this.destOrbit()?.bodyId ??
-      this.voyage.riding?.bodyId ??
-      this.worldId ??
-      this.courseBodyId ??
-      null
-    );
-  }
-
-  private droneSubject(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number } {
-    const id = this.droneOrbitId();
-    if (id && this.worldRt(id)) {
-      const R = this.droneCoreOf(id);
-      return { id, pos: this.droneCorePos, R };
-    }
-    if (id == null && (this.voyage.riding || this.destOrbit() || this.voyage.capturing)) {
-      const R = this.droneCoreOf(null);
-      return { id: null, pos: this.droneCorePos, R };
-    }
-    const n = this.dronePickNearestFrom(eye);
-    return { id: n.id, pos: this.droneCorePos, R: n.R };
-  }
-
-  /** Same fill law as the ship park: disk covers ARRIVE_FILL of the short FOV. */
-  private droneFillKm(R: number): number {
-    return fillViewRadius(Math.max(R, 1), this.camera.fov, this.camera.aspect);
-  }
-
-  private placeDrone(): void {
-    const drone = this.drone;
-    if (!drone || !this.locale.root || !this.locale.obj) return;
-    this.locale.pinEyeKm(drone.eye, null);
-  }
-
-  private hostStarRadiusKm(): number {
-    return Math.max(1, this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM);
-  }
-
-  /**
-   * Core nearest a host-km point (a world, else the star).
-   * Launch uses the ship; stay-out uses the drone. Writes
-   * droneCorePos. Lock itself never hops.
-   */
-  private dronePickNearestFrom(eye: THREE.Vector3): { id: string | null; R: number } {
-    const rt = nearestBody(this.locale.sys.bodies, (b) => eye.distanceTo(b.pos));
-    const starD = eye.length();
-    if (rt && eye.distanceTo(rt.pos) < starD) {
-      this.droneCorePos.copy(rt.pos);
-      return { id: rt.spec.id, R: Math.max(1, rt.spec.radius) };
-    }
-    this.droneCorePos.set(0, 0, 0);
-    return { id: null, R: this.hostStarRadiusKm() };
-  }
-
-  /** Body (or the star) in the centre pip. Null if the pip is empty. */
-  private droneReticleTarget(): { id: string | null } | null {
-    if (this.sight.focusBodyId && this.worldRt(this.sight.focusBodyId)) return { id: this.sight.focusBodyId };
-    if (this.selectedBodyId && this.worldRt(this.selectedBodyId)) return { id: this.selectedBodyId };
-    const root = this.locale.root;
-    if (!root) return null;
-    const d = root.position.length();
-    if (d < 1e-18) return { id: null };
-    const inv = 1 / d;
-    const dot =
-      root.position.x * inv * this.ship.fwd.x +
-      root.position.y * inv * this.ship.fwd.y +
-      root.position.z * inv * this.ship.fwd.z;
-    if (dot >= Math.cos(RETICLE_LOCK)) return { id: null };
-    return null;
-  }
-
-  private droneCoreOf(id: string | null): number {
-    if (id) {
-      const rt = this.worldRt(id);
-      if (rt) {
-        this.droneCorePos.copy(rt.pos);
-        return Math.max(1, rt.spec.radius);
-      }
-    }
-    this.droneCorePos.set(0, 0, 0);
-    return this.hostStarRadiusKm();
-  }
-
   /** Soft floor: do not go inside a ball. Atmosphere is outside R. */
   /** World look vector into the drone's local frame. */
   private droneLocalLook(world: THREE.Vector3, localOfWorld: THREE.Quaternion): THREE.Vector3 {
@@ -1258,16 +1156,22 @@ export class GalaxyView {
     return this.orbitTmp2.normalize().clone();
   }
 
+  private placeDrone(): void {
+    const drone = this.drone;
+    if (!drone || !this.locale.root || !this.locale.obj) return;
+    this.locale.pinEyeKm(drone.eye, null);
+  }
+
   private turnDrone(dx: number, dy: number): void {
     if (!this.drone) return;
-    this.drone.look(dx, dy, this.droneWorld());
+    this.drone.look(dx, dy, this.bridge.world());
     this.placeDrone();
     this.applyCam();
   }
 
   private tickDrone(dt: number): void {
     if (!this.drone) return;
-    const done = this.drone.tick(dt, this.droneWorld());
+    const done = this.drone.tick(dt, this.bridge.world());
     this.placeDrone();
     if (done === 'docked') {
       this.drone = null;
@@ -2035,7 +1939,7 @@ export class GalaxyView {
   private zoom(factor: number): void {
     const f = Math.max(1e-3, factor);
     if (this.drone) {
-      this.drone.thrustZoom(f, this.droneWorld());
+      this.drone.thrustZoom(f, this.bridge.world());
       this.placeDrone();
       this.applyCam();
       this.wake();
