@@ -27,7 +27,8 @@ import { decodeShipVoyage, encodePlace, encodeSession } from './sessionCodec';
 import { Helm } from './helm';
 import { Sight, type GalaxyFocus } from './sight';
 import { DroneBridge } from './droneBridge';
-import { VoyagePilot } from './voyagePilot';
+import { VoyagePilot, type PilotPort } from './voyagePilot';
+import { VoyageApproach } from './voyageApproach';
 
 export type { GalaxyFocus } from './sight';
 import {
@@ -196,8 +197,10 @@ export class GalaxyView {
   private readonly ship = new ShipFlight();
   /** Flight state machine — berth, ride, capture, depart, warp. */
   private readonly voyage = new Voyage();
-  /** The geometry that flies it — insertions, captures, cruise. */
+  /** Ring geometry — insertions, captures, ride placement. */
   private readonly pilot: VoyagePilot;
+  /** Approach laws — cruise gears, speed caps, parks, fences. */
+  private readonly approach: VoyageApproach;
   /** Ride clock frozen while the drone is out. */
   private droneRideT = 0;
   /** Face-on / Back / save only — not the look hot path. */
@@ -359,7 +362,7 @@ export class GalaxyView {
       setGear: (astern) => this.setGear(astern),
       warping: () => this.voyage.thrustOn,
     });
-    this.pilot = new VoyagePilot(this.ship, this.voyage, this.locale, this.camera, {
+    const pilotPort: PilotPort = {
       region: () => this.mode === 'region',
       droneLive: () => Boolean(this.drone),
       looking: () => this.helm.looking,
@@ -382,7 +385,9 @@ export class GalaxyView {
         this.updateArriveSubject();
         this.updateWorldSubject();
       },
-    });
+    };
+    this.pilot = new VoyagePilot(this.ship, this.voyage, this.locale, this.camera, pilotPort);
+    this.approach = new VoyageApproach(this.ship, this.voyage, this.locale, this.camera, pilotPort);
     this.sight = new Sight(seed, {
       region: () => this.mode === 'region',
       orient: () => this.orientArc(),
@@ -1489,9 +1494,9 @@ export class GalaxyView {
   leaveOrbit(): void {
     if (this.drone) return;
     if (!this.voyage.riding && !this.voyage.capturing) return;
-    const vEsc = this.pilot.departEscapeSpeed();
+    const vEsc = this.approach.departEscapeSpeed();
     this.breakOrbit();
-    this.pilot.aimDepartStarboard();
+    this.approach.aimDepartStarboard();
     this.voyage.beginDepart(vEsc, this.ship.fwd);
     this.applyCam();
     this.wake();
@@ -1530,7 +1535,7 @@ export class GalaxyView {
     if (this.voyage.departing) return;
     if (on && (this.voyage.riding || this.voyage.capturing)) return;
     this.voyage.coast.set(0, 0, 0);
-    this.voyage.thrustOn = on && this.pilot.warpMayRun();
+    this.voyage.thrustOn = on && this.approach.warpMayRun();
     if (this.voyage.thrustOn) this.wake(2);
   }
 
@@ -1852,7 +1857,7 @@ export class GalaxyView {
    */
   private moveBubble(vx: number, vy: number, vz: number, force = false): void {
     if (this.mode !== 'region') return;
-    const maxV = force ? null : this.pilot.moveCap();
+    const maxV = force ? null : this.approach.moveCap();
     if (maxV != null) {
       const max = maxV * Math.max(this.lastDt, 1 / 120);
       const len = Math.hypot(vx, vy, vz);
@@ -1865,7 +1870,7 @@ export class GalaxyView {
     }
     const len = Math.hypot(vx, vy, vz);
     if (len > 0) {
-      const allowed = this.pilot.clampAdvance(vx, vy, vz, len);
+      const allowed = this.approach.clampAdvance(vx, vy, vz, len);
       if (allowed < len) {
         const s = allowed / len;
         vx *= s;
@@ -2082,7 +2087,7 @@ export class GalaxyView {
     this.lastT = now;
     this.lastDt = dt;
     this.pilot.holdCourse(dt);
-    this.pilot.cruise(dt);
+    this.approach.cruise(dt);
     this.tickRoll(dt);
     // Motion is the universal wake: input, warp, and settling
     // all end as pose drift. Hover, a parked Home pick, and a
