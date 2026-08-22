@@ -154,6 +154,17 @@ export interface RegionSelection {
   z: number;
 }
 
+export interface GlobePick {
+  bodyId: string;
+  cell: number;
+  level: number;
+  dir: [number, number, number];
+  waterLevel: number;
+}
+
+/** Hex tools while the drone is out. */
+export type MarkTool = 'label' | 'object';
+
 export interface ProjectedPoint {
   x: number;
   y: number;
@@ -167,6 +178,9 @@ interface Callbacks {
   onPlace?: (p: LastPlace) => void;
   /** Live ship / drone save — written as the pose moves. */
   onSession?: (s: SessionSnap) => void;
+  /** Drone tap on a hex — inspector (no tool) or the mark dialog. */
+  onInspect?: (hit: GlobePick | null) => void;
+  onMark?: (tool: MarkTool, hit: GlobePick) => void;
 }
 
 export class GalaxyView {
@@ -236,6 +250,10 @@ export class GalaxyView {
   private readonly worldUp = new THREE.Vector3(0, 1, 0);
   /** Pointer / key routing. Events arrive as verbs on the port. */
   private readonly helm: Helm;
+  /** Hex tool while the drone is out. Null = inspect on tap. */
+  private markTool: MarkTool | null = null;
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly ndc = new THREE.Vector2();
   private lastT = performance.now();
   private lastDt = 1 / 60;
   private viewW = 0;
@@ -2044,12 +2062,55 @@ export class GalaxyView {
 
   // ------------------------------------------------------------- picking
 
+  /** Hex tool while the drone is out (label / marker / off). */
+  setMarkTool(tool: MarkTool | null): void {
+    this.markTool = tool;
+  }
+
   /**
-   * In-system only: name a host world for the plate. Galaxy
+   * Hex under a drone tap: raycast the ready globes through the
+   * tap point. The drone is the close look — this is how a cell
+   * is inspected or marked. Same grid the globe grew from.
+   */
+  private pickGlobeCell(clientX: number, clientY: number): GlobePick | null {
+    if (!this.drone) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    const w = Math.max(1, rect.width);
+    const h = Math.max(1, rect.height);
+    this.ndc.set(((clientX - rect.left) / w) * 2 - 1, -((clientY - rect.top) / h) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    this.locale.scene.updateMatrixWorld(true);
+    let best: { pick: GlobePick; t: number } | null = null;
+    for (const globe of this.locale.globes.values()) {
+      const mesh = globe.terrainMesh();
+      if (!globe.ready || !mesh) continue;
+      const hits = this.raycaster.intersectObject(mesh, false);
+      if (!hits[0]) continue;
+      if (best && hits[0].distance >= best.t) continue;
+      this.hostTmp.copy(hits[0].point);
+      mesh.worldToLocal(this.hostTmp);
+      const at = globe.cellAt(this.hostTmp.x, this.hostTmp.y, this.hostTmp.z);
+      if (!at) continue;
+      best = { pick: { bodyId: globe.bodyId, ...at }, t: hits[0].distance };
+    }
+    return best?.pick ?? null;
+  }
+
+  /**
+   * In-system only. Drone out: a hex hit inspects or marks the
+   * cell. Otherwise name a host world for the plate. Galaxy
    * stars are the reticle — a tap does not set course.
    */
   private pick(cx: number, cy: number): void {
     if (!this.locale.obj) return;
+    if (this.drone) {
+      const hit = this.pickGlobeCell(cx, cy);
+      if (hit) {
+        if (this.markTool) this.callbacks.onMark?.(this.markTool, hit);
+        else this.callbacks.onInspect?.(hit);
+        return;
+      }
+    }
     const body = this.pickBody(cx, cy);
     if (!body) return;
     this.selectedBodyId = body.spec.id;

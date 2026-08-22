@@ -850,10 +850,11 @@ are **overlays on the addressable grid**, not new planet types.
 
 **Now** (on the host-pass globe)
 
-- Inspect the orbited world (body physics; per-hex inspection returns
-  when the drone can pick cells — walking is retired).
-- Labels and objects (`city` / `town` / `landmark`) still render on
-  their cells; placing new ones waits for the drone pick.
+- Inspect a hex from the drone: tap a cell for that column's surface
+  layer, from geology. From a ride the inspector shows the body.
+- Place labels and objects (`city` / `town` / `landmark`) on a cell —
+  the label / marker tools arm while the drone is out; a hex tap
+  places. Same addressable cells the walk used to reach.
 
 **Direction (do not invent a parallel world to get here)**
 
