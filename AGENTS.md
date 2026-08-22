@@ -1065,9 +1065,15 @@ Code map (start here):
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
 | Nebula shape law (backdrop + local) | `src/world/skyShape.ts` |
 | ISM fog (gas field → extinction volume) | `src/world/dustVolume.ts` |
-| Galaxy explorer (catalog, place, globes; routes input) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Galaxy explorer (conductor: frame loop, camera, verbs) | `src/render/galaxyView.ts`, `src/ui/GalaxyExplorer.tsx` |
+| Survey sky GPU (harvest, nebulae, dust, cosmic, freeze) | `src/render/skySurvey.ts` |
+| Voyage state machine (berth, ride, capture, depart, warp) | `src/render/voyage.ts` |
+| Host locale (SOI place: furnace, km frame, bodies, globes) | `src/render/hostLocale.ts` |
+| Helm (pointer / key / pinch / hold-roll → verbs) | `src/render/helm.ts` |
+| Sight (reticle chance-acquire / hold; plate payloads) | `src/render/sight.ts` |
+| Session codec (module state → v1 save shapes) | `src/render/sessionCodec.ts` |
 | Ship pose + stick (catalog kpc, in or out of SOI) | `src/render/flight.ts` |
-| Trackball drone (own nav; join = launch / land) | `src/render/drone.ts` |
+| Trackball drone (own nav; join = launch / dock) | `src/render/drone.ts` |
 | Course berth + derived legs | `src/world/course.ts` |
 | Host solar system (Kepler balls + rings under the sphere) | `src/render/hostSystem.ts` |
 | Host look (Center = nearest body core) | `src/render/hostLook.ts` |
@@ -1083,7 +1089,7 @@ Code map (start here):
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
-| Host-pass orbit rings (chart pick) | `src/world/worldOrbit.ts` |
+| Orbit film laws (limb / hover / fill parks, ω, escape) | `src/world/worldOrbit.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |
 | Per-cell geology (mining truth) | `src/world/geology.ts` |
