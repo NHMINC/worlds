@@ -623,7 +623,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   ahead / astern when stopped so you can back off a park.
   Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
   quietly unless that gear points inward. A tap, not a hold.
-  Drag looks. After a pinch, the surviving
+  Drag looks. Two-finger twist rolls the
+  look — clockwise fingers, clockwise roll
+  (`SOI_TWIST`), catalog and sphere. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
   `AIM_RANGE_KPC`. Set course holds the heading; the plate

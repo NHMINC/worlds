@@ -261,6 +261,7 @@ interface BubblePose {
   z: number;
   yaw: number;
   pitch: number;
+  roll: number;
 }
 
 export function matchesFilter(o: GalaxyObject, f: GalaxyFilter): boolean {
@@ -880,7 +881,7 @@ export class GalaxyView {
   private sEyeH = 0.03;
   private sEyeHTarget = 0.03;
   private sWalk = 0;
-  /** Roll around the look. Catalog yaw/pitch have no twist. */
+  /** Roll around the look. Same stick in the catalog and the sphere. */
   private arcRoll = 0;
   /** Leftover ship look-hold. Target lock lives on the drone. */
   private lookHold: 'center' | null = null;
@@ -3838,6 +3839,7 @@ export class GalaxyView {
       z: this.arcCenter.z,
       yaw: this.arcYaw,
       pitch: this.arcPitch,
+      roll: this.arcRoll,
     };
   }
 
@@ -3868,6 +3870,7 @@ export class GalaxyView {
     this.rememberBack();
     this.overview = true;
     const d = this.overviewDistance(kind);
+    this.arcRoll = 0;
     if (kind === 'face') {
       this.enterRegion(0, d, 0, null);
       this.aimAt(0, -1, 0);
@@ -3891,6 +3894,7 @@ export class GalaxyView {
     this.enterRegion(p.x, p.y, p.z, null);
     this.arcYaw = p.yaw;
     this.arcPitch = p.pitch;
+    this.arcRoll = p.roll;
     this.applyCam();
     this.updateSight(true);
   }
@@ -5344,12 +5348,10 @@ export class GalaxyView {
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
       }
-      if (this.hostObj) {
-        let dAng = ang - this.pinchAngle;
-        if (dAng > Math.PI) dAng -= Math.PI * 2;
-        if (dAng < -Math.PI) dAng += Math.PI * 2;
-        this.twistLook(dAng);
-      }
+      let dAng = ang - this.pinchAngle;
+      if (dAng > Math.PI) dAng -= Math.PI * 2;
+      if (dAng < -Math.PI) dAng += Math.PI * 2;
+      this.twistLook(dAng);
       this.pinch0 = d;
       this.pinchAngle = ang;
       this.moved += 4;

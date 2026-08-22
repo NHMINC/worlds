@@ -512,7 +512,8 @@ export const UNIVERSE = {
   /**
    * Host-sphere camera. Pinch / wheel dollies at a fraction of
    * the subject distance (`SOI_ZOOM`); two-finger twist rolls
-   * the view (`SOI_TWIST`) — clockwise fingers, clockwise roll.
+   * the look (`SOI_TWIST`) in the catalog and the sphere —
+   * clockwise fingers, clockwise roll.
    * On a ridden ring, zoom changes that
    * radius instead of fighting placeRide (`SOI_TRACK_*` is that
    * ring cage). The drone is anti-gravity: zoom thrusts along
