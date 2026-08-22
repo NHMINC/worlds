@@ -657,6 +657,8 @@ export interface GalaxyFrame {
   nearestBodyId: string | null;
   /** Short HUD line for the active nav mode (body · ring). */
   navHint: string | null;
+  /** On a ring or capturing — Leave orbit, not Warp. */
+  canLeaveOrbit: boolean;
   /** Standing on the latched rocky globe. */
   landed: boolean;
   /** Globe is ready and we can set down from this place. */
@@ -2044,6 +2046,10 @@ export class GalaxyView {
   private beginAutopilot(): void {
     if (this.drone) return;
     this.navMode = 'lock';
+    if (this.riding || this.capturing) {
+      this.wake();
+      return;
+    }
     if (this.thrustOn) this.setWarp(false);
     this.setGear(false);
     this.setWarp(true);
@@ -3712,6 +3718,21 @@ export class GalaxyView {
   }
 
   /**
+   * Player verb: drop the rail into free space. Warp stays off
+   * until they latch it. A live dest is kept (LeaveSoi / cruise
+   * after they Warp). No dest → proximity.
+   */
+  leaveOrbit(): void {
+    if (this.drone || this.landed) return;
+    if (!this.riding && !this.capturing) return;
+    this.breakOrbit();
+    this.thrustOn = false;
+    this.thrustSpeed = 0;
+    this.applyCam();
+    this.wake();
+  }
+
+  /**
    * Exit ring: drop the rail. If a dest course is live, keep it
    * (LeaveSoi / cruise owns the nose next). No dest → proximity.
    * Nose-in (hang / hover) turns radially out so Ahead is escape.
@@ -3745,7 +3766,7 @@ export class GalaxyView {
   setWarp(on: boolean): void {
     if (this.drone) return;
     if (this.mode !== 'region' || this.landed) return;
-    if (on && (this.riding || this.capturing)) this.breakOrbit();
+    if (on && (this.riding || this.capturing)) return;
     // Stop kills thrust only. Drag (abortAutopilot) drops the course.
     this.thrustOn = on && this.warpMayRun();
     this.idle = 0;
@@ -4819,6 +4840,7 @@ export class GalaxyView {
       }
       return;
     }
+    if (this.riding || this.capturing) return;
     if (this.mode === 'region' && !e.repeat) {
       if (e.code === 'ArrowUp') {
         e.preventDefault();
@@ -5526,6 +5548,7 @@ export class GalaxyView {
       navMode: this.navMode,
       nearestBodyId: nearRt?.spec.id ?? null,
       navHint,
+      canLeaveOrbit: Boolean(this.riding || this.capturing),
       landed: this.landed,
       canLand: this.canLandNow(),
       lookHold: this.drone?.lock && !this.drone.phase ? 'center' : null,

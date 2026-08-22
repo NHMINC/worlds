@@ -458,8 +458,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   the body; that pitch eases in as the insertion
   blend goes from full-ahead to the rail. GEO /
   hover face the hang face. The helm does not
-  look-drag or zoom on a ring — the drone is the
-  free camera. A/D, arrows, and a hold on the
+  look-drag, zoom, or warp on a ring — Leave
+  orbit first, then free look and Warp. The
+  drone is the free camera on the rail. A/D, arrows, and a hold on the
   left/right of the screen roll in flight.
   The ship looks
   ahead. Trackball launches (lift
@@ -646,6 +647,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   ↓ sets **astern** and latches warp. While thrusting, ↓ is
   stop. A smaller helm bubble overlapping Warp also toggles
   ahead / astern when stopped so you can back off a park.
+  On a ridden ring (or capture) Warp and the gear hide —
+  **Leave orbit** drops the rail into free space (no
+  thrust). Then look around the system or the galaxy and
+  Warp. A live dest survives Leave; a look drag still
+  aborts it.
   Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
   quietly unless that gear points inward. A tap, not a hold.
   Drag looks in flight: the **ship** stick

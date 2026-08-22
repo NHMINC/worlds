@@ -798,6 +798,12 @@ body,
   background: rgba(180, 70, 50, 0.35);
 }
 
+.gx-warp.gx-leave {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+}
+
 .gx-gear {
   position: absolute;
   left: -10px;
