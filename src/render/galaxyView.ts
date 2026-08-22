@@ -3077,6 +3077,7 @@ export class GalaxyView {
     }
     this.placeRide(tSys);
     // Lock-on ends. In Orbit: helm look stays locked to the ring.
+    this.route.arrive();
     this.capturing = null;
     this.courseObj = null;
     this.courseBodyId = null;
@@ -3112,6 +3113,7 @@ export class GalaxyView {
       omega,
     };
     this.placeRide(tSys);
+    this.route.arrive();
     this.capturing = null;
     this.courseObj = null;
     this.courseBodyId = null;
@@ -4044,13 +4046,14 @@ export class GalaxyView {
     this.clearRide();
     this.capturing = null;
     this.insertBlend = 0;
+    this.pendingArriveOrbit = false;
     if (!this.route.live) {
       this.pendingOrbit = null;
-      this.pendingArriveOrbit = false;
       this.proximity = true;
       this.navMode = 'proximity';
     } else {
       this.navMode = 'lock';
+      this.fillCourseHud();
     }
     if (!leftId) return;
     const rt = this.worldRt(leftId);
@@ -4061,6 +4064,22 @@ export class GalaxyView {
     if (this.ship.fwd.dot(this.orbitTmp) > 0) {
       this.ship.lookAt(-this.orbitTmp.x, -this.orbitTmp.y, -this.orbitTmp.z);
       this.applyCam();
+    }
+  }
+
+  /** Dest survived Leave — put the plate back after In Orbit wiped it. */
+  private fillCourseHud(): void {
+    const dest = this.route.dest;
+    if (!dest || this.courseHud) return;
+    const obj = objectAt(this.seed, dest.starId);
+    if (!obj) return;
+    this.courseObj = obj;
+    this.courseBodyId = dest.bodyId;
+    if (dest.bodyId) {
+      const rt = this.worldRt(dest.bodyId);
+      this.courseHud = rt ? this.hudForBody(rt) : this.hudForStar(obj);
+    } else {
+      this.courseHud = this.hudForStar(obj);
     }
   }
 
@@ -4611,6 +4630,8 @@ export class GalaxyView {
     } else if (this.landed) {
       this.walkSurface(this.lastDt);
       this.placeSurface();
+    } else if (this.departing) {
+      // Escape burn owns the stick — do not recapture the ring.
     } else if (this.pendingArriveOrbit && this.pendingOrbit) {
       this.pendingArriveOrbit = false;
       this.enterRide(tSys);

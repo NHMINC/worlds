@@ -786,11 +786,22 @@ export function GalaxyExplorer(props: Props) {
                   <i className="gx-plate-go">Free look</i>
                 )}
               </>
+            ) : frame.departing ? (
+              <>
+                <b>{frame.navHint ?? 'Leaving orbit'}</b>
+                <em>Escape burn</em>
+                <i className="gx-plate-go">Then free flight</i>
+              </>
             ) : frame.navMode === 'proximity' ? (
               <>
                 <b>{frame.navHint ?? 'Nearest body'}</b>
                 <em>{navModeLabel('proximity')}</em>
                 <i className="gx-plate-go">Nearest body — free flight</i>
+              </>
+            ) : !(frame.course ?? frame.focus) ? (
+              <>
+                <b>{frame.navHint ?? 'Free flight'}</b>
+                <em>{frame.navMode ? navModeLabel(frame.navMode) : 'Cruise'}</em>
               </>
             ) : (
               <>
