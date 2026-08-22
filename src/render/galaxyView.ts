@@ -34,6 +34,7 @@ import { Course, type Berth } from '../world/course';
 import {
   clearRadiusKm,
   coerceOrbitKind,
+  fillViewRadius,
   isHangOrbit,
   isLimbOrbit,
   orbitLabel,
@@ -1493,8 +1494,7 @@ export class GalaxyView {
 
   /** Same fill law as the ship park: disk covers ARRIVE_FILL of the short FOV. */
   private droneFillKm(R: number): number {
-    const r = Math.max(R, 1);
-    return r / Math.max(1e-8, Math.tan(this.fillHalfAngle()));
+    return fillViewRadius(Math.max(R, 1), this.camera.fov, this.camera.aspect);
   }
 
   private placeDrone(): void {
@@ -4091,19 +4091,9 @@ export class GalaxyView {
   }
 
   /**
-   * Catalog distance at which the object's disk covers ARRIVE_FILL
-   * of the shorter field — min(vertical, horizontal) FOV. Portrait
-   * uses the width so the photosphere does not eat the screen;
-   * landscape keeps the old vertical fill. One law, the aspect
-   * is the orientation.
+   * Free-fly star park (catalog kpc): ARRIVE_FILL film from
+   * `worldOrbit.fillViewRadius`, on the live camera frame.
    */
-  private fillHalfAngle(): number {
-    const vFov = (this.camera.fov * Math.PI) / 180;
-    const aspect = Math.max(1e-6, this.camera.aspect);
-    const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * aspect);
-    return 0.5 * UNIVERSE.ARRIVE_FILL * Math.min(vFov, hFov);
-  }
-
   private parkKpc(obj: GalaxyObject): number {
     // Remnants are point-sized (pulsar ~1e-5 R☉). Fill-park on that
     // radius is ~1e-15 kpc — closer than holdCourse will aim, so
@@ -4111,14 +4101,13 @@ export class GalaxyView {
     // compact object still has a reachable park.
     const Rsun = Math.max(0.01, obj.star.radius);
     const R = Rsun * UNIVERSE.RSUN_KM * KM_TO_KPC;
-    return R / Math.max(1e-8, Math.tan(this.fillHalfAngle()));
+    return fillViewRadius(R, this.camera.fov, this.camera.aspect);
   }
 
   private parkBodyKpc(b: BodySpec): number {
     const clear = clearRadiusKm(b) * KM_TO_KPC;
     const R = Math.max(1, b.radius) * KM_TO_KPC;
-    const fill = R / Math.max(1e-8, Math.tan(this.fillHalfAngle()));
-    return Math.max(clear, fill);
+    return Math.max(clear, fillViewRadius(R, this.camera.fov, this.camera.aspect));
   }
 
   /**
