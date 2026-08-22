@@ -648,12 +648,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   stop. A smaller helm bubble overlapping Warp also toggles
   ahead / astern when stopped so you can back off a park.
   On a ridden ring (or capture) Warp and the gear hide —
-  **Leave orbit** drops the rail and burns along the
-  latched heading to escape speed for that body
-  (`√2 ω r`, floored by `ARRIVE_K` × the place fence
-  so the beat is visible, capped by sphere warp). Ease
-  is `ORBIT_CAPTURE`. The burn is not interruptible —
-  then you float free and the helm comes back. Leftover
+  **Leave orbit** drops the rail, yaws right so the
+  body sits to port (Ahead is tangent, not into the
+  ball), and burns to escape speed (`√2 ω r`, floored
+  by `ARRIVE_K` × the place fence, capped by sphere
+  warp). Ease is `ORBIT_CAPTURE`. The burn is not
+  interruptible — then you float free and Warp comes
+  back. The shell fence still stops a dive. Leftover
   speed coasts inertially until Warp or Stop. A live
   dest survives Leave; a look drag still aborts it
   after the burn.

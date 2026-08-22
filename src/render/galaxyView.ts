@@ -3964,10 +3964,10 @@ export class GalaxyView {
     if (!this.riding && !this.capturing) return;
     const vEsc = this.departEscapeSpeed();
     this.breakOrbit();
+    this.aimDepartStarboard();
     this.thrustOn = false;
     this.thrustSpeed = 0;
     this.coast.set(0, 0, 0);
-    this.ship.orthonormalize();
     this.departing = {
       v: 0,
       vEsc,
@@ -3975,6 +3975,17 @@ export class GalaxyView {
     };
     this.applyCam();
     this.wake();
+  }
+
+  /**
+   * Yaw right 90°. The body we were looking at sits to port
+   * so we can see it, and Ahead is tangent — not into the ball.
+   * Warp can run; the shell fence still stops a later dive.
+   */
+  private aimDepartStarboard(): void {
+    this.ship.orthonormalize();
+    this.ship.fwd.copy(this.ship.right);
+    this.ship.orthonormalize();
   }
 
   /** √2 ω r, floored by ARRIVE_K × the place fence, capped by sphere warp. */
@@ -4039,10 +4050,10 @@ export class GalaxyView {
   /**
    * Exit ring: drop the rail. If a dest course is live, keep it
    * (LeaveSoi / cruise owns the nose next). No dest → proximity.
-   * Nose-in (hang / hover) turns radially out so Ahead is escape.
+   * Heading is the Leave starboard yaw — not a radial flip
+   * into the star.
    */
   private breakOrbit(): void {
-    const leftId = this.riding?.bodyId ?? this.capturing?.bodyId ?? null;
     this.clearRide();
     this.capturing = null;
     this.insertBlend = 0;
@@ -4054,16 +4065,6 @@ export class GalaxyView {
     } else {
       this.navMode = 'lock';
       this.fillCourseHud();
-    }
-    if (!leftId) return;
-    const rt = this.worldRt(leftId);
-    if (!rt) return;
-    this.bodyFromEye(rt, this.orbitTmp);
-    if (this.orbitTmp.lengthSq() < 1e-28) return;
-    this.ship.orthonormalize();
-    if (this.ship.fwd.dot(this.orbitTmp) > 0) {
-      this.ship.lookAt(-this.orbitTmp.x, -this.orbitTmp.y, -this.orbitTmp.z);
-      this.applyCam();
     }
   }
 
