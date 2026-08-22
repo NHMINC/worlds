@@ -16,6 +16,7 @@ import {
   eclipticPole,
   starSpecFromState,
   systemAt,
+  systemU,
   type SystemSpec,
 } from '../world/systemgen';
 import { HostSystem, type HostBodyRT } from './hostSystem';
@@ -86,7 +87,9 @@ export class HostLocale {
   attachFurnace(lock: GalaxyObject): void {
     this.detachFurnace();
     this.clearBodies();
-    let star = starSpecFromState(lock.star, () => 0.5);
+    // Fallback star hashes the same address systemAt uses, so a
+    // failed system mint still shows the catalog star's true name.
+    let star = starSpecFromState(lock.star, systemU(`${this.seed}:${lock.id}`));
     try {
       this.spec = systemAt(this.seed, lock.id);
       star = this.spec.star;

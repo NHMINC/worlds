@@ -57,11 +57,16 @@ toy — Godus blocks on a real-sized globe.
   a closed-form clock. Never `Math.random`, `crypto.getRandomValues`,
   `Date.now`, or a walking PRNG stream for the catalog, a system,
   terrain, geology, dust, nebulae, or the cosmic photograph. Same
-  inputs, same universe, every player, every time. A `mulberry32`
-  stream through `generateSystem` / `objectAt` is leftover debt:
-  do not add draws; new laws hash the address. Allowed rolls live
-  *outside* the universe only: a listen seed for the music (never
-  the system seed),   a UUID for a save row.
+  inputs, same universe, every player, every time. Gen v17 paid
+  the walking-stream debt: `generateSystem` / `systemAt` and body
+  physics draw `hashU(address:salt)` — order-free, so a new law
+  never moves its neighbours and no draw is kept "for stream
+  discipline". `mulberry32` survives only as an atomic block
+  seeding a construction (noise permutation tables; the galaxy's
+  short per-slot birth streams) — never a stream laws are
+  inserted into. Allowed rolls live *outside* the universe only:
+  a listen seed for the music (never the system seed), a UUID
+  for a save row.
 - **Archetypes are outputs, never inputs.** There is no `if (iceball)` /
   `if (hothouse)` / `if (pulsar)` generator switch. Iceballs, O stars,
   pulsars, H II regions, and living paradises are attractor regions of

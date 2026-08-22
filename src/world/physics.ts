@@ -1,4 +1,4 @@
-import { mulberry32, xmur3 } from './rng';
+import { hashU } from './rng';
 
 /**
  * The physics engine of the universe.
@@ -1196,7 +1196,7 @@ function frosted(diskT: number, frostT: number): number {
  * comet-delivered water in the temperate band (the decreed bias).
  */
 function solidInventory(
-  rng: () => number,
+  u: (salt: string) => number,
   diskT: number,
   Teq: number,
   Z: number,
@@ -1206,7 +1206,7 @@ function solidInventory(
 
   // Metal fraction scales with metallicity; rock is the remainder of the
   // refractory budget.
-  const metal = 0.22 * Math.pow(Z, 0.7) * (0.85 + rng() * 0.3);
+  const metal = 0.22 * Math.pow(Z, 0.7) * (0.85 + u('metal') * 0.3);
 
   // Ices claim a growing share of the solid mass as the disk cools.
   const fW = frosted(diskT, UNIVERSE.FROST_H2O);
@@ -1217,20 +1217,19 @@ function solidInventory(
   // nebula the oxygen is locked up in CO gas, so water ice starves while
   // carbon ices and carbides feast (solar co = 1 is exact identity).
   const oxyFree = clamp01(1.55 - 0.55 * co);
-  let iceW = 0.42 * fW * (0.7 + rng() * 0.6) * oxyFree;
-  const iceN = 0.05 * fN * (0.6 + rng() * 0.8);
-  const iceC2 = 0.08 * fC2 * (0.6 + rng() * 0.8) * co;
-  const iceC1 = 0.07 * fC1 * (0.6 + rng() * 0.8) * co;
+  let iceW = 0.42 * fW * (0.7 + u('iceW') * 0.6) * oxyFree;
+  const iceN = 0.05 * fN * (0.6 + u('iceN') * 0.8);
+  const iceC2 = 0.08 * fC2 * (0.6 + u('iceC2') * 0.8) * co;
+  const iceC1 = 0.07 * fC1 * (0.6 + u('iceC1') * 0.8) * co;
 
   // Comet delivery into the temperate band: water where it matters most
   // (comets are children of the same disk, so they starve with it).
   const habBump = Math.exp(-Math.pow((Teq - 285) / 45, 2));
-  iceW += UNIVERSE.HAB_WATER * habBump * (0.6 + rng() * 0.8) * oxyFree;
+  iceW += UNIVERSE.HAB_WATER * habBump * (0.6 + u('habWater') * 0.8) * oxyFree;
 
   // Past co = 1 the condensation sequence flips: carbides and graphite
   // condense as refractories — dark carbon crusts instead of silicates.
-  const graphiteJitter = rng(); // drawn unconditionally: stream discipline
-  const graphite = 0.55 * Math.max(0, co - 1) * (0.7 + graphiteJitter * 0.6);
+  const graphite = 0.55 * Math.max(0, co - 1) * (0.7 + u('graphite') * 0.6);
 
   const iceTotal = iceW + iceN + iceC2 + iceC1;
   const rock = Math.max(0.05, 1 - metal - iceTotal) * (1 - clamp01(graphite));
@@ -1284,12 +1283,15 @@ export interface RockyInputs {
 }
 
 export function rockyPhysics(inp: RockyInputs): BodyPhysics {
-  const rng = mulberry32(xmur3(`${inp.seed}:phys`)());
+  // Every draw is f(body address, salt): no stream, no order — a
+  // branch can skip a draw and nothing else moves, so the old
+  // "drawn unconditionally: stream discipline" ritual is gone.
+  const u = (salt: string): number => hashU(`${inp.seed}:phys:${salt}`);
   const diskT = diskTempAt(inp.a, inp.L);
   const Teq = equilibriumTemp(inp.a, inp.L);
 
   // --- inventory & gravity: chemistry first, gravity derived ---
-  const { inv, iceFrac, waterMass } = solidInventory(rng, diskT, Teq, inp.Z, inp.CO ?? 1);
+  const { inv, iceFrac, waterMass } = solidInventory(u, diskT, Teq, inp.Z, inp.CO ?? 1);
   const metalFrac = inv.Fe + inv.Ni + inv.U;
   const densityRel = bulkDensity(metalFrac, iceFrac);
   const radiusRel = inp.radiusGL / UNIVERSE.R_HOME;
@@ -1333,7 +1335,7 @@ export function rockyPhysics(inp: RockyInputs): BodyPhysics {
   // budget bakes out as CO2.
   const runaway =
     Teq > UNIVERSE.RUNAWAY_T && (retained.CO2 ?? 0) > 1e-5 && pressure > UNIVERSE.RUNAWAY_MIN_P;
-  if (runaway) pressure *= UNIVERSE.RUNAWAY_MULT * (0.7 + rng() * 0.6);
+  if (runaway) pressure *= UNIVERSE.RUNAWAY_MULT * (0.7 + u('runaway') * 0.6);
 
   // Greenhouse lift from the greenhouse-active partial pressures.
   const mixSum = Object.values(retained).reduce((x, y) => x + y, 0) || 1;
@@ -1405,10 +1407,7 @@ export function rockyPhysics(inp: RockyInputs): BodyPhysics {
     }
   }
 
-  // --- life: a physical condition, then a (biased) seeded roll. The roll
-  // is drawn UNCONDITIONALLY so the rng stream never depends on a branch:
-  // re-running the pipeline with a temperature override must reproduce
-  // every other seeded quantity exactly. ---
+  // --- life: a physical condition, then a (biased) seeded roll. ---
   const habitable =
     substance === 'water' &&
     state === 'liquid' &&
@@ -1416,8 +1415,7 @@ export function rockyPhysics(inp: RockyInputs): BodyPhysics {
     Tsurf < UNIVERSE.LIFE_T[1] &&
     pressure > UNIVERSE.LIFE_P[0] &&
     pressure < UNIVERSE.LIFE_P[1];
-  const lifeRoll = rng();
-  const life = habitable && lifeRoll < UNIVERSE.LIFE_ODDS;
+  const life = habitable && u('life') < UNIVERSE.LIFE_ODDS;
 
   // Life leaves its signature: O2, and a whisper of biogenic methane.
   if (life) {
@@ -1441,7 +1439,6 @@ export function rockyPhysics(inp: RockyInputs): BodyPhysics {
   // Frozen sheets fill the basins just like their liquid would — the same
   // inventory, unmoving. ---
   const temp01 = clamp01((Tsurf - UNIVERSE.T_COLD) / (UNIVERSE.T_HOT - UNIVERSE.T_COLD));
-  const drySeaJitter = rng(); // drawn unconditionally: branch-independent stream
   let sea01: number;
   if (substance === 'water') {
     sea01 =
@@ -1451,7 +1448,7 @@ export function rockyPhysics(inp: RockyInputs): BodyPhysics {
   } else if (substance === 'methane') sea01 = clamp(0.24 + 3 * inv.C, 0.24, 0.5);
   else if (substance === 'co2') sea01 = clamp(0.2 + 2.2 * inv.C, 0.2, 0.45);
   else if (substance === 'nitrogen') sea01 = clamp(0.18 + 9 * inv.N, 0.18, 0.4);
-  else sea01 = 0.02 + drySeaJitter * 0.08;
+  else sea01 = 0.02 + u('drySea') * 0.08;
 
   // Snow/freeze dial measured from the working volatile's freeze point.
   // With the water window this is algebraically identical to temp01
@@ -1541,7 +1538,7 @@ export interface GasInputs {
 }
 
 export function gasPhysics(inp: GasInputs): BodyPhysics {
-  const rng = mulberry32(xmur3(`${inp.seed}:phys`)());
+  const u = (salt: string): number => hashU(`${inp.seed}:phys:${salt}`);
   const diskT = diskTempAt(inp.a, inp.L);
   const Teq = equilibriumTemp(inp.a, inp.L);
 
@@ -1551,14 +1548,14 @@ export function gasPhysics(inp: GasInputs): BodyPhysics {
   // region, methane blues far out — the same condensation law as the rocks.
   // A carbon-rich disk deepens the methane hand.
   const traceCH4 =
-    0.012 * frosted(diskT, UNIVERSE.FROST_CH4 * 1.8) * (0.7 + rng() * 0.6) * (inp.CO ?? 1);
-  const traceNH3 = 0.01 * frosted(diskT, UNIVERSE.FROST_NH3 * 1.4) * (0.7 + rng() * 0.6);
+    0.012 * frosted(diskT, UNIVERSE.FROST_CH4 * 1.8) * (0.7 + u('ch4') * 0.6) * (inp.CO ?? 1);
+  const traceNH3 = 0.01 * frosted(diskT, UNIVERSE.FROST_NH3 * 1.4) * (0.7 + u('nh3') * 0.6);
   addMix(inv, ICE_CH4, traceCH4);
   addMix(inv, ICE_NH3, traceNH3);
   normalize(inv);
 
   const radiusRel = inp.radiusGL / UNIVERSE.R_HOME;
-  const densityRel = 0.24 + 0.1 * rng();
+  const densityRel = 0.24 + 0.1 * u('density');
   const gravity = UNIVERSE.G_TOY * densityRel * radiusRel;
 
   const mix: Partial<Record<Gas, number>> = {
