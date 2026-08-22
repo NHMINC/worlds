@@ -94,7 +94,8 @@ toy — Godus blocks on a real-sized globe.
   The explorer asks `objectsNear` for the volume it occupies; within
   a cell the IMF is stratified so zooming in is “include more slots,”
   not “load a bigger array.”
-- **Named constants live in `UNIVERSE` (`src/world/physics.ts`).** Spatial
+- **Named constants live in `UNIVERSE` (`src/world/universe.ts`,
+  re-exported by `physics.ts`).** Spatial
   scale is SI (`AU_KM`, `RSUN_KM`, `REARTH_KM`, `KPC_KM`). Time default
   is 1:1; `TIME_SCALE` is a live observer rate (time-lapse), not a hidden
   gearbox. Hex coarseness (`MAX_FINE_F`) is the remaining toy. Keep every
@@ -1065,7 +1066,8 @@ Code map (start here):
 
 | Area | Where |
 |------|--------|
-| Charter + `UNIVERSE` + body physics | `src/world/physics.ts` |
+| Charter + `UNIVERSE` knob table | `src/world/universe.ts` |
+| Body physics laws (inventory → air → seas → life) | `src/world/physics.ts` |
 | Galaxy (MW field + implicit catalog) | `src/world/galaxy.ts` |
 | Stellar clock (IMF, MK, remnants, nebulae) | `src/world/stellar.ts` |
 | Sector tessellation + region cloud | `src/world/sectors.ts` |
