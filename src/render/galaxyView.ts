@@ -4,6 +4,8 @@
  * ship (`flight.ts`) is the same in or out of a sphere. The
  * drone (`drone.ts`) joins only at launch / land. A course
  * (`course.ts`) is a berth — derived legs, not a playlist.
+ * Galaxy stars are named by the reticle (chance lock, then
+ * hold). Going there is Set course / the chart — never a tap.
  * Camera is the live vehicle’s pose. Face-on / Edge-on /
  * Home / Back still emit yaw-pitch-roll.
  */
@@ -30,7 +32,6 @@ import {
   HARVEST_SHINE_GAIN,
   HARVEST_SHINE_L_P,
   POINT_FLUX_EPS,
-  glowRadiusKpc,
 } from './galaxyStar';
 import { classifyStar } from '../world/stellar';
 import {
@@ -254,6 +255,13 @@ const TAP_SLOP = 22;
 const HOLD_ROLL_MS = 240;
 /** Left / right this fraction of the canvas is a hold-roll zone. Centre is tap / look. */
 const HOLD_ROLL_EDGE = 0.28;
+/**
+ * Reticle acquire / hold. A star has to fly through the
+ * tight pip to lock; once named it stays until the look
+ * leaves a wider cone. Chance to catch, then consistent.
+ */
+const RETICLE_LOCK = 0.028;
+const RETICLE_HOLD = 0.045;
 
 export type GalaxyMode = 'region';
 export type GalaxyFilter = 'all' | 'hot' | 'sunlike' | 'cool' | 'remnant' | 'nebula' | 'halo' | 'arm';
@@ -800,7 +808,6 @@ export class GalaxyView {
   private pickRing: THREE.Mesh;
   private hereRing: THREE.Mesh;
   private hereObj: GalaxyObject | null = null;
-  private visitedIds: number[] = [];
 
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
@@ -860,7 +867,10 @@ export class GalaxyView {
   /** Goldberg globes for every rocky body of the host. */
   private readonly globes = new Map<string, RockyGlobe>();
   private markTool: MarkTool | null = null;
-  /** Chart / star lock: fly to first contact with this ring, then ride it. bodyId null = host star ecliptic. */
+  /**
+   * Session shadow of the dest ring. Live dest is
+   * `route.destOrbit()` — this copy is restore-only.
+   */
   private pendingOrbit: { bodyId: string | null; kind: WorldOrbitKind } | null = null;
   private riding: {
     /** null = host-star ecliptic. */
@@ -1035,9 +1045,8 @@ export class GalaxyView {
     this.wake();
   }
 
-  setVisited(ids: number[]): void {
-    this.visitedIds = ids;
-  }
+  /** Visits live in the panel. The sky does not tap-select them. */
+  setVisited(_ids: number[]): void {}
 
   /**
    * Boot camp: the same star, the same world and ring (or the
@@ -1280,7 +1289,7 @@ export class GalaxyView {
             dir: v(this.capturing.dir),
           }
         : null,
-      pendingOrbit: this.pendingOrbit,
+      pendingOrbit: this.destOrbit(),
       pendingArriveOrbit: this.pendingArriveOrbit,
       insertBlend: this.insertBlend,
       surfDir: this.landed ? v(this.surfDir) : null,
@@ -1535,13 +1544,15 @@ export class GalaxyView {
 
   /**
    * Park the viewpoint at a catalog point. The sky is the once-per-
-   * load harvest — we do not remint a neighbourhood. `select` is
-   * pinned when the dive is a star.
+   * load harvest — we do not remint a neighbourhood. A teleport
+   * drops the live dest; Set course / a visit then names a new one.
    */
   enterRegion(x: number, y: number, z: number, select: GalaxyObject | null = null): void {
     this.leaveSurface();
     this.clearRide();
+    this.route.abort();
     this.pendingOrbit = null;
+    this.pendingArriveOrbit = false;
     this.mode = 'region';
     this.ship.at.set(x, y, z);
     this.mintAt.set(x, y, z);
@@ -2227,7 +2238,8 @@ export class GalaxyView {
   }
 
   /**
-   * Name a berth and latch warp-ahead. Works from catalog or
+   * Name a berth and latch warp-ahead. Reticle / plate / chart
+   * only — a tap does not call this. Works from catalog or
    * another system's SOI. While the drone is out this is a
    * no-op — land first. Drag aborts; Stop only kills thrust.
    */
@@ -2251,6 +2263,14 @@ export class GalaxyView {
     const starId = this.focusObj?.id ?? this.hostObj?.id;
     if (starId == null) return;
     this.setCourseBerth({ starId, bodyId, orbit: kind });
+  }
+
+  /**
+   * Live dest ring. Course owns it; `pendingOrbit` is only
+   * a restore shadow so a host teardown cannot drop lock-on.
+   */
+  private destOrbit(): { bodyId: string | null; kind: WorldOrbitKind } | null {
+    return this.route.destOrbit() ?? this.pendingOrbit;
   }
 
   setCourseBerth(dest: Berth): void {
@@ -2504,7 +2524,7 @@ export class GalaxyView {
   private droneOrbitId(): string | null {
     return (
       this.capturing?.bodyId ??
-      this.pendingOrbit?.bodyId ??
+      this.destOrbit()?.bodyId ??
       this.riding?.bodyId ??
       this.worldId ??
       this.courseBodyId ??
@@ -2518,7 +2538,7 @@ export class GalaxyView {
       const R = this.droneCoreOf(id);
       return { id, pos: this.droneCorePos, R };
     }
-    if (id == null && (this.riding || this.pendingOrbit || this.capturing)) {
+    if (id == null && (this.riding || this.destOrbit() || this.capturing)) {
       const R = this.droneCoreOf(null);
       return { id: null, pos: this.droneCorePos, R };
     }
@@ -2582,7 +2602,7 @@ export class GalaxyView {
       root.position.x * inv * this.ship.fwd.x +
       root.position.y * inv * this.ship.fwd.y +
       root.position.z * inv * this.ship.fwd.z;
-    if (dot >= Math.cos(0.028)) return { id: null };
+    if (dot >= Math.cos(RETICLE_LOCK)) return { id: null };
     return null;
   }
 
@@ -2819,13 +2839,13 @@ export class GalaxyView {
   }
 
   private enterRide(tSys: number): void {
-    const pending = this.pendingOrbit;
+    const pending = this.destOrbit();
     if (!pending) return;
-    this.pendingOrbit = null;
-    this.setWarp(false);
     if (pending.bodyId == null) {
-      // Host-star ecliptic.
-      if (!this.hostObj) return;
+      // Host-star ecliptic — wait until the dest sphere is the place.
+      if (!this.hostObj || this.hostObj.id !== this.route.dest?.starId) return;
+      this.pendingArriveOrbit = false;
+      this.setWarp(false);
       if (this.hostRoot) {
         this.hostTmp.copy(this.hostRoot.position).negate().normalize();
       } else {
@@ -2846,11 +2866,13 @@ export class GalaxyView {
         dir: this.hostTmp.clone(),
       };
       this.navMode = 'lock';
-        this.tickCapture(this.lastDt || 1 / 60, tSys);
+      this.tickCapture(this.lastDt || 1 / 60, tSys);
       return;
     }
     const rt = this.worldRt(pending.bodyId);
-    if (!rt) return;
+    if (!rt || this.hostObj?.id !== this.route.dest?.starId) return;
+    this.pendingArriveOrbit = false;
+    this.setWarp(false);
     this.bodyFromEye(rt, this.orbitTmp2).negate();
     if (this.orbitTmp2.lengthSq() < 1e-28) {
       this.orientArc();
@@ -3510,8 +3532,9 @@ export class GalaxyView {
       zenY = -this.orbitTmp.y;
       zenZ = -this.orbitTmp.z;
       haveZen = this.orbitTmp.lengthSq() > 1e-28;
-      if (this.pendingOrbit && this.pendingOrbit.bodyId === rt.spec.id) {
-        insertBlend = this.applyPendingInsert(rt, this.pendingOrbit.kind, this.orbitTmp);
+      const dest = this.destOrbit();
+      if (dest && dest.bodyId === rt.spec.id) {
+        insertBlend = this.applyPendingInsert(rt, dest.kind, this.orbitTmp);
       }
       this.routeAim(this.orbitTmp, rt.spec.id);
     } else if (this.courseObj) {
@@ -3525,11 +3548,8 @@ export class GalaxyView {
       zenY = -this.orbitTmp.y;
       zenZ = -this.orbitTmp.z;
       haveZen = this.orbitTmp.lengthSq() > 1e-28;
-      if (
-        this.pendingOrbit &&
-        this.pendingOrbit.bodyId == null &&
-        this.pendingOrbit.kind === 'ecliptic'
-      ) {
+      const dest = this.destOrbit();
+      if (dest && dest.bodyId == null && dest.kind === 'ecliptic') {
         insertBlend = this.applyStarInsert(this.courseObj, this.orbitTmp);
       }
       if (this.hostObj && this.courseObj.id === this.hostObj.id) {
@@ -3549,27 +3569,22 @@ export class GalaxyView {
     // only inside the insert window. Far lock-on is a heading
     // hold — passing zenith here snapped roll (away-from-star
     // = screen-up) on the Set course tap and the sky jumped.
+    const dest = this.destOrbit();
     const hangLook =
-      this.pendingOrbit != null &&
-      this.pendingOrbit.bodyId != null &&
-      isHangOrbit(this.pendingOrbit.kind);
+      dest != null && dest.bodyId != null && isHangOrbit(dest.kind);
     const bank = !hangLook && haveZen && insertBlend > 1e-4;
     // Limb pitch is a ship attitude (not a second camera).
     let lx = dx;
     let ly = dy;
     let lz = dz;
-    if (
-      bank &&
-      this.pendingOrbit?.bodyId &&
-      isLimbOrbit(this.pendingOrbit.kind)
-    ) {
-      const rt = this.worldRt(this.pendingOrbit.bodyId);
+    if (bank && dest?.bodyId && isLimbOrbit(dest.kind)) {
+      const rt = this.worldRt(dest.bodyId);
       if (rt) {
         const zlen = Math.hypot(zenX, zenY, zenZ);
         const flen = Math.hypot(dx, dy, dz);
         if (zlen > 1e-18 && flen > 1e-18) {
           const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
-          const rd = orbitRadiusKpc(rt.spec, this.pendingOrbit.kind);
+          const rd = orbitRadiusKpc(rt.spec, dest.kind);
           const pitch = orbitLimbPitch(R, rd, this.camera.fov, UNIVERSE.ORBIT_LIMB_FILL) * insertBlend;
           const c = Math.cos(pitch);
           const s = Math.sin(pitch);
@@ -3578,17 +3593,11 @@ export class GalaxyView {
           lz = (dz / flen) * c - (zenZ / zlen) * s;
         }
       }
-    } else if (
-      bank &&
-      this.pendingOrbit &&
-      this.pendingOrbit.bodyId == null &&
-      this.pendingOrbit.kind === 'ecliptic' &&
-      this.courseObj
-    ) {
+    } else if (bank && dest && dest.bodyId == null && dest.kind === 'ecliptic' && this.courseObj) {
       const zlen = Math.hypot(zenX, zenY, zenZ);
       const flen = Math.hypot(dx, dy, dz);
       if (zlen > 1e-18 && flen > 1e-18) {
-        const star = this.hostSpec?.star ?? {
+        const star = {
           radius: Math.max(1e-6, this.courseObj.star.radius) * UNIVERSE.RSUN_KM,
         };
         const rd = starOrbitRadiusKpc(star);
@@ -3674,11 +3683,11 @@ export class GalaxyView {
 
   /** Star ecliptic insertion. eyeToBody → fly-to; returns blend. */
   private applyStarInsert(obj: GalaxyObject, eyeToBody: THREE.Vector3): number {
-    const star = this.hostSpec?.star ?? {
+    const star = {
       radius: Math.max(1e-6, obj.star.radius) * UNIVERSE.RSUN_KM,
     };
     const r = starOrbitRadiusKpc(star);
-    if (this.hostRoot) {
+    if (this.hostRoot && this.hostObj?.id === obj.id) {
       this.rideNorth.set(0, 0, 1).applyQuaternion(this.hostRoot.quaternion);
     } else {
       this.rideNorth.copy(this.worldUp);
@@ -3727,7 +3736,7 @@ export class GalaxyView {
     return n > 0 ? n : this.objects.length;
   }
 
-  /** The arc's loaded survey — every row is a tappable catalog id. */
+  /** The arc's loaded survey — every row is a catalog id. */
   surveyStars(): GalaxyObject[] {
     return this.objects;
   }
@@ -3911,7 +3920,7 @@ export class GalaxyView {
   }
 
   /**
-   * An on-screen cloud star — smoke proves the full field is tappable.
+   * An on-screen cloud star — smoke proves the harvest is addressable.
    */
   probePointStar(): { id: number; x: number; y: number } | null {
     const cloud = this.cloud;
@@ -4451,18 +4460,25 @@ export class GalaxyView {
     this.detachHost();
   }
 
+  /**
+   * Tear down the local km frame. A live dest lives on
+   * `route` — leaving a sphere is not aborting lock-on.
+   */
   private detachHost(): void {
     this.worldId = null;
-    this.courseBodyId = null;
     this.focusBodyId = null;
     this.selectedBodyId = null;
-    this.pendingOrbit = null;
-    this.pendingArriveOrbit = false;
     this.pendingPlace = null;
     this.drone = null;
     this.clearRide();
     this.leaveSurface();
-    if (this.courseHud?.bodyId) this.clearCourse();
+    if (!this.route.live) {
+      this.courseBodyId = null;
+      this.pendingOrbit = null;
+      this.pendingArriveOrbit = false;
+      if (this.courseHud?.bodyId) this.clearCourse();
+      this.navMode = null;
+    }
     this.dropGlobes();
     this.clearHostBodies();
     this.detachHostFurnace();
@@ -4472,7 +4488,6 @@ export class GalaxyView {
     }
     this.hostStarId = -1;
     this.hostFill = null;
-    this.navMode = null;
     this.thawCatalog();
   }
 
@@ -4731,8 +4746,7 @@ export class GalaxyView {
       this.placeSurface();
     } else if (this.departing) {
       // Escape burn owns the stick — do not recapture the ring.
-    } else if (this.pendingArriveOrbit && this.pendingOrbit) {
-      this.pendingArriveOrbit = false;
+    } else if (this.pendingArriveOrbit && this.destOrbit()) {
       this.enterRide(tSys);
     } else if (this.capturing) {
       this.tickCapture(this.lastDt, tSys);
@@ -4780,7 +4794,7 @@ export class GalaxyView {
    * The hard shell fence still keeps you out of the ball.
    */
   private closeWorld(): HostBodyRT | null {
-    return this.worldRt(this.pendingOrbit?.bodyId ?? this.courseBodyId);
+    return this.worldRt(this.destOrbit()?.bodyId ?? this.courseBodyId);
   }
 
   /**
@@ -4836,10 +4850,10 @@ export class GalaxyView {
     const world = this.closeWorld();
     if (world) {
       const d = this.bodyDist(world);
-      const pending = this.pendingOrbit;
+      const dest = this.destOrbit();
       const park =
-        pending && pending.bodyId === world.spec.id
-          ? orbitRadiusKpc(world.spec, pending.kind)
+        dest && dest.bodyId === world.spec.id
+          ? orbitRadiusKpc(world.spec, dest.kind)
           : this.parkBodyKpc(world.spec);
       return this.worldCloseSpeed(d, park, dt);
     }
@@ -4985,48 +4999,20 @@ export class GalaxyView {
 
   // ------------------------------------------------------------- picking
 
-  /** Client-pixel position of a catalog object, or null if off-screen. */
-  projectClient(obj: GalaxyObject): { x: number; y: number } | null {
-    const rect = this.canvas.getBoundingClientRect();
-    const c = this.viewCart(obj);
-    const v = new THREE.Vector3(c.x, c.y, c.z).project(this.camera);
-    if (v.z < -1.2 || v.z > 1.2) return null;
-    return {
-      x: rect.left + (v.x * 0.5 + 0.5) * rect.width,
-      y: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
-    };
-  }
-
-  private setRay(cx: number, cy: number): void {
-    const rect = this.canvas.getBoundingClientRect();
-    this.ndc.set(
-      ((cx - rect.left) / Math.max(1, rect.width)) * 2 - 1,
-      -((cy - rect.top) / Math.max(1, rect.height)) * 2 + 1,
-    );
-    this.camera.updateMatrixWorld();
-    this.raycaster.setFromCamera(this.ndc, this.camera);
-  }
-
+  /**
+   * In-system only: name a host world for the plate. Galaxy
+   * stars are the reticle — a tap does not set course.
+   */
   private pick(cx: number, cy: number): void {
-    this.setRay(cx, cy);
-    if (this.hostObj) {
-      const body = this.pickBody(cx, cy);
-      if (body) {
-        this.selectedBodyId = body.spec.id;
-        this.focusBodyId = body.spec.id;
-        this.focusHud = this.hudForBody(body);
-        this.focusObj = this.hostObj;
-        this.select(null);
-        this.wake();
-        return;
-      }
-    }
-    const picked = this.pickCloud(cx, cy);
-    if (!picked) return;
-    this.selectedBodyId = null;
-    this.focusBodyId = null;
-    this.select(picked);
-    if (this.hostObj && picked.id !== this.hostObj.id) this.setCourse(picked);
+    if (!this.hostObj) return;
+    const body = this.pickBody(cx, cy);
+    if (!body) return;
+    this.selectedBodyId = body.spec.id;
+    this.focusBodyId = body.spec.id;
+    this.focusHud = this.hudForBody(body);
+    this.focusObj = this.hostObj;
+    this.select(null);
+    this.wake();
   }
 
   /** Screen-nearest host body, same slop as a POI tap. */
@@ -5047,80 +5033,6 @@ export class GalaxyView {
       }
     }
     return best;
-  }
-
-  /** Here and visited samples — always pickable, even if faint. */
-  private pickPoi(cx: number, cy: number): GalaxyObject | null {
-    const pois: GalaxyObject[] = [];
-    const here = this.hereObj ?? this.home;
-    if (here) pois.push(here);
-    for (const id of this.visitedIds) {
-      if (here && id === here.id) continue;
-      const o = objectAt(this.seed, id);
-      if (o) pois.push(o);
-    }
-    let best: GalaxyObject | null = null;
-    let bestD = 28;
-    for (const o of pois) {
-      const p = this.projectClient(o);
-      if (!p) continue;
-      const d = Math.hypot(p.x - cx, p.y - cy);
-      if (d < bestD) {
-        bestD = d;
-        best = o;
-      }
-    }
-    return best;
-  }
-
-  private pickCloud(cx: number, cy: number): GalaxyObject | null {
-    const poi = this.pickPoi(cx, cy);
-    if (poi) return poi;
-    this.camera.updateMatrixWorld();
-    const e = this.camera.matrixWorldInverse.elements;
-    const p = this.camera.projectionMatrix.elements;
-    const rect = this.canvas.getBoundingClientRect();
-    const ox = this.ship.at.x;
-    const oy = this.ship.at.y;
-    const oz = this.ship.at.z;
-    const pxPer = this.pxPerRad() / Math.max(1, this.renderer.getPixelRatio());
-    let bestId = -1;
-    let bestD = Infinity;
-    for (const cloud of [this.cloud, this.nebulae]) {
-      if (!cloud) continue;
-      const cat = cloud.pos;
-      const bits = cloud.bits;
-      const ids = cloud.ids;
-      const lum = cloud.lum;
-      for (let i = 0; i < cloud.n; i++) {
-        if (!sketchMatches(bits[i], this.filter)) continue;
-        const i3 = i * 3;
-        const x = cat[i3] - ox;
-        const y = cat[i3 + 1] - oy;
-        const z = cat[i3 + 2] - oz;
-        const mx = e[0] * x + e[4] * y + e[8] * z + e[12];
-        const my = e[1] * x + e[5] * y + e[9] * z + e[13];
-        const mz = e[2] * x + e[6] * y + e[10] * z + e[14];
-        const mw = e[3] * x + e[7] * y + e[11] * z + e[15];
-        const cw = p[3] * mx + p[7] * my + p[11] * mz + p[15] * mw;
-        if (cw <= 1e-6) continue;
-        const nx = (p[0] * mx + p[4] * my + p[8] * mz + p[12] * mw) / cw;
-        const ny = (p[1] * mx + p[5] * my + p[9] * mz + p[13] * mw) / cw;
-        if (nx < -1.15 || nx > 1.15 || ny < -1.15 || ny > 1.15) continue;
-        const sx = rect.left + (nx * 0.5 + 0.5) * rect.width;
-        const sy = rect.top + (-ny * 0.5 + 0.5) * rect.height;
-        const d = Math.hypot(sx - cx, sy - cy);
-        const viewD = Math.max(1e-4, Math.hypot(mx, my, mz));
-        const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
-        const hitR = Math.max(22, 0.55 * 2 * glowRadiusKpc(lum[i], dim) * pxPer / viewD);
-        if (d <= hitR && d < bestD) {
-          bestD = d;
-          bestId = ids[i];
-        }
-      }
-    }
-    if (bestId < 0) return null;
-    return objectAt(this.seed, bestId);
   }
 
   // ------------------------------------------------------------- input
@@ -5448,11 +5360,16 @@ export class GalaxyView {
     this.updateWorldSubject();
     const sign = this.thrustSign();
     const course = this.courseObj;
-    const world = this.courseBodyId ? this.worldRt(this.courseBodyId) : null;
-    const pending = this.pendingOrbit;
+    const dest = this.destOrbit();
+    const world =
+      dest?.bodyId != null
+        ? this.worldRt(dest.bodyId)
+        : this.courseBodyId
+          ? this.worldRt(this.courseBodyId)
+          : null;
     const orbitPark =
-      world && pending && pending.bodyId === this.courseBodyId
-        ? orbitRadiusKpc(world.spec, pending.kind)
+      world && dest && dest.bodyId === world.spec.id
+        ? orbitRadiusKpc(world.spec, dest.kind)
         : null;
     const cap = this.moveCap(dt);
     const v = cap ?? UNIVERSE.GALAXY_WARP;
@@ -5468,29 +5385,16 @@ export class GalaxyView {
       ) {
         return;
       }
-    } else if (world && !this.astern) {
-      if (
-        this.closeWorldShell(world, this.parkBodyKpc(world.spec), step, () => {
-          this.setWarp(false);
-        })
-      ) {
-        return;
-      }
-    } else if (this.hostObj && !this.astern && course) {
+    } else if (course && dest && dest.bodyId == null && !this.astern) {
       const d = this.arriveDist(course);
-      const star =
-        this.hostSpec?.star ??
-        ({
-          radius: Math.max(1e-6, course.star.radius) * UNIVERSE.RSUN_KM,
-          mass: Math.max(0.08, course.star.mass),
-        } as const);
-      const ecliptic =
-        this.pendingOrbit?.bodyId == null && this.pendingOrbit?.kind === 'ecliptic';
-      const park = ecliptic
-        ? starOrbitRadiusKpc(star)
-        : this.parkKpc(course);
+      const star = {
+        radius: Math.max(1e-6, course.star.radius) * UNIVERSE.RSUN_KM,
+        mass: Math.max(0.08, course.star.mass),
+      };
+      const park =
+        dest.kind === 'ecliptic' ? starOrbitRadiusKpc(star) : this.parkKpc(course);
       if (d <= park) {
-        if (ecliptic) this.pendingArriveOrbit = true;
+        if (dest.kind === 'ecliptic') this.pendingArriveOrbit = true;
         this.setWarp(false);
         return;
       }
@@ -5507,7 +5411,7 @@ export class GalaxyView {
           (c.y - this.ship.at.y) * inv * remain,
           (c.z - this.ship.at.z) * inv * remain,
         );
-        if (ecliptic) this.pendingArriveOrbit = true;
+        if (dest.kind === 'ecliptic') this.pendingArriveOrbit = true;
         this.setWarp(false);
         return;
       }
@@ -5560,21 +5464,17 @@ export class GalaxyView {
   }
 
   /**
-   * Centre reticle vs local catalog points. Lock uses the visit body
-   * (aimRadiusKpc), not the 1px paint pin — a star that flies through
-   * the pip is real and set-course-able even while it is still a point.
-   * Dust is an ISM address; the magnitude-limited backdrop is not here.
+   * Centre reticle vs host worlds and local catalog points.
+   * Acquire is a tight pip (chance). Hold is a wider cone so
+   * the named object stays until the look leaves it. Bodies
+   * and harvest stars compete on the same off-axis score —
+   * a planet in the cone does not hide a star in the pip.
    */
   private aimReticle(): void {
-    if (this.mode !== 'region') {
+    if (this.mode !== 'region' || (!this.cloud && !this.nebulae)) {
       this.focusObj = null;
       this.focusHud = null;
-      this.grownCount = 0;
-      return;
-    }
-    if (!this.cloud && !this.nebulae) {
-      this.focusObj = null;
-      this.focusHud = null;
+      this.focusBodyId = null;
       this.grownCount = 0;
       return;
     }
@@ -5582,45 +5482,68 @@ export class GalaxyView {
     const lx = this.ship.fwd.x;
     const ly = this.ship.fwd.y;
     const lz = this.ship.fwd.z;
-    const cx = 0;
-    const cy = 0;
-    const cz = 0;
-    const cosCone = Math.cos(0.028);
     const ox = this.ship.at.x;
     const oy = this.ship.at.y;
     const oz = this.ship.at.z;
+    const holdCos = Math.cos(RETICLE_HOLD);
+    const lockCos = Math.cos(RETICLE_LOCK);
+
+    const holdBody = this.focusBodyId ? this.worldRt(this.focusBodyId) : null;
+    if (holdBody) {
+      holdBody.group.getWorldPosition(this.hostTmp);
+      const dist = this.hostTmp.length();
+      if (dist > 1e-18) {
+        const inv = 1 / dist;
+        const dot = this.hostTmp.x * inv * lx + this.hostTmp.y * inv * ly + this.hostTmp.z * inv * lz;
+        if (dot >= holdCos) {
+          this.grownCount = 1;
+          this.focusObj = this.hostObj;
+          this.focusHud = this.hudForBody(holdBody);
+          this.focusHud.dist = dist;
+          return;
+        }
+      }
+    } else if (this.focusObj && !this.focusBodyId) {
+      const c = galToCart(this.focusObj.pos);
+      const dx = c.x - ox;
+      const dy = c.y - oy;
+      const dz = c.z - oz;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > 1e-12 && dist <= UNIVERSE.AIM_RANGE_KPC) {
+        const inv = 1 / dist;
+        const dot = dx * inv * lx + dy * inv * ly + dz * inv * lz;
+        if (dot >= holdCos) {
+          this.grownCount = 1;
+          if (this.focusHud) this.focusHud.dist = dist;
+          return;
+        }
+      }
+    }
+
     let grown = 0;
+    let bestBody: HostBodyRT | null = null;
     let bestId = -1;
     let bestOff = 1;
     let bestDist = 0;
     let bestDim = false;
-    if (this.hostObj && this.host.bodies.length) {
-      let bestBody: HostBodyRT | null = null;
+    if (this.hostObj) {
       for (const rt of this.host.bodies) {
         rt.group.getWorldPosition(this.hostTmp);
         const dist = this.hostTmp.length();
         if (dist < 1e-18) continue;
         const inv = 1 / dist;
         const dot = this.hostTmp.x * inv * lx + this.hostTmp.y * inv * ly + this.hostTmp.z * inv * lz;
-        if (dot < cosCone) continue;
+        if (dot < lockCos) continue;
         grown++;
         const off = 1 - dot;
         if (off < bestOff) {
           bestOff = off;
           bestBody = rt;
+          bestId = -1;
           bestDist = dist;
         }
       }
-      if (bestBody) {
-        this.grownCount = grown;
-        this.focusBodyId = bestBody.spec.id;
-        this.focusObj = this.hostObj;
-        this.focusHud = this.hudForBody(bestBody);
-        this.focusHud.dist = bestDist;
-        return;
-      }
     }
-    this.focusBodyId = null;
     for (const cloud of [this.cloud, this.nebulae]) {
       if (!cloud) continue;
       const cat = cloud.pos;
@@ -5630,9 +5553,9 @@ export class GalaxyView {
       for (let i = 0; i < cloud.n; i++) {
         if (!sketchMatches(bits[i], this.filter)) continue;
         const i3 = i * 3;
-        const dx = cat[i3] - ox - cx;
-        const dy = cat[i3 + 1] - oy - cy;
-        const dz = cat[i3 + 2] - oz - cz;
+        const dx = cat[i3] - ox;
+        const dy = cat[i3 + 1] - oy;
+        const dz = cat[i3 + 2] - oz;
         const d2 = dx * dx + dy * dy + dz * dz;
         if (d2 < 1e-12) continue;
         const dist = Math.sqrt(d2);
@@ -5642,10 +5565,11 @@ export class GalaxyView {
         grown++;
         const inv = 1 / dist;
         const dot = dx * inv * lx + dy * inv * ly + dz * inv * lz;
-        if (dot < cosCone) continue;
+        if (dot < lockCos) continue;
         const off = 1 - dot;
         if (off < bestOff) {
           bestOff = off;
+          bestBody = null;
           bestId = ids[i];
           bestDist = dist;
           bestDim = dim;
@@ -5653,6 +5577,14 @@ export class GalaxyView {
       }
     }
     this.grownCount = grown;
+    if (bestBody) {
+      this.focusBodyId = bestBody.spec.id;
+      this.focusObj = this.hostObj;
+      this.focusHud = this.hudForBody(bestBody);
+      this.focusHud.dist = bestDist;
+      return;
+    }
+    this.focusBodyId = null;
     if (bestId < 0) {
       this.focusObj = null;
       this.focusHud = null;
@@ -5804,7 +5736,7 @@ export class GalaxyView {
       this.coast.lengthSq() > 0 ||
       this.steerHeld() ||
       this.riding ||
-      this.pendingOrbit ||
+      this.destOrbit() ||
       this.landed ||
       this.drone ||
       this.pendingPlace ||
@@ -5945,14 +5877,15 @@ export class GalaxyView {
         const rt = this.worldRt(this.capturing.bodyId);
         navHint = rt ? `Capturing ${rt.spec.name} · ${ring}` : `Capturing · ${ring}`;
       }
-    } else if (this.navMode === 'lock' && this.pendingOrbit) {
-      const ring = orbitLabel(this.pendingOrbit.kind);
+    } else if (this.navMode === 'lock' && this.destOrbit()) {
+      const dest = this.destOrbit()!;
+      const ring = orbitLabel(dest.kind);
       const inserting = this.insertBlend > 0.55;
-      if (this.pendingOrbit.bodyId == null) {
+      if (dest.bodyId == null) {
         const name = this.courseHud?.name ?? this.hostSpec?.star.name ?? 'Star';
         navHint = inserting ? `Inserting ${name} · ${ring}` : `${name} · ${ring}`;
       } else {
-        const rt = this.worldRt(this.pendingOrbit.bodyId);
+        const rt = this.worldRt(dest.bodyId);
         const name = rt?.spec.name;
         navHint = inserting
           ? name
@@ -5981,7 +5914,7 @@ export class GalaxyView {
       soiRemain: soi == null ? null : Math.max(0, UNIVERSE.ARRIVE_RANGE_KPC - soi),
       hostId: this.hostObj?.id ?? null,
       backdrop: this.shownCount(),
-      orbit: this.riding?.kind ?? this.capturing?.kind ?? this.pendingOrbit?.kind ?? this.landKind,
+      orbit: this.riding?.kind ?? this.capturing?.kind ?? this.destOrbit()?.kind ?? this.landKind,
       orbiting: Boolean(this.riding),
       navMode: this.navMode,
       nearestBodyId: nearRt?.spec.id ?? null,

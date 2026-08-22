@@ -102,12 +102,18 @@ toy — Godus blocks on a real-sized globe.
   density field + IMF + closed-form stellar clock instead); interstellar
   travel is warp at `GALAXY_WARP`, never clamped between the stars.
   The reticle plate only names an object inside `AIM_RANGE_KPC`
-  (1 kpc). Set course names a **berth** (`starId`, `bodyId | null`,
-  ring) and runs a ship-only pipeline of derived legs (exit
-  ring → leave SOI → catalog cruise → enter → insert →
-  capture → in orbit). The plate reads Course Locked. A look
-  drag (or pinch / roll) aborts the route and warp. Stop
-  kills thrust only — Warp again resumes the same dest.
+  (1 kpc). Acquire is chance (a tight pip); once named the
+  lock holds until the look leaves a wider cone. A tap does
+  not name or go to a harvest star — only Set course and the
+  chart start a berth. Host-world taps still name a body for
+  the plate. Set course names a **berth** (`starId`,
+  `bodyId | null`, ring) and runs a ship-only pipeline of
+  derived legs (exit ring → leave SOI → catalog cruise →
+  enter → insert → capture → in orbit). The dest lives on
+  `Course`; leaving a host sphere does not drop it. The plate
+  reads Course Locked. A look drag (or pinch / roll) aborts
+  the route and warp. Stop kills thrust only — Warp again
+  resumes the same dest.
   The chart opens on the focused harvest star (else the
   host). You may name another star from inside an SOI; the
   sphere is a place, not a “you may not set course” wall. On a
@@ -683,8 +689,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   in flight (strafe is not a ship or
   drone verb); a still hold on the
   left/right of the screen is the same
-  roll. The sight plate only locks an object inside
-  `AIM_RANGE_KPC`. Set course is a berth
+  roll.   The sight plate only locks an object inside
+  `AIM_RANGE_KPC` (chance pip, then hold). A tap does not
+  set course. Set course is a berth
   pipeline (`course.ts`): heading hold
   (nose only — bank waits for the insert
   window) plus warp-ahead. A look drag
@@ -700,10 +707,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   is the sphere limit only, then full warp.
   Inside, `ARRIVE_WARP` also
   caps (sticky — fly out before a new target or full warp).
-  A locked course stops at the
-  `ARRIVE_FILL` park. Inside a host, set
-  course on a world uses the same park on
-  that world's disk; speed ramps from
+  A locked course stops at the dest
+  film park (limb curve / hover area),
+  not a tap. Inside a host, set
+  course on a world uses that world's
+  film ring; speed ramps from
   `ARRIVE_K` to `WORLD_SLOT_K` as remain
   closes the insert window
   so the fence cannot be skipped, and the

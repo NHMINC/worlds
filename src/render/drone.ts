@@ -328,9 +328,15 @@ export class Trackball {
   }
 
   private stayOut(world: DroneWorld): void {
-    const n = world.nearestFrom(this.eye);
-    this.core.copy(n.pos);
-    const min = n.R * 1.002;
+    let R: number;
+    if (this.lock) {
+      R = world.coreOf(this.lockId, this.core);
+    } else {
+      const n = world.nearestFrom(this.eye);
+      this.core.copy(n.pos);
+      R = n.R;
+    }
+    const min = R * 1.002;
     const d = this.eye.distanceTo(this.core);
     if (d >= min) return;
     if (d < 1e-9) {

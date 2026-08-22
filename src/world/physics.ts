@@ -342,8 +342,11 @@ export const UNIVERSE = {
 
   /**
    * Course lock. The reticle plate only names an object inside
-   * AIM_RANGE_KPC (a neighbourhood, not the far disk). Set course
-   * is autopilot: heading hold at ARRIVE_HOLD (1/s) and warp-ahead.
+   * AIM_RANGE_KPC (a neighbourhood, not the far disk). A star
+   * has to fly through the pip to lock; once named it holds
+   * until the look leaves. A tap does not set course — Set
+   * course / the chart is autopilot: heading hold at
+   * ARRIVE_HOLD (1/s) and warp-ahead.
    * A look drag aborts both. The sphere of influence is a fixed 0.01 ly
    * (ARRIVE_RANGE_LY), not the object's radius — park distance
    * is the size law. That sphere is sticky: warp is ARRIVE_WARP

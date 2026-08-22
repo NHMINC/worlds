@@ -64,6 +64,16 @@ export class Course {
     this.live = false;
   }
 
+  /**
+   * Named ring while the route is live. This is the destination
+   * — not a copy the host teardown can drop.
+   */
+  destOrbit(): { bodyId: string | null; kind: WorldOrbitKind } | null {
+    const d = this.dest;
+    if (!d || !this.live) return null;
+    return { bodyId: d.bodyId, kind: d.orbit };
+  }
+
   sameBerth(starId: number, bodyId: string | null, orbit: WorldOrbitKind): boolean {
     const d = this.dest;
     return Boolean(d && d.starId === starId && d.bodyId === bodyId && d.orbit === orbit);
