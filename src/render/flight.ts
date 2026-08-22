@@ -55,8 +55,10 @@ export class ShipFlight {
 
   /**
    * Nose along `fwd`, bank so `zenith` is screen-up.
-   * Roll unwraps against the current up so a ±π hop
-   * cannot spin the ship.
+   * +twist rotates up toward right (fwd × up). The bank
+   * angle is atan2(desired·right, desired·up) — a minus
+   * here runs away: each frame lookAt keeps the up, the
+   * leftover grows, and the helm rolls forever.
    */
   lookBank(fx: number, fy: number, fz: number, zx: number, zy: number, zz: number): void {
     this.lookAt(fx, fy, fz);
@@ -64,8 +66,7 @@ export class ShipFlight {
     this.t0.addScaledVector(this.fwd, -this.t0.dot(this.fwd));
     if (this.t0.lengthSq() < 1e-16) return;
     this.t0.normalize();
-    const raw = Math.atan2(-this.t0.dot(this.right), this.t0.dot(this.up));
-    this.twist(raw);
+    this.twist(Math.atan2(this.t0.dot(this.right), this.t0.dot(this.up)));
   }
 
   /**

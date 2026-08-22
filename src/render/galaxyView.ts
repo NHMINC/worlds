@@ -2931,10 +2931,17 @@ export class GalaxyView {
       this.orbitTmp2.copy(this.rideLocal).applyQuaternion(this.orbitQ);
       const len = Math.hypot(this.orbitTmp2.x, this.orbitTmp2.y, this.orbitTmp2.z);
       if (len < 1e-18) return;
-      this.aimAt(-this.orbitTmp2.x / len, -this.orbitTmp2.y / len, -this.orbitTmp2.z / len);
-      let dR = -this.arcRoll;
-      dR = Math.atan2(Math.sin(dR), Math.cos(dR));
-      this.arcRoll += dR;
+      // Nose into the face; galactic north as screen-up.
+      // Do not zero Euler roll — setEuler rebuilds from
+      // galactic yaw/pitch and fights the look every frame.
+      this.aimOrbitBank(
+        -this.orbitTmp2.x / len,
+        -this.orbitTmp2.y / len,
+        -this.orbitTmp2.z / len,
+        0,
+        1,
+        0,
+      );
       return;
     }
     const th = ride.theta0 + ride.omega * tSys;
