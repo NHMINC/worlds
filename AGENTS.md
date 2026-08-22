@@ -106,7 +106,7 @@ toy — Godus blocks on a real-sized globe.
   ring) and runs a ship-only pipeline of derived legs (exit
   ring → leave SOI → catalog cruise → enter → insert →
   capture → in orbit). The plate reads Course Locked. A look
-  drag (or pinch / twist) aborts the route and warp. Stop
+  drag (or pinch / roll) aborts the route and warp. Stop
   kills thrust only — Warp again resumes the same dest.
   The chart opens on the focused harvest star (else the
   host). You may name another star from inside an SOI; the
@@ -177,7 +177,7 @@ toy — Godus blocks on a real-sized globe.
   sphere the aim goes tangent, so
   departure spirals out; and a hard wall
   at 1.12 radii clamps every move (warp,
-  zoom, strafe), entry only. Orbit rings
+  zoom, roll), entry only. Orbit rings
   draw under a sagitta law — segments
   chosen so the line deviates by less
   than a quarter body radius, so bodies
@@ -203,9 +203,11 @@ toy — Godus blocks on a real-sized globe.
   Drag looks. Inside the sphere, pinch /
   wheel dollies at the subject distance
   (`SOI_ZOOM`); on a ring it changes
-  that radius. Two-finger twist rolls
-  the look (`SOI_TWIST`) — clockwise
-  fingers, clockwise roll. Inertial parks
+  that radius. Pinch is zoom only. Roll
+  is A/D, ←/→, or a still hold on the
+  left/right of the screen (`SOI_TWIST`
+  rad/s) — right / clockwise is
+  negative twist. Inertial parks
   (LEO / station / MEO / polar) pitch
   the look so the forward limb fills
   `ORBIT_LIMB_FILL` (30%) of the bottom
@@ -216,7 +218,7 @@ toy — Godus blocks on a real-sized globe.
   when the ship is live. The
   trackball is an independent drone
   (`drone.ts`) — own look / zoom-
-  thrust / twist / Target. The only
+  thrust / roll / Target. The only
   join is launch / land. Trackball
   on parks the ship and lifts along
   the zenith into lock on the body
@@ -451,7 +453,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   the rail. GEO / hover face the hang face. A look
   drag takes the stick — release does not snap the
   look back. Pinch zooms the ring
-  radius; twist rolls. The ship looks
+  radius; A/D, arrows, and a hold on
+  the left/right of the screen roll.
+  The ship looks
   ahead. Trackball launches (lift +
   a latched lock on the body nearest
   the ship) and returns (capture
@@ -637,13 +641,17 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
   quietly unless that gear points inward. A tap, not a hold.
   Drag looks: the **ship** stick (yaw around
-  current up, pitch around fwd × up, twist
+  current up, pitch around fwd × up, roll
   around the nose) lives in `flight.ts`.
   The **drone** stick is its own in
   `drone.ts` — they do not share a
   `stick.ts`. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
-  single-finger touch.   A/D still slide. The sight plate only locks an object inside
+  single-finger touch. A/D and ←/→ roll
+  (strafe is not a ship or drone verb);
+  a still hold on the left/right of the
+  screen is the same roll. Pinch is zoom
+  only. The sight plate only locks an object inside
   `AIM_RANGE_KPC`. Set course is a berth
   pipeline (`course.ts`): heading hold
   (nose only — bank waits for the insert

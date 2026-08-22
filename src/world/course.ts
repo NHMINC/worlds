@@ -52,7 +52,7 @@ export class Course {
     this.live = true;
   }
 
-  /** Look / pinch / twist — drop the route. Thrust is the caller's job. */
+  /** Look / pinch / roll — drop the route. Thrust is the caller's job. */
   abort(): void {
     this.dest = null;
     this.live = false;

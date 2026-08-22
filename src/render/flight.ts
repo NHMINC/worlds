@@ -39,7 +39,7 @@ export class ShipFlight {
     this.orthonormalize();
   }
 
-  /** Roll around the nose. Clockwise fingers → clockwise roll. */
+  /** Roll around the nose. Clockwise / right is negative d. */
   twist(d: number): void {
     if (Math.abs(d) < 1e-8) return;
     this.up.applyAxisAngle(this.fwd, d);

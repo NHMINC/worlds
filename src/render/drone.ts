@@ -1,5 +1,5 @@
 /**
- * Trackball drone. Own look / zoom-thrust / twist / Target /
+ * Trackball drone. Own look / zoom-thrust / roll / Target /
  * launch / home. Home is fly-to-ship then a camera dock onto
  * the parked ship pose — not the ship's orbit-entry bank.
  *

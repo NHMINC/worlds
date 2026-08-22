@@ -348,7 +348,7 @@ export const UNIVERSE = {
    * (ARRIVE_RANGE_LY), not the object's radius — park distance
    * is the size law. That sphere is sticky: warp is ARRIVE_WARP
    * (1/1000) of GALAXY_WARP while you are inside it — a speed
-   * limit on every move (warp, WASD, strafe, zoom), not a teleport —
+   * limit on every move (warp, roll, zoom), not a teleport —
    * and a new target cannot be chosen
    * until you fly out. The photosphere replaces the pin when the
    * sphere is entered — the harvest pin cannot draw the approach
@@ -512,9 +512,11 @@ export const UNIVERSE = {
   WORLD_SURF_STEER: 0.004,
   /**
    * Host-sphere camera. Pinch / wheel dollies at a fraction of
-   * the subject distance (`SOI_ZOOM`); two-finger twist rolls
-   * the look (`SOI_TWIST`) in the catalog and the sphere —
-   * clockwise fingers, clockwise roll.
+   * the subject distance (`SOI_ZOOM`). Roll is a hold or a
+   * key (`SOI_TWIST` rad/s) in the catalog and the sphere —
+   * A/D and ←/→, or a still hold on the left/right of the
+   * screen. Right / clockwise is negative twist. Pinch is
+   * zoom only.
    * On a ridden ring, zoom changes that
    * radius instead of fighting placeRide (`SOI_TRACK_*` is that
    * ring cage). The drone is anti-gravity: zoom thrusts along
@@ -533,6 +535,7 @@ export const UNIVERSE = {
    * law, not orbit capture.
    */
   SOI_ZOOM: 0.55,
+  /** Hold / key roll rate (rad/s). 1 ≈ 57°/s. */
   SOI_TWIST: 1,
   SOI_TRACK_MIN: 0.12,
   SOI_TRACK_MAX: 8,
@@ -786,8 +789,8 @@ export const UNIVERSE = {
   /**
    * Latched warp. Diameter (2 × R_MAX) in CROSS_S seconds — rim
    * to opposite rim in about a minute. Rate is catalog kpc / s;
-   * on is this cruise, off is stop. WASD stays the slow
-   * look-around pace (arcPace).
+   * on is this cruise, off is stop. A/D and ←/→ roll
+   * (`SOI_TWIST` rad/s); they do not slide.
    */
   GALAXY_WARP_CROSS_S: 69,
   get GALAXY_WARP(): number {
@@ -797,7 +800,7 @@ export const UNIVERSE = {
    * Galactocentric radius where latched warp lets go (kpc).
    * Four disk radii — past Face-on / Edge-on, still inside the
    * halo. Quiet: no toast. Inward warp still runs so you can
-   * fall home. WASD is unchanged.
+   * fall home. Roll is unchanged.
    */
   get GALAXY_WARP_LIM(): number {
     return this.GALAXY_R_MAX * 4;

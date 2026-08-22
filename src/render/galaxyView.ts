@@ -247,6 +247,10 @@ const ZOOM_WHEEL_SENS = 0.0008;
 const ZOOM_PINCH_POW = 0.7;
 /** Tap vs a look: pick if the captured pointer never really moved. */
 const TAP_SLOP = 22;
+/** Still this long on a left/right edge before hold-roll starts. */
+const HOLD_ROLL_MS = 240;
+/** Left / right this fraction of the canvas is a hold-roll zone. Centre is tap / look. */
+const HOLD_ROLL_EDGE = 0.28;
 
 export type GalaxyMode = 'region';
 export type GalaxyFilter = 'all' | 'hot' | 'sunlike' | 'cool' | 'remnant' | 'nebula' | 'halo' | 'arm';
@@ -797,7 +801,6 @@ export class GalaxyView {
   private mintAt = new THREE.Vector3();
   private readonly worldUp = new THREE.Vector3(0, 1, 0);
   private keys = new Set<string>();
-  private panBtn = 0;
 
   private dragging = false;
   /** True once this captured pointer actually moved — a look, not a click. */
@@ -807,6 +810,10 @@ export class GalaxyView {
   private moved = 0;
   private pointers = new Map<number, { x: number; y: number }>();
   private pinch0 = 0;
+  private holdRollTimer: ReturnType<typeof setTimeout> | null = null;
+  /** +1 left (CCW), −1 right (CW), 0 none. */
+  private holdRoll = 0;
+  private holdClientX = 0;
   private thrustOn = false;
   /** Helm gear: false = ahead (along the nose), true = astern. */
   private astern = false;
@@ -856,7 +863,7 @@ export class GalaxyView {
    */
   private navMode: HostNavMode = null;
   /**
-   * In Orbit: a look drag (or twist) owns the camera. The
+   * In Orbit: a look drag (or roll) owns the camera. The
    * arrival bank stays until then; release does not snap back.
    */
   private rideLookFree = false;
@@ -897,7 +904,6 @@ export class GalaxyView {
   private sEyeH = 0.03;
   private sEyeHTarget = 0.03;
   private sWalk = 0;
-  private pinchAngle = 0;
   /** Boot restore: park the host, then the world, once bodies exist. */
   private pendingPlace: LastPlace | null = null;
   private lastPlaceKey = '';
@@ -3590,7 +3596,7 @@ export class GalaxyView {
     this.applyCam();
   }
 
-  /** Slide the bubble along camera right. */
+  /** Slide the bubble along camera right. Leftover smoke — not a player verb. */
   flyStrafe(kpc: number): void {
     if (this.mode !== 'region') return;
     this.orientArc();
@@ -3617,6 +3623,7 @@ export class GalaxyView {
       this.wake();
       if (!this.raf) this.raf = requestAnimationFrame(this.frame);
     } else {
+      this.cancelHoldRoll();
       cancelAnimationFrame(this.raf);
       this.raf = 0;
       this.setWarp(false);
@@ -3625,6 +3632,7 @@ export class GalaxyView {
 
   dispose(): void {
     this.disposed = true;
+    this.cancelHoldRoll();
     cancelAnimationFrame(this.raf);
     this.canvas.removeEventListener('pointerdown', this.onDown);
     this.canvas.removeEventListener('pointermove', this.onMove);
@@ -4598,19 +4606,19 @@ export class GalaxyView {
   }
 
   /**
-   * Two-finger twist rolls the look around the nose.
-   * Screen atan2 is Y-down, so a clockwise pinch is +dAng;
-   * look-axis roll is the other way. Negate so clockwise
-   * fingers roll the camera clockwise.
+   * Roll the live vehicle around the nose.
+   * Positive d is left / CCW; right / clockwise is negative
+   * (same sign the old Y-down pinch negate used).
    */
-  private twistLook(dAng: number): void {
-    const d = -dAng * UNIVERSE.SOI_TWIST;
-    if (Math.abs(d) < 1e-6) return;
+  private applyRoll(d: number): void {
+    if (Math.abs(d) < 1e-8) return;
     if (this.riding) this.rideLookFree = true;
-    if (this.drone) this.drone.twist(d);
-    else this.ship.twist(d);
-    if (this.drone) this.placeDrone();
-    else if (this.landed) this.placeSurface();
+    if (this.drone) {
+      this.drone.twist(d);
+      this.placeDrone();
+    } else {
+      this.ship.twist(d);
+    }
     this.applyCam();
     this.wake();
   }
@@ -4766,7 +4774,6 @@ export class GalaxyView {
       // Capture is how a drag that leaves the canvas stays real input.
     }
     this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    this.panBtn = e.button;
     if (this.pointers.size === 1) {
       this.dragging = true;
       this.looking = false;
@@ -4774,12 +4781,14 @@ export class GalaxyView {
       this.lastY = e.clientY;
       this.moved = 0;
       this.idle = 0;
+      this.holdClientX = e.clientX;
+      this.armHoldRoll();
     } else if (this.pointers.size === 2) {
+      this.cancelHoldRoll();
       this.dragging = false;
       this.looking = false;
       const pts = [...this.pointers.values()];
       this.pinch0 = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      this.pinchAngle = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
     }
   };
 
@@ -4792,18 +4801,12 @@ export class GalaxyView {
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      const ang = Math.atan2(pts[1].y - pts[0].y, pts[1].x - pts[0].x);
       this.abortAutopilot();
       if (this.pinch0 > 0) {
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
       }
-      let dAng = ang - this.pinchAngle;
-      if (dAng > Math.PI) dAng -= Math.PI * 2;
-      if (dAng < -Math.PI) dAng += Math.PI * 2;
-      this.twistLook(dAng);
       this.pinch0 = d;
-      this.pinchAngle = ang;
       this.moved += 4;
       this.idle = 0;
       return;
@@ -4821,14 +4824,7 @@ export class GalaxyView {
     this.lastY = e.clientY;
     this.moved += Math.hypot(dx, dy);
     this.idle = 0;
-    const strafe =
-      this.mode === 'region' &&
-      !this.landed &&
-      (this.panBtn === 1 || this.panBtn === 2 || e.shiftKey);
-    if (strafe) {
-      this.strafePixels(dx, dy);
-      return;
-    }
+    if (this.moved >= TAP_SLOP) this.cancelHoldRoll();
     if (this.mode === 'region') {
       this.looking = true;
       if (this.drone) {
@@ -4854,20 +4850,12 @@ export class GalaxyView {
     }
   };
 
-  private strafePixels(dx: number, dy: number): void {
-    if (this.mode !== 'region') return;
-    this.orientArc();
-    const dist = Math.max(0.02, this.arcPace() * 8);
-    const worldH = 2 * dist * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) * 0.5);
-    const wpp = worldH / Math.max(1, this.canvas.clientHeight);
-    this.moveBubble(this.ship.right.x * -dx * wpp + this.ship.up.x * dy * wpp, this.ship.right.y * -dx * wpp + this.ship.up.y * dy * wpp, this.ship.right.z * -dx * wpp + this.ship.up.z * dy * wpp);
-    this.applyCam();
-  }
-
   private onUp = (e: PointerEvent): void => {
     if (!this.pointers.has(e.pointerId)) return;
     this.wake();
-    const tap = this.dragging && !this.looking && this.moved < TAP_SLOP;
+    const rolled = this.holdRoll !== 0;
+    this.cancelHoldRoll();
+    const tap = !rolled && this.dragging && !this.looking && this.moved < TAP_SLOP;
     this.endPointer(e.pointerId);
     if (tap && this.landed) {
       const hit = this.pickGlobeCell(e.clientX, e.clientY);
@@ -4881,6 +4869,7 @@ export class GalaxyView {
 
   private onLostCapture = (e: PointerEvent): void => {
     if (!this.pointers.has(e.pointerId)) return;
+    this.cancelHoldRoll();
     this.endPointer(e.pointerId);
   };
 
@@ -4888,7 +4877,6 @@ export class GalaxyView {
     this.pointers.delete(id);
     if (this.pointers.size < 2) {
       this.pinch0 = 0;
-      this.pinchAngle = 0;
     }
     this.dragging = false;
     this.looking = false;
@@ -4971,18 +4959,51 @@ export class GalaxyView {
     return (
       code === 'KeyA' ||
       code === 'KeyD' ||
-      code === 'KeyQ' ||
-      code === 'KeyE' ||
-      code === 'Space' ||
-      code === 'KeyC' ||
       code === 'ArrowLeft' ||
       code === 'ArrowRight'
     );
   }
 
   private steerHeld(): boolean {
+    if (this.holdRoll !== 0) return true;
     for (const c of this.keys) if (this.isSteerKey(c)) return true;
     return false;
+  }
+
+  /** +1 left, −1 right, 0 none. Keys win over a finger hold. */
+  private rollSign(): number {
+    const k = this.keys;
+    let s = 0;
+    if (k.has('KeyA') || k.has('ArrowLeft')) s += 1;
+    if (k.has('KeyD') || k.has('ArrowRight')) s -= 1;
+    if (s !== 0) return s > 0 ? 1 : -1;
+    return this.holdRoll;
+  }
+
+  private armHoldRoll(): void {
+    this.cancelHoldRoll();
+    if (this.landed || this.mode !== 'region') return;
+    this.holdRollTimer = setTimeout(() => this.maybeStartHoldRoll(), HOLD_ROLL_MS);
+  }
+
+  private maybeStartHoldRoll(): void {
+    this.holdRollTimer = null;
+    if (this.moved >= TAP_SLOP || this.pointers.size !== 1 || this.landed || this.mode !== 'region') {
+      return;
+    }
+    const rect = this.canvas.getBoundingClientRect();
+    const x = (this.holdClientX - rect.left) / Math.max(1, rect.width);
+    if (x < HOLD_ROLL_EDGE) this.holdRoll = 1;
+    else if (x > 1 - HOLD_ROLL_EDGE) this.holdRoll = -1;
+    if (this.holdRoll) this.wake();
+  }
+
+  private cancelHoldRoll(): void {
+    if (this.holdRollTimer != null) {
+      clearTimeout(this.holdRollTimer);
+      this.holdRollTimer = null;
+    }
+    this.holdRoll = 0;
   }
 
   /**
@@ -5138,24 +5159,13 @@ export class GalaxyView {
     this.moveBubble(this.ship.fwd.x * sign * step, this.ship.fwd.y * sign * step, this.ship.fwd.z * sign * step);
   }
 
-  private steerArc(dt: number): void {
-    if (this.riding || this.landed || this.drone) return;
-    let mx = 0;
-    let my = 0;
-    let mz = 0;
-    if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) mx += 1;
-    if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) mx -= 1;
-    if (this.keys.has('KeyE') || this.keys.has('Space')) my += 1;
-    if (this.keys.has('KeyQ') || this.keys.has('KeyC')) my -= 1;
-    if (mx === 0 && my === 0 && mz === 0) return;
-    this.orientArc();
-    const boost = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 3 : 1;
-    const pace = this.arcPace() * boost;
-    this.moveBubble(
-      (this.ship.right.x * mx + this.ship.up.x * my + this.ship.fwd.x * mz) * pace * dt,
-      (this.ship.right.y * mx + this.ship.up.y * my + this.ship.fwd.y * mz) * pace * dt,
-      (this.ship.right.z * mx + this.ship.up.z * my + this.ship.fwd.z * mz) * pace * dt,
-    );
+  /** A/D, ←/→, and a still hold on the left/right of the screen roll. */
+  private tickRoll(dt: number): void {
+    if (this.landed) return;
+    const s = this.rollSign();
+    if (!s) return;
+    this.abortAutopilot();
+    this.applyRoll(s * UNIVERSE.SOI_TWIST * dt);
     this.idle = 0;
   }
 
@@ -5389,7 +5399,7 @@ export class GalaxyView {
     this.idle += dt;
     this.holdCourse(dt);
     this.cruise(dt);
-    this.steerArc(dt);
+    this.tickRoll(dt);
     // Motion is the universal wake: input, warp, and settling
     // all end as pose drift. Hover, a parked Home pick, and a
     // spinning focus ring are not motion — those used to keep
