@@ -407,7 +407,7 @@ export const LIVE_KNOBS: LiveKnob[] = [
     label: 'Approach warp',
     group: 'approach',
     hint: 'speed inside the sphere, as a fraction of disk warp',
-    about: 'Extra cap inside the host bubble (warp, roll, zoom), on top of Close crawl × distance. The half-warp gears stop at this floor when they reach the fence. Next frame.',
+    about: 'Extra cap inside the host bubble (warp, drone thrust), on top of Close crawl × distance. The half-warp gears stop at this floor when they reach the fence. Next frame.',
     uniform: 'uArriveWarp',
     min: 0.0002,
     max: 0.02,

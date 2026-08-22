@@ -862,11 +862,6 @@ export class GalaxyView {
    * the contract the HUD and look system obey.
    */
   private navMode: HostNavMode = null;
-  /**
-   * In Orbit: a look drag (or roll) owns the camera. The
-   * arrival bank stays until then; release does not snap back.
-   */
-  private rideLookFree = false;
   private drone: Trackball | null = null;
   /** Lock-on insertion blend 0…1 (far transfer → at the shell). */
   private insertBlend = 0;
@@ -2069,7 +2064,6 @@ export class GalaxyView {
   private clearRide(): void {
     this.riding = null;
     this.capturing = null;
-    this.rideLookFree = false;
   }
 
   private leaveSurface(): void {
@@ -2199,7 +2193,6 @@ export class GalaxyView {
       const tSys = (this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE;
       const dt = tSys - this.droneRideT;
       this.riding.theta0 -= this.riding.omega * dt;
-      this.rideLookFree = true;
       this.placeRide(tSys);
     } else if (this.landed) {
       this.placeSurface();
@@ -2753,7 +2746,6 @@ export class GalaxyView {
       this.hostRoot.position.copy(this.orbitTmp).negate();
       this.hostRoot.updateMatrixWorld(true);
     }
-    if (this.looking) return;
     // Hang capture: fwd ≈ −zenith → face the sphere (roll → 0).
     const face =
       fwdX * zenX + fwdY * zenY + fwdZ * zenZ <
@@ -2805,10 +2797,8 @@ export class GalaxyView {
       this.rideE2.normalize();
       this.riding.theta0 = -this.riding.omega * tSys;
     }
-    this.rideLookFree = false;
     this.placeRide(tSys);
-    // Lock-on ends. In Orbit: arrival look is the aesthetic
-    // gravity lock. A look drag takes the stick for good.
+    // Lock-on ends. In Orbit: helm look stays locked to the ring.
     this.capturing = null;
     this.courseObj = null;
     this.courseBodyId = null;
@@ -2843,7 +2833,6 @@ export class GalaxyView {
       theta0: -omega * tSys,
       omega,
     };
-    this.rideLookFree = false;
     this.placeRide(tSys);
     this.capturing = null;
     this.courseObj = null;
@@ -2924,15 +2913,16 @@ export class GalaxyView {
   }
 
   /**
-   * Arrival ride look. Inertial rings (LEO / station / MEO /
-   * polar): prograde, pitched so the forward limb fills
-   * ORBIT_LIMB_FILL of the bottom of the frame, banked nadir-
-   * down. Hang / hover: nose into the body. A look drag takes
-   * the stick; release leaves that heading.
+   * Helm ride look. The ship camera is bolted to this attitude —
+   * no free look, no zoom. Hang / GEO / hover: nose into the
+   * body (full sphere ahead). LEO / station / MEO / polar:
+   * prograde, pitched so the forward limb fills ORBIT_LIMB_FILL
+   * of the bottom of the frame, banked nadir-down and locked
+   * to the body. Drone is the free camera.
    */
   private bankRideLook(tSys: number): void {
     const ride = this.riding;
-    if (!ride || this.looking || this.drone || this.rideLookFree) return;
+    if (!ride || this.drone) return;
     if (ride.hang) {
       // GEO / hover: face the hang face — full sphere ahead.
       const rt = this.worldRt(ride.bodyId);
@@ -3010,7 +3000,7 @@ export class GalaxyView {
 
   /** Write the parked limb look (capture start — matches the insert ease). */
   private aimLimbParkLook(rt: HostBodyRT, kind: WorldOrbitKind, zenith: THREE.Vector3): void {
-    if (!isLimbOrbit(kind) || this.looking) return;
+    if (!isLimbOrbit(kind)) return;
     this.spinWorld(rt, this.orbitQ);
     this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
     this.rideE1.copy(zenith);
@@ -3578,7 +3568,6 @@ export class GalaxyView {
    */
   orbitBy(dTheta: number, dPhi = 0): void {
     if (this.mode === 'region') {
-      if (this.riding) this.rideLookFree = true;
       this.arcYaw += dTheta;
       this.arcPitch = THREE.MathUtils.clamp(this.arcPitch - dPhi, -1.45, 1.45);
       this.applyCam();
@@ -4273,34 +4262,6 @@ export class GalaxyView {
   }
 
   /**
-   * Cruise speed. Cap is small and fixed so extra space between
-   * stars is felt as more zoom, not a faster ship. Slow further
-   * only when a star is already close (examine, don't overshoot).
-   */
-  private arcPace(): number {
-    const cloud = this.cloud;
-    let minD = 8;
-    if (cloud) {
-      const step = Math.max(1, Math.floor(cloud.n / 6000));
-      const cx = this.ship.at.x;
-      const cy = this.ship.at.y;
-      const cz = this.ship.at.z;
-      const cat = cloud.pos;
-      for (let i = 0; i < cloud.n; i += step) {
-        const i3 = i * 3;
-        const d = Math.hypot(cat[i3] - cx, cat[i3 + 1] - cy, cat[i3 + 2] - cz);
-        if (d > 1e-4 && d < minD) minD = d;
-      }
-    }
-    if (this.selected) {
-      const c = this.viewCart(this.selected);
-      const d = Math.hypot(c.x, c.y, c.z);
-      if (d > 1e-4) minD = Math.min(minD, d);
-    }
-    return THREE.MathUtils.clamp(0.42 * minD, 0.004, 0.025);
-  }
-
-  /**
    * Gestures are catalog kpc. The camera stays at the origin; the
    * viewpoint slides. The GPU holds the harvest — the vertex shader
    * subtracts uCenter. No membership walk.
@@ -4502,9 +4463,9 @@ export class GalaxyView {
   }
 
   /**
-   * Pinch / wheel. Inside an SOI this is a subject-distance
-   * dolly (or ride-radius). The drone thrusts along its look.
-   * On the disk it still slides the bubble along the look.
+   * Pinch / wheel. Drone only — thrust along the look.
+   * The ship helm does not zoom (that was a fake slide).
+   * On the skin this is the walk throttle.
    */
   private zoom(factor: number): void {
     const f = Math.max(1e-3, factor);
@@ -4517,92 +4478,7 @@ export class GalaxyView {
     }
     if (this.landed) {
       this.applySurfaceZoom(-Math.log(f));
-      return;
     }
-    this.idle = 0;
-    if (this.riding && this.hostObj) {
-      this.zoomRide(f);
-      return;
-    }
-    if (this.hostObj) {
-      this.zoomSoi(f);
-      return;
-    }
-    this.orientArc();
-    const dir = f < 1 ? 1 : -1;
-    const step = this.arcPace() * 14 * Math.abs(Math.log(f)) * dir;
-    this.moveBubble(this.ship.fwd.x * step, this.ship.fwd.y * step, this.ship.fwd.z * step);
-    this.applyCam();
-  }
-
-  /** Pinch on a ridden ring changes that radius. placeRide owns the pose. */
-  private zoomRide(factor: number): void {
-    const ride = this.riding;
-    if (!ride) return;
-    if (ride.bodyId == null) {
-      if (!this.hostObj) return;
-      const star = this.hostSpec?.star ?? {
-        radius: Math.max(1e-6, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
-      };
-      const lo = (Math.max(star.radius, 1) + UNIVERSE.WORLD_ORBIT_CLEAR_KM) / UNIVERSE.KPC_KM;
-      const hi = Math.max(lo * 40, this.parkKpc(this.hostObj) * 8);
-      ride.r = THREE.MathUtils.clamp(ride.r * factor, lo, hi);
-      ride.omega = starOrbitOmega(
-        this.hostSpec?.star ?? {
-          mass: Math.max(0.08, this.hostObj.star.mass),
-        },
-        ride.r,
-      );
-      this.wake();
-      return;
-    }
-    const rt = this.worldRt(ride.bodyId);
-    if (!rt) return;
-    const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
-    const lo = shellFloorKm(rt.spec) * KM_TO_KPC;
-    const hi = Math.max(R * (1 + UNIVERSE.SOI_TRACK_MAX), UNIVERSE.WORLD_RANGE_KPC * 0.8);
-    ride.r = THREE.MathUtils.clamp(ride.r * factor, lo, hi);
-    this.wake();
-  }
-
-  /** Dolly along the look at a fraction of the subject distance. */
-  private zoomSoi(factor: number): void {
-    this.orientArc();
-    const world = this.closeWorld();
-    const d = world ? this.bodyDist(world) : this.hostObj ? this.arriveDist(this.hostObj) : 0;
-    if (!(d > 0)) return;
-    const log = -Math.log(factor);
-    let step = d * UNIVERSE.SOI_ZOOM * log;
-    if (step > 0) {
-      const fence = world
-        ? shellFloorKm(world.spec) * KM_TO_KPC
-        : this.hostObj
-          ? this.parkKpc(this.hostObj)
-          : 0;
-      step = Math.min(step, Math.max(0, d - fence) * 0.9);
-    } else if (this.hostObj) {
-      const lim = UNIVERSE.ARRIVE_RANGE_KPC * 0.85;
-      const fromStar = this.arriveDist(this.hostObj);
-      if (fromStar - step > lim) step = -(lim - fromStar);
-    }
-    if (Math.abs(step) < 1e-18) return;
-    // The dolly obeys the same wall as every other move.
-    const sign = Math.sign(step);
-    const mag = this.clampHostAdvance(
-      this.ship.fwd.x * sign,
-      this.ship.fwd.y * sign,
-      this.ship.fwd.z * sign,
-      Math.abs(step),
-    );
-    step = mag * sign;
-    if (Math.abs(step) < 1e-18) return;
-    this.ship.at.x += this.ship.fwd.x * step;
-    this.ship.at.y += this.ship.fwd.y * step;
-    this.ship.at.z += this.ship.fwd.z * step;
-    this.mintAt.copy(this.ship.at);
-    this.pushMagUniforms();
-    this.applyCam();
-    this.wake();
   }
 
   /**
@@ -4612,7 +4488,6 @@ export class GalaxyView {
    */
   private applyRoll(d: number): void {
     if (Math.abs(d) < 1e-8) return;
-    if (this.riding) this.rideLookFree = true;
     if (this.drone) {
       this.drone.twist(d);
       this.placeDrone();
@@ -4801,8 +4676,7 @@ export class GalaxyView {
     if (this.pointers.size === 2) {
       const pts = [...this.pointers.values()];
       const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-      this.abortAutopilot();
-      if (this.pinch0 > 0) {
+      if ((this.drone || this.landed) && this.pinch0 > 0) {
         const ratio = d / Math.max(1e-3, this.pinch0);
         this.zoom(Math.pow(1 / Math.max(0.2, ratio), ZOOM_PINCH_POW));
       }
@@ -4842,8 +4716,8 @@ export class GalaxyView {
         this.applyCam();
         return;
       }
+      if (this.riding || this.capturing) return;
       this.abortAutopilot();
-      if (this.riding) this.rideLookFree = true;
       this.ship.look(dx, dy);
       this.applyCam();
       return;
@@ -5162,6 +5036,7 @@ export class GalaxyView {
   /** A/D, ←/→, and a still hold on the left/right of the screen roll. */
   private tickRoll(dt: number): void {
     if (this.landed) return;
+    if (!this.drone && (this.riding || this.capturing)) return;
     const s = this.rollSign();
     if (!s) return;
     this.abortAutopilot();

@@ -511,28 +511,25 @@ export const UNIVERSE = {
   WORLD_SURF_PITCH: -0.15,
   WORLD_SURF_STEER: 0.004,
   /**
-   * Host-sphere camera. Pinch / wheel dollies at a fraction of
-   * the subject distance (`SOI_ZOOM`). Roll is a hold or a
-   * key (`SOI_TWIST` rad/s) in the catalog and the sphere —
-   * A/D and ←/→, or a still hold on the left/right of the
-   * screen. Right / clockwise is negative twist. Pinch is
-   * zoom only.
-   * On a ridden ring, zoom changes that
-   * radius instead of fighting placeRide (`SOI_TRACK_*` is that
-   * ring cage). The drone is anti-gravity: zoom thrusts along
-   * the look, drag steers — the same screen-relative stick
-   * as ship flight. Soft floor is the ball itself
-   * (`R × 1.002`) so it can enter air and fly between moons.
-   * Target is drone-only — a latched lock. Launch locks the
-   * body nearest the ship; after that it stays on that id.
-   * Tap Target off to free fly; tap on to lock the body in
-   * the pip. The lock does not hop.
-   * Launch / recall use the capture ease (`ORBIT_CAPTURE`):
-   * lift along the local zenith by `DRONE_LIFT` (a fraction of
-   * hover height, floored at that fraction of the body radius)
-   * while the look rotates onto the core; recall flies a
-   * line to the parked ship and docks the camera — drone
-   * law, not orbit capture.
+   * Drone camera. Pinch / wheel thrusts along the look at a
+   * fraction of the subject distance (`SOI_ZOOM`). The ship
+   * helm does not zoom — that was a fake slide. Roll is a
+   * hold or a key (`SOI_TWIST` rad/s) in flight (A/D, ←/→,
+   * or a still hold on the left/right of the screen). Right
+   * / clockwise is negative twist. On a ridden ring the helm
+   * look is locked (`SOI_TRACK_*` is the named-park cage, not
+   * a zoom range). The drone is anti-gravity: zoom thrusts
+   * along the look, drag steers. Soft floor is the ball
+   * itself (`R × 1.002`) so it can enter air and fly between
+   * moons. Target is drone-only — a latched lock. Launch
+   * locks the body nearest the ship; after that it stays on
+   * that id. Tap Target off to free fly; tap on to lock the
+   * body in the pip. The lock does not hop.
+   * Launch / recall: lift along the local zenith by
+   * `DRONE_LIFT` (a fraction of hover height, floored at that
+   * fraction of the body radius) while the look rotates onto
+   * the core; recall flies a line to the parked ship and
+   * docks the camera — drone law, not orbit capture.
    */
   SOI_ZOOM: 0.55,
   /** Hold / key roll rate (rad/s). 1 ≈ 57°/s. */
@@ -549,11 +546,12 @@ export const UNIVERSE = {
   /**
    * Inertial park look (LEO / station / MEO / polar). The nose
    * stays near prograde; pitch down so the forward limb fills
-   * this fraction of the bottom of the frame. Horizon is
-   * acos(R/(R+h)) below prograde; the look sits
-   * CAM_FOV × (½ − this) above that limb. GEO / hover still
-   * face the ball. Insertion eases from full-ahead to this
-   * pitch as the fly-to slides onto the rail.
+   * this fraction of the bottom of the frame, locked to the
+   * body. Horizon is acos(R/(R+h)) below prograde; the look
+   * sits CAM_FOV × (½ − this) above that limb. GEO / hover
+   * face the ball, full forward. Insertion eases from
+   * full-ahead to this pitch as the fly-to slides onto the
+   * rail. The helm does not zoom or free-look on the ring.
    */
   ORBIT_LIMB_FILL: 0.3,
   /** Vertical field of the explorer camera (degrees). */

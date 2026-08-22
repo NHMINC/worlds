@@ -200,22 +200,23 @@ toy — Godus blocks on a real-sized globe.
   metres (an 8 kpc ULP is larger than
   a world), so `starCart − arcCenter`
   does not follow orbit or spin.
-  Drag looks. Inside the sphere, pinch /
-  wheel dollies at the subject distance
-  (`SOI_ZOOM`); on a ring it changes
-  that radius. Pinch is zoom only. Roll
-  is A/D, ←/→, or a still hold on the
-  left/right of the screen (`SOI_TWIST`
-  rad/s) — right / clockwise is
-  negative twist. Inertial parks
-  (LEO / station / MEO / polar) pitch
-  the look so the forward limb fills
-  `ORBIT_LIMB_FILL` (30%) of the bottom
-  of the frame; insertion eases that
-  pitch as a **ship attitude** (no
-  second camera). The ship looks
-  ahead; that look *is* the camera
-  when the ship is live. The
+  Drag looks in flight (the camera is
+  the helm — full forward). The ship
+  does not zoom; pinch / wheel on the
+  helm is a no-op. Roll is A/D, ←/→,
+  or a still hold on the left/right of
+  the screen (`SOI_TWIST` rad/s) —
+  right / clockwise is negative twist
+  — in flight only. GEO / hover hang
+  full-forward at the face. LEO /
+  station / MEO / polar pitch so the
+  forward limb fills `ORBIT_LIMB_FILL`
+  (30%) of the bottom of the frame and
+  stay locked to that body; insertion
+  eases that pitch as a **ship
+  attitude** (no second camera). The
+  ship look *is* the camera when the
+  ship is live. The
   trackball is an independent drone
   (`drone.ts`) — own look / zoom-
   thrust / roll / Target. The only
@@ -448,13 +449,13 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   hover, inertial for the rest). Arrival look on
   LEO / station / MEO / polar pitches down so the
   top of the sphere fills the bottom 30% of the
-  frame (`ORBIT_LIMB_FILL`); that pitch eases in
-  as the insertion blend goes from full-ahead to
-  the rail. GEO / hover face the hang face. A look
-  drag takes the stick — release does not snap the
-  look back. Pinch zooms the ring
-  radius; A/D, arrows, and a hold on
-  the left/right of the screen roll.
+  frame (`ORBIT_LIMB_FILL`) and stays locked to
+  the body; that pitch eases in as the insertion
+  blend goes from full-ahead to the rail. GEO /
+  hover face the hang face. The helm does not
+  look-drag or zoom on a ring — the drone is the
+  free camera. A/D, arrows, and a hold on the
+  left/right of the screen roll in flight.
   The ship looks
   ahead. Trackball launches (lift +
   a latched lock on the body nearest
@@ -640,18 +641,22 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   ahead / astern when stopped so you can back off a park.
   Past `GALAXY_WARP_LIM` (four disk radii) warp lets go
   quietly unless that gear points inward. A tap, not a hold.
-  Drag looks: the **ship** stick (yaw around
-  current up, pitch around fwd × up, roll
-  around the nose) lives in `flight.ts`.
-  The **drone** stick is its own in
-  `drone.ts` — they do not share a
+  Drag looks in flight: the **ship** stick
+  (yaw around current up, pitch around
+  fwd × up, roll around the nose) lives
+  in `flight.ts` — camera is the helm,
+  full forward. On a ridden ring the
+  helm look stays locked. The ship does
+  not zoom. The **drone** stick is its
+  own in `drone.ts` (pinch / wheel is
+  real thrust) — they do not share a
   `stick.ts`. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch. A/D and ←/→ roll
-  (strafe is not a ship or drone verb);
-  a still hold on the left/right of the
-  screen is the same roll. Pinch is zoom
-  only. The sight plate only locks an object inside
+  in flight (strafe is not a ship or
+  drone verb); a still hold on the
+  left/right of the screen is the same
+  roll. The sight plate only locks an object inside
   `AIM_RANGE_KPC`. Set course is a berth
   pipeline (`course.ts`): heading hold
   (nose only — bank waits for the insert

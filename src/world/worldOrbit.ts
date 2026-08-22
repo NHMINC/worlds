@@ -23,7 +23,7 @@ export function isHangOrbit(kind: WorldOrbitKind): boolean {
   return kind === 'geo' || kind === 'hover';
 }
 
-/** Inertial world rings that park with the limb in the lower frame. */
+/** Inertial world rings: helm pitched to the limb, locked to the body. */
 export function isLimbOrbit(kind: WorldOrbitKind): boolean {
   return kind === 'leo' || kind === 'station' || kind === 'meo' || kind === 'polar';
 }
