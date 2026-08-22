@@ -349,8 +349,9 @@ export const UNIVERSE = {
    * is the size law. That sphere is sticky: warp is ARRIVE_WARP
    * (1/1000) of GALAXY_WARP while you are inside it — a speed
    * limit on every move (warp, roll, zoom), not a teleport —
-   * and a new target cannot be chosen
-   * until you fly out. The photosphere replaces the pin when the
+   * and another star or world can be
+   * named while you are still inside.
+   * The photosphere replaces the pin when the
    * sphere is entered — the harvest pin cannot draw the approach
    * (a point, then float32 hops). From ARRIVE_BRAKE_LY (50 ly)
    * in, speed is half of GALAXY_WARP, held until a frame would

@@ -62,6 +62,7 @@ import {
   shellFloorKm,
   starOrbitOmega,
   starOrbitRadiusKpc,
+  viewSkinKm,
   type WorldOrbitKind,
 } from '../world/worldOrbit';
 import {
@@ -2258,6 +2259,8 @@ export class GalaxyView {
     if (!obj) return;
     if (this.landed) this.takeOff();
     this.leaveSurface();
+    if (this.riding || this.capturing) this.breakOrbit();
+    this.clearDepart();
     this.proximity = false;
     this.route.begin(dest);
     this.courseObj = obj;
@@ -2300,7 +2303,7 @@ export class GalaxyView {
   private beginAutopilot(): void {
     if (this.drone) return;
     this.navMode = 'lock';
-    if (this.departing || this.riding || this.capturing) {
+    if (this.riding || this.capturing) {
       this.wake();
       return;
     }
@@ -4846,15 +4849,13 @@ export class GalaxyView {
   }
 
   /**
-   * Hard fence: no move crosses into a body's clear shell —
-   * shellFloorKm (absolute 10,000 km above the surface, or the
-   * SOI relative floor) — or the photosphere's. The step lands
-   * on the wall instead. If we are already inside, only steps
-   * that climb out are allowed (the old miss-when-inside let
-   * a park through a world keep sinking). Entry only: leaving
-   * a shell and tangent slides stay free, and every ring parks
-   * at or above it. Returns the allowed step length along
-   * (dx,dy,dz)/len.
+   * Hard fence: no move crosses a body's view skin (air /
+   * gas / a thin fraction of R) or the photosphere's. The
+   * film park sits outside that wall. The 10 000 km figure
+   * is a transfer graze, not this shell. The step lands on
+   * the wall instead. If we are already inside, only steps
+   * that climb out are allowed. Returns the allowed step
+   * length along (dx,dy,dz)/len.
    */
   private clampHostAdvance(dx: number, dy: number, dz: number, len: number): number {
     if (!this.hostObj || !this.hostRoot || !(len > 0)) return len;
@@ -4882,12 +4883,7 @@ export class GalaxyView {
     }
     this.hostTmp2.copy(this.hostRoot.position);
     const starR = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
-    fence(
-      this.hostTmp2.x,
-      this.hostTmp2.y,
-      this.hostTmp2.z,
-      starR + UNIVERSE.WORLD_ORBIT_CLEAR_KM,
-    );
+    fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, viewSkinKm(starR));
     return allowed;
   }
 
@@ -5027,10 +5023,10 @@ export class GalaxyView {
     }
     const picked = this.pickCloud(cx, cy);
     if (!picked) return;
-    if (this.hostObj && picked.id !== this.hostObj.id) return;
     this.selectedBodyId = null;
     this.focusBodyId = null;
     this.select(picked);
+    if (this.hostObj && picked.id !== this.hostObj.id) this.setCourse(picked);
   }
 
   /** Screen-nearest host body, same slop as a POI tap. */
@@ -5641,7 +5637,6 @@ export class GalaxyView {
         if (d2 < 1e-12) continue;
         const dist = Math.sqrt(d2);
         if (dist > UNIVERSE.AIM_RANGE_KPC) continue;
-        if (this.hostObj && ids[i] !== this.hostObj.id) continue;
         const dim = (bits[i] & BIT_REMNANT) !== 0 || lum[i] < 0.05;
         if (!aimLocks(lum[i], dist, dim)) continue;
         grown++;

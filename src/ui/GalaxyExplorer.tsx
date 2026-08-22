@@ -792,11 +792,11 @@ export function GalaxyExplorer(props: Props) {
                 <em>Escape burn</em>
                 <i className="gx-plate-go">Then free flight</i>
               </>
-            ) : frame.navMode === 'proximity' ? (
+            ) : !(frame.course ?? frame.focus) && frame.navMode === 'proximity' ? (
               <>
                 <b>{frame.navHint ?? 'Nearest body'}</b>
                 <em>{navModeLabel('proximity')}</em>
-                <i className="gx-plate-go">Nearest body — free flight</i>
+                <i className="gx-plate-go">Aim a body or star — Set course</i>
               </>
             ) : !(frame.course ?? frame.focus) ? (
               <>

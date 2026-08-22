@@ -156,10 +156,14 @@ export function clearRadiusKm(body: { radius: number }): number {
   return Math.max(body.radius, 1) + UNIVERSE.WORLD_ORBIT_CLEAR_KM;
 }
 
-/** Lowest legal camera shell about a body (km from centre). */
-export function shellFloorKm(body: { radius: number }): number {
-  const R = Math.max(body.radius, 1);
-  return Math.max(clearRadiusKm(body), R * (1 + UNIVERSE.SOI_TRACK_MIN));
+/**
+ * Hard camera wall (km from centre). The film park sits
+ * outside this skin — the 10 000 km graze is a transfer
+ * floor, not a park. SOI_TRACK_MIN is a drone cage, not
+ * this wall (it sat outside the star film).
+ */
+export function shellFloorKm(body: { radius: number } & Partial<BodySpec>): number {
+  return viewSkinKm(Math.max(body.radius, 1), 'physics' in body ? (body as BodySpec) : undefined);
 }
 
 export function orbitRadiusKm(body: BodySpec, kind: string): number {
