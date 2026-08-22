@@ -11,7 +11,7 @@
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
-import type { GalaxyObject } from '../world/galaxy';
+import { galToCart, type GalaxyObject } from '../world/galaxy';
 import {
   eclipticPole,
   starSpecFromState,
@@ -59,6 +59,7 @@ export class HostLocale {
   private readonly alignQ = new THREE.Quaternion();
   private readonly eclipticZ = new THREE.Vector3(0, 0, 1);
   private readonly tmpQ = new THREE.Quaternion();
+  private readonly tmpV = new THREE.Vector3();
 
   private readonly seed: string;
   private readonly hooks: LocaleHooks;
@@ -173,5 +174,76 @@ export class HostLocale {
 
   starRadiusKm(): number {
     return Math.max(1, this.spec?.star.radius ?? UNIVERSE.RSUN_KM);
+  }
+
+  // ------------------------------------------------- km ↔ kpc bridges
+
+  /** Body spin in the oriented km frame. */
+  spinWorld(rt: HostBodyRT, out: THREE.Quaternion): THREE.Quaternion {
+    out.copy(rt.spinQ);
+    if (this.root) out.premultiply(this.root.quaternion);
+    return out;
+  }
+
+  /** Camera → host-root km. Inverse of pinEyeKm. */
+  hostEyeKm(out: THREE.Vector3): THREE.Vector3 {
+    const root = this.root;
+    if (!root) return out.set(0, 0, 0);
+    return out
+      .copy(root.position)
+      .negate()
+      .applyQuaternion(this.tmpQ.copy(root.quaternion).conjugate())
+      .multiplyScalar(1 / KM_TO_KPC);
+  }
+
+  /** Catalog position of a host-pass body — independent of arcCenter. */
+  bodyCatalog(rt: HostBodyRT, out: THREE.Vector3): THREE.Vector3 {
+    const lock = this.obj;
+    if (!lock) return out.set(0, 0, 0);
+    const c = galToCart(lock.pos);
+    out.copy(rt.pos).multiplyScalar(KM_TO_KPC);
+    if (this.root) out.applyQuaternion(this.root.quaternion);
+    out.x += c.x;
+    out.y += c.y;
+    out.z += c.z;
+    return out;
+  }
+
+  /**
+   * Camera → body in catalog kpc. Order is the precision law:
+   * star − eye is an exact difference of two nearby ~8 kpc
+   * doubles; the body's km offset adds after, in that small
+   * frame. Folding the kilometres into the 8 kpc point first
+   * quantizes them by a ULP (~30 km) — that noise was the
+   * shell-park zigzag that never arrived.
+   */
+  bodyFromEye(shipAt: THREE.Vector3, rt: HostBodyRT, out: THREE.Vector3): THREE.Vector3 {
+    const lock = this.obj;
+    if (!lock) return out.set(0, 0, 0);
+    out.copy(rt.pos).multiplyScalar(KM_TO_KPC);
+    if (this.root) out.applyQuaternion(this.root.quaternion);
+    const c = galToCart(lock.pos);
+    out.x += c.x - shipAt.x;
+    out.y += c.y - shipAt.y;
+    out.z += c.z - shipAt.z;
+    return out;
+  }
+
+  /**
+   * Pin the root so a host-root-local km point sits at the
+   * camera. Do not fold that offset into the 8 kpc catalog
+   * point first — a metre there is below a ULP. Writes the
+   * ship's catalog position when `shipAt` is given.
+   */
+  pinEyeKm(eyeKm: THREE.Vector3, shipAt: THREE.Vector3 | null): void {
+    const root = this.root;
+    const lock = this.obj;
+    if (!root || !lock) return;
+    this.tmpV.copy(eyeKm).multiplyScalar(KM_TO_KPC).applyQuaternion(root.quaternion);
+    root.position.copy(this.tmpV).negate();
+    root.updateMatrixWorld(true);
+    if (!shipAt) return;
+    const cart = galToCart(lock.pos);
+    shipAt.copy(cart).add(this.tmpV);
   }
 }
