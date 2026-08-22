@@ -678,8 +678,11 @@ export function GalaxyExplorer(props: Props) {
               className={`gx-look-btn${frame.drone ? ' is-on' : ''}`}
               aria-label="Trackball"
               aria-pressed={frame.drone}
+              disabled={frame.departing}
               title={
-                frame.dronePhase === 'home'
+                frame.departing
+                  ? 'Leaving orbit — then the drone'
+                  : frame.dronePhase === 'home'
                   ? 'Landing on the ship…'
                   : frame.dronePhase === 'launch'
                     ? 'Lifting into target…'

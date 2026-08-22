@@ -2277,7 +2277,7 @@ export class GalaxyView {
   private beginAutopilot(): void {
     if (this.drone) return;
     this.navMode = 'lock';
-    if (this.riding || this.capturing) {
+    if (this.departing || this.riding || this.capturing) {
       this.wake();
       return;
     }
@@ -2309,7 +2309,7 @@ export class GalaxyView {
   }
 
   private canLandNow(): boolean {
-    if (this.landed) return false;
+    if (this.landed || this.departing) return false;
     const id = this.riding?.bodyId ?? this.worldId;
     const rt = this.worldRt(id);
     if (!rt || rt.spec.kind !== 'rocky') return false;
@@ -2323,6 +2323,7 @@ export class GalaxyView {
    * joins the spinning frame — you stand on the turning world.
    */
   land(): void {
+    if (this.departing) return;
     if (this.drone) this.setDrone(false, false);
     if (this.mode !== 'region' || !this.hostObj) return;
     const id = this.riding?.bodyId ?? this.worldId;
@@ -2398,6 +2399,7 @@ export class GalaxyView {
   }
 
   setDrone(on: boolean, ease = true): void {
+    if (this.departing) return;
     if (this.mode !== 'region' || !this.hostObj || !this.hostRoot) return;
     if (!on) {
       if (!this.drone) return;
@@ -3661,7 +3663,7 @@ export class GalaxyView {
   }
 
   setPreset(p: GalaxyPreset): void {
-    if (this.landed || this.drone) return;
+    if (this.landed || this.drone || this.departing) return;
     this.wake();
     if (p === 'home') {
       const obj = this.hereObj ?? this.home;
@@ -3952,8 +3954,8 @@ export class GalaxyView {
   /**
    * Player verb: drop the rail and burn to escape speed for
    * that body (√2 × circular, floored by the place crawl so
-   * the burn is a beat). Warp stays off until the speed is
-   * reached. A live dest is kept. No dest → proximity.
+   * the burn is a beat). Not interruptible — then you float
+   * free and the helm comes back. A live dest is kept.
    */
   leaveOrbit(): void {
     if (this.drone || this.landed) return;
