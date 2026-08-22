@@ -15,13 +15,14 @@ export const SESSION_ID = 'live';
 export const SESSION_VERSION = 1 as const;
 
 const ORBITS = new Set<SessionOrbit>([
+  'equatorial',
+  'polar',
+  'hover',
+  'ecliptic',
   'leo',
   'station',
   'meo',
   'geo',
-  'polar',
-  'hover',
-  'ecliptic',
 ]);
 
 export function sessionBytes(snap: SessionSnap): number {

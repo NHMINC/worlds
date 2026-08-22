@@ -17,7 +17,7 @@ export type CourseNav = 'lock' | 'orbit' | 'proximity' | null;
 
 export type Berth = {
   starId: number;
-  /** null + ecliptic = star fill-safe ring. */
+  /** null + ecliptic = host-star limb-film ring. */
   bodyId: string | null;
   orbit: WorldOrbitKind;
 };

@@ -481,26 +481,13 @@ export const UNIVERSE = {
    */
   WORLD_ORBIT_CLEAR_KM: 10_000,
   /**
-   * Host-pass orbit rings from the system chart. Heights are
-   * in body radii above the surface — one law, every world —
-   * then floored by `WORLD_ORBIT_CLEAR_KM`. LEO skims the air.
-   * Station is the same inertial family a little higher (GEO
-   * low / station-keeping: the world turns under you). GEO
-   * hangs over one face at the Kepler altitude for that spin
-   * (`a³/T² = GM/4π²`); a locked body has no useful GEO, so
-   * that pick is hover. MEO sits on the LEO→GEO lerp. Polar
-   * is LEO in a plane that contains the spin axis. Hover hangs
-   * over the arrival face. Gas floors the skim so the ball is
-   * not a clip. GEO_MAX clamps a slow spinner so the ring stays
-   * a world orbit, not a second heliocentric. Heights are
-   * framing altitudes on the toy globe — a true ISS skim
-   * reads as scraping the terrace.
+   * Host-pass orbit rings. The chart names a plane (polar /
+   * equatorial) or hover — not an altitude. Inertial distance
+   * is the limb film (`ORBIT_LIMB_*`, `ORBIT_VIEW_H_KM`).
+   * Hover is a face-on area fill. Gas floors the skin so a
+   * giant is not a clip. The 10 000 km figure is a transfer
+   * graze, not the park.
    */
-  WORLD_ORBIT_LEO: 0.22,
-  WORLD_ORBIT_HOVER: 0.42,
-  WORLD_ORBIT_MEO: 0.8,
-  WORLD_ORBIT_MEO_FRAC: 0.55,
-  WORLD_ORBIT_GEO_MAX: 12,
   WORLD_ORBIT_GAS_FLOOR: 0.35,
   /**
    * Host-pass surface. Same law as the old viewer: you hover a
@@ -553,19 +540,36 @@ export const UNIVERSE = {
    */
   DRONE_LIFT: 0.16,
   /**
-   * Inertial park look (LEO / station / MEO / polar / ecliptic).
-   * The nose stays near prograde; pitch down so the forward
-   * limb fills this fraction of the bottom of the frame,
-   * locked to the body — or the host star on the ecliptic
-   * ring. Horizon is acos(R/d) below prograde; the look sits
-   * CAM_FOV × (½ − this) above that limb. GEO / hover face
-   * the ball, full forward. Insertion eases from full-ahead
-   * to this pitch as the fly-to slides onto the rail. The
-   * helm does not zoom or free-look on the ring.
+   * Inertial park film (equatorial / polar / ecliptic — one
+   * law, every body). The look is the upper tangent: the
+   * forward limb sits this fraction up the frame (½ = midline).
+   * Distance then follows the sphere: a huge body hits
+   * ORBIT_VIEW_H_KM and the horizon is almost level; a smaller
+   * world parks where the limb curve almost touches the lower
+   * corners of the decreed film (`ORBIT_LIMB_CORNER` inset on
+   * CAM_FOV × CAM_ASPECT). Hover faces the ball so the disk
+   * covers ORBIT_HOVER_AREA of that film. Insertion eases
+   * from full-ahead to this pitch. The helm does not zoom
+   * or free-look on the ring.
    */
-  ORBIT_LIMB_FILL: 0.3,
+  ORBIT_LIMB_FILL: 0.5,
+  /**
+   * Absolute height (km) that flattens a huge body. Stars and
+   * giants sit near R + this; worlds smaller than the corner
+   * curve pull in until the limb reaches the corners.
+   */
+  ORBIT_VIEW_H_KM: 10_000,
+  /** Inset on the lower corners (1 = exact corners). */
+  ORBIT_LIMB_CORNER: 0.92,
+  /** Hover: projected disk area / film area. */
+  ORBIT_HOVER_AREA: 0.6,
   /** Vertical field of the explorer camera (degrees). */
   CAM_FOV: 50,
+  /**
+   * Film aspect the orbit law is cut for. A live window can
+   * differ; the limb stays close.
+   */
+  CAM_ASPECT: 16 / 9,
   /**
    * Host-pass orbit rings. The old system viewer used ~0.1 on a
    * black void; that is glass on the dimmed harvest. These are

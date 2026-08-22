@@ -51,6 +51,7 @@ import { Trackball, type DroneWorld } from './drone';
 import { Course, type Berth } from '../world/course';
 import {
   clearRadiusKm,
+  coerceOrbitKind,
   isHangOrbit,
   isLimbOrbit,
   orbitLabel,
@@ -1086,13 +1087,15 @@ export class GalaxyView {
       : null;
     this.proximity = snap.proximity;
     this.insertBlend = snap.insertBlend;
-    this.pendingOrbit = snap.pendingOrbit;
+    this.pendingOrbit = snap.pendingOrbit
+      ? { bodyId: snap.pendingOrbit.bodyId, kind: coerceOrbitKind(snap.pendingOrbit.kind) }
+      : null;
     this.pendingArriveOrbit = snap.pendingArriveOrbit;
     this.worldId = snap.worldId ?? snap.bodyId;
     this.sYaw = snap.sYaw;
     this.sPitch = snap.sPitch;
     this.sEyeH = this.sEyeHTarget = snap.sEyeH;
-    this.landKind = snap.landKind;
+    this.landKind = snap.landKind ? coerceOrbitKind(snap.landKind) : null;
     this.bindSky();
     this.regionLabel = regionName(this.ship.at.x, this.ship.at.y, this.ship.at.z);
     if (snap.starId != null) {
@@ -1115,7 +1118,12 @@ export class GalaxyView {
         this.courseHud = this.hudForStar(dest);
       }
       this.courseBodyId = snap.course.bodyId;
-      if (snap.courseLive) this.route.begin(snap.course);
+      if (snap.courseLive) {
+        this.route.begin({
+          ...snap.course,
+          orbit: coerceOrbitKind(snap.course.orbit),
+        });
+      }
     }
     this.applyCam();
     this.wake();
@@ -1299,7 +1307,7 @@ export class GalaxyView {
       radius: Math.max(1e-6, obj.star.radius) * UNIVERSE.RSUN_KM,
       mass: Math.max(0.08, obj.star.mass),
     };
-    const park = starOrbitRadiusKpc(star, this.parkKpc(obj));
+    const park = starOrbitRadiusKpc(star);
     let ax = c.x;
     let ay = c.y;
     let az = c.z;
@@ -1363,7 +1371,7 @@ export class GalaxyView {
     if (p.landed) {
       const globe = this.globeOf(rt.spec.id);
       if (!globe?.ready) return false;
-      this.landKind = p.orbit ?? 'hover';
+      this.landKind = coerceOrbitKind(p.orbit ?? 'hover');
       this.clearRide();
       this.pendingOrbit = null;
       this.pendingArriveOrbit = false;
@@ -1381,7 +1389,7 @@ export class GalaxyView {
       this.pendingPlace = null;
       return true;
     }
-    const kind = p.orbit ?? 'hover';
+    const kind = coerceOrbitKind(p.orbit ?? 'hover');
     this.beginRide(rt, kind, dir, tSys);
     if (p.h != null && this.riding) {
       const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
@@ -1411,14 +1419,29 @@ export class GalaxyView {
       if (!globe?.ready) return false;
     }
     if (s.riding) {
+      const kind = coerceOrbitKind(s.riding.kind);
       this.riding = {
         bodyId: s.riding.bodyId,
-        kind: s.riding.kind,
-        hang: s.riding.hang,
+        kind,
+        hang: isHangOrbit(kind),
         r: s.riding.r,
         theta0: s.riding.theta0,
         omega: s.riding.omega,
       };
+      if (s.riding.bodyId) {
+        const rt = this.worldRt(s.riding.bodyId);
+        if (rt) {
+          this.riding.r = orbitRadiusKpc(rt.spec, kind);
+          this.riding.omega = isHangOrbit(kind) ? 0 : orbitOmega(rt.spec, kind);
+        }
+      } else if (this.hostObj) {
+        const star = this.hostSpec?.star ?? {
+          radius: Math.max(1e-6, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
+          mass: Math.max(0.08, this.hostObj.star.mass),
+        };
+        this.riding.r = starOrbitRadiusKpc(star);
+        this.riding.omega = starOrbitOmega(star, this.riding.r);
+      }
       this.rideE1.set(s.riding.e1[0], s.riding.e1[1], s.riding.e1[2]);
       this.rideE2.set(s.riding.e2[0], s.riding.e2[1], s.riding.e2[2]);
       this.rideLocal.set(s.riding.local[0], s.riding.local[1], s.riding.local[2]);
@@ -1428,7 +1451,7 @@ export class GalaxyView {
     if (s.capturing) {
       this.capturing = {
         bodyId: s.capturing.bodyId,
-        kind: s.capturing.kind,
+        kind: coerceOrbitKind(s.capturing.kind),
         dir: new THREE.Vector3(s.capturing.dir[0], s.capturing.dir[1], s.capturing.dir[2]),
       };
     }
@@ -1436,7 +1459,7 @@ export class GalaxyView {
       this.landed = true;
       this.worldId = s.worldId ?? s.bodyId;
       this.courseBodyId = this.worldId;
-      this.landKind = s.landKind;
+      this.landKind = s.landKind ? coerceOrbitKind(s.landKind) : null;
       if (s.surfDir) this.surfDir.set(s.surfDir[0], s.surfDir[1], s.surfDir[2]);
       this.sYaw = s.sYaw;
       this.sPitch = s.sPitch;
@@ -2211,11 +2234,11 @@ export class GalaxyView {
     this.setCourseBerth({ starId: obj.id, bodyId: null, orbit: 'ecliptic' });
   }
 
-  /** Plate: a world of the focused / host star → MEO berth. */
+  /** Plate: a world of the focused / host star → equatorial berth. */
   setCourseBody(bodyId: string): void {
     const starId = this.focusObj?.id ?? this.hostObj?.id;
     if (starId == null) return;
-    this.setCourseBerth({ starId, bodyId, orbit: 'meo' });
+    this.setCourseBerth({ starId, bodyId, orbit: 'equatorial' });
   }
 
   /**
@@ -2240,7 +2263,7 @@ export class GalaxyView {
     this.courseObj = obj;
     this.courseBodyId = dest.bodyId;
     this.pendingArriveOrbit = false;
-    this.pendingOrbit = { bodyId: dest.bodyId, kind: dest.orbit };
+    this.pendingOrbit = { bodyId: dest.bodyId, kind: coerceOrbitKind(dest.orbit) };
     this.navMode = 'lock';
     this.resetRoutePlot();
     if (dest.bodyId) {
@@ -2868,19 +2891,7 @@ export class GalaxyView {
       this.orbitTmp2.copy(this.rideLocal).applyQuaternion(this.orbitQ).multiplyScalar(r);
     } else {
       this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-      this.rideE1.copy(cap.dir);
-      if (this.rideE1.lengthSq() < 1e-16) this.rideE1.copy(this.ship.fwd).negate();
-      this.rideE1.normalize();
-      if (cap.kind === 'polar') {
-        this.rideE2.copy(this.rideNorth).addScaledVector(this.rideE1, -this.rideNorth.dot(this.rideE1));
-      } else {
-        this.rideE2.crossVectors(this.rideNorth, this.rideE1);
-      }
-      if (this.rideE2.lengthSq() < 1e-16) {
-        this.rideE2.crossVectors(this.rideE1, this.ship.right);
-        if (this.rideE2.lengthSq() < 1e-16) this.rideE2.crossVectors(this.rideE1, this.worldUp);
-      }
-      this.rideE2.normalize();
+      this.layoutInertialPlane(cap.kind, cap.dir);
       // Capture holds the arrival longitude (theta = 0 on E1).
       this.orbitTmp2.copy(this.rideE1).multiplyScalar(r);
     }
@@ -2940,15 +2951,15 @@ export class GalaxyView {
       radius: Math.max(1, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
       mass: Math.max(0.08, this.hostObj.star.mass),
     };
-    const r = starOrbitRadiusKpc(star, this.parkKpc(this.hostObj));
+    const r = starOrbitRadiusKpc(star);
     this.prepareStarRideBasis(dir);
     this.orbitTmp2.copy(this.rideE1).multiplyScalar(r);
     const c = galToCart(this.hostObj.pos);
     const tx = c.x + this.orbitTmp2.x;
     const ty = c.y + this.orbitTmp2.y;
     const tz = c.z + this.orbitTmp2.z;
-    // Same limb-down as a world ring: prograde pitched so the
-    // photosphere's top sits in the bottom of the frame.
+    // Same limb-down as a world ring: look along the upper
+    // tangent so the photosphere sits in the lower half.
     this.pitchLimbFwd(this.rideE2, this.rideE1, this.starLimbR(), r, this.lookSlerp);
     this.easeCapturePose(
       dt,
@@ -2970,6 +2981,33 @@ export class GalaxyView {
     }
     this.applyCam();
     this.wake();
+  }
+
+  /**
+   * Inertial ring basis. Polar: plane contains the spin axis.
+   * Equatorial (and the same geometry for a world arrival):
+   * arrival projected into the equator.
+   */
+  private layoutInertialPlane(kind: WorldOrbitKind, arrival: THREE.Vector3): void {
+    this.rideE1.copy(arrival);
+    if (this.rideE1.lengthSq() < 1e-16) this.rideE1.copy(this.ship.fwd).negate();
+    this.rideE1.normalize();
+    if (coerceOrbitKind(kind) === 'polar') {
+      this.rideE2.copy(this.rideNorth).addScaledVector(this.rideE1, -this.rideNorth.dot(this.rideE1));
+    } else {
+      this.rideE1.addScaledVector(this.rideNorth, -this.rideE1.dot(this.rideNorth));
+      if (this.rideE1.lengthSq() < 1e-16) {
+        this.rideE1.crossVectors(this.rideNorth, this.ship.fwd);
+        if (this.rideE1.lengthSq() < 1e-16) this.rideE1.crossVectors(this.rideNorth, this.worldUp);
+      }
+      this.rideE1.normalize();
+      this.rideE2.crossVectors(this.rideNorth, this.rideE1);
+    }
+    if (this.rideE2.lengthSq() < 1e-16) {
+      this.rideE2.crossVectors(this.rideE1, this.ship.right);
+      if (this.rideE2.lengthSq() < 1e-16) this.rideE2.crossVectors(this.rideE1, this.worldUp);
+    }
+    this.rideE2.normalize();
   }
 
   /** Ecliptic plane basis: pole from host frame, arrival projected in-plane. */
@@ -3062,19 +3100,7 @@ export class GalaxyView {
       // Height is the named ring. The plane contains the arrival
       // so we do not seek an equator / far-side start.
       this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-      this.rideE1.copy(dirCatalog);
-      if (this.rideE1.lengthSq() < 1e-16) this.rideE1.copy(this.ship.fwd).negate();
-      this.rideE1.normalize();
-      if (kind === 'polar') {
-        this.rideE2.copy(this.rideNorth).addScaledVector(this.rideE1, -this.rideNorth.dot(this.rideE1));
-      } else {
-        this.rideE2.crossVectors(this.rideNorth, this.rideE1);
-      }
-      if (this.rideE2.lengthSq() < 1e-16) {
-        this.rideE2.crossVectors(this.rideE1, this.ship.right);
-        if (this.rideE2.lengthSq() < 1e-16) this.rideE2.crossVectors(this.rideE1, this.worldUp);
-      }
-      this.rideE2.normalize();
+      this.layoutInertialPlane(kind, dirCatalog);
       this.riding.theta0 = -this.riding.omega * tSys;
     }
     this.placeRide(tSys);
@@ -3095,7 +3121,7 @@ export class GalaxyView {
   /**
    * Latch the host-star ecliptic ring. dirCatalog is star → camera
    * at first contact (projected into the ecliptic). Kepler ω from
-   * GM☉ · mass at the fill-safe radius.
+   * GM☉ · mass at the limb-film radius.
    */
   private beginStarRide(dirCatalog: THREE.Vector3, tSys: number): void {
     if (!this.hostObj) return;
@@ -3103,7 +3129,7 @@ export class GalaxyView {
       radius: Math.max(1e-6, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
       mass: Math.max(0.08, this.hostObj.star.mass),
     };
-    const r = starOrbitRadiusKpc(star, this.parkKpc(this.hostObj));
+    const r = starOrbitRadiusKpc(star);
     const omega = starOrbitOmega(star, r);
     this.prepareStarRideBasis(dirCatalog);
     this.riding = {
@@ -3196,12 +3222,11 @@ export class GalaxyView {
 
   /**
    * Helm ride look. The ship camera is bolted to this attitude —
-   * no free look, no zoom. Hang / GEO / hover: nose into the
-   * body (full sphere ahead). LEO / station / MEO / polar /
-   * ecliptic: prograde, pitched so the forward limb fills
-   * ORBIT_LIMB_FILL of the bottom of the frame, banked
-   * nadir-down and locked to the body (or the star). Drone
-   * is the free camera.
+   * no free look, no zoom. Hover: nose into the body (full
+   * sphere ahead). Equatorial / polar / ecliptic: prograde,
+   * pitched so the forward limb fills ORBIT_LIMB_FILL of the
+   * frame, banked nadir-down. Same law for a world or the
+   * star. Drone is the free camera.
    */
   private bankRideLook(tSys: number): void {
     const ride = this.riding;
@@ -3248,17 +3273,14 @@ export class GalaxyView {
     fy /= flen;
     fz /= flen;
     const rt = ride.bodyId != null ? this.worldRt(ride.bodyId) : null;
-    if (rt && isLimbOrbit(ride.kind)) {
+    if (isLimbOrbit(ride.kind)) {
+      const Rkpc =
+        rt != null
+          ? Math.max(rt.spec.radius, 1) * KM_TO_KPC
+          : this.starLimbR();
       this.lookSlerp.set(fx, fy, fz);
       this.orbitTmp.set(zx, zy, zz);
-      this.limbParkFwd(rt, ride.kind, this.lookSlerp, this.orbitTmp, this.lookSlerp);
-      fx = this.lookSlerp.x;
-      fy = this.lookSlerp.y;
-      fz = this.lookSlerp.z;
-    } else if (ride.kind === 'ecliptic' && ride.bodyId == null) {
-      this.lookSlerp.set(fx, fy, fz);
-      this.orbitTmp.set(zx, zy, zz);
-      this.pitchLimbFwd(this.lookSlerp, this.orbitTmp, this.starLimbR(), ride.r, this.lookSlerp);
+      this.pitchLimbFwd(this.lookSlerp, this.orbitTmp, Rkpc, ride.r, this.lookSlerp);
       fx = this.lookSlerp.x;
       fy = this.lookSlerp.y;
       fz = this.lookSlerp.z;
@@ -3566,7 +3588,7 @@ export class GalaxyView {
         const star = this.hostSpec?.star ?? {
           radius: Math.max(1e-6, this.courseObj.star.radius) * UNIVERSE.RSUN_KM,
         };
-        const rd = starOrbitRadiusKpc(star, this.parkKpc(this.courseObj));
+        const rd = starOrbitRadiusKpc(star);
         this.lookSlerp.set(dx / flen, dy / flen, dz / flen);
         this.orbitTmp2.set(zenX / zlen, zenY / zlen, zenZ / zlen);
         this.pitchLimbFwd(
@@ -3625,10 +3647,20 @@ export class GalaxyView {
     const mode = this.insertModeOf(kind);
     this.spinWorld(rt, this.orbitQ);
     this.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+    if (coerceOrbitKind(kind) === 'polar') {
+      this.lookSlerp.crossVectors(this.rideNorth, eyeToBody);
+      if (this.lookSlerp.lengthSq() < 1e-24) {
+        this.lookSlerp.crossVectors(this.rideNorth, this.ship.fwd);
+        if (this.lookSlerp.lengthSq() < 1e-24) this.lookSlerp.set(1, 0, 0);
+      }
+      this.lookSlerp.normalize();
+    } else {
+      this.lookSlerp.copy(this.rideNorth);
+    }
     return planOrbitInsert(
       eyeToBody,
       r,
-      this.rideNorth,
+      this.lookSlerp,
       mode,
       UNIVERSE.ORBIT_INSERT,
       this.orbitTmp2,
@@ -3642,7 +3674,7 @@ export class GalaxyView {
     const star = this.hostSpec?.star ?? {
       radius: Math.max(1e-6, obj.star.radius) * UNIVERSE.RSUN_KM,
     };
-    const r = starOrbitRadiusKpc(star, this.parkKpc(obj));
+    const r = starOrbitRadiusKpc(star);
     if (this.hostRoot) {
       this.rideNorth.set(0, 0, 1).applyQuaternion(this.hostRoot.quaternion);
     } else {
@@ -3661,9 +3693,7 @@ export class GalaxyView {
   }
 
   private insertModeOf(kind: WorldOrbitKind): InsertMode {
-    if (kind === 'hover') return 'hover';
-    if (isHangOrbit(kind)) return 'hang';
-    return 'inertial';
+    return isHangOrbit(kind) ? 'hover' : 'inertial';
   }
 
   canPick(): boolean {
@@ -5461,7 +5491,7 @@ export class GalaxyView {
       const ecliptic =
         this.pendingOrbit?.bodyId == null && this.pendingOrbit?.kind === 'ecliptic';
       const park = ecliptic
-        ? starOrbitRadiusKpc(star, this.parkKpc(course))
+        ? starOrbitRadiusKpc(star)
         : this.parkKpc(course);
       if (d <= park) {
         if (ecliptic) this.pendingArriveOrbit = true;

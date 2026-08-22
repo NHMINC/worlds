@@ -1,16 +1,19 @@
 /**
- * Host-pass orbits. The chart names a ring; the viewpoint
- * rides that ring. Heights and ω come from the body
- * (radius, density, spin, air) — not a preset per class.
- * Every named ring is floored by WORLD_ORBIT_CLEAR_KM above
- * the surface so a small moon never parks inside its ball.
- * Star Lock-on uses `ecliptic`: fill-safe Kepler ring in the
- * system's ecliptic plane (not a chart pick).
+ * Host-pass orbits. The chart names a plane, not an altitude.
+ * Polar / equatorial / ecliptic share one inertial film: the
+ * limb sits on the midline and the horizon runs from a level
+ * line (huge body) to a curve that almost touches the lower
+ * corners (smaller worlds). Hover faces the ball at a fixed
+ * area fill. Distance is an output of that picture plus a
+ * skin floor — not a menu of LEO / MEO / GEO.
  */
 import { UNIVERSE, airExtinction } from './physics';
 import type { BodySpec } from './systemgen';
 
-export type WorldOrbitKind = 'leo' | 'station' | 'meo' | 'geo' | 'polar' | 'hover' | 'ecliptic';
+export type WorldOrbitKind = 'equatorial' | 'polar' | 'hover' | 'ecliptic';
+
+/** Names that still arrive from old camps / sessions. */
+export type LegacyOrbitKind = 'leo' | 'station' | 'meo' | 'geo';
 
 export interface WorldOrbitOption {
   kind: Exclude<WorldOrbitKind, 'ecliptic'>;
@@ -18,21 +21,30 @@ export interface WorldOrbitOption {
   hint: string;
 }
 
-/** Hang over one face (spinning frame). The rest are inertial. */
-export function isHangOrbit(kind: WorldOrbitKind): boolean {
-  return kind === 'geo' || kind === 'hover';
+/** Old altitude picks collapse onto the new roster. */
+export function coerceOrbitKind(kind: string): WorldOrbitKind {
+  if (kind === 'polar') return 'polar';
+  if (kind === 'hover' || kind === 'geo') return 'hover';
+  if (kind === 'ecliptic') return 'ecliptic';
+  return 'equatorial';
 }
 
-/** Inertial world rings: helm pitched to the limb, locked to the body. */
-export function isLimbOrbit(kind: WorldOrbitKind): boolean {
-  return kind === 'leo' || kind === 'station' || kind === 'meo' || kind === 'polar';
+/** Hang over one face (spinning frame). */
+export function isHangOrbit(kind: string): boolean {
+  return coerceOrbitKind(kind) === 'hover';
+}
+
+/** Inertial rings: helm pitched to the limb, locked to the body. */
+export function isLimbOrbit(kind: string): boolean {
+  const k = coerceOrbitKind(kind);
+  return k === 'equatorial' || k === 'polar' || k === 'ecliptic';
 }
 
 /**
  * Pitch from prograde toward the body so the forward limb
  * fills `fill` of the bottom of a `fovDeg` frame. Horizon is
  * acos(R/d) below prograde; the look sits `fov*(½−fill)`
- * above that limb.
+ * above that limb. At fill = ½ the look is the upper tangent.
  */
 export function orbitLimbPitch(R: number, d: number, fovDeg: number, fill: number): number {
   const ratio = Math.min(0.999999, Math.max(0, R / Math.max(d, 1e-18)));
@@ -42,16 +54,24 @@ export function orbitLimbPitch(R: number, d: number, fovDeg: number, fill: numbe
   return Math.min(Math.PI * 0.49, Math.max(0, horizon - limbFromLook));
 }
 
-export function orbitLabel(kind: WorldOrbitKind): string {
-  switch (kind) {
-    case 'leo':
-      return 'LEO';
-    case 'station':
-      return 'GEO low / Station';
-    case 'meo':
-      return 'MEO';
-    case 'geo':
-      return 'GEO';
+/**
+ * Angular radius whose silhouette, with the top limb on the
+ * look centre, passes through the inset lower corners of the
+ * decreed film. tan(α) = inset·tan(v/2)·(aspect²+1)/2.
+ */
+export function orbitLimbCornerAlpha(): number {
+  const half = ((UNIVERSE.CAM_FOV * Math.PI) / 180) * 0.5;
+  const T = Math.tan(half);
+  const k = UNIVERSE.ORBIT_LIMB_CORNER;
+  const A = k * UNIVERSE.CAM_ASPECT * T;
+  const B = k * T;
+  return Math.atan((A * A + B * B) / (2 * B));
+}
+
+export function orbitLabel(kind: string): string {
+  switch (coerceOrbitKind(kind)) {
+    case 'equatorial':
+      return 'Equatorial';
     case 'polar':
       return 'Polar';
     case 'hover':
@@ -61,26 +81,24 @@ export function orbitLabel(kind: WorldOrbitKind): string {
   }
 }
 
-/** Chart modal roster. GEO's hint changes when the world is locked. */
-export function orbitOptions(body: BodySpec): WorldOrbitOption[] {
-  const locked = body.tidallyLocked;
+/** Chart modal roster. A star has no pick — Lock-on is ecliptic. */
+export function orbitOptions(_body: BodySpec): WorldOrbitOption[] {
   return [
-    { kind: 'leo', label: 'LEO', hint: 'Low circular — skim the air.' },
     {
-      kind: 'station',
-      label: 'GEO low / Station',
-      hint: 'Low inertial — station-keeping; the world turns under you.',
+      kind: 'equatorial',
+      label: 'Equatorial',
+      hint: 'Inertial, in the spin equator — body below.',
     },
-    { kind: 'meo', label: 'MEO', hint: 'Medium circular, between LEO and GEO.' },
     {
-      kind: 'geo',
-      label: 'GEO',
-      hint: locked
-        ? 'Hang over one face — same as hover; this world is tidally locked.'
-        : 'Hang over one spot at the Kepler altitude for this spin.',
+      kind: 'polar',
+      label: 'Polar',
+      hint: 'Inertial, over the poles — body below.',
     },
-    { kind: 'polar', label: 'Polar', hint: 'Low inertial; the plane contains the pole.' },
-    { kind: 'hover', label: 'Hover', hint: 'Hang over the arrival face, low.' },
+    {
+      kind: 'hover',
+      label: 'Hover',
+      hint: 'Hang over the arrival face. The disk fills the frame.',
+    },
   ];
 }
 
@@ -88,61 +106,52 @@ function gasFloor(body: BodySpec): number {
   return body.kind === 'gas' ? UNIVERSE.WORLD_ORBIT_GAS_FLOOR : 0;
 }
 
-function leoHeightRel(body: BodySpec): number {
-  const ext = airExtinction(body.physics);
-  const air = ext ? 2.2 * ext.scaleH : 0;
-  return Math.max(UNIVERSE.WORLD_ORBIT_LEO, air, gasFloor(body));
-}
-
-function stationHeightRel(body: BodySpec): number {
-  const ext = airExtinction(body.physics);
-  const air = ext ? 2.8 * ext.scaleH : 0;
-  return Math.max(leoHeightRel(body) * 1.15, air, gasFloor(body));
+/**
+ * Closest legal camera (km from centre). Air / gas / a thin
+ * skin — not the 10 000 km graze used on transfers.
+ */
+export function viewSkinKm(R: number, body?: BodySpec): number {
+  const r = Math.max(R, 1);
+  let extra = r * 0.002;
+  if (body) {
+    extra = Math.max(extra, gasFloor(body) * r);
+    const ext = airExtinction(body.physics);
+    if (ext) extra = Math.max(extra, 2.2 * ext.scaleH);
+  }
+  return r + extra;
 }
 
 /**
- * Synchronous altitude for this spin. Slow rotators clamp;
- * a locked world has no useful GEO — that pick is hover.
+ * Inertial park (km from centre). The film wants the corner
+ * curve; a huge body hits ORBIT_VIEW_H_KM first and the
+ * horizon flattens; a pebble hits the skin and stays small.
  */
-export function geoHeightRel(body: BodySpec): number {
-  if (body.tidallyLocked) return hoverHeightRel(body);
-  const T = body.spinPeriod;
-  if (!(T > 0) || !Number.isFinite(T)) return UNIVERSE.WORLD_ORBIT_GEO_MAX;
-  const Rm = Math.max(body.radius, 1) * 1000;
-  const M = body.physics.densityRel * UNIVERSE.RHO_EARTH * (4 / 3) * Math.PI * Rm * Rm * Rm;
-  const a = Math.cbrt((UNIVERSE.G_SI * M * T * T) / (4 * Math.PI * Math.PI));
-  const hRel = a / Rm - 1;
-  if (!Number.isFinite(hRel)) return UNIVERSE.WORLD_ORBIT_GEO_MAX;
-  return Math.min(UNIVERSE.WORLD_ORBIT_GEO_MAX, Math.max(leoHeightRel(body), hRel));
+export function limbViewRadiusKm(R: number, body?: BodySpec): number {
+  const r = Math.max(R, 1);
+  const a = orbitLimbCornerAlpha();
+  const want = r / Math.max(1e-8, Math.sin(a));
+  const lo = viewSkinKm(r, body);
+  const hi = r + UNIVERSE.ORBIT_VIEW_H_KM;
+  if (hi < lo) return lo;
+  return Math.min(hi, Math.max(lo, want));
 }
 
-function hoverHeightRel(body: BodySpec): number {
-  return Math.max(UNIVERSE.WORLD_ORBIT_HOVER, gasFloor(body));
+/**
+ * Hover park: face-on disk covers ORBIT_HOVER_AREA of the
+ * decreed film. Same picture on every body.
+ */
+export function hoverViewRadiusKm(R: number, body?: BodySpec): number {
+  const r = Math.max(R, 1);
+  const half = ((UNIVERSE.CAM_FOV * Math.PI) / 180) * 0.5;
+  const T = Math.tan(half);
+  const k = Math.sqrt((4 * UNIVERSE.CAM_ASPECT * UNIVERSE.ORBIT_HOVER_AREA) / Math.PI);
+  const tanA = T * k;
+  const a = Math.atan(tanA);
+  const want = r / Math.max(1e-8, Math.sin(a));
+  return Math.max(viewSkinKm(r, body), want);
 }
 
-/** Altitude in body radii above the surface (before the clear floor). */
-export function orbitHeightRel(body: BodySpec, kind: WorldOrbitKind): number {
-  if (kind === 'ecliptic') return 0;
-  const leo = leoHeightRel(body);
-  switch (kind) {
-    case 'leo':
-    case 'polar':
-      return leo;
-    case 'station':
-      return stationHeightRel(body);
-    case 'hover':
-      return hoverHeightRel(body);
-    case 'geo':
-      return geoHeightRel(body);
-    case 'meo': {
-      const geo = geoHeightRel(body);
-      const mix = leo + (geo - leo) * UNIVERSE.WORLD_ORBIT_MEO_FRAC;
-      return Math.max(UNIVERSE.WORLD_ORBIT_MEO, mix);
-    }
-  }
-}
-
-/** Body radius + absolute clear floor (km from centre). */
+/** Body radius + absolute transfer / graze floor (km from centre). */
 export function clearRadiusKm(body: { radius: number }): number {
   return Math.max(body.radius, 1) + UNIVERSE.WORLD_ORBIT_CLEAR_KM;
 }
@@ -153,18 +162,19 @@ export function shellFloorKm(body: { radius: number }): number {
   return Math.max(clearRadiusKm(body), R * (1 + UNIVERSE.SOI_TRACK_MIN));
 }
 
-export function orbitRadiusKm(body: BodySpec, kind: WorldOrbitKind): number {
-  if (kind === 'ecliptic') return clearRadiusKm(body);
+export function orbitRadiusKm(body: BodySpec, kind: string): number {
+  const k = coerceOrbitKind(kind);
   const R = Math.max(body.radius, 1);
-  return Math.max(clearRadiusKm(body), (1 + orbitHeightRel(body, kind)) * R);
+  if (k === 'hover') return hoverViewRadiusKm(R, body);
+  return limbViewRadiusKm(R, body);
 }
 
-export function orbitRadiusKpc(body: BodySpec, kind: WorldOrbitKind): number {
+export function orbitRadiusKpc(body: BodySpec, kind: string): number {
   return orbitRadiusKm(body, kind) / UNIVERSE.KPC_KM;
 }
 
 /** Mean-motion ω (rad / universe-second) at that ring. */
-export function orbitOmega(body: BodySpec, kind: WorldOrbitKind): number {
+export function orbitOmega(body: BodySpec, kind: string): number {
   const aM = orbitRadiusKm(body, kind) * 1000;
   const Rm = Math.max(body.radius, 1) * 1000;
   const M = body.physics.densityRel * UNIVERSE.RHO_EARTH * (4 / 3) * Math.PI * Rm * Rm * Rm;
@@ -181,16 +191,11 @@ export function escapeSpeedKpcS(omega: number, rKpc: number): number {
 }
 
 /**
- * Default host-star orbit: ecliptic plane, at the ARRIVE_FILL
- * park (safe above the photosphere clear shell). Kepler ω from
- * GM☉ · mass.
+ * Host-star ecliptic: the same inertial film as a world ring.
+ * Kepler ω from GM☉ · mass at that radius.
  */
-export function starOrbitRadiusKpc(
-  star: { radius: number },
-  fillParkKpc: number,
-): number {
-  const clear = (Math.max(star.radius, 1) + UNIVERSE.WORLD_ORBIT_CLEAR_KM) / UNIVERSE.KPC_KM;
-  return Math.max(clear, fillParkKpc);
+export function starOrbitRadiusKpc(star: { radius: number }): number {
+  return limbViewRadiusKm(Math.max(star.radius, 1)) / UNIVERSE.KPC_KM;
 }
 
 export function starOrbitOmega(star: { mass: number }, aKpc: number): number {

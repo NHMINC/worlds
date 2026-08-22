@@ -5,13 +5,14 @@ import type { LastPlace, SavedCamera, SystemMeta } from '../world/types';
 export const CAMP_ID = 'camp';
 
 const ORBITS = new Set<LastPlace['orbit']>([
+  'equatorial',
+  'polar',
+  'hover',
+  'ecliptic',
   'leo',
   'station',
   'meo',
   'geo',
-  'polar',
-  'hover',
-  'ecliptic',
 ]);
 
 export function placeKey(p: LastPlace): string {
@@ -52,7 +53,7 @@ function placeFromCamera(base: LastPlace, cam: SavedCamera): LastPlace {
     return {
       ...base,
       bodyId: cam.bodyId,
-      orbit: cam.style === 'geo' ? 'geo' : 'station',
+      orbit: cam.style === 'geo' ? 'hover' : 'equatorial',
       landed: false,
     };
   }

@@ -24,7 +24,7 @@ import { OrbitPick } from './OrbitPick';
 import { InspectorPanel, type InspectedCell } from './InspectorPanel';
 import { LabelsOverlay } from './LabelsOverlay';
 import { PlaceDialog } from './PlaceDialog';
-import { orbitLabel } from '../world/worldOrbit';
+import { isHangOrbit, orbitLabel } from '../world/worldOrbit';
 import { navModeLabel } from '../render/hostNav';
 
 const VIEW_PRESETS: Array<{ id: GalaxyPreset; label: string }> = [
@@ -778,7 +778,7 @@ export function GalaxyExplorer(props: Props) {
                 ) : frame.orbit ? (
                   <i className="gx-plate-go">
                     {orbitLabel(frame.orbit)}
-                    {frame.orbit === 'geo' || frame.orbit === 'hover'
+                    {isHangOrbit(frame.orbit)
                       ? ' · facing body'
                       : ' · body below'}
                   </i>

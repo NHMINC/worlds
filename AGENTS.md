@@ -160,13 +160,13 @@ toy — Godus blocks on a real-sized globe.
   the slot lasts the capture; Stop at
   `ARRIVE_FILL` of that disk). Reticle Set course is
   still that heading. The system chart
-  opens an orbit picker (LEO, GEO low /
-  Station, MEO, GEO, Polar, Hover);
-  confirm auto-warps and settles onto
-  that ring at the approach face
-  (`WORLD_ORBIT_*`, Kepler GEO from
-  spin and mass) — first contact, never
-  through the body. The TRANSFER ROUTE
+  opens an orbit picker (Equatorial,
+  Polar, Hover); a star is always
+  ecliptic. Confirm auto-warps and
+  settles onto that plane at the film
+  radius (limb curve / hover area) —
+  first contact, never through the
+  body. The TRANSFER ROUTE
   is a per-frame law, not waypoints: the
   speed cap follows the DESTINATION
   (departure is never held by the body
@@ -207,16 +207,21 @@ toy — Godus blocks on a real-sized globe.
   or a still hold on the left/right of
   the screen (`SOI_TWIST` rad/s) —
   right / clockwise is negative twist
-  — in flight only. GEO / hover hang
-  full-forward at the face. LEO /
-  station / MEO / polar / ecliptic
-  pitch so the forward limb fills
-  `ORBIT_LIMB_FILL` (30%) of the
-  bottom of the frame and stay locked
-  to that body (the host star on
-  ecliptic); insertion eases that
-  pitch as a **ship attitude** (no
-  second camera). The
+  — in flight only. Hover hangs
+  full-forward at the face so the
+  disk covers `ORBIT_HOVER_AREA` of
+  the film. Equatorial / polar /
+  ecliptic share one inertial film:
+  the forward limb sits on the
+  midline (`ORBIT_LIMB_FILL` 50%)
+  and the horizon runs from a level
+  line (huge body at
+  `ORBIT_VIEW_H_KM`) to a curve that
+  almost touches the lower corners.
+  Same law for a planet, a moon, or
+  the host star; insertion eases
+  that pitch as a **ship attitude**
+  (no second camera). The
   ship look *is* the camera when the
   ship is live. The
   trackball is an independent drone
@@ -449,18 +454,18 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   The **system chart** (orbits icon next to Cosmic engineer)
   is the same rank-spaced orbits-and-moons schematic as the
   world viewer, zoomable. It appears only inside a host
-  sphere. A tap opens a modal of standard rings
-  (LEO, GEO low / Station, MEO, GEO, Polar, Hover).
-  Pick one and warp auto-engages; the viewpoint
-  parks on that radius and rides it (hang for GEO /
-  hover, inertial for the rest). Arrival look on
-  LEO / station / MEO / polar / ecliptic pitches
-  down so the top of the sphere fills the bottom
-  30% of the frame (`ORBIT_LIMB_FILL`) and stays
-  locked to the body — the host star on ecliptic,
-  same law; that pitch eases in as the insertion
-  blend goes from full-ahead to the rail. GEO /
-  hover face the hang face. The helm does not
+  sphere. A tap opens a modal of three rings
+  (Equatorial, Polar, Hover). A star has no pick
+  — Lock-on is always ecliptic. Pick one and warp
+  auto-engages; distance is the film law, not an
+  altitude menu. Hover hangs facing the disk at
+  `ORBIT_HOVER_AREA`. Equatorial / polar /
+  ecliptic pitch so the top of the sphere sits on
+  the midline (`ORBIT_LIMB_FILL`) — a huge body
+  is a level horizon, a smaller one curves toward
+  the lower corners. That pitch eases in as the
+  insertion blend goes from full-ahead to the
+  rail. The helm does not
   look-drag, zoom, or warp on a ring — Leave
   orbit first, then free look and Warp. The
   drone is the free camera on the rail. A/D, arrows, and a hold on the

@@ -66,7 +66,16 @@ export interface LastPlace {
   /** null = the host star (fill park). */
   bodyId: string | null;
   /** Ring we were riding; null at a free hover. `ecliptic` = host star. */
-  orbit: 'leo' | 'station' | 'meo' | 'geo' | 'polar' | 'hover' | 'ecliptic' | null;
+  orbit:
+    | 'equatorial'
+    | 'polar'
+    | 'hover'
+    | 'ecliptic'
+    | 'leo'
+    | 'station'
+    | 'meo'
+    | 'geo'
+    | null;
   landed: boolean;
   /** Body-local body→camera (hang face / landing spot). */
   dir: [number, number, number] | null;
@@ -78,13 +87,14 @@ export interface LastPlace {
 export type SessionVec = [number, number, number];
 
 export type SessionOrbit =
+  | 'equatorial'
+  | 'polar'
+  | 'hover'
+  | 'ecliptic'
   | 'leo'
   | 'station'
   | 'meo'
-  | 'geo'
-  | 'polar'
-  | 'hover'
-  | 'ecliptic';
+  | 'geo';
 
 /** Drone pose in host-root km. Camera is this pose while the drone is out. */
 export interface SessionDrone {

@@ -14,7 +14,7 @@ export function OrbitPick(props: Props) {
     <div className="modal-backdrop orbit-pick-backdrop" onClick={props.onCancel}>
       <div className="modal modal-small orbit-pick" onClick={(e) => e.stopPropagation()}>
         <h2>Orbit {props.body.name}</h2>
-        <p className="modal-note">Warp there and settle into that ring.</p>
+        <p className="modal-note">Polar or equatorial (body below), or hover (facing).</p>
         <div className="orbit-pick-list">
           {opts.map((opt) => (
             <button
