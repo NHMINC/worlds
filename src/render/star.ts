@@ -293,7 +293,7 @@ export function makeStar(spec: StarSpec): StarView {
   // A tight halo: the visible corona hugs the disk. Reach into the
   // system is the glare quad's job (inverse-square at the eye), not a
   // giant shell the camera can see the edge of.
-  const outerR = photoR * 4;
+  const outerR = photoR * UNIVERSE.STAR_CORONA_R;
 
   const photoMat = new THREE.ShaderMaterial({
     vertexShader: PHOTO_VERT,

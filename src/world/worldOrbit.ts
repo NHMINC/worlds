@@ -214,11 +214,18 @@ export function escapeSpeedKpcS(omega: number, rKpc: number): number {
 }
 
 /**
- * Host-star ecliptic: the same inertial film as a world ring.
- * Kepler ω from GM☉ · mass at that radius.
+ * Host-star ecliptic: the corner film, floored outside the
+ * corona. The world flat-horizon cap (ORBIT_VIEW_H_KM over the
+ * skin) must not apply — 10,000 km over a photosphere parked
+ * the ship inside the fire (a giant's cap even fell below the
+ * skin floor and returned a graze). A star's view skin is its
+ * drawn corona (STAR_CORONA_R photosphere radii); the ring sits
+ * just outside it. Kepler ω from GM☉ · mass at that radius.
  */
 export function starOrbitRadiusKpc(star: { radius: number }): number {
-  return limbViewRadiusKm(Math.max(star.radius, 1)) / UNIVERSE.KPC_KM;
+  const R = Math.max(star.radius, 1);
+  const want = R / Math.max(1e-8, Math.sin(orbitLimbCornerAlpha()));
+  return Math.max(R * UNIVERSE.STAR_CORONA_R * 1.05, want) / UNIVERSE.KPC_KM;
 }
 
 export function starOrbitOmega(star: { mass: number }, aKpc: number): number {

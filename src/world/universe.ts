@@ -93,6 +93,13 @@ export const UNIVERSE = {
    */
   STAR_CORONA: 0.95,
   STAR_WIND: 0.72,
+  /**
+   * Corona / wind shell outer radius, in photosphere radii —
+   * drawn by star.ts and treated as the star's VIEW SKIN: a
+   * star is a furnace, so films and parks stay outside the
+   * fire, not 10,000 km over the photosphere like a world.
+   */
+  STAR_CORONA_R: 4,
 
   /**
    * Flare visibility. Activity (starActivity) decides whether the
