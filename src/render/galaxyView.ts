@@ -3594,21 +3594,24 @@ export class GalaxyView {
     if (d < 1e-15) return;
     if (this.courseHud) this.courseHud.dist = d;
     this.insertBlend = insertBlend;
-    // Hang / hover face the sphere. Inertial banks body-below.
-    // Look-vector slerp — never ease yaw/pitch/roll as three angles.
+    // Hang / hover face the sphere. Inertial banks body-below
+    // only inside the insert window. Far lock-on is a heading
+    // hold — passing zenith here snapped roll (away-from-star
+    // = screen-up) on the Set course tap and the sky jumped.
     const hangLook =
       this.pendingOrbit != null &&
       this.pendingOrbit.bodyId != null &&
       isHangOrbit(this.pendingOrbit.kind);
+    const bank = !hangLook && haveZen && insertBlend > 1e-4;
     this.easeLookToward(
       dt,
       UNIVERSE.ARRIVE_HOLD,
       dx,
       dy,
       dz,
-      hangLook || !haveZen ? null : zenX,
-      hangLook || !haveZen ? null : zenY,
-      hangLook || !haveZen ? null : zenZ,
+      bank ? zenX : null,
+      bank ? zenY : null,
+      bank ? zenZ : null,
       hangLook,
     );
     this.applyCam();
@@ -3679,16 +3682,32 @@ export class GalaxyView {
       by = a * cy + b * ty;
       bz = a * cz + b * tz;
     }
+    this.aimAt(bx, by, bz);
+    let dR = 0;
     if (zenX != null && zenY != null && zenZ != null) {
-      this.aimOrbitBank(bx, by, bz, zenX, zenY, zenZ);
+      dR = this.desiredRollForZenith(zenX, zenY, zenZ) - this.arcRoll;
+    } else if (faceBody) {
+      dR = -this.arcRoll;
+    } else {
       return;
     }
-    this.aimAt(bx, by, bz);
-    if (faceBody) {
-      let dR = -this.arcRoll;
-      dR = Math.atan2(Math.sin(dR), Math.cos(dR));
-      this.arcRoll += dR * k;
-    }
+    dR = Math.atan2(Math.sin(dR), Math.cos(dR));
+    this.arcRoll += dR * k;
+  }
+
+  /** Unrolled-basis roll that puts `zenith` on screen-up. */
+  private desiredRollForZenith(zenX: number, zenY: number, zenZ: number): number {
+    const cp = Math.cos(this.arcPitch);
+    this.arcFwd.set(cp * Math.sin(this.arcYaw), Math.sin(this.arcPitch), cp * Math.cos(this.arcYaw));
+    this.arcRight.crossVectors(this.arcFwd, this.worldUp);
+    if (this.arcRight.lengthSq() < 1e-10) this.arcRight.set(1, 0, 0);
+    else this.arcRight.normalize();
+    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
+    this.orbitTmp.set(zenX, zenY, zenZ);
+    this.orbitTmp.addScaledVector(this.arcFwd, -this.orbitTmp.dot(this.arcFwd));
+    if (this.orbitTmp.lengthSq() < 1e-16) return 0;
+    this.orbitTmp.normalize();
+    return Math.atan2(-this.orbitTmp.dot(this.arcRight), this.orbitTmp.dot(this.arcUp));
   }
 
   /**
@@ -4197,23 +4216,7 @@ export class GalaxyView {
     zenZ: number,
   ): void {
     this.aimAt(fwdX, fwdY, fwdZ);
-    const cp = Math.cos(this.arcPitch);
-    this.arcFwd.set(cp * Math.sin(this.arcYaw), Math.sin(this.arcPitch), cp * Math.cos(this.arcYaw));
-    this.arcRight.crossVectors(this.arcFwd, this.worldUp);
-    if (this.arcRight.lengthSq() < 1e-10) this.arcRight.set(1, 0, 0);
-    else this.arcRight.normalize();
-    this.arcUp.crossVectors(this.arcRight, this.arcFwd).normalize();
-    this.orbitTmp.set(zenX, zenY, zenZ);
-    this.orbitTmp.addScaledVector(this.arcFwd, -this.orbitTmp.dot(this.arcFwd));
-    if (this.orbitTmp.lengthSq() < 1e-16) {
-      let dR = -this.arcRoll;
-      dR = Math.atan2(Math.sin(dR), Math.cos(dR));
-      this.arcRoll += dR;
-      return;
-    }
-    this.orbitTmp.normalize();
-    // applyRoll: up' = c·up − s·right  →  roll = atan2(−zen·right, zen·up)
-    const raw = Math.atan2(-this.orbitTmp.dot(this.arcRight), this.orbitTmp.dot(this.arcUp));
+    const raw = this.desiredRollForZenith(zenX, zenY, zenZ);
     this.arcRoll += Math.atan2(Math.sin(raw - this.arcRoll), Math.cos(raw - this.arcRoll));
   }
 

@@ -631,7 +631,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   (`SOI_TWIST`), catalog and sphere. After a pinch, the surviving
   finger is NOT a drag — rotation resumes only with a fresh
   single-finger touch.   A/D still slide. The sight plate only locks an object inside
-  `AIM_RANGE_KPC`. Set course holds the heading; the plate
+  `AIM_RANGE_KPC`. Set course holds the heading
+  (nose only — bank waits for the insert window);
+  the plate
   shows live distance in AU / ly / kpc. Inside a sphere
   a corner overlay names the remaining distance to the fence.
   From
