@@ -1,0 +1,177 @@
+/**
+ * The host locale: the local km frame at the latched SOI star —
+ * the furnace (photosphere), the Kepler bodies, the rocky
+ * globes, and the frame's ecliptic orientation. This is a
+ * place, not a heading: it owns nothing about the course,
+ * the ride, or the camera. Attach and detach only tear down
+ * locale state; a live dest lives on `Voyage` and survives.
+ *
+ * Drawn as a second AU-scale depth pass (`scene`) over the
+ * live galaxy — one universe, two depth windows.
+ */
+import * as THREE from 'three';
+import { UNIVERSE } from '../world/physics';
+import type { GalaxyObject } from '../world/galaxy';
+import {
+  eclipticPole,
+  starSpecFromState,
+  systemAt,
+  type SystemSpec,
+} from '../world/systemgen';
+import { HostSystem, type HostBodyRT } from './hostSystem';
+import { RockyGlobe } from './rockyGlobe';
+import { makeStar, type StarView } from './star';
+
+/** Catalog kpc per kilometre — host meshes live in km under this scale. */
+const KM_TO_KPC = 1 / UNIVERSE.KPC_KM;
+
+/** What the locale tells the sky when the furnace swaps a pin. */
+export interface LocaleHooks {
+  /** The photosphere replaces this harvest pin. */
+  furnaceUp(starId: number): void;
+  /** The photosphere is gone: the pin is the star again. */
+  furnaceGone(): void;
+}
+
+export class HostLocale {
+  /**
+   * Close-approach subject. Latched when the course, reticle, or
+   * selected star comes inside ARRIVE_RANGE_LY; released when the
+   * camera leaves that bubble. Latching, not re-testing the
+   * reticle, because a full-screen star cannot stay on a tight pip.
+   */
+  obj: GalaxyObject | null = null;
+  star: StarView | null = null;
+  starId = -1;
+  /** Second depth pass over the live galaxy. */
+  readonly scene = new THREE.Scene();
+  /** Local km frame at the locked host, scaled into catalog kpc. */
+  root: THREE.Group | null = null;
+  /** Galaxy fill on objects in the bubble — ARRIVE_SKY_GAIN, not a flood. */
+  fill: THREE.AmbientLight | null = null;
+  /** Kepler balls + rings — own file, not the galaxy flight. */
+  readonly sys = new HostSystem();
+  spec: SystemSpec | null = null;
+  /** Goldberg globes for every rocky body of the host. */
+  readonly globes = new Map<string, RockyGlobe>();
+
+  private readonly pole = new THREE.Vector3();
+  private readonly alignQ = new THREE.Quaternion();
+  private readonly eclipticZ = new THREE.Vector3(0, 0, 1);
+  private readonly tmpQ = new THREE.Quaternion();
+
+  private readonly seed: string;
+  private readonly hooks: LocaleHooks;
+
+  constructor(seed: string, hooks: LocaleHooks) {
+    this.seed = seed;
+    this.hooks = hooks;
+  }
+
+  ensureRoot(): THREE.Group {
+    if (this.root) return this.root;
+    const root = new THREE.Group();
+    root.scale.setScalar(KM_TO_KPC);
+    // Same law as the photograph: a small galaxy fill, not a 0.22 flood
+    // that would make night impossible once worlds land.
+    const fill = new THREE.AmbientLight(0x9aa8c4, UNIVERSE.ARRIVE_SKY_GAIN);
+    root.add(fill);
+    this.fill = fill;
+    this.scene.add(root);
+    this.root = root;
+    return root;
+  }
+
+  attachFurnace(lock: GalaxyObject): void {
+    this.detachFurnace();
+    this.clearBodies();
+    let star = starSpecFromState(lock.star, () => 0.5);
+    try {
+      this.spec = systemAt(this.seed, lock.id);
+      star = this.spec.star;
+    } catch {
+      this.spec = null;
+    }
+    this.star = makeStar(star);
+    this.ensureRoot().add(this.star.group);
+    this.starId = lock.id;
+    // The photosphere replaces the pin. The catalog freezes on
+    // this viewpoint — pins stay pins, the march sleeps.
+    this.hooks.furnaceUp(lock.id);
+    if (this.spec) this.buildBodies(this.spec);
+  }
+
+  detachFurnace(): void {
+    if (!this.star) return;
+    this.root?.remove(this.star.group);
+    this.star.dispose();
+    this.star = null;
+    this.hooks.furnaceGone();
+  }
+
+  /**
+   * Tear down the km frame — furnace, bodies, globes, root.
+   * Locale state only: the course, ride, and camera are not ours.
+   */
+  detach(): void {
+    this.dropGlobes();
+    this.clearBodies();
+    this.detachFurnace();
+    if (this.root) {
+      this.scene.remove(this.root);
+      this.root = null;
+    }
+    this.starId = -1;
+    this.fill = null;
+  }
+
+  /**
+   * Host +Z is the ecliptic pole. The galaxy's pole is +Y (XZ disk).
+   * Rotate the km frame so this system's hashed pole sits in the sky.
+   */
+  orient(root: THREE.Group): void {
+    const e = this.spec?.ecliptic;
+    if (!e) {
+      root.quaternion.identity();
+      return;
+    }
+    const p = eclipticPole(e);
+    this.pole.set(p.x, p.y, p.z);
+    this.alignQ.setFromUnitVectors(this.eclipticZ, this.pole);
+    this.tmpQ.setFromAxisAngle(this.pole, e.spin);
+    root.quaternion.copy(this.tmpQ).multiply(this.alignQ);
+  }
+
+  buildBodies(spec: SystemSpec): void {
+    this.sys.build(this.ensureRoot(), spec);
+  }
+
+  clearBodies(): void {
+    this.sys.clear(this.root);
+    this.spec = null;
+  }
+
+  updateBodies(t: number, camera: THREE.PerspectiveCamera): void {
+    this.sys.update(t, camera, this.root);
+  }
+
+  /** Grow a Goldberg globe on a rocky Kepler ball, once. */
+  mintGlobe(rt: HostBodyRT): void {
+    if (!this.spec || rt.spec.kind !== 'rocky' || this.globes.has(rt.spec.id)) return;
+    this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.spec, rt.group, rt.placeholder));
+  }
+
+  globeOf(id: string | null | undefined): RockyGlobe | null {
+    if (!id) return null;
+    return this.globes.get(id) ?? null;
+  }
+
+  dropGlobes(): void {
+    for (const g of this.globes.values()) g.dispose();
+    this.globes.clear();
+  }
+
+  starRadiusKm(): number {
+    return Math.max(1, this.spec?.star.radius ?? UNIVERSE.RSUN_KM);
+  }
+}

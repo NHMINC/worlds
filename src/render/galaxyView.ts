@@ -15,16 +15,9 @@ import { galToCart, homeStar, objectAt, type GalaxyObject } from '../world/galax
 import { aimLocks, harvestGlowPx } from './galaxyStar';
 import { SkySurvey } from './skySurvey';
 import { classifyStar } from '../world/stellar';
-import {
-  eclipticPole,
-  lockedToStar,
-  starSpecFromState,
-  systemAt,
-  type BodySpec,
-  type SystemSpec,
-} from '../world/systemgen';
-import { RockyGlobe } from './rockyGlobe';
-import { HostSystem, type HostBodyRT } from './hostSystem';
+import { lockedToStar, systemAt, type BodySpec } from '../world/systemgen';
+import { type HostBodyRT } from './hostSystem';
+import { HostLocale } from './hostLocale';
 import { nearestBody } from './hostLook';
 import { type HostNavMode } from './hostNav';
 import { planOrbitInsert, type InsertMode } from './orbitInsert';
@@ -56,7 +49,6 @@ import {
   type GalaxyFilterName,
 } from '../world/sectors';
 import { PerfMeter } from './perfHud';
-import { makeStar, type StarView } from './star';
 import { prepareUniverse } from '../world/universePrep';
 import type { LastPlace, SessionSnap, SessionVec } from '../world/types';
 /** Park “here” this far ahead of the camera (catalog kpc). */
@@ -341,8 +333,6 @@ export class GalaxyView {
   private worldId: string | null = null;
   private focusBodyId: string | null = null;
   private selectedBodyId: string | null = null;
-  /** Goldberg globes for every rocky body of the host. */
-  private readonly globes = new Map<string, RockyGlobe>();
   private markTool: MarkTool | null = null;
   private navMode: HostNavMode = null;
   private drone: Trackball | null = null;
@@ -376,34 +366,11 @@ export class GalaxyView {
   private lastPlaceKey = '';
   private lastSessionJson = '';
   private lastSessionWrite = 0;
-  /**
-   * Close-approach subject. Latched when the course, reticle, or
-   * selected star comes inside ARRIVE_RANGE_LY; released when the
-   * camera leaves that bubble. Latching, not re-testing the reticle,
-   * because a full-screen star cannot stay on a 0.028 rad crosshair.
-   */
-  private hostObj: GalaxyObject | null = null;
-  private hostStar: StarView | null = null;
-  private hostStarId = -1;
-  /**
-   * The close star draws in its own depth pass over the live galaxy
-   * — same camera pose, AU-scale near/far — so the sky never bakes,
-   * blanks, or switches environment. One universe, two depth windows.
-   */
-  private readonly hostScene = new THREE.Scene();
-  /** Local km frame at the locked host, scaled into catalog kpc. */
-  private hostRoot: THREE.Group | null = null;
-  /** Galaxy fill on objects in the bubble — ARRIVE_SKY_GAIN, not a flood. */
-  private hostFill: THREE.AmbientLight | null = null;
-  /** Kepler balls + rings — own file, not the galaxy flight. */
-  private readonly host = new HostSystem();
-  private hostSpec: SystemSpec | null = null;
+  /** The latched SOI star's local km frame — a place, not a heading. */
+  private readonly locale: HostLocale;
   private readonly hostTmp = new THREE.Vector3();
   private readonly hostTmp2 = new THREE.Vector3();
   private readonly hostTmpQ = new THREE.Quaternion();
-  private readonly hostPole = new THREE.Vector3();
-  private readonly hostAlignQ = new THREE.Quaternion();
-  private readonly hostEclipticZ = new THREE.Vector3(0, 0, 1);
   private readonly epochUnix = Date.now() / 1000 - performance.now() / 1000;
 
   constructor(
@@ -433,8 +400,16 @@ export class GalaxyView {
       wake: (n) => this.wake(n),
       pxPerRad: () => this.pxPerRad(),
       pixelRatio: () => this.renderer.getPixelRatio(),
-      hostPresent: () => Boolean(this.hostObj),
+      hostPresent: () => Boolean(this.locale.obj),
       center: () => this.ship.at,
+    });
+
+    this.locale = new HostLocale(seed, {
+      furnaceUp: (id) => {
+        this.sky.hideHarvestId(id);
+        this.sky.beginFreeze();
+      },
+      furnaceGone: () => this.sky.applyStarVis(),
     });
 
     this.pickRing = this.makeRing(0xf4e4c1, 0.18);
@@ -503,7 +478,7 @@ export class GalaxyView {
       this.openAtHere();
       return;
     }
-    if (this.hostObj && this.hostObj.id !== obj.id) this.detachHost();
+    if (this.locale.obj && this.locale.obj.id !== obj.id) this.detachHost();
     this.pendingSession = null;
     this.pendingPlace = place;
     this.setHere(place.starId);
@@ -552,7 +527,7 @@ export class GalaxyView {
     if (snap.starId != null) {
       const obj = objectAt(this.seed, snap.starId);
       if (obj) {
-        this.hostObj = obj;
+        this.locale.obj = obj;
         this.setHere(obj.id);
       } else {
         this.openAtHere();
@@ -587,7 +562,7 @@ export class GalaxyView {
     const obj = objectAt(this.seed, starId);
     this.pendingSession = null;
     this.pendingPlace = null;
-    if (this.hostObj && this.hostObj.id !== starId) this.detachHost();
+    if (this.locale.obj && this.locale.obj.id !== starId) this.detachHost();
     this.setHere(starId);
     if (obj) this.parkAtStar(obj);
     else this.openAtHere();
@@ -616,10 +591,10 @@ export class GalaxyView {
    */
   projectCell(bodyId: string, cell: number): ProjectedPoint {
     const hidden: ProjectedPoint = { x: 0, y: 0, visible: false, alpha: 0 };
-    const globe = this.globeOf(bodyId);
+    const globe = this.locale.globeOf(bodyId);
     const rt = this.worldRt(bodyId);
     const dir = globe?.cellCenter(cell);
-    if (!globe || !rt || !dir || !this.hostRoot) return hidden;
+    if (!globe || !rt || !dir || !this.locale.root) return hidden;
     this.hostTmp.set(dir[0], dir[1], dir[2]);
     const r = globe.groundR(this.hostTmp);
     this.hostTmp.multiplyScalar(r);
@@ -643,7 +618,7 @@ export class GalaxyView {
   }
 
   getMood(): { group: 'water' | 'green' | 'dry' | 'cold' | 'rock' | 'space'; density: number } {
-    if (!this.hostObj) return { group: 'space', density: 0 };
+    if (!this.locale.obj) return { group: 'space', density: 0 };
     const rt = this.worldRt(this.voyage.riding?.bodyId ?? this.worldId);
     const density = this.landed ? 0.85 : this.voyage.riding ? 0.45 : 0.08;
     if (!rt || rt.spec.kind !== 'rocky') return { group: 'space', density };
@@ -656,7 +631,7 @@ export class GalaxyView {
   }
 
   snapshotPlace(): LastPlace | null {
-    const host = this.hostObj;
+    const host = this.locale.obj;
     if (!host) return null;
     const rt = this.worldRt(this.voyage.riding?.bodyId ?? this.worldId);
     let dir: [number, number, number] | null = null;
@@ -703,7 +678,7 @@ export class GalaxyView {
       departing: this.voyage.departing
         ? { v: this.voyage.departing.v, vEsc: this.voyage.departing.vEsc, dir: v(this.voyage.departing.dir) }
         : null,
-      starId: this.hostObj?.id ?? null,
+      starId: this.locale.obj?.id ?? null,
       bodyId:
         this.voyage.riding?.bodyId ??
         (this.landed ? this.worldId : null) ??
@@ -754,7 +729,7 @@ export class GalaxyView {
   private parkAtStar(obj: GalaxyObject): void {
     const c = galToCart(obj.pos);
     this.enterRegion(c.x, c.y, c.z, obj);
-    this.hostObj = obj;
+    this.locale.obj = obj;
     this.setCourse(obj);
     const star = {
       radius: Math.max(1e-6, obj.star.radius) * UNIVERSE.RSUN_KM,
@@ -798,12 +773,12 @@ export class GalaxyView {
   /** True when the camp is fully applied (or abandoned). */
   private applyPendingPlace(tSys: number): boolean {
     const p = this.pendingPlace;
-    if (!p || !this.hostObj || this.hostObj.id !== p.starId) return true;
-    if (!this.hostRoot || !this.hostSpec) return false;
+    if (!p || !this.locale.obj || this.locale.obj.id !== p.starId) return true;
+    if (!this.locale.root || !this.locale.spec) return false;
     if (!p.bodyId) {
       // Star camp → ecliptic hold.
-      if (this.hostRoot) {
-        this.hostTmp.copy(this.hostRoot.position).negate().normalize();
+      if (this.locale.root) {
+        this.hostTmp.copy(this.locale.root.position).negate().normalize();
       } else {
         this.orientArc();
         this.hostTmp.copy(this.ship.fwd).negate();
@@ -822,7 +797,7 @@ export class GalaxyView {
     this.courseHud = this.hudForBody(rt);
     const dir = this.dirFromPlace(p, rt);
     if (p.landed) {
-      const globe = this.globeOf(rt.spec.id);
+      const globe = this.locale.globeOf(rt.spec.id);
       if (!globe?.ready) return false;
       this.landKind = coerceOrbitKind(p.orbit ?? 'hover');
       this.voyage.clearRide();
@@ -862,12 +837,12 @@ export class GalaxyView {
     const s = this.pendingSession;
     if (!s) return true;
     if (s.starId != null) {
-      if (!this.hostObj || this.hostObj.id !== s.starId) return false;
-      if (!this.hostRoot || !this.hostSpec) return false;
+      if (!this.locale.obj || this.locale.obj.id !== s.starId) return false;
+      if (!this.locale.root || !this.locale.spec) return false;
     }
     if (s.landed) {
       const id = s.worldId ?? s.bodyId;
-      const globe = this.globeOf(id);
+      const globe = this.locale.globeOf(id);
       if (!globe?.ready) return false;
     }
     if (s.riding) {
@@ -886,10 +861,10 @@ export class GalaxyView {
           this.voyage.riding.r = orbitRadiusKpc(rt.spec, kind);
           this.voyage.riding.omega = isHangOrbit(kind) ? 0 : orbitOmega(rt.spec, kind);
         }
-      } else if (this.hostObj) {
-        const star = this.hostSpec?.star ?? {
-          radius: Math.max(1e-6, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
-          mass: Math.max(0.08, this.hostObj.star.mass),
+      } else if (this.locale.obj) {
+        const star = this.locale.spec?.star ?? {
+          radius: Math.max(1e-6, this.locale.obj.star.radius) * UNIVERSE.RSUN_KM,
+          mass: Math.max(0.08, this.locale.obj.star.mass),
         };
         this.voyage.riding.r = starOrbitRadiusKpc(star);
         this.voyage.riding.omega = starOrbitOmega(star, this.voyage.riding.r);
@@ -1065,7 +1040,7 @@ export class GalaxyView {
   private pushMagUniforms(): void {
     const dim = this.skyDim();
     this.sky.pushCenter(this.ship.at.x, this.ship.at.y, this.ship.at.z, dim);
-    if (this.hostFill) this.hostFill.intensity = dim;
+    if (this.locale.fill) this.locale.fill.intensity = dim;
   }
 
   /**
@@ -1086,7 +1061,7 @@ export class GalaxyView {
       const d2 = d * d;
       if (d2 < best2) best2 = d2;
     };
-    considerObj(this.hostObj);
+    considerObj(this.locale.obj);
     considerObj(this.courseObj);
     considerObj(this.focusObj);
     considerObj(this.selected);
@@ -1148,7 +1123,7 @@ export class GalaxyView {
 
   /** Plate: a world of the focused / host star → equatorial berth. */
   setCourseBody(bodyId: string): void {
-    const starId = this.focusObj?.id ?? this.hostObj?.id;
+    const starId = this.focusObj?.id ?? this.locale.obj?.id;
     if (starId == null) return;
     this.setCourseBerth({ starId, bodyId, orbit: 'equatorial' });
   }
@@ -1159,7 +1134,7 @@ export class GalaxyView {
    * hostObj === dest.
    */
   goToWorldOrbit(bodyId: string, kind: WorldOrbitKind): void {
-    const starId = this.focusObj?.id ?? this.hostObj?.id;
+    const starId = this.focusObj?.id ?? this.locale.obj?.id;
     if (starId == null) return;
     this.setCourseBerth({ starId, bodyId, orbit: kind });
   }
@@ -1241,7 +1216,7 @@ export class GalaxyView {
     const id = this.voyage.riding?.bodyId ?? this.worldId;
     const rt = this.worldRt(id);
     if (!rt || rt.spec.kind !== 'rocky') return false;
-    const globe = this.globeOf(rt.spec.id);
+    const globe = this.locale.globeOf(rt.spec.id);
     if (!globe?.ready) return false;
     return true;
   }
@@ -1253,11 +1228,11 @@ export class GalaxyView {
   land(): void {
     if (this.voyage.departing) return;
     if (this.drone) this.setDrone(false, false);
-    if (this.mode !== 'region' || !this.hostObj) return;
+    if (this.mode !== 'region' || !this.locale.obj) return;
     const id = this.voyage.riding?.bodyId ?? this.worldId;
     const rt = this.worldRt(id);
     if (!rt) return;
-    const globe = this.globeOf(rt.spec.id);
+    const globe = this.locale.globeOf(rt.spec.id);
     if (!this.canLandNow() || !globe) return;
     this.landKind = this.voyage.riding?.kind ?? 'hover';
     this.voyage.clearRide();
@@ -1312,7 +1287,7 @@ export class GalaxyView {
    * nearest the ship — this retargets; it does not hop.
    */
   centerLook(): void {
-    if (this.mode !== 'region' || !this.hostObj || !this.drone || this.drone.phase) return;
+    if (this.mode !== 'region' || !this.locale.obj || !this.drone || this.drone.phase) return;
     this.drone.toggleLock(this.droneWorld());
     this.placeDrone();
     this.applyCam();
@@ -1327,7 +1302,7 @@ export class GalaxyView {
 
   setDrone(on: boolean, ease = true): void {
     if (this.voyage.departing) return;
-    if (this.mode !== 'region' || !this.hostObj || !this.hostRoot) return;
+    if (this.mode !== 'region' || !this.locale.obj || !this.locale.root) return;
     if (!on) {
       if (!this.drone) return;
       if (!ease || this.drone.phase === 'home') {
@@ -1343,7 +1318,7 @@ export class GalaxyView {
     this.voyage.clearDepart();
     const tSys = (this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE;
     this.droneRideT = tSys;
-    this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate();
+    this.hostTmpQ.copy(this.locale.root.quaternion).conjugate();
     this.hostEyeKm(this.orbitTmp2);
     const fwd = this.droneLocalLook(this.ship.fwd, this.hostTmpQ);
     const up = this.droneLocalLook(this.ship.up, this.hostTmpQ);
@@ -1356,7 +1331,7 @@ export class GalaxyView {
 
   /** Camera back onto the parked ship. The ship never moved. */
   private restoreShipCam(): void {
-    if (this.voyage.riding && this.hostObj) {
+    if (this.voyage.riding && this.locale.obj) {
       const tSys = (this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE;
       const dt = tSys - this.droneRideT;
       this.voyage.riding.theta0 -= this.voyage.riding.omega * dt;
@@ -1364,8 +1339,8 @@ export class GalaxyView {
     } else if (this.landed) {
       this.placeSurface();
     } else {
-      const root = this.hostRoot;
-      const lock = this.hostObj;
+      const root = this.locale.root;
+      const lock = this.locale.obj;
       if (root && lock) {
         const cart = galToCart(lock.pos);
         root.position.set(
@@ -1434,13 +1409,13 @@ export class GalaxyView {
 
   private placeDrone(): void {
     const drone = this.drone;
-    if (!drone || !this.hostRoot || !this.hostObj) return;
+    if (!drone || !this.locale.root || !this.locale.obj) return;
     this.pinHostEyeKm(drone.eye, false);
   }
 
   /** Camera → host-root km. Inverse of pinHostEyeKm. */
   private hostEyeKm(out: THREE.Vector3): THREE.Vector3 {
-    const root = this.hostRoot;
+    const root = this.locale.root;
     if (!root) return out.set(0, 0, 0);
     return out
       .copy(root.position)
@@ -1450,7 +1425,7 @@ export class GalaxyView {
   }
 
   private hostStarRadiusKm(): number {
-    return Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
+    return Math.max(1, this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM);
   }
 
   /**
@@ -1459,7 +1434,7 @@ export class GalaxyView {
    * droneCorePos. Lock itself never hops.
    */
   private dronePickNearestFrom(eye: THREE.Vector3): { id: string | null; R: number } {
-    const rt = nearestBody(this.host.bodies, (b) => eye.distanceTo(b.pos));
+    const rt = nearestBody(this.locale.sys.bodies, (b) => eye.distanceTo(b.pos));
     const starD = eye.length();
     if (rt && eye.distanceTo(rt.pos) < starD) {
       this.droneCorePos.copy(rt.pos);
@@ -1473,7 +1448,7 @@ export class GalaxyView {
   private droneReticleTarget(): { id: string | null } | null {
     if (this.focusBodyId && this.worldRt(this.focusBodyId)) return { id: this.focusBodyId };
     if (this.selectedBodyId && this.worldRt(this.selectedBodyId)) return { id: this.selectedBodyId };
-    const root = this.hostRoot;
+    const root = this.locale.root;
     if (!root) return null;
     const d = root.position.length();
     if (d < 1e-18) return { id: null };
@@ -1537,7 +1512,7 @@ export class GalaxyView {
       this.sWalk = Math.max(0, this.sWalk + logZoom * UNIVERSE.WORLD_SURF_STOP);
     } else {
       this.sWalk = 0;
-      const globe = this.globeOf(this.worldId ?? this.courseBodyId);
+      const globe = this.locale.globeOf(this.worldId ?? this.courseBodyId);
       if (!globe) return;
       const lo = Math.max(0.004, globe.terraceStep * 0.6);
       this.sEyeHTarget = Math.min(
@@ -1583,13 +1558,13 @@ export class GalaxyView {
   }
 
   private placeSurface(): void {
-    if (!this.landed || !this.hostObj) return;
+    if (!this.landed || !this.locale.obj) return;
     const rt = this.worldRt(this.worldId ?? this.courseBodyId);
     if (!rt) {
       this.leaveSurface();
       return;
     }
-    const globe = this.globeOf(rt.spec.id);
+    const globe = this.locale.globeOf(rt.spec.id);
     const gR = globe?.ready ? globe.groundR(this.surfDir) : 1;
     const eyeKm = (gR + this.sEyeH) * Math.max(rt.spec.radius, 1);
     // Eye in the host-root km frame (body centre + spun hover).
@@ -1620,8 +1595,8 @@ export class GalaxyView {
    * point first — a metre there is below a ULP.
    */
   private pinHostEyeKm(eyeKm: THREE.Vector3, writeShip = true): void {
-    const root = this.hostRoot;
-    const lock = this.hostObj;
+    const root = this.locale.root;
+    const lock = this.locale.obj;
     if (!root || !lock) return;
     this.orbitTmp.copy(eyeKm).multiplyScalar(KM_TO_KPC).applyQuaternion(root.quaternion);
     root.position.copy(this.orbitTmp).negate();
@@ -1633,11 +1608,11 @@ export class GalaxyView {
 
   /** Catalog position of a host-pass body — independent of arcCenter. */
   private bodyCatalog(rt: HostBodyRT, out: THREE.Vector3): THREE.Vector3 {
-    const lock = this.hostObj;
+    const lock = this.locale.obj;
     if (!lock) return out.set(0, 0, 0);
     const c = galToCart(lock.pos);
     out.copy(rt.pos).multiplyScalar(KM_TO_KPC);
-    if (this.hostRoot) out.applyQuaternion(this.hostRoot.quaternion);
+    if (this.locale.root) out.applyQuaternion(this.locale.root.quaternion);
     out.x += c.x;
     out.y += c.y;
     out.z += c.z;
@@ -1653,10 +1628,10 @@ export class GalaxyView {
    * shell-park zigzag that never arrived.
    */
   private bodyFromEye(rt: HostBodyRT, out: THREE.Vector3): THREE.Vector3 {
-    const lock = this.hostObj;
+    const lock = this.locale.obj;
     if (!lock) return out.set(0, 0, 0);
     out.copy(rt.pos).multiplyScalar(KM_TO_KPC);
-    if (this.hostRoot) out.applyQuaternion(this.hostRoot.quaternion);
+    if (this.locale.root) out.applyQuaternion(this.locale.root.quaternion);
     const c = galToCart(lock.pos);
     out.x += c.x - this.ship.at.x;
     out.y += c.y - this.ship.at.y;
@@ -1714,7 +1689,7 @@ export class GalaxyView {
 
   private spinWorld(rt: HostBodyRT, out: THREE.Quaternion): THREE.Quaternion {
     out.copy(rt.spinQ);
-    if (this.hostRoot) out.premultiply(this.hostRoot.quaternion);
+    if (this.locale.root) out.premultiply(this.locale.root.quaternion);
     return out;
   }
 
@@ -1723,13 +1698,13 @@ export class GalaxyView {
     if (!pending) return;
     if (pending.bodyId == null) {
       // Host-star ecliptic — wait until the dest sphere is the place.
-      if (!this.hostObj || this.hostObj.id !== this.voyage.route.dest?.starId) return;
+      if (!this.locale.obj || this.locale.obj.id !== this.voyage.route.dest?.starId) return;
       this.voyage.pendingArriveOrbit = false;
       this.setWarp(false);
-      if (this.hostRoot) {
-        this.hostTmp.copy(this.hostRoot.position).negate().normalize();
+      if (this.locale.root) {
+        this.hostTmp.copy(this.locale.root.position).negate().normalize();
       } else {
-        const c = galToCart(this.hostObj.pos);
+        const c = galToCart(this.locale.obj.pos);
         this.hostTmp.set(
           this.ship.at.x - c.x,
           this.ship.at.y - c.y,
@@ -1749,7 +1724,7 @@ export class GalaxyView {
       return;
     }
     const rt = this.worldRt(pending.bodyId);
-    if (!rt || this.hostObj?.id !== this.voyage.route.dest?.starId) return;
+    if (!rt || this.locale.obj?.id !== this.voyage.route.dest?.starId) return;
     this.voyage.pendingArriveOrbit = false;
     this.setWarp(false);
     this.bodyFromEye(rt, this.orbitTmp2).negate();
@@ -1774,7 +1749,7 @@ export class GalaxyView {
    */
   private tickCapture(dt: number, tSys: number): void {
     const cap = this.voyage.capturing;
-    if (!cap || !this.hostObj) return;
+    if (!cap || !this.locale.obj) return;
     if (cap.bodyId == null) {
       this.tickStarCapture(dt, tSys, cap.dir);
       return;
@@ -1848,15 +1823,15 @@ export class GalaxyView {
 
   /** Capture onto the host-star ecliptic ring. */
   private tickStarCapture(dt: number, tSys: number, dir: THREE.Vector3): void {
-    if (!this.hostObj) return;
-    const star = this.hostSpec?.star ?? {
-      radius: Math.max(1, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
-      mass: Math.max(0.08, this.hostObj.star.mass),
+    if (!this.locale.obj) return;
+    const star = this.locale.spec?.star ?? {
+      radius: Math.max(1, this.locale.obj.star.radius) * UNIVERSE.RSUN_KM,
+      mass: Math.max(0.08, this.locale.obj.star.mass),
     };
     const r = starOrbitRadiusKpc(star);
     this.prepareStarRideBasis(dir);
     this.orbitTmp2.copy(this.rideE1).multiplyScalar(r);
-    const c = galToCart(this.hostObj.pos);
+    const c = galToCart(this.locale.obj.pos);
     const tx = c.x + this.orbitTmp2.x;
     const ty = c.y + this.orbitTmp2.y;
     const tz = c.z + this.orbitTmp2.z;
@@ -1914,8 +1889,8 @@ export class GalaxyView {
 
   /** Ecliptic plane basis: pole from host frame, arrival projected in-plane. */
   private prepareStarRideBasis(dirCatalog: THREE.Vector3): void {
-    if (this.hostRoot) {
-      this.rideNorth.set(0, 0, 1).applyQuaternion(this.hostRoot.quaternion);
+    if (this.locale.root) {
+      this.rideNorth.set(0, 0, 1).applyQuaternion(this.locale.root.quaternion);
     } else {
       this.rideNorth.copy(this.worldUp);
     }
@@ -1956,15 +1931,15 @@ export class GalaxyView {
     this.ship.at.x += (tx - this.ship.at.x) * k;
     this.ship.at.y += (ty - this.ship.at.y) * k;
     this.ship.at.z += (tz - this.ship.at.z) * k;
-    if (this.hostRoot && this.hostObj) {
-      const cart = galToCart(this.hostObj.pos);
+    if (this.locale.root && this.locale.obj) {
+      const cart = galToCart(this.locale.obj.pos);
       this.orbitTmp.set(
         this.ship.at.x - cart.x,
         this.ship.at.y - cart.y,
         this.ship.at.z - cart.z,
       );
-      this.hostRoot.position.copy(this.orbitTmp).negate();
-      this.hostRoot.updateMatrixWorld(true);
+      this.locale.root.position.copy(this.orbitTmp).negate();
+      this.locale.root.updateMatrixWorld(true);
     }
     // Hang capture: fwd ≈ −zenith → face the sphere (roll → 0).
     const face =
@@ -2013,10 +1988,10 @@ export class GalaxyView {
    * GM☉ · mass at the limb-film radius.
    */
   private beginStarRide(dirCatalog: THREE.Vector3, tSys: number): void {
-    if (!this.hostObj) return;
-    const star = this.hostSpec?.star ?? {
-      radius: Math.max(1e-6, this.hostObj.star.radius) * UNIVERSE.RSUN_KM,
-      mass: Math.max(0.08, this.hostObj.star.mass),
+    if (!this.locale.obj) return;
+    const star = this.locale.spec?.star ?? {
+      radius: Math.max(1e-6, this.locale.obj.star.radius) * UNIVERSE.RSUN_KM,
+      mass: Math.max(0.08, this.locale.obj.star.mass),
     };
     const r = starOrbitRadiusKpc(star);
     const omega = starOrbitOmega(star, r);
@@ -2037,7 +2012,7 @@ export class GalaxyView {
 
   private placeRide(tSys: number): void {
     const ride = this.voyage.riding;
-    if (!ride || !this.hostObj) {
+    if (!ride || !this.locale.obj) {
       this.voyage.clearRide();
       return;
     }
@@ -2052,14 +2027,14 @@ export class GalaxyView {
       ox = (this.rideE1.x * c + this.rideE2.x * s) * ride.r;
       oy = (this.rideE1.y * c + this.rideE2.y * s) * ride.r;
       oz = (this.rideE1.z * c + this.rideE2.z * s) * ride.r;
-      if (this.hostRoot) {
+      if (this.locale.root) {
         this.orbitTmp2
           .set(ox, oy, oz)
-          .applyQuaternion(this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate())
+          .applyQuaternion(this.hostTmpQ.copy(this.locale.root.quaternion).conjugate())
           .multiplyScalar(1 / KM_TO_KPC);
         this.pinHostEyeKm(this.orbitTmp2);
       } else {
-        const cart = galToCart(this.hostObj.pos);
+        const cart = galToCart(this.locale.obj.pos);
         this.ship.at.set(cart.x + ox, cart.y + oy, cart.z + oz);
       }
       this.bankRideLook(tSys);
@@ -2084,13 +2059,13 @@ export class GalaxyView {
       oy = (this.rideE1.y * c + this.rideE2.y * s) * ride.r;
       oz = (this.rideE1.z * c + this.rideE2.z * s) * ride.r;
     }
-    if (this.hostRoot) {
+    if (this.locale.root) {
       // Pin the ride eye in the host km frame (the landed / drone
       // law): body centre + ring offset. Building arcCenter out of
       // the 8 kpc point instead quantizes the park by a ULP.
       this.orbitTmp2
         .set(ox, oy, oz)
-        .applyQuaternion(this.hostTmpQ.copy(this.hostRoot.quaternion).conjugate())
+        .applyQuaternion(this.hostTmpQ.copy(this.locale.root.quaternion).conjugate())
         .multiplyScalar(1 / KM_TO_KPC)
         .add(rt.pos);
       this.pinHostEyeKm(this.orbitTmp2);
@@ -2172,8 +2147,8 @@ export class GalaxyView {
   /** Photosphere radius in catalog kpc — ecliptic limb uses this as R. */
   private starLimbR(): number {
     const km =
-      this.hostSpec?.star.radius ??
-      Math.max(1e-6, this.hostObj?.star.radius ?? 1) * UNIVERSE.RSUN_KM;
+      this.locale.spec?.star.radius ??
+      Math.max(1e-6, this.locale.obj?.star.radius ?? 1) * UNIVERSE.RSUN_KM;
     return Math.max(km, 1) * KM_TO_KPC;
   }
 
@@ -2266,7 +2241,7 @@ export class GalaxyView {
    * ball. No maze, no corridor search.
    */
   private routeAim(aim: THREE.Vector3, targetId: string | null): void {
-    if (!this.hostObj || !this.hostRoot) return;
+    if (!this.locale.obj || !this.locale.root) return;
     const dT = aim.length();
     if (!(dT > 1e-18)) return;
 
@@ -2286,18 +2261,18 @@ export class GalaxyView {
       ey = ry;
       ez = rz;
     };
-    for (const rt of this.host.bodies) {
+    for (const rt of this.locale.sys.bodies) {
       if (rt.spec.id === targetId) continue;
       this.bodyFromEye(rt, this.hostTmp2);
       noteEscape(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
     }
     if (targetId != null) {
-      this.hostTmp2.copy(this.hostRoot.position);
+      this.hostTmp2.copy(this.locale.root.position);
       noteEscape(
         this.hostTmp2.x,
         this.hostTmp2.y,
         this.hostTmp2.z,
-        this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM,
+        this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM,
       );
     }
     if (escapeD < Infinity) {
@@ -2331,18 +2306,18 @@ export class GalaxyView {
       by = ry;
       bz = rz;
     };
-    for (const rt of this.host.bodies) {
+    for (const rt of this.locale.sys.bodies) {
       if (rt.spec.id === targetId) continue;
       this.bodyFromEye(rt, this.hostTmp2);
       consider(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
     }
     if (targetId != null) {
-      this.hostTmp2.copy(this.hostRoot.position);
+      this.hostTmp2.copy(this.locale.root.position);
       consider(
         this.hostTmp2.x,
         this.hostTmp2.y,
         this.hostTmp2.z,
-        this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM,
+        this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM,
       );
     }
     if (!(bestD < Infinity)) return;
@@ -2374,7 +2349,7 @@ export class GalaxyView {
     let zenY = 0;
     let zenZ = 0;
     let haveZen = false;
-    if (this.courseBodyId && this.hostObj && this.voyage.route.dest?.starId === this.hostObj.id) {
+    if (this.courseBodyId && this.locale.obj && this.voyage.route.dest?.starId === this.locale.obj.id) {
       const rt = this.worldRt(this.courseBodyId);
       if (!rt) return;
       this.bodyFromEye(rt, this.orbitTmp);
@@ -2402,7 +2377,7 @@ export class GalaxyView {
       if (dest && dest.bodyId == null && dest.kind === 'ecliptic') {
         insertBlend = this.applyStarInsert(this.courseObj, this.orbitTmp);
       }
-      if (this.hostObj && this.courseObj.id === this.hostObj.id) {
+      if (this.locale.obj && this.courseObj.id === this.locale.obj.id) {
         this.routeAim(this.orbitTmp, null);
       }
     } else {
@@ -2537,8 +2512,8 @@ export class GalaxyView {
       radius: Math.max(1e-6, obj.star.radius) * UNIVERSE.RSUN_KM,
     };
     const r = starOrbitRadiusKpc(star);
-    if (this.hostRoot && this.hostObj?.id === obj.id) {
-      this.rideNorth.set(0, 0, 1).applyQuaternion(this.hostRoot.quaternion);
+    if (this.locale.root && this.locale.obj?.id === obj.id) {
+      this.rideNorth.set(0, 0, 1).applyQuaternion(this.locale.root.quaternion);
     } else {
       this.rideNorth.copy(this.worldUp);
     }
@@ -2749,7 +2724,7 @@ export class GalaxyView {
 
   /** Chart subject: focused harvest star, else the host. */
   chartObject(): GalaxyObject | null {
-    return this.focusObj ?? this.hostObj;
+    return this.focusObj ?? this.locale.obj;
   }
 
   /** Refresh sight uniforms — smoke / tests. */
@@ -2943,10 +2918,10 @@ export class GalaxyView {
       fence = this.voyage.riding.bodyId != null ? UNIVERSE.WORLD_RANGE_KPC : UNIVERSE.ARRIVE_RANGE_KPC;
     } else if (this.voyage.capturing) {
       if (this.voyage.capturing.bodyId == null) {
-        const obj = this.hostObj;
+        const obj = this.locale.obj;
         if (obj) {
           r = this.arriveDist(obj);
-          const star = this.hostSpec?.star ?? {
+          const star = this.locale.spec?.star ?? {
             mass: Math.max(0.08, obj.star.mass),
           };
           omega = starOrbitOmega(star, r);
@@ -3073,15 +3048,15 @@ export class GalaxyView {
   }
 
   private applyCam(): void {
-    if (this.drone && this.hostRoot) {
-      this.orbitTmp.copy(this.drone.fwd).applyQuaternion(this.hostRoot.quaternion).normalize();
-      this.orbitTmp2.copy(this.drone.up).applyQuaternion(this.hostRoot.quaternion).normalize();
+    if (this.drone && this.locale.root) {
+      this.orbitTmp.copy(this.drone.fwd).applyQuaternion(this.locale.root.quaternion).normalize();
+      this.orbitTmp2.copy(this.drone.up).applyQuaternion(this.locale.root.quaternion).normalize();
       this.drone.applyLook(this.camera, this.orbitTmp, this.orbitTmp2);
     } else {
       this.ship.orthonormalize();
       this.ship.applyCam(this.camera);
     }
-    const lock = this.hostObj;
+    const lock = this.locale.obj;
     if (lock) {
       const d = this.arriveDist(lock);
       this.camera.near = Math.min(0.001, Math.max(1e-14, d * 0.04));
@@ -3105,7 +3080,7 @@ export class GalaxyView {
   }
 
   private worldRt(id: string | null | undefined): HostBodyRT | null {
-    return this.host.get(id);
+    return this.locale.sys.get(id);
   }
 
   /** Catalog kpc from the camera to a host-pass body. */
@@ -3116,11 +3091,11 @@ export class GalaxyView {
   private hudForBody(rt: HostBodyRT): GalaxyFocus {
     const b = rt.spec;
     let moons = 0;
-    if (this.hostSpec) {
-      for (const row of this.hostSpec.bodies) if (row.parent === b.id) moons++;
+    if (this.locale.spec) {
+      for (const row of this.locale.spec.bodies) if (row.parent === b.id) moons++;
     }
     return {
-      id: this.hostObj?.id ?? 0,
+      id: this.locale.obj?.id ?? 0,
       bodyId: b.id,
       name: b.name,
       cls: classify(b.physics, lockedToStar(b)),
@@ -3143,14 +3118,14 @@ export class GalaxyView {
    */
   private updateArriveSubject(): void {
     const range = UNIVERSE.ARRIVE_RANGE_KPC;
-    if (this.hostObj) {
-      if (this.arriveDist(this.hostObj) <= range) return;
-      this.hostObj = null;
+    if (this.locale.obj) {
+      if (this.arriveDist(this.locale.obj) <= range) return;
+      this.locale.obj = null;
       return;
     }
     for (const cand of [this.courseObj, this.focusObj, this.selected]) {
       if (cand && this.arriveDist(cand) <= range) {
-        this.hostObj = cand;
+        this.locale.obj = cand;
         return;
       }
     }
@@ -3163,7 +3138,7 @@ export class GalaxyView {
    */
   private updateWorldSubject(): void {
     const range = UNIVERSE.WORLD_RANGE_KPC;
-    if (!(range > 0) || !this.hostObj) {
+    if (!(range > 0) || !this.locale.obj) {
       this.worldId = null;
       return;
     }
@@ -3187,42 +3162,41 @@ export class GalaxyView {
    * where they are. The placeholder hides when the terrace is on.
    */
   private tickGlobes(tSys: number): void {
-    if (!this.hostSpec) {
-      this.dropGlobes();
+    if (!this.locale.spec) {
+      this.locale.dropGlobes();
       return;
     }
     const prefer = this.worldId ?? this.courseBodyId ?? this.voyage.riding?.bodyId ?? null;
     const rocky: HostBodyRT[] = [];
-    for (const rt of this.host.bodies) {
+    for (const rt of this.locale.sys.bodies) {
       if (rt.spec.kind !== 'rocky') continue;
       rocky.push(rt);
     }
     const mint = (rt: HostBodyRT): void => {
-      if (!this.hostSpec || this.globes.has(rt.spec.id)) return;
-      this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.hostSpec, rt.group, rt.placeholder));
+      this.locale.mintGlobe(rt);
     };
     if (prefer) {
       const first = rocky.find((rt) => rt.spec.id === prefer);
       if (first) mint(first);
     }
     for (const rt of rocky) {
-      if (this.globes.has(rt.spec.id)) continue;
+      if (this.locale.globes.has(rt.spec.id)) continue;
       mint(rt);
       break;
     }
-    for (const id of [...this.globes.keys()]) {
+    for (const id of [...this.locale.globes.keys()]) {
       if (!rocky.some((rt) => rt.spec.id === id)) {
-        this.globes.get(id)?.dispose();
-        this.globes.delete(id);
+        this.locale.globes.get(id)?.dispose();
+        this.locale.globes.delete(id);
       }
     }
     const ordered = prefer
       ? [...rocky.filter((rt) => rt.spec.id === prefer), ...rocky.filter((rt) => rt.spec.id !== prefer)]
       : rocky;
     let budget = 8;
-    const L = this.hostSpec.star.luminosity;
+    const L = this.locale.spec.star.luminosity;
     for (const rt of ordered) {
-      const g = this.globes.get(rt.spec.id);
+      const g = this.locale.globes.get(rt.spec.id);
       if (!g) continue;
       if (!g.ready) {
         if (budget <= 0.4) {
@@ -3238,15 +3212,10 @@ export class GalaxyView {
     }
   }
 
-  private globeOf(id: string | null | undefined): RockyGlobe | null {
-    if (!id) return null;
-    return this.globes.get(id) ?? null;
-  }
-
   /** Hex under a landed tap. Same grid the globe grew from. */
   private pickGlobeCell(clientX: number, clientY: number): GlobePick | null {
     if (!this.landed || !this.worldId) return null;
-    const globe = this.globeOf(this.worldId);
+    const globe = this.locale.globeOf(this.worldId);
     const mesh = globe?.terrainMesh();
     if (!globe || !mesh) return null;
     const rect = this.canvas.getBoundingClientRect();
@@ -3254,7 +3223,7 @@ export class GalaxyView {
     const h = Math.max(1, rect.height);
     this.ndc.set(((clientX - rect.left) / w) * 2 - 1, -((clientY - rect.top) / h) * 2 + 1);
     this.raycaster.setFromCamera(this.ndc, this.camera);
-    this.hostScene.updateMatrixWorld(true);
+    this.locale.scene.updateMatrixWorld(true);
     const hits = this.raycaster.intersectObject(mesh, false);
     if (!hits[0]) return null;
     this.hostTmp.copy(hits[0].point);
@@ -3264,13 +3233,8 @@ export class GalaxyView {
     return { bodyId: globe.bodyId, ...at };
   }
 
-  private dropGlobes(): void {
-    for (const g of this.globes.values()) g.dispose();
-    this.globes.clear();
-  }
-
   private detachHostStar(): void {
-    this.hostObj = null;
+    this.locale.obj = null;
     this.detachHost();
   }
 
@@ -3291,89 +3255,8 @@ export class GalaxyView {
       this.voyage.pendingArriveOrbit = false;
       if (this.courseHud?.bodyId) this.clearCourse();
     }
-    this.dropGlobes();
-    this.clearHostBodies();
-    this.detachHostFurnace();
-    if (this.hostRoot) {
-      this.hostScene.remove(this.hostRoot);
-      this.hostRoot = null;
-    }
-    this.hostStarId = -1;
-    this.hostFill = null;
+    this.locale.detach();
     this.sky.thaw();
-  }
-
-  private detachHostFurnace(): void {
-    if (!this.hostStar) return;
-    this.hostRoot?.remove(this.hostStar.group);
-    this.hostStar.dispose();
-    this.hostStar = null;
-    // The photosphere is gone: the harvest pin is the star again.
-    this.sky.applyStarVis();
-  }
-
-  private ensureHostRoot(): THREE.Group {
-    if (this.hostRoot) return this.hostRoot;
-    const root = new THREE.Group();
-    root.scale.setScalar(KM_TO_KPC);
-    // Same law as the photograph: a small galaxy fill, not a 0.22 flood
-    // that would make night impossible once worlds land.
-    const fill = new THREE.AmbientLight(0x9aa8c4, UNIVERSE.ARRIVE_SKY_GAIN);
-    root.add(fill);
-    this.hostFill = fill;
-    this.hostScene.add(root);
-    this.hostRoot = root;
-    return root;
-  }
-
-  private attachHostFurnace(lock: GalaxyObject): void {
-    this.detachHostFurnace();
-    this.clearHostBodies();
-    let star = starSpecFromState(lock.star, () => 0.5);
-    try {
-      this.hostSpec = systemAt(this.seed, lock.id);
-      star = this.hostSpec.star;
-    } catch {
-      this.hostSpec = null;
-    }
-    this.hostStar = makeStar(star);
-    this.ensureHostRoot().add(this.hostStar.group);
-    this.hostStarId = lock.id;
-    // The photosphere replaces the pin. The catalog freezes on
-    // this viewpoint — pins stay pins, the march sleeps.
-    this.sky.hideHarvestId(lock.id);
-    this.sky.beginFreeze();
-    if (this.hostSpec) this.buildHostBodies(this.hostSpec);
-  }
-
-  /**
-   * Host +Z is the ecliptic pole. The galaxy's pole is +Y (XZ disk).
-   * Rotate the km frame so this system's hashed pole sits in the sky.
-   */
-  private orientHost(root: THREE.Group): void {
-    const e = this.hostSpec?.ecliptic;
-    if (!e) {
-      root.quaternion.identity();
-      return;
-    }
-    const p = eclipticPole(e);
-    this.hostPole.set(p.x, p.y, p.z);
-    this.hostAlignQ.setFromUnitVectors(this.hostEclipticZ, this.hostPole);
-    this.hostTmpQ.setFromAxisAngle(this.hostPole, e.spin);
-    root.quaternion.copy(this.hostTmpQ).multiply(this.hostAlignQ);
-  }
-
-  private buildHostBodies(spec: SystemSpec): void {
-    this.host.build(this.ensureHostRoot(), spec);
-  }
-
-  private clearHostBodies(): void {
-    this.host.clear(this.hostRoot);
-    this.hostSpec = null;
-  }
-
-  private updateHostBodies(t: number): void {
-    this.host.update(t, this.camera, this.hostRoot);
   }
 
   /**
@@ -3384,9 +3267,9 @@ export class GalaxyView {
   private updateHostArrival(now: number): void {
     this.updateArriveSubject();
     this.updateWorldSubject();
-    const lock = this.hostObj;
+    const lock = this.locale.obj;
     if (!lock) {
-      if (this.hostRoot || this.hostStar) {
+      if (this.locale.root || this.locale.star) {
         this.detachHost();
         this.applyCam();
       }
@@ -3396,24 +3279,24 @@ export class GalaxyView {
     const dx = cart.x - this.ship.at.x;
     const dy = cart.y - this.ship.at.y;
     const dz = cart.z - this.ship.at.z;
-    if (this.hostStarId !== lock.id && (this.hostRoot || this.hostStar)) this.detachHost();
+    if (this.locale.starId !== lock.id && (this.locale.root || this.locale.star)) this.detachHost();
     // The sphere is the object of interest: the pin cannot draw
     // the approach (it stays a point, then hops). Swap the frame
     // we enter. Looking around is not leaving.
-    if (!this.hostStar) this.attachHostFurnace(lock);
+    if (!this.locale.star) this.locale.attachFurnace(lock);
 
-    const root = this.hostRoot;
+    const root = this.locale.root;
     if (root) {
       // Landed / drone / ride eyes pin from a km hover — starCart −
       // arcCenter drops the metres at 8 kpc. Do not overwrite the
       // pin before placeRide / placeSurface; that was a one-frame
       // star-relative root that made bodyFromEye aim at the void.
       if (!this.landed && !this.drone && !this.voyage.riding) root.position.set(dx, dy, dz);
-      this.orientHost(root);
+      this.locale.orient(root);
     }
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
-    this.updateHostBodies(tSys);
+    this.locale.updateBodies(tSys, this.camera);
     if (this.pendingSession) {
       this.applyPendingSession(tSys);
     } else if (this.pendingPlace) {
@@ -3435,10 +3318,10 @@ export class GalaxyView {
       this.voyage.pendingArriveOrbit = false;
     }
     if (root) root.updateMatrixWorld(true);
-    if (this.hostStar && root) {
+    if (this.locale.star && root) {
       const camLocal = new THREE.Vector3();
-      this.hostStar.group.worldToLocal(camLocal.copy(this.camera.position));
-      this.hostStar.update(camLocal, tSys, new THREE.Vector3(1, 1, 1));
+      this.locale.star.group.worldToLocal(camLocal.copy(this.camera.position));
+      this.locale.star.update(camLocal, tSys, new THREE.Vector3(1, 1, 1));
     }
     this.applyCam();
     this.emitPlace();
@@ -3461,7 +3344,7 @@ export class GalaxyView {
 
   /** Course or host we are closing on / backing from. */
   private closeSubject(): GalaxyObject | null {
-    return this.hostObj ?? this.courseObj;
+    return this.locale.obj ?? this.courseObj;
   }
 
   /**
@@ -3551,7 +3434,7 @@ export class GalaxyView {
    * length along (dx,dy,dz)/len.
    */
   private clampHostAdvance(dx: number, dy: number, dz: number, len: number): number {
-    if (!this.hostObj || !this.hostRoot || !(len > 0)) return len;
+    if (!this.locale.obj || !this.locale.root || !(len > 0)) return len;
     const inv = 1 / len;
     this.orbitTmp2.set(dx * inv, dy * inv, dz * inv);
     let allowed = len;
@@ -3570,12 +3453,12 @@ export class GalaxyView {
       const t = this.firstShellHit(this.hostTmp, this.orbitTmp2, R);
       if (t != null && t < allowed) allowed = t;
     };
-    for (const rt of this.host.bodies) {
+    for (const rt of this.locale.sys.bodies) {
       this.bodyFromEye(rt, this.hostTmp2);
       fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, shellFloorKm(rt.spec));
     }
-    this.hostTmp2.copy(this.hostRoot.position);
-    const starR = Math.max(1, this.hostSpec?.star.radius ?? UNIVERSE.RSUN_KM);
+    this.hostTmp2.copy(this.locale.root.position);
+    const starR = Math.max(1, this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM);
     fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, viewSkinKm(starR));
     return allowed;
   }
@@ -3683,13 +3566,13 @@ export class GalaxyView {
    * stars are the reticle — a tap does not set course.
    */
   private pick(cx: number, cy: number): void {
-    if (!this.hostObj) return;
+    if (!this.locale.obj) return;
     const body = this.pickBody(cx, cy);
     if (!body) return;
     this.selectedBodyId = body.spec.id;
     this.focusBodyId = body.spec.id;
     this.focusHud = this.hudForBody(body);
-    this.focusObj = this.hostObj;
+    this.focusObj = this.locale.obj;
     this.select(null);
     this.wake();
   }
@@ -3699,7 +3582,7 @@ export class GalaxyView {
     const rect = this.canvas.getBoundingClientRect();
     let best: HostBodyRT | null = null;
     let bestD = 28;
-    for (const rt of this.host.bodies) {
+    for (const rt of this.locale.sys.bodies) {
       rt.group.getWorldPosition(this.hostTmp);
       const v = this.hostTmp.project(this.camera);
       if (v.z < -1.2 || v.z > 1.2) continue;
@@ -4165,7 +4048,7 @@ export class GalaxyView {
         const dot = this.hostTmp.x * inv * lx + this.hostTmp.y * inv * ly + this.hostTmp.z * inv * lz;
         if (dot >= holdCos) {
           this.grownCount = 1;
-          this.focusObj = this.hostObj;
+          this.focusObj = this.locale.obj;
           this.focusHud = this.hudForBody(holdBody);
           this.focusHud.dist = dist;
           return;
@@ -4194,8 +4077,8 @@ export class GalaxyView {
     let bestOff = 1;
     let bestDist = 0;
     let bestDim = false;
-    if (this.hostObj) {
-      for (const rt of this.host.bodies) {
+    if (this.locale.obj) {
+      for (const rt of this.locale.sys.bodies) {
         rt.group.getWorldPosition(this.hostTmp);
         const dist = this.hostTmp.length();
         if (dist < 1e-18) continue;
@@ -4247,7 +4130,7 @@ export class GalaxyView {
     this.grownCount = grown;
     if (bestBody) {
       this.focusBodyId = bestBody.spec.id;
-      this.focusObj = this.hostObj;
+      this.focusObj = this.locale.obj;
       this.focusHud = this.hudForBody(bestBody);
       this.focusHud.dist = bestDist;
       return;
@@ -4420,7 +4303,7 @@ export class GalaxyView {
     // attach so this draw matches the viewpoint.
     const dim = this.skyDim();
     this.sky.setDim(dim);
-    if (this.hostFill) this.hostFill.intensity = dim;
+    if (this.locale.fill) this.locale.fill.intensity = dim;
 
     // One scene, one pass, straight to the canvas: the void is
     // black (vacuum emits nothing), self-extincted background
@@ -4429,16 +4312,16 @@ export class GalaxyView {
     this.renderer.setRenderTarget(null);
     this.perf.beginDraw();
     this.renderer.render(this.scene, this.camera);
-    if (this.hostRoot && this.hostObj) {
+    if (this.locale.root && this.locale.obj) {
       // Close-approach pass: same camera pose, AU-scale depth window,
       // drawn over the live galaxy. The star is IN the galaxy — the
       // sky never bakes, blanks, or switches environment; the depth
       // buffer is simply re-cleared for the near geometry.
-      const d = this.arriveDist(this.hostObj);
-      const aKpc = this.host.outerAu * AU_KM * KM_TO_KPC;
+      const d = this.arriveDist(this.locale.obj);
+      const aKpc = this.locale.sys.outerAu * AU_KM * KM_TO_KPC;
       let near = Math.min(d * 0.02, aKpc * 0.01);
       const cam = this.camera.position;
-      for (const rt of this.host.bodies) {
+      for (const rt of this.locale.sys.bodies) {
         rt.group.getWorldPosition(this.hostTmp);
         const surf = cam.distanceTo(this.hostTmp) - rt.spec.radius * KM_TO_KPC;
         const k = this.landed && rt.spec.id === this.worldId ? 0.12 : 0.35;
@@ -4451,7 +4334,7 @@ export class GalaxyView {
       this.camera.updateProjectionMatrix();
       this.renderer.autoClear = false;
       this.renderer.clearDepth();
-      this.renderer.render(this.hostScene, this.camera);
+      this.renderer.render(this.locale.scene, this.camera);
       this.renderer.autoClear = true;
       this.camera.near = near0;
       this.camera.far = far0;
@@ -4467,14 +4350,14 @@ export class GalaxyView {
     }
     this.navMode = this.voyage.route.navMode(
       {
-        hostId: this.hostObj?.id ?? null,
+        hostId: this.locale.obj?.id ?? null,
         riding:
-          this.voyage.riding && this.hostObj
-            ? { starId: this.hostObj.id, bodyId: this.voyage.riding.bodyId, orbit: this.voyage.riding.kind }
+          this.voyage.riding && this.locale.obj
+            ? { starId: this.locale.obj.id, bodyId: this.voyage.riding.bodyId, orbit: this.voyage.riding.kind }
             : null,
         capturing: Boolean(this.voyage.capturing),
         insertBlend: this.voyage.insertBlend,
-        hostArriveDist: this.hostObj ? this.arriveDist(this.hostObj) : null,
+        hostArriveDist: this.locale.obj ? this.arriveDist(this.locale.obj) : null,
         arriveRange: UNIVERSE.ARRIVE_RANGE_KPC,
       },
       this.voyage.proximity,
@@ -4482,13 +4365,13 @@ export class GalaxyView {
     const soi = this.soiDist();
     const nearRt =
       this.navMode === 'proximity' || this.navMode === 'orbit' || this.navMode === 'lock'
-        ? nearestBody(this.host.bodies, (b) => this.bodyDist(b))
+        ? nearestBody(this.locale.sys.bodies, (b) => this.bodyDist(b))
         : null;
     let navHint: string | null = null;
     if (this.navMode === 'orbit' && this.voyage.riding) {
       const ring = orbitLabel(this.voyage.riding.kind);
       if (this.voyage.riding.bodyId == null) {
-        navHint = `${this.hostSpec?.star.name ?? 'Star'} · ${ring}`;
+        navHint = `${this.locale.spec?.star.name ?? 'Star'} · ${ring}`;
       } else {
         const rt = this.worldRt(this.voyage.riding.bodyId);
         navHint = rt ? `${rt.spec.name} · ${ring}` : ring;
@@ -4498,7 +4381,7 @@ export class GalaxyView {
     } else if (this.navMode === 'lock' && this.voyage.capturing) {
       const ring = orbitLabel(this.voyage.capturing.kind);
       if (this.voyage.capturing.bodyId == null) {
-        navHint = `Capturing ${this.hostSpec?.star.name ?? 'star'} · ${ring}`;
+        navHint = `Capturing ${this.locale.spec?.star.name ?? 'star'} · ${ring}`;
       } else {
         const rt = this.worldRt(this.voyage.capturing.bodyId);
         navHint = rt ? `Capturing ${rt.spec.name} · ${ring}` : `Capturing · ${ring}`;
@@ -4508,7 +4391,7 @@ export class GalaxyView {
       const ring = orbitLabel(dest.kind);
       const inserting = this.voyage.insertBlend > 0.55;
       if (dest.bodyId == null) {
-        const name = this.courseHud?.name ?? this.hostSpec?.star.name ?? 'Star';
+        const name = this.courseHud?.name ?? this.locale.spec?.star.name ?? 'Star';
         navHint = inserting ? `Inserting ${name} · ${ring}` : `${name} · ${ring}`;
       } else {
         const rt = this.worldRt(dest.bodyId);
@@ -4538,7 +4421,7 @@ export class GalaxyView {
       astern: this.voyage.astern,
       inView: this.overview,
       soiRemain: soi == null ? null : Math.max(0, UNIVERSE.ARRIVE_RANGE_KPC - soi),
-      hostId: this.hostObj?.id ?? null,
+      hostId: this.locale.obj?.id ?? null,
       backdrop: this.shownCount(),
       orbit: this.voyage.riding?.kind ?? this.voyage.capturing?.kind ?? this.destOrbit()?.kind ?? this.landKind,
       orbiting: Boolean(this.voyage.riding),
