@@ -214,18 +214,33 @@ export function escapeSpeedKpcS(omega: number, rKpc: number): number {
 }
 
 /**
+ * A star's view skin is its drawn corona (STAR_CORONA_R
+ * photosphere radii): films, hard walls, and transfer grazes
+ * all stay outside the fire. Ordering law for a star course —
+ * wall (this) < graze (×1.02) < park (×1.05) — so the router
+ * can always tangent past the ball and still reach the ring.
+ */
+export function starSkinKm(radiusKm: number): number {
+  return Math.max(radiusKm, 1) * UNIVERSE.STAR_CORONA_R;
+}
+
+/** Transfer graze around the photosphere — just off the wall. */
+export function starGrazeKm(radiusKm: number): number {
+  return starSkinKm(radiusKm) * 1.02;
+}
+
+/**
  * Host-star ecliptic: the corner film, floored outside the
  * corona. The world flat-horizon cap (ORBIT_VIEW_H_KM over the
  * skin) must not apply — 10,000 km over a photosphere parked
  * the ship inside the fire (a giant's cap even fell below the
- * skin floor and returned a graze). A star's view skin is its
- * drawn corona (STAR_CORONA_R photosphere radii); the ring sits
- * just outside it. Kepler ω from GM☉ · mass at that radius.
+ * skin floor and returned a graze). Kepler ω from GM☉ · mass
+ * at that radius.
  */
 export function starOrbitRadiusKpc(star: { radius: number }): number {
   const R = Math.max(star.radius, 1);
   const want = R / Math.max(1e-8, Math.sin(orbitLimbCornerAlpha()));
-  return Math.max(R * UNIVERSE.STAR_CORONA_R * 1.05, want) / UNIVERSE.KPC_KM;
+  return Math.max(starSkinKm(R) * 1.05, want) / UNIVERSE.KPC_KM;
 }
 
 export function starOrbitOmega(star: { mass: number }, aKpc: number): number {

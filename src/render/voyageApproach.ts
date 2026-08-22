@@ -23,7 +23,7 @@ import {
   shellFloorKm,
   starOrbitOmega,
   starOrbitRadiusKpc,
-  viewSkinKm,
+  starSkinKm,
   type WorldOrbitKind,
 } from '../world/worldOrbit';
 
@@ -113,8 +113,10 @@ export class VoyageApproach {
       fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, shellFloorKm(rt.spec));
     }
     this.hostTmp2.copy(this.locale.root.position);
+    // A star is a furnace: the hard wall is the corona skin, not
+    // a photosphere graze — nothing flies into the fire.
     const starR = Math.max(1, this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM);
-    fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, viewSkinKm(starR));
+    fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starSkinKm(starR));
     return allowed;
   }
 

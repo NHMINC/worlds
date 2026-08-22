@@ -25,6 +25,7 @@ import {
   orbitLimbPitch,
   orbitOmega,
   orbitRadiusKpc,
+  starGrazeKm,
   starOrbitOmega,
   starOrbitRadiusKpc,
   type WorldOrbitKind,
@@ -656,11 +657,11 @@ export class VoyagePilot {
     let ex = 0;
     let ey = 0;
     let ez = 0;
-    const noteEscape = (rx: number, ry: number, rz: number, radiusKm: number): void => {
+    const noteEscape = (rx: number, ry: number, rz: number, radiusKm: number, grazeOverrideKm?: number): void => {
       const dO = Math.hypot(rx, ry, rz);
       if (!(dO > 1e-18) || dO >= escapeD) return;
       const R = Math.max(radiusKm, 1);
-      const grazeKm = Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
+      const grazeKm = grazeOverrideKm ?? Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
       if (dO >= grazeKm * KM_TO_KPC) return;
       escapeD = dO;
       ex = rx;
@@ -672,14 +673,13 @@ export class VoyagePilot {
       this.locale.bodyFromEye(this.ship.at, rt, this.hostTmp2);
       noteEscape(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
     }
-    if (targetId != null) {
+    {
+      // The star's ball counts on every course — a star dest
+      // targets the RING, not the core. Graze sits just off the
+      // corona wall, under the park (wall < graze < park).
+      const starR = this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM;
       this.hostTmp2.copy(this.locale.root.position);
-      noteEscape(
-        this.hostTmp2.x,
-        this.hostTmp2.y,
-        this.hostTmp2.z,
-        this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM,
-      );
+      noteEscape(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starR, starGrazeKm(starR));
     }
     if (escapeD < Infinity) {
       const inv = dT / Math.max(escapeD, 1e-18);
@@ -694,12 +694,12 @@ export class VoyagePilot {
     let bz = 0;
     let bestD = Infinity;
     let bestSin = 0;
-    const consider = (rx: number, ry: number, rz: number, radiusKm: number): void => {
+    const consider = (rx: number, ry: number, rz: number, radiusKm: number, grazeOverrideKm?: number): void => {
       const dO = Math.hypot(rx, ry, rz);
       if (!(dO > 1e-18) || dO >= dT || dO >= bestD) return;
       const dOT = Math.hypot(aim.x - rx, aim.y - ry, aim.z - rz);
       const R = Math.max(radiusKm, 1);
-      const grazeKm = Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
+      const grazeKm = grazeOverrideKm ?? Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
       const graze = Math.min(grazeKm * KM_TO_KPC, dOT * 0.9);
       if (!(graze > 0)) return;
       const sinMin = Math.min(1, graze / dO);
@@ -717,14 +717,10 @@ export class VoyagePilot {
       this.locale.bodyFromEye(this.ship.at, rt, this.hostTmp2);
       consider(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
     }
-    if (targetId != null) {
+    {
+      const starR = this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM;
       this.hostTmp2.copy(this.locale.root.position);
-      consider(
-        this.hostTmp2.x,
-        this.hostTmp2.y,
-        this.hostTmp2.z,
-        this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM,
-      );
+      consider(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starR, starGrazeKm(starR));
     }
     if (!(bestD < Infinity)) return;
 
