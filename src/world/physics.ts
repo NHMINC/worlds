@@ -553,14 +553,15 @@ export const UNIVERSE = {
    */
   DRONE_LIFT: 0.16,
   /**
-   * Inertial park look (LEO / station / MEO / polar). The nose
-   * stays near prograde; pitch down so the forward limb fills
-   * this fraction of the bottom of the frame, locked to the
-   * body. Horizon is acos(R/(R+h)) below prograde; the look
-   * sits CAM_FOV × (½ − this) above that limb. GEO / hover
-   * face the ball, full forward. Insertion eases from
-   * full-ahead to this pitch as the fly-to slides onto the
-   * rail. The helm does not zoom or free-look on the ring.
+   * Inertial park look (LEO / station / MEO / polar / ecliptic).
+   * The nose stays near prograde; pitch down so the forward
+   * limb fills this fraction of the bottom of the frame,
+   * locked to the body — or the host star on the ecliptic
+   * ring. Horizon is acos(R/d) below prograde; the look sits
+   * CAM_FOV × (½ − this) above that limb. GEO / hover face
+   * the ball, full forward. Insertion eases from full-ahead
+   * to this pitch as the fly-to slides onto the rail. The
+   * helm does not zoom or free-look on the ring.
    */
   ORBIT_LIMB_FILL: 0.3,
   /** Vertical field of the explorer camera (degrees). */

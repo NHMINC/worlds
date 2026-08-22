@@ -2947,15 +2947,17 @@ export class GalaxyView {
     const tx = c.x + this.orbitTmp2.x;
     const ty = c.y + this.orbitTmp2.y;
     const tz = c.z + this.orbitTmp2.z;
-    // θ=0: zenith = E1, prograde = E2.
+    // Same limb-down as a world ring: prograde pitched so the
+    // photosphere's top sits in the bottom of the frame.
+    this.pitchLimbFwd(this.rideE2, this.rideE1, this.starLimbR(), r, this.lookSlerp);
     this.easeCapturePose(
       dt,
       tx,
       ty,
       tz,
-      this.rideE2.x,
-      this.rideE2.y,
-      this.rideE2.z,
+      this.lookSlerp.x,
+      this.lookSlerp.y,
+      this.lookSlerp.z,
       this.rideE1.x,
       this.rideE1.y,
       this.rideE1.z,
@@ -3195,10 +3197,11 @@ export class GalaxyView {
   /**
    * Helm ride look. The ship camera is bolted to this attitude —
    * no free look, no zoom. Hang / GEO / hover: nose into the
-   * body (full sphere ahead). LEO / station / MEO / polar:
-   * prograde, pitched so the forward limb fills ORBIT_LIMB_FILL
-   * of the bottom of the frame, banked nadir-down and locked
-   * to the body. Drone is the free camera.
+   * body (full sphere ahead). LEO / station / MEO / polar /
+   * ecliptic: prograde, pitched so the forward limb fills
+   * ORBIT_LIMB_FILL of the bottom of the frame, banked
+   * nadir-down and locked to the body (or the star). Drone
+   * is the free camera.
    */
   private bankRideLook(tSys: number): void {
     const ride = this.riding;
@@ -3252,8 +3255,47 @@ export class GalaxyView {
       fx = this.lookSlerp.x;
       fy = this.lookSlerp.y;
       fz = this.lookSlerp.z;
+    } else if (ride.kind === 'ecliptic' && ride.bodyId == null) {
+      this.lookSlerp.set(fx, fy, fz);
+      this.orbitTmp.set(zx, zy, zz);
+      this.pitchLimbFwd(this.lookSlerp, this.orbitTmp, this.starLimbR(), ride.r, this.lookSlerp);
+      fx = this.lookSlerp.x;
+      fy = this.lookSlerp.y;
+      fz = this.lookSlerp.z;
     }
     this.aimOrbitBank(fx, fy, fz, zx, zy, zz);
+  }
+
+  /** Photosphere radius in catalog kpc — ecliptic limb uses this as R. */
+  private starLimbR(): number {
+    const km =
+      this.hostSpec?.star.radius ??
+      Math.max(1e-6, this.hostObj?.star.radius ?? 1) * UNIVERSE.RSUN_KM;
+    return Math.max(km, 1) * KM_TO_KPC;
+  }
+
+  /**
+   * Prograde pitched toward the body (−zenith) so the forward
+   * limb fills ORBIT_LIMB_FILL. Same law for a world or the star.
+   */
+  private pitchLimbFwd(
+    prograde: THREE.Vector3,
+    zenith: THREE.Vector3,
+    R: number,
+    d: number,
+    out: THREE.Vector3,
+    blend = 1,
+  ): void {
+    const p = orbitLimbPitch(R, d, this.camera.fov, UNIVERSE.ORBIT_LIMB_FILL) * blend;
+    const c = Math.cos(p);
+    const s = Math.sin(p);
+    out.set(
+      prograde.x * c - zenith.x * s,
+      prograde.y * c - zenith.y * s,
+      prograde.z * c - zenith.z * s,
+    );
+    if (out.lengthSq() < 1e-16) out.copy(prograde);
+    else out.normalize();
   }
 
   /**
@@ -3271,18 +3313,13 @@ export class GalaxyView {
       out.copy(prograde);
       return;
     }
-    const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
-    const d = orbitRadiusKpc(rt.spec, kind);
-    const p = orbitLimbPitch(R, d, this.camera.fov, UNIVERSE.ORBIT_LIMB_FILL);
-    const c = Math.cos(p);
-    const s = Math.sin(p);
-    out.set(
-      prograde.x * c - zenith.x * s,
-      prograde.y * c - zenith.y * s,
-      prograde.z * c - zenith.z * s,
+    this.pitchLimbFwd(
+      prograde,
+      zenith,
+      Math.max(rt.spec.radius, 1) * KM_TO_KPC,
+      orbitRadiusKpc(rt.spec, kind),
+      out,
     );
-    if (out.lengthSq() < 1e-16) out.copy(prograde);
-    else out.normalize();
   }
 
   /** Write the parked limb look (capture start — matches the insert ease). */
@@ -3515,6 +3552,34 @@ export class GalaxyView {
           ly = (dy / flen) * c - (zenY / zlen) * s;
           lz = (dz / flen) * c - (zenZ / zlen) * s;
         }
+      }
+    } else if (
+      bank &&
+      this.pendingOrbit &&
+      this.pendingOrbit.bodyId == null &&
+      this.pendingOrbit.kind === 'ecliptic' &&
+      this.courseObj
+    ) {
+      const zlen = Math.hypot(zenX, zenY, zenZ);
+      const flen = Math.hypot(dx, dy, dz);
+      if (zlen > 1e-18 && flen > 1e-18) {
+        const star = this.hostSpec?.star ?? {
+          radius: Math.max(1e-6, this.courseObj.star.radius) * UNIVERSE.RSUN_KM,
+        };
+        const rd = starOrbitRadiusKpc(star, this.parkKpc(this.courseObj));
+        this.lookSlerp.set(dx / flen, dy / flen, dz / flen);
+        this.orbitTmp2.set(zenX / zlen, zenY / zlen, zenZ / zlen);
+        this.pitchLimbFwd(
+          this.lookSlerp,
+          this.orbitTmp2,
+          this.starLimbR(),
+          rd,
+          this.lookSlerp,
+          insertBlend,
+        );
+        lx = this.lookSlerp.x;
+        ly = this.lookSlerp.y;
+        lz = this.lookSlerp.z;
       }
     }
     this.ship.easeToward(

@@ -209,12 +209,14 @@ toy — Godus blocks on a real-sized globe.
   right / clockwise is negative twist
   — in flight only. GEO / hover hang
   full-forward at the face. LEO /
-  station / MEO / polar pitch so the
-  forward limb fills `ORBIT_LIMB_FILL`
-  (30%) of the bottom of the frame and
-  stay locked to that body; insertion
-  eases that pitch as a **ship
-  attitude** (no second camera). The
+  station / MEO / polar / ecliptic
+  pitch so the forward limb fills
+  `ORBIT_LIMB_FILL` (30%) of the
+  bottom of the frame and stay locked
+  to that body (the host star on
+  ecliptic); insertion eases that
+  pitch as a **ship attitude** (no
+  second camera). The
   ship look *is* the camera when the
   ship is live. The
   trackball is an independent drone
@@ -452,10 +454,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Pick one and warp auto-engages; the viewpoint
   parks on that radius and rides it (hang for GEO /
   hover, inertial for the rest). Arrival look on
-  LEO / station / MEO / polar pitches down so the
-  top of the sphere fills the bottom 30% of the
-  frame (`ORBIT_LIMB_FILL`) and stays locked to
-  the body; that pitch eases in as the insertion
+  LEO / station / MEO / polar / ecliptic pitches
+  down so the top of the sphere fills the bottom
+  30% of the frame (`ORBIT_LIMB_FILL`) and stays
+  locked to the body — the host star on ecliptic,
+  same law; that pitch eases in as the insertion
   blend goes from full-ahead to the rail. GEO /
   hover face the hang face. The helm does not
   look-drag, zoom, or warp on a ring — Leave
