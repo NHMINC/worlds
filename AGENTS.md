@@ -859,7 +859,12 @@ as you move (~every 200 ms when the pose changes, and on hide).
 Compact JSON is about 0.6 KB on a ring and about 1 KB with the
 drone out — not a world dump. Reload restores the ship, the
 drone (if it was out), and that camera. Kepler still runs at
-live `t` from the stored phase.
+live `t` from the stored phase. Restore is a state copy, so the
+copy is **normalized once on boot** (`normalizeRestoredPose`): a
+saved ride re-derives its ring under current laws and pins via
+`placeRide`; any other pose that sits inside a hard fence (a
+stuck save from an older build — inside the sun, inside a shell)
+lifts radially to the appropriate park. A restart heals.
 
 **Export is first-class.** One self-contained `.tinysystem.json`
 (`formatVersion: 6`, `src/store/exportImport.ts`). Import creates a new
