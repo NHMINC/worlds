@@ -40,6 +40,8 @@ export class Trackball {
   phase: DronePhase = null;
   private launchLeg: LaunchLeg = 'lift';
   private readonly liftEye = new THREE.Vector3();
+  /** Pull-leg hold distance: the SHIP's distance from the core. */
+  private pullD = 0;
 
   /** Parked ship in host-km, frozen at launch. */
   readonly parkedEye = new THREE.Vector3();
@@ -53,8 +55,10 @@ export class Trackball {
   /**
    * Spawn from the ship's host-km eye / look. Park that pose
    * as the dock target. Launch lifts along ship-up facing
-   * forward, backs away from the orbited body until the disk
-   * fits the frame, then locks trackball on that core.
+   * forward, then locks trackball on the ship's orbit subject
+   * AT THE SHIP'S OWN DISTANCE, looking at the body — not the
+   * full-disk fill park, which on a close limb ride sat several
+   * radii out and left the pilot flying all the way back.
    */
   launch(eye: THREE.Vector3, fwd: THREE.Vector3, up: THREE.Vector3, world: DroneWorld): void {
     this.eye.copy(eye);
@@ -220,8 +224,9 @@ export class Trackball {
     if (this.t0.lengthSq() < 1e-12) this.t0.copy(this.parkedUp);
     if (this.t0.lengthSq() < 1e-12) this.t0.copy(this.parkedFwd).negate();
     this.t0.normalize();
-    const fill = Math.max(world.fillKm(R), R * 1.002);
-    this.rel.copy(this.t0).multiplyScalar(fill);
+    // Hold the ship's own distance (floored just off the skin).
+    this.pullD = Math.max(this.parkedEye.distanceTo(this.core), R * 1.002);
+    this.rel.copy(this.t0).multiplyScalar(this.pullD);
     this.launchLeg = 'pull';
   }
 
@@ -231,18 +236,19 @@ export class Trackball {
       const slack = Math.max(this.liftEye.distanceTo(this.parkedEye) * 0.08, 1);
       if (err > slack) return;
       this.beginPull(world);
-      const R = world.coreOf(this.lockId, this.core);
-      if (this.eye.distanceTo(this.core) >= world.fillKm(R) * 0.97) {
+      if (this.eye.distanceTo(this.core) >= this.pullD * 0.97) {
         this.finishLaunch(world);
       }
       return;
     }
     const R = world.coreOf(this.lockId, this.core);
-    const fill = Math.max(world.fillKm(R), R * 1.002);
-    this.rel.setLength(fill);
+    // A mid-pull restore has no saved hold distance — re-derive
+    // it from the parked ship (deterministic, not in the save).
+    if (this.pullD <= 0) this.beginPull(world);
+    this.rel.setLength(Math.max(this.pullD, R * 1.002));
     this.t0.copy(this.core).add(this.rel);
     const dist = this.eye.distanceTo(this.t0);
-    const slack = Math.max(fill * 0.03, 1);
+    const slack = Math.max(this.pullD * 0.03, 1);
     if (dist > slack) {
       this.t1.copy(this.t0).sub(this.eye);
       const step = Math.min(dist, Math.max(dist * LAUNCH_RATE * dt, dist * 0.08));
