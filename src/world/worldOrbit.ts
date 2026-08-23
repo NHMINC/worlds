@@ -15,36 +15,23 @@ export type WorldOrbitKind = 'equatorial' | 'polar' | 'hover' | 'ecliptic';
 /** Names that still arrive from old camps / sessions. */
 export type LegacyOrbitKind = 'leo' | 'station' | 'meo' | 'geo';
 
-export interface WorldOrbitOption {
-  kind: Exclude<WorldOrbitKind, 'ecliptic'>;
-  label: string;
-  hint: string;
-}
-
-/** Old altitude picks collapse onto the new roster. */
+/**
+ * Old picks collapse onto the two remaining rings: equatorial
+ * for a world, ecliptic for the star. Hover and polar retired —
+ * the drone is the close look, and one ring per body class
+ * keeps expectations exact.
+ */
 export function coerceOrbitKind(kind: string): WorldOrbitKind {
-  if (kind === 'polar') return 'polar';
-  if (kind === 'hover' || kind === 'geo') return 'hover';
-  if (kind === 'ecliptic') return 'ecliptic';
-  return 'equatorial';
-}
-
-/** Hang over one face (spinning frame). */
-export function isHangOrbit(kind: string): boolean {
-  return coerceOrbitKind(kind) === 'hover';
-}
-
-/** Inertial rings: helm pitched to the limb, locked to the body. */
-export function isLimbOrbit(kind: string): boolean {
-  const k = coerceOrbitKind(kind);
-  return k === 'equatorial' || k === 'polar' || k === 'ecliptic';
+  return kind === 'ecliptic' ? 'ecliptic' : 'equatorial';
 }
 
 /**
- * Pitch from prograde toward the body so the forward limb
- * fills `fill` of the bottom of a `fovDeg` frame. Horizon is
- * acos(R/d) below prograde; the look sits `fov*(½−fill)`
- * above that limb. At fill = ½ the look is the upper tangent.
+ * Yaw from prograde toward the body so the near limb sits
+ * `fill` across a `fovDeg` field. Horizon is acos(R/d) off
+ * prograde; the look sits `fov*(½−fill)` past that limb. At
+ * fill = ½ the limb is exactly on the frame's centre line —
+ * fed the HORIZONTAL field, that is the side-on ride: the
+ * body confined to the left half of the screen.
  */
 export function orbitLimbPitch(R: number, d: number, fovDeg: number, fill: number): number {
   const ratio = Math.min(0.999999, Math.max(0, R / Math.max(d, 1e-18)));
@@ -69,37 +56,13 @@ export function orbitLimbCornerAlpha(): number {
 }
 
 export function orbitLabel(kind: string): string {
-  switch (coerceOrbitKind(kind)) {
-    case 'equatorial':
-      return 'Equatorial';
-    case 'polar':
-      return 'Polar';
-    case 'hover':
-      return 'Hover';
-    case 'ecliptic':
-      return 'Ecliptic';
-  }
+  return coerceOrbitKind(kind) === 'ecliptic' ? 'Ecliptic' : 'Equatorial';
 }
 
-/** Chart modal roster. A star has no pick — Lock-on is ecliptic. */
-export function orbitOptions(_body: BodySpec): WorldOrbitOption[] {
-  return [
-    {
-      kind: 'equatorial',
-      label: 'Equatorial',
-      hint: 'Inertial, in the spin equator — body below.',
-    },
-    {
-      kind: 'polar',
-      label: 'Polar',
-      hint: 'Inertial, over the poles — body below.',
-    },
-    {
-      kind: 'hover',
-      label: 'Hover',
-      hint: 'Hang over the arrival face. The disk fills the frame.',
-    },
-  ];
+/** Horizontal field (degrees) of a vertical-fov frame — the side-on ride measures against this. */
+export function sideFovDeg(fovDeg: number, aspect: number): number {
+  const v = (fovDeg * Math.PI) / 180;
+  return (2 * Math.atan(Math.tan(v * 0.5) * Math.max(1e-6, aspect)) * 180) / Math.PI;
 }
 
 function gasFloor(body: BodySpec): number {
@@ -134,17 +97,6 @@ export function limbViewRadiusKm(R: number, body?: BodySpec): number {
   const hi = r + UNIVERSE.ORBIT_VIEW_H_KM;
   if (hi < lo) return lo;
   return Math.min(hi, Math.max(lo, want));
-}
-
-/**
- * Hover park: the FULL disk in the decreed film with edge
- * padding (HOVER_FILL of the shorter field). Same picture on
- * every body; portrait pads the sides, landscape the top.
- */
-export function hoverViewRadiusKm(R: number, body?: BodySpec): number {
-  const r = Math.max(R, 1);
-  const want = fillViewRadius(r, UNIVERSE.CAM_FOV, UNIVERSE.CAM_ASPECT, UNIVERSE.HOVER_FILL);
-  return Math.max(viewSkinKm(r, body), want);
 }
 
 /** Body radius + absolute transfer / graze floor (km from centre). */
@@ -182,10 +134,8 @@ export function shellFloorKm(body: { radius: number } & Partial<BodySpec>): numb
 }
 
 export function orbitRadiusKm(body: BodySpec, kind: string): number {
-  const k = coerceOrbitKind(kind);
-  const R = Math.max(body.radius, 1);
-  if (k === 'hover') return hoverViewRadiusKm(R, body);
-  return limbViewRadiusKm(R, body);
+  void coerceOrbitKind(kind);
+  return limbViewRadiusKm(Math.max(body.radius, 1), body);
 }
 
 export function orbitRadiusKpc(body: BodySpec, kind: string): number {

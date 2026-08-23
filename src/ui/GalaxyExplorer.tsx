@@ -10,11 +10,10 @@ import { geologyFor } from '../world/geology';
 import { insolationAt, localTemp01, METERS_PER_LEVEL } from '../world/toygen';
 import { IconCenter, IconGlobe, IconInspect, IconLabel, IconMusic, IconMusicOff, IconOrbits, IconPlace, IconTrackball } from './icons';
 import { SystemMap, mapAngleOf, planetsFromSpec, systemClock } from './SystemMap';
-import { OrbitPick } from './OrbitPick';
 import { InspectorPanel, type InspectedCell } from './InspectorPanel';
 import { LabelsOverlay } from './LabelsOverlay';
 import { PlaceDialog } from './PlaceDialog';
-import { isHangOrbit, orbitLabel } from '../world/worldOrbit';
+import { orbitLabel } from '../world/worldOrbit';
 import { lockedToStar } from '../world/systemgen';
 import { navModeLabel } from '../render/hostNav';
 import { useEngineer } from './EngineerPanel';
@@ -121,7 +120,6 @@ export function GalaxyExplorer(props: Props) {
   const musicRef = useRef<AmbientMusic | null>(null);
   const [menu, setMenu] = useState<null | 'view' | 'engineer'>(null);
   const [mapOpen, setMapOpen] = useState(false);
-  const [orbitPick, setOrbitPick] = useState<string | null>(null);
   const eng = useEngineer(
     () => viewRef.current,
     seed,
@@ -607,12 +605,7 @@ export function GalaxyExplorer(props: Props) {
                 <b>{frame.navHint ?? 'Orbit'}</b>
                 <em>{navModeLabel('orbit')}</em>
                 {frame.orbit ? (
-                  <i className="gx-plate-go">
-                    {orbitLabel(frame.orbit)}
-                    {isHangOrbit(frame.orbit)
-                      ? ' · facing body'
-                      : ' · body below'}
-                  </i>
+                  <i className="gx-plate-go">{orbitLabel(frame.orbit)} · side-on</i>
                 ) : (
                   <i className="gx-plate-go">Free look</i>
                 )}
@@ -867,23 +860,11 @@ export function GalaxyExplorer(props: Props) {
           angleOf={chartAngleOf}
           zoomable
           closeOnTravel={false}
-          onTravel={(id) => setOrbitPick(id)}
-          onClose={() => {
+          onTravel={(id) => {
             setMapOpen(false);
-            setOrbitPick(null);
+            viewRef.current?.goToWorldOrbit(id, 'equatorial');
           }}
-        />
-      )}
-      {orbitPick && chartSpec && chartSpec.bodies.some((b) => b.id === orbitPick) && (
-        <OrbitPick
-          body={chartSpec.bodies.find((b) => b.id === orbitPick)!}
-          onCancel={() => setOrbitPick(null)}
-          onPick={(kind) => {
-            const id = orbitPick;
-            setOrbitPick(null);
-            setMapOpen(false);
-            viewRef.current?.goToWorldOrbit(id, kind);
-          }}
+          onClose={() => setMapOpen(false)}
         />
       )}
       {inspect && (

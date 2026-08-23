@@ -18,12 +18,10 @@ import { ShipFlight } from './flight';
 import { Voyage } from './voyage';
 import { HostLocale } from './hostLocale';
 import {
-  coerceOrbitKind,
-  isHangOrbit,
-  isLimbOrbit,
   orbitLimbPitch,
   orbitOmega,
   orbitRadiusKpc,
+  sideFovDeg,
   starFilmRKm,
   starOrbitOmega,
   starOrbitRadiusKpc,
@@ -160,12 +158,11 @@ export class VoyagePilot {
    * arrival projected into the equator.
    */
   layoutInertialPlane(kind: WorldOrbitKind, arrival: THREE.Vector3): void {
+    void kind;
     this.voyage.rideE1.copy(arrival);
     if (this.voyage.rideE1.lengthSq() < 1e-16) this.voyage.rideE1.copy(this.ship.fwd).negate();
     this.voyage.rideE1.normalize();
-    if (coerceOrbitKind(kind) === 'polar') {
-      this.voyage.rideE2.copy(this.voyage.rideNorth).addScaledVector(this.voyage.rideE1, -this.voyage.rideNorth.dot(this.voyage.rideE1));
-    } else {
+    {
       this.voyage.rideE1.addScaledVector(this.voyage.rideNorth, -this.voyage.rideE1.dot(this.voyage.rideNorth));
       if (this.voyage.rideE1.lengthSq() < 1e-16) {
         this.voyage.rideE1.crossVectors(this.voyage.rideNorth, this.ship.fwd);
@@ -208,21 +205,15 @@ export class VoyagePilot {
   /** dirCatalog is body → camera at first contact, unit. The ring starts there. */
   beginRide(rt: HostBodyRT, kind: WorldOrbitKind, dirCatalog: THREE.Vector3, tSys: number): void {
     const r = orbitRadiusKpc(rt.spec, kind);
-    const hang = isHangOrbit(kind);
     this.locale.spinWorld(rt, this.orbitQ);
-    const omega = hang ? 0 : orbitOmega(rt.spec, kind);
-    let theta0 = 0;
-    if (hang) {
-      this.voyage.rideLocal.copy(dirCatalog).applyQuaternion(this.orbitQ.clone().conjugate());
-    } else {
-      // Height is the named ring. The plane contains the arrival
-      // so we do not seek an equator / far-side start.
-      this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-      this.layoutInertialPlane(kind, dirCatalog);
-      theta0 = -omega * tSys;
-    }
+    const omega = orbitOmega(rt.spec, kind);
+    // Height is the named ring. The plane contains the arrival
+    // so we do not seek an equator / far-side start.
+    this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+    this.layoutInertialPlane(kind, dirCatalog);
+    const theta0 = -omega * tSys;
     // Lock-on ends. In Orbit: helm look stays locked to the ring.
-    this.voyage.arriveRide({ bodyId: rt.spec.id, kind, hang, r, theta0, omega });
+    this.voyage.arriveRide({ bodyId: rt.spec.id, kind, hang: false, r, theta0, omega });
     this.placeRide(tSys);
     this.port.arrived();
   }
@@ -288,13 +279,7 @@ export class VoyagePilot {
       this.voyage.clearRide();
       return;
     }
-    if (ride.hang) {
-      this.locale.spinWorld(rt, this.orbitQ);
-      this.orbitTmp2.copy(this.voyage.rideLocal).applyQuaternion(this.orbitQ);
-      ox = this.orbitTmp2.x * ride.r;
-      oy = this.orbitTmp2.y * ride.r;
-      oz = this.orbitTmp2.z * ride.r;
-    } else {
+    {
       const th = ride.theta0 + ride.omega * tSys;
       const c = Math.cos(th);
       const s = Math.sin(th);
@@ -320,37 +305,16 @@ export class VoyagePilot {
   }
 
   /**
-   * Helm ride look. The ship camera is bolted to this attitude —
-   * no free look, no zoom. Hover: nose into the body (full
-   * sphere ahead). Equatorial / polar / ecliptic: prograde,
-   * pitched so the forward limb fills ORBIT_LIMB_FILL of the
-   * frame, banked nadir-down. Same law for a world or the
-   * star. Drone is the free camera.
+   * Helm ride look — SIDE-ON. The ship camera is bolted to this
+   * attitude: prograde, yawed toward the body so the near limb
+   * sits at ORBIT_LIMB_FILL of the HORIZONTAL field (½ = the
+   * centre line — the body confined to the left half), rolled so
+   * the ring plane is level (tidally locked on its side). Same
+   * law for a world or the star. Drone is the free camera.
    */
   private bankRideLook(tSys: number): void {
     const ride = this.voyage.riding;
     if (!ride || this.port.droneLive()) return;
-    if (ride.hang) {
-      // GEO / hover: face the hang face — full sphere ahead.
-      const rt = this.worldRt(ride.bodyId);
-      if (!rt) return;
-      this.locale.spinWorld(rt, this.orbitQ);
-      this.orbitTmp2.copy(this.voyage.rideLocal).applyQuaternion(this.orbitQ);
-      const len = Math.hypot(this.orbitTmp2.x, this.orbitTmp2.y, this.orbitTmp2.z);
-      if (len < 1e-18) return;
-      // Nose into the face; galactic north as screen-up.
-      // Do not zero Euler roll — setEuler rebuilds from
-      // galactic yaw/pitch and fights the look every frame.
-      this.aimOrbitBank(
-        -this.orbitTmp2.x / len,
-        -this.orbitTmp2.y / len,
-        -this.orbitTmp2.z / len,
-        0,
-        1,
-        0,
-      );
-      return;
-    }
     const th = ride.theta0 + ride.omega * tSys;
     const c = Math.cos(th);
     const s = Math.sin(th);
@@ -372,19 +336,30 @@ export class VoyagePilot {
     fy /= flen;
     fz /= flen;
     const rt = ride.bodyId != null ? this.worldRt(ride.bodyId) : null;
-    if (isLimbOrbit(ride.kind)) {
-      const Rkpc =
-        rt != null
-          ? Math.max(rt.spec.radius, 1) * KM_TO_KPC
-          : this.starLimbR();
-      this.lookSlerp.set(fx, fy, fz);
-      this.orbitTmp.set(zx, zy, zz);
-      this.pitchLimbFwd(this.lookSlerp, this.orbitTmp, Rkpc, ride.r, this.lookSlerp);
-      fx = this.lookSlerp.x;
-      fy = this.lookSlerp.y;
-      fz = this.lookSlerp.z;
-    }
-    this.aimOrbitBank(fx, fy, fz, zx, zy, zz);
+    const Rkpc =
+      rt != null
+        ? Math.max(rt.spec.radius, 1) * KM_TO_KPC
+        : this.starLimbR();
+    this.lookSlerp.set(fx, fy, fz);
+    this.orbitTmp.set(zx, zy, zz);
+    this.pitchLimbFwd(this.lookSlerp, this.orbitTmp, Rkpc, ride.r, this.lookSlerp);
+    // Side-on bank: screen-up = fwd × nadir puts the body on
+    // the LEFT (nadir lands on −right), ring plane level.
+    this.orbitTmp2.set(
+      this.lookSlerp.y * -zz - this.lookSlerp.z * -zy,
+      this.lookSlerp.z * -zx - this.lookSlerp.x * -zz,
+      this.lookSlerp.x * -zy - this.lookSlerp.y * -zx,
+    );
+    if (this.orbitTmp2.lengthSq() < 1e-16) this.orbitTmp2.set(0, 1, 0);
+    this.orbitTmp2.normalize();
+    this.aimOrbitBank(
+      this.lookSlerp.x,
+      this.lookSlerp.y,
+      this.lookSlerp.z,
+      this.orbitTmp2.x,
+      this.orbitTmp2.y,
+      this.orbitTmp2.z,
+    );
   }
 
   /** Star film radius in catalog kpc — ecliptic limb uses this as
@@ -395,8 +370,9 @@ export class VoyagePilot {
   }
 
   /**
-   * Prograde pitched toward the body (−zenith) so the forward
-   * limb fills ORBIT_LIMB_FILL. Same law for a world or the star.
+   * Prograde yawed toward the body (−zenith) so the near limb
+   * sits at ORBIT_LIMB_FILL of the HORIZONTAL field — the
+   * side-on ride. Same law for a world or the star.
    */
   pitchLimbFwd(
     prograde: THREE.Vector3,
@@ -406,7 +382,8 @@ export class VoyagePilot {
     out: THREE.Vector3,
     blend = 1,
   ): void {
-    const p = orbitLimbPitch(R, d, this.camera.fov, UNIVERSE.ORBIT_LIMB_FILL) * blend;
+    const hFov = sideFovDeg(this.camera.fov, this.camera.aspect);
+    const p = orbitLimbPitch(R, d, hFov, UNIVERSE.ORBIT_LIMB_FILL) * blend;
     const c = Math.cos(p);
     const s = Math.sin(p);
     out.set(
@@ -429,10 +406,6 @@ export class VoyagePilot {
     zenith: THREE.Vector3,
     out: THREE.Vector3,
   ): void {
-    if (!isLimbOrbit(kind)) {
-      out.copy(prograde);
-      return;
-    }
     this.pitchLimbFwd(
       prograde,
       zenith,

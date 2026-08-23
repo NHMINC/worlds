@@ -36,7 +36,6 @@ import { VoyageApproach } from './voyageApproach';
 export type { GalaxyFocus } from './sight';
 import {
   coerceOrbitKind,
-  isHangOrbit,
   orbitLabel,
   orbitOmega,
   orbitRadiusKpc,
@@ -604,9 +603,7 @@ export class GalaxyView {
     if (!host) return null;
     const rt = this.worldRt(this.voyage.riding?.bodyId ?? this.worldId);
     let dir: [number, number, number] | null = null;
-    if (this.voyage.riding?.hang) {
-      dir = [this.voyage.rideLocal.x, this.voyage.rideLocal.y, this.voyage.rideLocal.z];
-    } else if (rt) {
+    if (rt) {
       this.locale.bodyFromEye(this.ship.at, rt, this.orbitTmp2).negate();
       if (this.orbitTmp2.lengthSq() > 1e-28) {
         this.locale.spinWorld(rt, this.orbitQ);
@@ -716,16 +713,13 @@ export class GalaxyView {
     const dir = this.dirFromPlace(p, rt);
     // Landed camps restore as the ring they stood under — walking
     // is retired; the drone is the close look.
-    const kind = coerceOrbitKind(p.orbit ?? 'hover');
+    const kind = coerceOrbitKind(p.orbit ?? 'equatorial');
     this.pilot.beginRide(rt, kind, dir, tSys);
     if (p.h != null && this.voyage.riding) {
       const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
       const lo = shellFloorKm(rt.spec) * KM_TO_KPC;
       const hi = Math.max(R * (1 + UNIVERSE.SOI_TRACK_MAX), UNIVERSE.WORLD_RANGE_KPC * 0.8);
       this.voyage.riding.r = THREE.MathUtils.clamp(R * (1 + p.h), lo, hi);
-    }
-    if (kind && isHangOrbit(kind) && p.dir && this.voyage.riding) {
-      this.voyage.rideLocal.set(p.dir[0], p.dir[1], p.dir[2]).normalize();
     }
     this.pilot.placeRide(tSys);
     this.pendingPlace = null;
@@ -745,7 +739,7 @@ export class GalaxyView {
       this.voyage.riding = {
         bodyId: s.riding.bodyId,
         kind,
-        hang: isHangOrbit(kind),
+        hang: false,
         r: s.riding.r,
         theta0: s.riding.theta0,
         omega: s.riding.omega,
@@ -754,7 +748,7 @@ export class GalaxyView {
         const rt = this.worldRt(s.riding.bodyId);
         if (rt) {
           this.voyage.riding.r = orbitRadiusKpc(rt.spec, kind);
-          this.voyage.riding.omega = isHangOrbit(kind) ? 0 : orbitOmega(rt.spec, kind);
+          this.voyage.riding.omega = orbitOmega(rt.spec, kind);
         }
       } else if (this.locale.obj) {
         const mass = Math.max(0.08, this.locale.spec?.star.mass ?? this.locale.obj.star.mass);
@@ -763,7 +757,6 @@ export class GalaxyView {
       }
       this.voyage.rideE1.set(s.riding.e1[0], s.riding.e1[1], s.riding.e1[2]);
       this.voyage.rideE2.set(s.riding.e2[0], s.riding.e2[1], s.riding.e2[2]);
-      this.voyage.rideLocal.set(s.riding.local[0], s.riding.local[1], s.riding.local[2]);
       this.pilot.placeRide(tSys);
     }
     if (s.capturing) {
@@ -778,7 +771,7 @@ export class GalaxyView {
       // would have taken off to, over the same face.
       const rt = this.worldRt(s.worldId ?? s.bodyId);
       if (rt) {
-        const kind = coerceOrbitKind(s.landKind ?? 'hover');
+        const kind = coerceOrbitKind(s.landKind ?? 'equatorial');
         this.locale.spinWorld(rt, this.orbitQ);
         this.orbitTmp2
           .set(s.surfDir?.[0] ?? 0, s.surfDir?.[1] ?? 0, s.surfDir?.[2] ?? 1)

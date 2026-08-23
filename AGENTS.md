@@ -171,12 +171,13 @@ toy — Godus blocks on a real-sized globe.
   the transfer stays a close-crawl and
   the slot lasts the capture; Stop at
   `ARRIVE_FILL` of that disk). Reticle Set course is
-  still that heading. The system chart
-  opens an orbit picker (Equatorial,
-  Polar, Hover); a star is always
-  ecliptic. Confirm auto-warps and
+  still that heading. A world tap goes straight to the
+  equatorial ring; a star is always
+  ecliptic — hover and polar are
+  retired (the drone is the close
+  look), so expectations are exact. Confirm auto-warps and
   settles onto that plane at the film
-  radius (limb curve / hover area) —
+  radius (limb curve) —
   first contact, never through the
   body. The TRANSFER ROUTE
   is a per-frame law, not waypoints: the
@@ -226,13 +227,12 @@ toy — Godus blocks on a real-sized globe.
   or a still hold on the left/right of
   the screen (`SOI_TWIST` rad/s) —
   right / clockwise is negative twist
-  — in flight only. Hover hangs
-  full-forward at the face at the
-  hover film (`HOVER_FILL`): the
-  whole disk with edge padding on
-  the shorter field. The drone's
-  launch pull-back uses the same
-  film on the live screen. Equatorial / polar /
+  — in flight only. The drone
+  launches at the hover film
+  (`HOVER_FILL`): the whole disk in
+  frame with edge padding on the
+  shorter field, on the live
+  screen. Equatorial /
   ecliptic share one inertial film:
   the forward limb sits on the
   midline (`ORBIT_LIMB_FILL` 50%)
@@ -500,17 +500,16 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   is the same rank-spaced orbits-and-moons schematic as the
   world viewer, zoomable. It appears only inside a host
   sphere. A tap opens a modal of three rings
-  (Equatorial, Polar, Hover). A star has no pick
-  — Lock-on is always ecliptic. Pick one and warp
-  auto-engages; distance is the film law, not an
-  altitude menu. Hover hangs facing the disk at
-  the hover film (`HOVER_FILL`:
-  the whole sphere with padding on
-  the shorter field). Equatorial / polar /
-  ecliptic pitch so the top of the sphere sits on
-  the midline (`ORBIT_LIMB_FILL`) — a huge body
-  is a level horizon, a smaller one curves toward
-  the lower corners. That pitch eases in as the
+  — one ring per body class: a world tap warps
+  straight onto the equatorial ring; a star is
+  always ecliptic. No picker modal, no hover, no
+  polar — the drone is the close look. The ride
+  is SIDE-ON: prograde, yawed toward the body so
+  the near limb sits on the vertical centre line
+  (`ORBIT_LIMB_FILL` = ½ of the HORIZONTAL
+  field), rolled so the ring plane is level —
+  the body fills the left half of the screen,
+  the way people draw an orbit. That yaw eases in as the
   insertion blend goes from full-ahead to the
   rail. The helm does not
   look-drag, zoom, or warp on a ring — Leave
@@ -748,7 +747,7 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   Inside, `ARRIVE_WARP` also
   caps (sticky — fly out before a new target or full warp).
   A locked course stops at the dest
-  film park (limb curve / hover area),
+  film park (limb curve),
   not a tap. Inside a host, set
   course on a world uses that world's
   film ring; speed ramps from
@@ -1147,7 +1146,7 @@ Code map (start here):
 | Region point size / brightness law | `src/render/galaxyStar.ts` |
 | First look (habitable search) | `src/world/discover.ts` |
 | System / orbits / gen version | `src/world/systemgen.ts` |
-| Orbit film laws (limb / hover / fill parks, ω, escape) | `src/world/worldOrbit.ts` |
+| Orbit film laws (limb / fill parks, ω, escape) | `src/world/worldOrbit.ts` |
 | Hex columns, hydrology, snow line | `src/world/toygen.ts` |
 | Palettes from physics | `src/world/toyPalette.ts` |
 | Per-cell geology (mining truth) | `src/world/geology.ts` |

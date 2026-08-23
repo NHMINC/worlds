@@ -561,17 +561,16 @@ export const UNIVERSE = {
   SOI_TRACK_MIN: 0.12,
   SOI_TRACK_MAX: 8,
   /**
-   * Inertial park film (equatorial / polar / ecliptic — one
-   * law, every body). The look is the upper tangent: the
-   * forward limb sits this fraction up the frame (½ = midline).
-   * Distance then follows the sphere: a huge body hits
-   * ORBIT_VIEW_H_KM and the horizon is almost level; a smaller
-   * world parks where the limb curve almost touches the lower
-   * corners of the decreed film (`ORBIT_LIMB_CORNER` inset on
-   * CAM_FOV × CAM_ASPECT). Hover faces the ball at the hover
-   * film (HOVER_FILL). Insertion eases from full-ahead to
-   * this pitch. The helm does not zoom or free-look on the
-   * ring.
+   * Ride film (equatorial / ecliptic — one law, every body).
+   * SIDE-ON: prograde, yawed toward the body so the near limb
+   * sits this fraction across the HORIZONTAL field (½ = the
+   * vertical centre line: the body confined to the left half),
+   * rolled so the ring plane is level. Distance follows the
+   * sphere: a huge body hits ORBIT_VIEW_H_KM; a smaller world
+   * parks where the limb curve almost touches the corners of
+   * the decreed film (`ORBIT_LIMB_CORNER` inset on CAM_FOV ×
+   * CAM_ASPECT). Insertion eases from full-ahead to this yaw.
+   * The helm does not zoom or free-look on the ring.
    */
   ORBIT_LIMB_FILL: 0.5,
   /**
@@ -583,11 +582,11 @@ export const UNIVERSE = {
   /** Inset on the lower corners (1 = exact corners). */
   ORBIT_LIMB_CORNER: 0.92,
   /**
-   * Hover film (hover park + the drone's launch pull-back):
-   * the FULL disk in frame with edge padding — its diameter
-   * covers this fraction of the SHORTER field, so portrait
-   * pads the sides and landscape pads top / bottom. The old
-   * 60%-of-screen-AREA law overflowed the frame vertically.
+   * The drone's launch film: the FULL disk in frame with edge
+   * padding — its diameter covers this fraction of the SHORTER
+   * live field, so portrait pads the sides and landscape pads
+   * top / bottom. (Hover rides are retired; the drone is the
+   * close look.)
    */
   HOVER_FILL: 0.72,
   /** Vertical field of the explorer camera (degrees). */

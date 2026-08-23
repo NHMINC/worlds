@@ -27,7 +27,7 @@ import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import { galToCart, type GalaxyObject } from '../world/galaxy';
 import { type HostBodyRT } from './hostSystem';
-import { planOrbitInsert, type InsertMode } from './orbitInsert';
+import { planOrbitInsert } from './orbitInsert';
 import { ShipFlight } from './flight';
 import { ShipControls } from './shipControls';
 import { Voyage } from './voyage';
@@ -35,11 +35,9 @@ import { HostLocale } from './hostLocale';
 import { NavWorld } from './navWorld';
 import { VoyagePilot, type PilotPort } from './voyagePilot';
 import {
-  coerceOrbitKind,
-  isHangOrbit,
-  isLimbOrbit,
   orbitLimbPitch,
   orbitRadiusKpc,
+  sideFovDeg,
   starOrbitRadiusKpc,
   type WorldOrbitKind,
 } from '../world/worldOrbit';
@@ -179,19 +177,17 @@ export class Navigator {
         (UNIVERSE.NAV_ARC_MARGIN * UNIVERSE.SHIP_TURN_RATE * d) / (2 * sinHalf);
     }
 
-    // Hang / hover face the sphere. Inertial banks body-below
-    // only inside the insert window. Far lock-on is a heading
-    // hold — passing zenith here snapped roll (away-from-star
-    // = screen-up) on the Set course tap and the sky jumped.
+    // Banking engages only inside the insert window. Far
+    // lock-on is a heading hold — passing zenith here snapped
+    // roll on the Set course tap and the sky jumped.
     const dest = this.destOrbit();
-    const hangLook =
-      dest != null && dest.bodyId != null && isHangOrbit(dest.kind);
-    const bank = !hangLook && haveZen && insertBlend > 1e-4;
-    // Limb pitch is a ship attitude (not a second camera).
+    const bank = haveZen && insertBlend > 1e-4;
+    // Limb yaw is a ship attitude (not a second camera) — the
+    // side-on ride: the near limb walks to the centre line.
     let lx = dx;
     let ly = dy;
     let lz = dz;
-    if (bank && dest?.bodyId && isLimbOrbit(dest.kind)) {
+    if (bank && dest?.bodyId) {
       const rt = this.worldRt(dest.bodyId);
       if (rt) {
         const zlen = Math.hypot(zenX, zenY, zenZ);
@@ -199,7 +195,8 @@ export class Navigator {
         if (zlen > 1e-18 && flen > 1e-18) {
           const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
           const rd = orbitRadiusKpc(rt.spec, dest.kind);
-          const pitch = orbitLimbPitch(R, rd, this.camera.fov, UNIVERSE.ORBIT_LIMB_FILL) * insertBlend;
+          const hFov = sideFovDeg(this.camera.fov, this.camera.aspect);
+          const pitch = orbitLimbPitch(R, rd, hFov, UNIVERSE.ORBIT_LIMB_FILL) * insertBlend;
           const c = Math.cos(pitch);
           const s = Math.sin(pitch);
           lx = (dx / flen) * c - (zenX / zlen) * s;
@@ -231,17 +228,30 @@ export class Navigator {
         lz = this.lookSlerp.z;
       }
     }
-    this.fcs.steer(
-      dt,
-      UNIVERSE.ARRIVE_HOLD,
-      lx,
-      ly,
-      lz,
-      bank ? zenX : null,
-      bank ? zenY : null,
-      bank ? zenZ : null,
-      hangLook,
-    );
+    // Side-on bank: screen-up = fwd × nadir (nadir = −zenith)
+    // puts the body on the LEFT as the insert eases in.
+    let ux: number | null = null;
+    let uy: number | null = null;
+    let uz: number | null = null;
+    if (bank) {
+      const nx = -zenX;
+      const ny = -zenY;
+      const nz = -zenZ;
+      ux = ly * nz - lz * ny;
+      uy = lz * nx - lx * nz;
+      uz = lx * ny - ly * nx;
+      const ul = Math.hypot(ux, uy, uz);
+      if (ul > 1e-18) {
+        ux /= ul;
+        uy /= ul;
+        uz /= ul;
+      } else {
+        ux = null;
+        uy = null;
+        uz = null;
+      }
+    }
+    this.fcs.steer(dt, UNIVERSE.ARRIVE_HOLD, lx, ly, lz, ux, uy, uz, false);
     this.port.applyCam();
     this.port.wake();
   }
@@ -343,18 +353,12 @@ export class Navigator {
       return;
     }
     const r = orbitRadiusKpc(rt.spec, cap.kind);
-    const hang = isHangOrbit(cap.kind);
     this.locale.spinWorld(rt, this.orbitQ);
     // Desired ring offset from the body (catalog), same law as placeRide.
-    if (hang) {
-      this.voyage.rideLocal.copy(cap.dir).applyQuaternion(this.orbitQ.clone().conjugate());
-      this.tmp2.copy(this.voyage.rideLocal).applyQuaternion(this.orbitQ).multiplyScalar(r);
-    } else {
-      this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-      this.pilot.layoutInertialPlane(cap.kind, cap.dir);
-      // Capture holds the arrival longitude (theta = 0 on E1).
-      this.tmp2.copy(this.voyage.rideE1).multiplyScalar(r);
-    }
+    this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+    this.pilot.layoutInertialPlane(cap.kind, cap.dir);
+    // Capture holds the arrival longitude (theta = 0 on E1).
+    this.tmp2.copy(this.voyage.rideE1).multiplyScalar(r);
     // Desired eye = body + offset; the ring point drifts with the
     // body's own Kepler velocity (rendezvous feeds that forward).
     this.locale.bodyCatalog(rt, this.tmp);
@@ -365,51 +369,27 @@ export class Navigator {
     const ty = cy + this.tmp2.y;
     const tz = cz + this.tmp2.z;
     const drift = this.nav.body(cap.bodyId)?.vel ?? null;
-    // Hang / hover: nose into the body (full sphere). Inertial:
-    // zenith along offset, fwd prograde (body below).
-    let posErr: number;
-    if (hang) {
-      this.tmp.copy(this.tmp2);
-      if (this.tmp.lengthSq() < 1e-28) this.tmp.copy(cap.dir);
-      this.tmp.normalize();
-      // Look at the sphere: fwd = −radial out.
-      posErr = this.rendezvous(
-        dt,
-        tx,
-        ty,
-        tz,
-        cx,
-        cy,
-        cz,
-        r,
-        drift,
-        -this.tmp.x,
-        -this.tmp.y,
-        -this.tmp.z,
-        this.tmp.x,
-        this.tmp.y,
-        this.tmp.z,
-      );
-    } else {
-      this.pilot.limbParkFwd(rt, cap.kind, this.voyage.rideE2, this.voyage.rideE1, this.lookSlerp);
-      posErr = this.rendezvous(
-        dt,
-        tx,
-        ty,
-        tz,
-        cx,
-        cy,
-        cz,
-        r,
-        drift,
-        this.lookSlerp.x,
-        this.lookSlerp.y,
-        this.lookSlerp.z,
-        this.voyage.rideE1.x,
-        this.voyage.rideE1.y,
-        this.voyage.rideE1.z,
-      );
-    }
+    // Side-on parked look: fwd prograde yawed to the limb, up =
+    // fwd × nadir (body left).
+    this.pilot.limbParkFwd(rt, cap.kind, this.voyage.rideE2, this.voyage.rideE1, this.lookSlerp);
+    this.tmp.crossVectors(this.lookSlerp, this.tmp2.copy(this.voyage.rideE1).negate()).normalize();
+    const posErr = this.rendezvous(
+      dt,
+      tx,
+      ty,
+      tz,
+      cx,
+      cy,
+      cz,
+      r,
+      drift,
+      this.lookSlerp.x,
+      this.lookSlerp.y,
+      this.lookSlerp.z,
+      this.tmp.x,
+      this.tmp.y,
+      this.tmp.z,
+    );
     if (posErr <= this.latchSlack(r)) {
       this.voyage.capturing = null;
       this.pilot.beginRide(rt, cap.kind, cap.dir, tSys);
@@ -431,6 +411,7 @@ export class Navigator {
     // Same limb-down as a world ring: look along the upper
     // tangent so the photosphere sits in the lower half.
     this.pilot.pitchLimbFwd(this.voyage.rideE2, this.voyage.rideE1, this.pilot.starLimbR(), r, this.lookSlerp);
+    this.tmp.crossVectors(this.lookSlerp, this.tmp2.copy(this.voyage.rideE1).negate()).normalize();
     const posErr = this.rendezvous(
       dt,
       tx,
@@ -444,9 +425,9 @@ export class Navigator {
       this.lookSlerp.x,
       this.lookSlerp.y,
       this.lookSlerp.z,
-      this.voyage.rideE1.x,
-      this.voyage.rideE1.y,
-      this.voyage.rideE1.z,
+      this.tmp.x,
+      this.tmp.y,
+      this.tmp.z,
     );
     if (posErr <= this.latchSlack(r)) {
       this.voyage.capturing = null;
@@ -531,21 +512,7 @@ export class Navigator {
         this.locale.root.updateMatrixWorld(true);
       }
     }
-    // Hang capture: fwd ≈ −zenith → face the sphere (roll → 0).
-    const face =
-      fwdX * zenX + fwdY * zenY + fwdZ * zenZ <
-      -0.7 * Math.hypot(fwdX, fwdY, fwdZ) * Math.hypot(zenX, zenY, zenZ);
-    this.fcs.steer(
-      dt,
-      UNIVERSE.ORBIT_CAPTURE,
-      fwdX,
-      fwdY,
-      fwdZ,
-      face ? null : zenX,
-      face ? null : zenY,
-      face ? null : zenZ,
-      face,
-    );
+    this.fcs.steer(dt, UNIVERSE.ORBIT_CAPTURE, fwdX, fwdY, fwdZ, zenX, zenY, zenZ, false);
     return Math.hypot(tx - at.x, ty - at.y, tz - at.z);
   }
 
@@ -555,24 +522,14 @@ export class Navigator {
    */
   private applyPendingInsert(rt: HostBodyRT, kind: WorldOrbitKind, eyeToBody: THREE.Vector3): number {
     const r = orbitRadiusKpc(rt.spec, kind);
-    const mode = this.insertModeOf(kind);
     this.locale.spinWorld(rt, this.orbitQ);
     this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-    if (coerceOrbitKind(kind) === 'polar') {
-      this.lookSlerp.crossVectors(this.voyage.rideNorth, eyeToBody);
-      if (this.lookSlerp.lengthSq() < 1e-24) {
-        this.lookSlerp.crossVectors(this.voyage.rideNorth, this.ship.fwd);
-        if (this.lookSlerp.lengthSq() < 1e-24) this.lookSlerp.set(1, 0, 0);
-      }
-      this.lookSlerp.normalize();
-    } else {
-      this.lookSlerp.copy(this.voyage.rideNorth);
-    }
+    this.lookSlerp.copy(this.voyage.rideNorth);
     return planOrbitInsert(
       eyeToBody,
       r,
       this.lookSlerp,
-      mode,
+      'inertial',
       UNIVERSE.ORBIT_INSERT,
       this.tmp2,
       this.voyage.rideE1,
@@ -603,7 +560,4 @@ export class Navigator {
     );
   }
 
-  private insertModeOf(kind: WorldOrbitKind): InsertMode {
-    return isHangOrbit(kind) ? 'hover' : 'inertial';
-  }
 }
