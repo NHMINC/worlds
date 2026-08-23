@@ -77,8 +77,20 @@ export class NavWorld {
 
   /** Ecliptic park radius (kpc) for the latched star. */
   starParkKpc(): number {
-    const starR = Math.max(1, this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM);
-    return starOrbitRadiusKpc({ radius: starR });
+    return starOrbitRadiusKpc({ radius: this.starRadiusKm() });
+  }
+
+  /**
+   * Photosphere radius, km — the system spec when minted, else
+   * the catalog state through the SAME fallback law the pilot
+   * uses. (A fixed RSUN fallback once fenced a black hole
+   * behind a full sun's graze ball.)
+   */
+  starRadiusKm(): number {
+    const spec = this.locale.spec?.star.radius;
+    if (spec != null) return Math.max(1, spec);
+    const cat = this.locale.obj?.star.radius ?? 1;
+    return Math.max(1, Math.max(1e-6, cat) * UNIVERSE.RSUN_KM);
   }
 
   /**
@@ -115,7 +127,7 @@ export class NavWorld {
 
     // The star: eye-relative by exact difference; static in its
     // own frame; corona fences.
-    const starR = Math.max(1, this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM);
+    const starR = this.starRadiusKm();
     const star = take();
     star.id = null;
     this.locale.starFromEye(this.ship.at, star.pos);

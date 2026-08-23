@@ -273,8 +273,21 @@ toy — Godus blocks on a real-sized globe.
   ring they stood under.
   Short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
-  plate tectonics, and **weather** are out of scope until we take them
-  on as laws. Clouds are not a painted deck; aerosol opacity lives
+ plate tectonics, and **weather** are out of scope until we take them
+ on as laws. Ship translation is **kinematic with a bounded
+ throttle** (no momentum sim): velocity is real state in the
+ navigation truth, spin-up eases at `SHIP_ACCEL`, but cuts bind
+ instantly — Stop still stops. The autopilot is a GNC stack:
+ guidance (`navigator.ts`) reads the truth (`navWorld.ts` —
+ eye-relative positions, closed-form Kepler velocities, fence
+ stacks) and commands the flight controls (`shipControls.ts`),
+ which turn the nose at `SHIP_TURN_RATE` and roll at
+ `SHIP_ROLL_RATE` (rad/s, never per-frame). Guidance laws, not
+ patches: the transfer corridor latches its tangent side until
+ the blocking ball clears; speed is capped by the osculating
+ arc through the target (`NAV_ARC_MARGIN`); capture is a
+ terminal rendezvous that slides on the park sphere and latches
+ with a ULP-floored slack (the black-hole lesson). Clouds are not a painted deck; aerosol opacity lives
   inside `airExtinction` / the scattering integral. The **cosmic
   background** is the other decreed fake: we cannot mint the
   observable universe. It is SCENE CONTENT of the one galaxy
@@ -1084,7 +1097,10 @@ Code map (start here):
 | Survey sky GPU (harvest, nebulae, dust, cosmic, freeze) | `src/render/skySurvey.ts` |
 | Survey sky GLSL (extinction march, star PSF, fragment) | `src/render/skyShaders.ts` |
 | Voyage state machine (berth, ride, capture, depart, warp) | `src/render/voyage.ts` |
-| Orbit pilot (insertions, captures, ride placement, limb looks) | `src/render/voyagePilot.ts` |
+| Guidance (corridor + hysteresis, feasible speed, rendezvous) | `src/render/navigator.ts` |
+| Navigation truth (positions, Kepler velocities, fence stacks) | `src/render/navWorld.ts` |
+| Flight controls (rate-limited steer / roll / throttle) | `src/render/shipControls.ts` |
+| Orbit pilot (the rail: ride placement, ring bases, limb looks) | `src/render/voyagePilot.ts` |
 | Approach pilot (cruise gears, speed caps, parks, fences) | `src/render/voyageApproach.ts` |
 | Drone bridge (the DroneWorld port: cores, subject, pip) | `src/render/droneBridge.ts` |
 | Host locale (SOI place: furnace, km frame, bodies, globes) | `src/render/hostLocale.ts` |

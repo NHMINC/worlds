@@ -161,16 +161,22 @@ export class Navigator {
     this.port.courseDist(d);
     this.voyage.insertBlend = insertBlend;
 
-    // Feasible-speed law: pursuit of a point at distance d, off
-    // the nose by θ, demands a LOS rate of v·sinθ/d. The nose
-    // turns at SHIP_TURN_RATE — cap v so the demanded rate stays
-    // inside NAV_ARC_MARGIN of it. Aligned flight is uncapped.
-    const sinT = this.tmp
-      .set(dx / d, dy / d, dz / d)
-      .cross(this.ship.fwd)
-      .length();
-    if (sinT > 0.02) {
-      this.speedCap = (UNIVERSE.NAV_ARC_MARGIN * UNIVERSE.SHIP_TURN_RATE * d) / sinT;
+    // Feasible-speed law: the tightest circular arc that leaves
+    // the current heading and passes through the target has
+    // radius d / (2·sin(θ/2)) — d/2 for a target dead astern,
+    // unbounded only when truly aligned. The nose turns at
+    // SHIP_TURN_RATE, so cap v at NAV_ARC_MARGIN of the arc's
+    // rate. (A plain sinθ law is blind astern — sin π = 0 — and
+    // the ship circled a small park at full dive speed forever.)
+    const cosT = THREE.MathUtils.clamp(
+      (dx * this.ship.fwd.x + dy * this.ship.fwd.y + dz * this.ship.fwd.z) / d,
+      -1,
+      1,
+    );
+    const sinHalf = Math.sqrt(Math.max(0, (1 - cosT) / 2));
+    if (sinHalf > 0.01) {
+      this.speedCap =
+        (UNIVERSE.NAV_ARC_MARGIN * UNIVERSE.SHIP_TURN_RATE * d) / (2 * sinHalf);
     }
 
     // Hang / hover face the sphere. Inertial banks body-below
@@ -352,9 +358,12 @@ export class Navigator {
     // Desired eye = body + offset; the ring point drifts with the
     // body's own Kepler velocity (rendezvous feeds that forward).
     this.locale.bodyCatalog(rt, this.tmp);
-    const tx = this.tmp.x + this.tmp2.x;
-    const ty = this.tmp.y + this.tmp2.y;
-    const tz = this.tmp.z + this.tmp2.z;
+    const cx = this.tmp.x;
+    const cy = this.tmp.y;
+    const cz = this.tmp.z;
+    const tx = cx + this.tmp2.x;
+    const ty = cy + this.tmp2.y;
+    const tz = cz + this.tmp2.z;
     const drift = this.nav.body(cap.bodyId)?.vel ?? null;
     // Hang / hover: nose into the body (full sphere). Inertial:
     // zenith along offset, fwd prograde (body below).
@@ -369,6 +378,10 @@ export class Navigator {
         tx,
         ty,
         tz,
+        cx,
+        cy,
+        cz,
+        r,
         drift,
         -this.tmp.x,
         -this.tmp.y,
@@ -384,6 +397,10 @@ export class Navigator {
         tx,
         ty,
         tz,
+        cx,
+        cy,
+        cz,
+        r,
         drift,
         this.lookSlerp.x,
         this.lookSlerp.y,
@@ -393,8 +410,7 @@ export class Navigator {
         this.voyage.rideE1.z,
       );
     }
-    const slack = Math.max(r * 0.002, 1e-18);
-    if (posErr <= slack) {
+    if (posErr <= this.latchSlack(r)) {
       this.voyage.capturing = null;
       this.pilot.beginRide(rt, cap.kind, cap.dir, tSys);
     }
@@ -424,6 +440,10 @@ export class Navigator {
       tx,
       ty,
       tz,
+      c.x,
+      c.y,
+      c.z,
+      r,
       null,
       this.lookSlerp.x,
       this.lookSlerp.y,
@@ -432,13 +452,26 @@ export class Navigator {
       this.voyage.rideE1.y,
       this.voyage.rideE1.z,
     );
-    const slack = Math.max(r * 0.002, 1e-18);
-    if (posErr <= slack) {
+    if (posErr <= this.latchSlack(r)) {
       this.voyage.capturing = null;
       this.pilot.beginStarRide(dir, tSys);
     }
     this.port.applyCam();
     this.port.wake();
+  }
+
+  /**
+   * Latch slack: r·0.002, floored at 64 coordinate ULPs of the
+   * eye — 8 kpc from the origin one ULP is ~2e-15 kpc, and the
+   * exponential close stalls once its per-frame step rounds to
+   * zero (~22 ULP out at 60 fps). Without the floor a small park
+   * (a black hole's, a world ring's) can never resolve — the
+   * black-hole lesson, now an invariant. placeRide then pins the
+   * eye exactly, so the snap is a few km at worst.
+   */
+  private latchSlack(r: number): number {
+    const ulp = 2 ** -52 * this.ship.at.length();
+    return Math.max(r * 0.002, 64 * ulp);
   }
 
   /**
@@ -453,6 +486,10 @@ export class Navigator {
     tx: number,
     ty: number,
     tz: number,
+    cx: number,
+    cy: number,
+    cz: number,
+    rMin: number,
     drift: THREE.Vector3 | null,
     fwdX: number,
     fwdY: number,
@@ -468,14 +505,24 @@ export class Navigator {
     const d = Math.hypot(dx, dy, dz);
     if (d > 0) {
       const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
-      const step = d * k;
-      const s = step / d;
-      this.port.moveBubble(
-        dx * s + (drift ? drift.x * dt : 0),
-        dy * s + (drift ? drift.y * dt : 0),
-        dz * s + (drift ? drift.z * dt : 0),
-        true,
-      );
+      // Tentative endpoint: exponential close + the target's drift.
+      let nx = at.x + dx * k + (drift ? drift.x * dt : 0);
+      let ny = at.y + dy * k + (drift ? drift.y * dt : 0);
+      let nz = at.z + dz * k + (drift ? drift.z * dt : 0);
+      // The park sphere is the deck of the terminal phase. A
+      // near-pole arrival chording to an in-plane ring point
+      // would dive inside the wall — slide on the sphere instead.
+      const rx = nx - cx;
+      const ry = ny - cy;
+      const rz = nz - cz;
+      const rl = Math.hypot(rx, ry, rz);
+      if (rl > 0 && rl < rMin) {
+        const lift = rMin / rl;
+        nx = cx + rx * lift;
+        ny = cy + ry * lift;
+        nz = cz + rz * lift;
+      }
+      this.port.moveBubble(nx - at.x, ny - at.y, nz - at.z, true);
       // Keep the host root pinned to the moved eye (the same
       // repin the old capture ease did) so meshes cannot lag.
       if (this.locale.root && this.locale.obj) {
