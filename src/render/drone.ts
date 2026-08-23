@@ -278,28 +278,25 @@ export class Trackball {
   }
 
   /**
-   * Fly a line to the parked ship. Keep / ease the drone look
-   * on the way. When close, blend the camera onto the frozen
-   * ship pose and dock.
+   * Fly a line to the parked ship. At dock range the view CUTS
+   * to the ship camera — two separate cameras, a switch, never
+   * a pose blend (the ship is exactly as the drone left it).
    */
   private tickHome(dt: number, world: DroneWorld): boolean {
     const dest = this.parkedEye;
     const dist = this.eye.distanceTo(dest);
     const dock = Math.max(2, this.parkedEye.length() * 1e-9 + 2);
-    if (dist > dock * 6) {
-      this.t0.copy(dest).sub(this.eye);
-      const step = Math.min(dist, Math.max(dist * HOME_RATE * dt, dist * 0.08));
-      if (this.t0.lengthSq() > 1e-16) {
-        this.t0.normalize();
-        this.eye.addScaledVector(this.t0, step);
-        this.fwd.lerp(this.t0, 1 - Math.exp(-HOME_RATE * dt));
-        this.orthonormalize();
-      }
-      this.stayOut(world);
-      return false;
+    if (dist <= dock * 6) return true;
+    this.t0.copy(dest).sub(this.eye);
+    const step = Math.min(dist, Math.max(dist * HOME_RATE * dt, dist * 0.08));
+    if (this.t0.lengthSq() > 1e-16) {
+      this.t0.normalize();
+      this.eye.addScaledVector(this.t0, step);
+      this.fwd.lerp(this.t0, 1 - Math.exp(-HOME_RATE * dt));
+      this.orthonormalize();
     }
-    const err = this.easePose(dt, HOME_RATE, dest, this.parkedFwd, this.parkedUp, world);
-    return err <= dock;
+    this.stayOut(world);
+    return false;
   }
 
   private easePose(

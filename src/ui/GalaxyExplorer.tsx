@@ -156,6 +156,7 @@ export function GalaxyExplorer(props: Props) {
     lookHold: null,
     drone: false,
     dronePhase: null,
+    camCut: 0,
     worldId: null,
   });
 
@@ -208,6 +209,7 @@ export function GalaxyExplorer(props: Props) {
               prev.lookHold !== f.lookHold ||
               prev.drone !== f.drone ||
               prev.dronePhase !== f.dronePhase ||
+              prev.camCut !== f.camCut ||
               prev.worldId !== f.worldId ||
               prev.focus?.id !== f.focus?.id ||
               prev.focus?.bodyId !== f.focus?.bodyId ||
@@ -518,6 +520,7 @@ export function GalaxyExplorer(props: Props) {
         {!ready && <div className="galaxy-loading">Opening the neighbourhood…</div>}
         {eng.progress}
         {inRegion && !editing && <div className="gx-pip" aria-hidden />}
+        {frame.camCut > 0 && <div key={frame.camCut} className="gx-cam-cut" aria-hidden />}
         {inRegion && !editing && frame.hostId != null && (
           <div className="gx-look">
             {frame.drone && !frame.dronePhase && (

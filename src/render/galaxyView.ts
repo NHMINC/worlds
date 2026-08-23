@@ -147,6 +147,8 @@ export interface GalaxyFrame {
   drone: boolean;
   /** Launch lift / home capture. Null once the drone is free. */
   dronePhase: 'launch' | 'home' | null;
+  /** Increments on each ship ↔ drone camera handover (a cut). */
+  camCut: number;
   /** Latched / ridden world, if any. */
   worldId: string | null;
 }
@@ -296,6 +298,8 @@ export class GalaxyView {
   private selectedBodyId: string | null = null;
   private navMode: HostNavMode = null;
   private drone: Trackball | null = null;
+  /** Ship ↔ drone camera handover count — the UI blinks on it. */
+  private camCut = 0;
   private readonly orbitTmp = new THREE.Vector3();
   private readonly orbitTmp2 = new THREE.Vector3();
   /** Scratch for look-vector slerp (attitude nudges). */
@@ -1172,6 +1176,7 @@ export class GalaxyView {
       if (!this.drone) return;
       if (!ease || this.drone.phase === 'home') {
         this.drone = null;
+        this.camCut++;
         this.restoreShipCam();
         this.consumeBerth();
         return;
@@ -1211,6 +1216,7 @@ export class GalaxyView {
     const up = this.droneLocalLook(this.ship.up, this.hostTmpQ);
     this.drone = new Trackball();
     this.drone.launch(eyeKm, fwd, up, this.bridge.world());
+    this.camCut++;
     this.placeDrone();
     this.applyCam();
     this.wake();
@@ -1267,6 +1273,7 @@ export class GalaxyView {
     this.placeDrone();
     if (done === 'docked') {
       this.drone = null;
+      this.camCut++;
       this.restoreShipCam();
       this.consumeBerth();
     }
@@ -2410,6 +2417,7 @@ export class GalaxyView {
       lookHold: this.drone?.lock && !this.drone.phase ? 'center' : null,
       drone: Boolean(this.drone),
       dronePhase: this.drone?.phase ?? null,
+      camCut: this.camCut,
       worldId: this.voyage.riding?.bodyId ?? this.voyage.capturing?.bodyId ?? this.worldId ?? this.courseBodyId,
     });
     this.raf = requestAnimationFrame(this.frame);

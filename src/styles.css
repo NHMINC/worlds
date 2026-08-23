@@ -1480,3 +1480,21 @@ i.gx-plate-go {
     left: 0;
   }
 }
+
+/* Ship <-> drone camera handover: two separate cameras, so the
+   switch reads as a cut — a quick shutter blink, replayed by
+   remounting the keyed div. */
+.gx-cam-cut {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 40;
+  animation: gx-cam-cut 240ms ease-out;
+}
+@keyframes gx-cam-cut {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
