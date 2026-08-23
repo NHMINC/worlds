@@ -87,13 +87,29 @@ export class VoyageApproach {
     return this.voyage.route.destOrbit();
   }
 
+  /** Orbital speed bound, km per universe second (parents chained). */
+  private bodySpeedKm(rt: HostBodyRT): number {
+    const b = rt.spec;
+    const aKm = b.parent ? b.orbitRadius : b.orbitRadius * UNIVERSE.AU_KM;
+    const P = Math.max(1e-3, b.orbitPeriod);
+    let v = (2 * Math.PI * aKm) / P;
+    if (b.parent) {
+      const parent = this.locale.sys.get(b.parent);
+      if (parent) v += this.bodySpeedKm(parent);
+    }
+    return v;
+  }
+
   /**
    * Hard fence: no move crosses a body's view skin (air /
    * gas / a thin fraction of R) or the photosphere's. The
    * film park sits outside this wall. The step lands on
-   * the wall instead. If we are already inside, only steps
-   * that climb out are allowed. Returns the allowed step
-   * length along (dx,dy,dz)/len.
+   * the wall instead. The wall is where the body will BE:
+   * a fence on a moving body includes its Kepler drift over
+   * the step, or a stop "on the wall" is inside it one frame
+   * later (the body slides over the parked eye). If we are
+   * already inside, only steps that climb out are allowed.
+   * Returns the allowed step length along (dx,dy,dz)/len.
    */
   clampAdvance(dx: number, dy: number, dz: number, len: number): number {
     if (!this.locale.obj || !this.locale.root || !(len > 0)) return len;
@@ -117,7 +133,12 @@ export class VoyageApproach {
     };
     for (const rt of this.locale.sys.bodies) {
       this.locale.bodyFromEye(this.ship.at, rt, this.hostTmp2);
-      fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, shellFloorKm(rt.spec));
+      fence(
+        this.hostTmp2.x,
+        this.hostTmp2.y,
+        this.hostTmp2.z,
+        shellFloorKm(rt.spec) + this.bodySpeedKm(rt) * this.lastDt * UNIVERSE.TIME_SCALE,
+      );
     }
     this.hostTmp2.copy(this.locale.root.position);
     // A star is a furnace: the hard wall is the corona skin, not
@@ -127,6 +148,36 @@ export class VoyageApproach {
     // inside its own photosphere.
     fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starSkinKm(this.locale.starRadiusKm()));
     return allowed;
+  }
+
+  /**
+   * Fences push. clampAdvance stops the ship's own step at a
+   * wall; this is the other half, for when the WALL moves — an
+   * inner planet sweeps its air shell over a ship pinned
+   * against the fence while the nose is still coming around.
+   * Any eye inside a wall lifts radially to the wall, riding
+   * the surface like a shove. A ride is pinned by placeRide on
+   * a ring outside every wall and is left alone.
+   */
+  resolveFences(): void {
+    if (!this.locale.obj || !this.locale.root || this.voyage.riding) return;
+    const at = this.ship.at;
+    const push = (rx: number, ry: number, rz: number, wallKm: number): void => {
+      this.hostTmp.set(rx, ry, rz);
+      const wall = wallKm * KM_TO_KPC;
+      const d = this.hostTmp.length();
+      if (!(d > 1e-18) || d >= wall) return;
+      const k = (wall - d) / d;
+      at.x -= this.hostTmp.x * k;
+      at.y -= this.hostTmp.y * k;
+      at.z -= this.hostTmp.z * k;
+    };
+    for (const rt of this.locale.sys.bodies) {
+      this.locale.bodyFromEye(at, rt, this.hostTmp2);
+      push(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, shellFloorKm(rt.spec));
+    }
+    this.hostTmp2.copy(this.locale.root.position);
+    push(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starSkinKm(this.locale.starRadiusKm()));
   }
 
   /**

@@ -268,6 +268,13 @@ export class Navigator {
    * and keep the SAME side until that ball clears (hysteresis;
    * re-picking each frame oscillated near a graze ball). One peel
    * per frame — the next frame sees the next ball.
+   *
+   * A ball's ROUTING radius is capped by its distance to the aim
+   * (0.9 · dOT) in BOTH branches. The graze is a margin, not a
+   * wall: a close moon's ring sits inside its giant's graze ball,
+   * and an uncapped escape branch threw the ship out of the ball
+   * that contains its own destination — the course bounced on
+   * the giant's graze forever. The hard wall still holds.
    */
   private corridor(aim: THREE.Vector3, targetId: string | null): void {
     const objs = this.nav.objects;
@@ -275,16 +282,17 @@ export class Navigator {
     const dT = aim.length();
     if (!(dT > 1e-18)) return;
 
-    // Inside a non-target graze → only way is out. (The star's
-    // ball counts on every course — a star dest targets the RING,
-    // not the core.)
+    // Inside a non-target ROUTING ball → only way is out. (The
+    // star's ball counts on every course — a star dest targets
+    // the RING, not the core.)
     let escD = Infinity;
     let escObj: (typeof objs)[number] | null = null;
     for (const o of objs) {
       if (o.id != null && o.id === targetId) continue;
       const dO = o.pos.length();
       if (!(dO > 1e-18) || dO >= escD) continue;
-      if (dO >= o.grazeKm * KM_TO_KPC) continue;
+      const dOT = Math.hypot(aim.x - o.pos.x, aim.y - o.pos.y, aim.z - o.pos.z);
+      if (dO >= Math.min(o.grazeKm * KM_TO_KPC, dOT * 0.9)) continue;
       escD = dO;
       escObj = o;
     }

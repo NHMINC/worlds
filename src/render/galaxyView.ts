@@ -1923,6 +1923,9 @@ export class GalaxyView {
 
     const tSys = (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE;
     this.locale.updateBodies(tSys, this.camera);
+    // Fences push: a Kepler wall that overtook the eye this
+    // tick shoves it out before any pilot reads the pose.
+    if (!this.drone) this.approach.resolveFences();
     if (this.pendingSession) {
       this.applyPendingSession(tSys);
     } else if (this.pendingPlace) {

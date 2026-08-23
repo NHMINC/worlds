@@ -297,7 +297,16 @@ toy — Godus blocks on a real-sized globe.
  which turn the nose at `SHIP_TURN_RATE` and roll at
  `SHIP_ROLL_RATE` (rad/s, never per-frame). Guidance laws, not
  patches: the transfer corridor latches its tangent side until
-  the blocking ball clears; speed is capped by the osculating
+  the blocking ball clears. A ball's ROUTING radius is capped
+  by its distance to the aim in both corridor branches — the
+  graze is a margin, not a wall: a close moon's ring sits
+  inside its giant's graze ball, and an uncapped escape branch
+  bounced that course on the giant's graze forever. Fences
+  PUSH: `clampAdvance` stops the ship's own step at a wall
+  (drift-inflated — the wall is where the body will be), and
+  `resolveFences` shoves the eye out when a Kepler wall
+  overtakes a ship still turning. Speed is capped by the
+  osculating
   arc through the target (`NAV_ARC_MARGIN`); insertion flies a
   TANGENT of the park sphere — the heading-chosen side, latched
   — so the nose is already prograde at contact (a near-face
