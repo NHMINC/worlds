@@ -155,7 +155,6 @@ export function GalaxyExplorer(props: Props) {
     departing: false,
     lookHold: null,
     drone: false,
-    dronePhase: null,
     camCut: 0,
     worldId: null,
   });
@@ -208,7 +207,6 @@ export function GalaxyExplorer(props: Props) {
               prev.departing !== f.departing ||
               prev.lookHold !== f.lookHold ||
               prev.drone !== f.drone ||
-              prev.dronePhase !== f.dronePhase ||
               prev.camCut !== f.camCut ||
               prev.worldId !== f.worldId ||
               prev.focus?.id !== f.focus?.id ||
@@ -523,7 +521,7 @@ export function GalaxyExplorer(props: Props) {
         {frame.camCut > 0 && <div key={frame.camCut} className="gx-cam-cut" aria-hidden />}
         {inRegion && !editing && frame.hostId != null && (
           <div className="gx-look">
-            {frame.drone && !frame.dronePhase && (
+            {frame.drone && (
               <button
                 type="button"
                 className={`gx-look-btn${frame.lookHold === 'center' ? ' is-on' : ''}`}
@@ -541,18 +539,10 @@ export function GalaxyExplorer(props: Props) {
             )}
             <button
               type="button"
-              className={`gx-look-btn${frame.drone && frame.dronePhase !== 'home' ? ' is-on' : ''}`}
+              className={`gx-look-btn${frame.drone ? ' is-on' : ''}`}
               aria-label="Trackball"
-              aria-pressed={frame.drone && frame.dronePhase !== 'home'}
-              title={
-                frame.dronePhase === 'home'
-                  ? 'Landing on the ship — tap to stay out'
-                  : frame.dronePhase === 'launch'
-                    ? 'Lifting into target…'
-                    : frame.drone
-                      ? 'Return to the ship'
-                      : 'Launch drone — lift into target lock'
-              }
+              aria-pressed={frame.drone}
+              title={frame.drone ? 'Return to the ship' : 'Launch drone — hover the body'}
               onClick={() => viewRef.current?.toggleDrone()}
             >
               <IconTrackball size={18} />

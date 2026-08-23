@@ -145,8 +145,6 @@ export interface GalaxyFrame {
   lookHold: 'center' | null;
   /** Anti-gravity drone is out. */
   drone: boolean;
-  /** Launch lift / home capture. Null once the drone is free. */
-  dronePhase: 'launch' | 'home' | null;
   /** Increments on each ship ↔ drone camera handover (a cut). */
   camCut: number;
   /** Latched / ridden world, if any. */
@@ -309,8 +307,6 @@ export class GalaxyView {
   private pendingPlace: LastPlace | null = null;
   /** Exact ship / drone pose — applied once the host frame exists. */
   private pendingSession: SessionSnap | null = null;
-  /** Berth chosen while the drone was out — begins at dock. */
-  private pendingBerth: Berth | null = null;
   private lastPlaceKey = '';
   private lastSessionJson = '';
   private lastSessionWrite = 0;
@@ -793,7 +789,7 @@ export class GalaxyView {
         this.pilot.beginRide(rt, kind, this.orbitTmp2, tSys);
       }
     }
-    if (s.drone) {
+    if (s.drone && s.drone.phase !== 'home') {
       this.drone = new Trackball();
       this.drone.restore(s.drone);
       this.droneRideT = s.drone.rideT;
@@ -1066,9 +1062,9 @@ export class GalaxyView {
   /**
    * Name a berth and latch warp-ahead. Reticle / plate / chart
    * only — a tap does not call this. Works from catalog or
-   * another system's SOI. While the drone is out the berth is
-   * QUEUED: the drone lands first, then the course begins at
-   * dock. Drag aborts; Stop only kills thrust.
+   * another system's SOI. While the drone is out it docks
+   * (an instant cut) and the course begins. Drag aborts; Stop
+   * only kills thrust.
    */
   setCourse(obj: GalaxyObject): void {
     this.setCourseBerth({ starId: obj.id, bodyId: null, orbit: 'ecliptic' });
@@ -1099,12 +1095,7 @@ export class GalaxyView {
 
   setCourseBerth(dest: Berth): void {
     if (this.mode !== 'region') return;
-    if (this.drone) {
-      // Land the drone, then navigate: the dock consumes this.
-      this.pendingBerth = dest;
-      this.setDrone(false);
-      return;
-    }
+    if (this.drone) this.setDrone(false);
     const obj = objectAt(this.seed, dest.starId);
     if (!obj) return;
     if (this.voyage.riding || this.voyage.capturing) this.breakOrbit();
@@ -1151,46 +1142,31 @@ export class GalaxyView {
    * nearest the ship — this retargets; it does not hop.
    */
   centerLook(): void {
-    if (this.mode !== 'region' || !this.locale.obj || !this.drone || this.drone.phase) return;
+    if (this.mode !== 'region' || !this.locale.obj || !this.drone) return;
     this.drone.toggleLock(this.bridge.world());
     this.placeDrone();
     this.applyCam();
     this.wake();
   }
 
-  /**
-   * Strict two-way toggle on INTENT: out ↔ back. A drone flying
-   * home already counts as "off" — tapping then is "no, stay
-   * out" (the home aborts and the trackball resumes in place),
-   * never a third state. Returns the new intent.
-   */
+  /** Strict two-way toggle: out ↔ back, both instant cuts. */
   toggleDrone(): boolean {
-    const out = Boolean(this.drone && this.drone.phase !== 'home');
-    this.setDrone(!out);
-    return Boolean(this.drone && this.drone.phase !== 'home');
+    this.setDrone(!this.drone);
+    return Boolean(this.drone);
   }
 
-  setDrone(on: boolean, ease = true): void {
+  setDrone(on: boolean): void {
     if (this.mode !== 'region' || !this.locale.obj) return;
     if (!on) {
       if (!this.drone) return;
-      if (!ease || this.drone.phase === 'home') {
-        this.drone = null;
-        this.camCut++;
-        this.restoreShipCam();
-        this.consumeBerth();
-        return;
-      }
-      this.drone.beginHome();
-      this.wake();
+      // Instant return: the cut, then the ship camera — which is
+      // exactly as the drone left it.
+      this.drone = null;
+      this.camCut++;
+      this.restoreShipCam();
       return;
     }
-    if (this.drone) {
-      // Mid-recall change of heart: stay out, re-lock in place.
-      this.drone.abortHome(this.bridge.world());
-      this.wake();
-      return;
-    }
+    if (this.drone) return;
     // Launch must always work inside a sphere: a Leave burn is
     // simply cancelled (the old early-return made the button dead
     // for the whole burn), and a just-teleported host attaches
@@ -1267,23 +1243,10 @@ export class GalaxyView {
     this.applyCam();
   }
 
-  private tickDrone(dt: number): void {
+  private tickDrone(): void {
     if (!this.drone) return;
-    const done = this.drone.tick(dt, this.bridge.world());
+    this.drone.tick(this.bridge.world());
     this.placeDrone();
-    if (done === 'docked') {
-      this.drone = null;
-      this.camCut++;
-      this.restoreShipCam();
-      this.consumeBerth();
-    }
-  }
-
-  /** A berth queued behind a drone recall begins once docked. */
-  private consumeBerth(): void {
-    const berth = this.pendingBerth;
-    this.pendingBerth = null;
-    if (berth) this.setCourseBerth(berth);
   }
 
   private clearCourse(): void {
@@ -1897,7 +1860,6 @@ export class GalaxyView {
     this.selectedBodyId = null;
     this.pendingPlace = null;
     this.drone = null;
-    this.pendingBerth = null;
     this.voyage.clearRide();
     if (!this.voyage.route.live) {
       this.courseBodyId = null;
@@ -1951,7 +1913,7 @@ export class GalaxyView {
     } else if (this.pendingPlace) {
       this.applyPendingPlace(tSys);
     } else if (this.drone) {
-      this.tickDrone(this.lastDt);
+      this.tickDrone();
     } else if (this.voyage.departing) {
       // Escape burn owns the stick — do not recapture the ring.
     } else if (this.voyage.pendingArriveOrbit && this.destOrbit()) {
@@ -2414,9 +2376,8 @@ export class GalaxyView {
       navHint,
       canLeaveOrbit: Boolean(this.voyage.riding || this.voyage.capturing),
       departing: Boolean(this.voyage.departing),
-      lookHold: this.drone?.lock && !this.drone.phase ? 'center' : null,
+      lookHold: this.drone?.lock ? 'center' : null,
       drone: Boolean(this.drone),
-      dronePhase: this.drone?.phase ?? null,
       camCut: this.camCut,
       worldId: this.voyage.riding?.bodyId ?? this.voyage.capturing?.bodyId ?? this.worldId ?? this.courseBodyId,
     });
