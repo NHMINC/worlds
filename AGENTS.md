@@ -274,10 +274,14 @@ toy — Godus blocks on a real-sized globe.
   Short nebula phases are toy-stretched
   (`HII_GYR`, `PN_GYR`, `SNR_GYR`) so they are findable; interiors,
  plate tectonics, and **weather** are out of scope until we take them
- on as laws. Ship translation is **kinematic with a bounded
- throttle** (no momentum sim): velocity is real state in the
- navigation truth, spin-up eases at `SHIP_ACCEL`, but cuts bind
- instantly — Stop still stops. The autopilot is a GNC stack:
+ on as laws. The ship is a **negligible point mass (~1000 t)
+ with near-infinite thrust**: the flight controls cancel gravity
+ exactly while under command (station-keeping is free) and a
+ coast holds its velocity — the ship does not fall, the same
+ fiat that keeps orbits stable. Ship translation is therefore
+ **kinematic with a bounded throttle** (no momentum sim):
+ velocity is real state in the navigation truth, spin-up eases
+ at `SHIP_ACCEL`, but cuts bind instantly — Stop still stops. The autopilot is a GNC stack:
  guidance (`navigator.ts`) reads the truth (`navWorld.ts` —
  eye-relative positions, closed-form Kepler velocities, fence
  stacks) and commands the flight controls (`shipControls.ts`),
@@ -465,19 +469,19 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - Light comes from the **loaded** star at the origin. Day/night is spin
   + orbit as functions of `(spec, unix time t)` — deterministic, no
   “bake a sun behind the camera.”
-- **The star is a furnace, not a sticker.** Photosphere Teff is
-  Stefan–Boltzmann from L and R (`starTeff`). Limb darkening is the
-  Eddington grey atmosphere. Granules, spots and flares follow the
-  convective dynamo (`starActivity`); the K-corona and the wind are
-  Thomson scatter of *that* photosphere’s light (`starWind`) — a blue
-  star does not grow an orange halo. Inverse-square is two distances
-  and one law: bodies use physics `a` (`starIrradiance`, the same `a`
-  T_eq already drank, `a` in AU); the eye uses render km
-  (`starEyeFlux`, referenced to `A_HAB · AU_KM`). Glare is the
-  eye’s PSF on that flux, not a painted sprite. The disk draws *after*
-  the sky shell so the LDR star-veil cannot filter the sun; air in
-  front only multiplies the same Chapman transmittance the sky already
-  computed. Knobs live in `UNIVERSE` (`STAR_*`). Renderer:
+- **The star draws as its observable surface — for now.** One
+  white sphere at the photosphere radius, the SAME kilometres the
+  fences and parks use (`locale.starRadiusKm()` is the one size
+  law: minted spec, else the catalog through
+  `starSpecFromState`'s `max(1e-6, R☉)·RSUN_KM`). The corona
+  shell and glare quad are retired: they drew light out past the
+  4 R hard wall, so a ship correctly parked at 4.2 R still LOOKED
+  inside the sun and navigation could not be judged by eye.
+  Navigation first; the furnace look (Teff blackbody, Eddington
+  limb darkening, dynamo activity, Thomson corona — the previous
+  `star.ts`, in git history) returns later as a law drawn INSIDE
+  the surface radius, never past the wall. The PointLight stays
+  (inverse-square, referenced at `A_HAB`). Renderer:
   `src/render/star.ts`.
 - **The explorer is the harvest, not a magnifier ball.**
   The **system chart** (orbits icon next to Cosmic engineer)

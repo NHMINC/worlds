@@ -457,17 +457,20 @@ export class Navigator {
   }
 
   /**
-   * Latch slack: r·0.002, floored at 64 coordinate ULPs of the
+   * Latch slack: r·0.002, floored at 256 coordinate ULPs of the
    * eye — 8 kpc from the origin one ULP is ~2e-15 kpc, and the
    * exponential close stalls once its per-frame step rounds to
-   * zero (~22 ULP out at 60 fps). Without the floor a small park
-   * (a black hole's, a world ring's) can never resolve — the
-   * black-hole lesson, now an invariant. placeRide then pins the
-   * eye exactly, so the snap is a few km at worst.
+   * zero. Without the floor a small park (a black hole's, a
+   * world ring's) can never resolve — the black-hole lesson, now
+   * an invariant. Measured: the park-sphere slide stalls near
+   * 74 ULP at 60 fps and ~150 at 120 fps (the per-frame step
+   * halves with dt), so 256 covers the frame-rate family.
+   * placeRide then pins the eye exactly; the snap is a fraction
+   * of a percent of the film-floored park — invisible.
    */
   private latchSlack(r: number): number {
     const ulp = 2 ** -52 * this.ship.at.length();
-    return Math.max(r * 0.002, 64 * ulp);
+    return Math.max(r * 0.002, 256 * ulp);
   }
 
   /**
