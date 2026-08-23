@@ -70,8 +70,10 @@ function gasFloor(body: BodySpec): number {
 }
 
 /**
- * Closest legal camera (km from centre). Air / gas / a thin
- * skin — not the 10 000 km graze used on transfers.
+ * Closest legal camera (km from centre). The body's size is
+ * surface PLUS its atmosphere: the air term is the drawn sky
+ * shell's own top (AIR_SHELL_H scale heights, scaleH in planet
+ * radii), so no park or fence ever sits inside the visible air.
  */
 export function viewSkinKm(R: number, body?: BodySpec): number {
   const r = Math.max(R, 1);
@@ -79,7 +81,7 @@ export function viewSkinKm(R: number, body?: BodySpec): number {
   if (body) {
     extra = Math.max(extra, gasFloor(body) * r);
     const ext = airExtinction(body.physics);
-    if (ext) extra = Math.max(extra, 2.2 * ext.scaleH);
+    if (ext) extra = Math.max(extra, UNIVERSE.AIR_SHELL_H * ext.scaleH * r);
   }
   return r + extra;
 }

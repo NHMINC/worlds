@@ -604,6 +604,16 @@ export const UNIVERSE = {
   /** Inset on the lower corners (1 = exact corners). */
   ORBIT_LIMB_CORNER: 0.92,
   /**
+   * Where a body's air ENDS, in scale heights — the top of the
+   * drawn sky shell AND the body's occupancy radius share this
+   * one number: a body's size is surface + atmosphere, so parks
+   * and fences can never place the ship inside the drawn air.
+   * (The skin once added 2.2·scaleH in the wrong UNITS — radii
+   * read as km — so the air added nothing and rides parked
+   * inside the shell.)
+   */
+  AIR_SHELL_H: 7,
+  /**
    * The drone's launch film: the FULL disk in frame with edge
    * padding — its diameter covers this fraction of the SHORTER
    * live field, so portrait pads the sides and landscape pads

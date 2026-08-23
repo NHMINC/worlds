@@ -290,7 +290,7 @@ export class RockyGlobe {
     if (air) {
       const peakH = (MAX_LEVEL - this.waterLevel) * this.step;
       const peakR = 1 + peakH;
-      const shellR = Math.max(peakR + 0.06, 1 + 7 * air.scaleH);
+      const shellR = Math.max(peakR + 0.06, 1 + UNIVERSE.AIR_SHELL_H * air.scaleH);
       const floorR = Math.max(0.05, 1 - this.waterLevel * this.step - 0.005);
       const shell = makeSkyShellMaterials(air, shellR, floorR);
       const shellGeo = new THREE.SphereGeometry(shellR, 64, 40);
