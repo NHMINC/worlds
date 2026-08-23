@@ -302,7 +302,12 @@ toy — Godus blocks on a real-sized globe.
   TANGENT of the park sphere — the heading-chosen side, latched
   — so the nose is already prograde at contact (a near-face
   dive plus a 90° slam drove the ship into the body). Arrival
-  is that graze (`ORBIT_ARRIVE_GRAZE`), not a radial hit.
+  is that graze (`ORBIT_ARRIVE_GRAZE`), not a radial hit. The
+  terminal phase is a GLIDE by decree — take more time, arrive
+  settled: the touch floor is `ORBIT_GLIDE_K` × park (the last
+  park radius takes seconds, not 0.8 s), and `ORBIT_CAPTURE`
+  is sized with the turn/roll limits so the slide and the bank
+  finish together instead of position lunging in and waiting.
   Capture is a
   terminal rendezvous that slides on the park sphere and latches
   with a ULP-floored slack (the black-hole lesson). A world's

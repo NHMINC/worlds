@@ -148,17 +148,18 @@ export class VoyageApproach {
   }
 
   /**
-   * Close on a world shell at the first GRAZE on the way.
-   * A dive at the near face is not arrival — that used to pin
-   * the ship on the shell and slam a 90° turn into the body.
-   * Inside the park: lift out, keep flying the tangent.
+   * Close on a world shell — arrival is a GRAZE inside the
+   * arrival band, not a hairline "at the shell" test (a tangent
+   * trajectory converges on the sphere without crossing it) and
+   * not a dive at the near face (that pinned the ship on the
+   * wall and slammed a 90° turn into the body). Inside the
+   * park: lift out, keep flying the tangent.
    */
   closeWorldShell(rt: HostBodyRT, park: number, step: number, onPark: () => void): boolean {
     this.locale.bodyFromEye(this.ship.at, rt, this.hostTmp);
     const d = Math.max(this.hostTmp.length(), 1e-18);
-    const slack = Math.max(park * 0.002, 1e-18);
     const graze = rayImpact(this.hostTmp, this.ship.fwd) >= park * UNIVERSE.ORBIT_ARRIVE_GRAZE;
-    if (Math.abs(d - park) <= slack && graze) {
+    if (d <= park * (1 + UNIVERSE.ORBIT_ARRIVE_BAND) && graze) {
       onPark();
       return true;
     }
@@ -170,19 +171,12 @@ export class VoyageApproach {
       return true;
     }
     const t = this.firstShellHit(this.hostTmp, this.ship.fwd, park);
-    if (t != null && t <= step) {
-      if (graze) {
-        this.port.moveBubble(this.ship.fwd.x * t, this.ship.fwd.y * t, this.ship.fwd.z * t);
-        onPark();
-        return true;
-      }
-      // Dive into the near face: stop short of punching in, but
-      // do not freeze on contact — the next yaw lets cruise
-      // slide toward the tangent.
-      if (t > slack) {
-        this.port.moveBubble(this.ship.fwd.x * t, this.ship.fwd.y * t, this.ship.fwd.z * t);
-        return true;
-      }
+    if (t != null && t <= step && t > park * 0.002) {
+      // A frame would cross the shell without a grazing heading:
+      // stop short of punching in; the next yaw slides the nose
+      // toward the tangent and the band picks the arrival up.
+      this.port.moveBubble(this.ship.fwd.x * t, this.ship.fwd.y * t, this.ship.fwd.z * t);
+      return true;
     }
     return false;
   }
@@ -321,7 +315,10 @@ export class VoyageApproach {
    * to WORLD_SLOT_K (insertion) as remain closes the
    * ORBIT_INSERT window. No AU step — the window is the
    * body's own ring. A frame that would skip the slot
-   * halves. Astern keeps the close-crawl.
+   * halves. The touch floor is the GLIDE rate, not the
+   * transfer crawl — the last park radius takes seconds,
+   * so the turn and the roll are done before contact.
+   * Astern keeps the close-crawl.
    */
   private worldCloseSpeed(d: number, park: number, dt = this.lastDt): number {
     const vCeil = UNIVERSE.GALAXY_WARP * UNIVERSE.ARRIVE_WARP;
@@ -334,7 +331,10 @@ export class VoyageApproach {
     const k = this.voyage.astern ? kFar : kSlot + (kFar - kSlot) * a;
     let v = Math.min(vCeil, k * remain);
     const slack = Math.max(d - slot, 0);
-    const vLim = Math.min(vCeil, UNIVERSE.ARRIVE_K * slot);
+    const vLim = Math.min(
+      vCeil,
+      (this.voyage.astern ? UNIVERSE.ARRIVE_K : UNIVERSE.ORBIT_GLIDE_K) * slot,
+    );
     if (slack <= 0) return vLim;
     const frame = Math.min(0.05, Math.max(dt, 1 / 120));
     while (v > vLim && v * frame >= slack) v *= 0.5;
@@ -353,7 +353,20 @@ export class VoyageApproach {
       return this.worldCloseSpeed(d, park, dt);
     }
     const sub = this.closeSubject();
-    if (sub) return this.closeSpeed(this.arriveDist(sub), dt);
+    if (sub) {
+      const d = this.arriveDist(sub);
+      const dest = this.destOrbit();
+      // A star ecliptic dest glides into its slot with the same
+      // world-course curve — the old sphere crawl arrived at the
+      // park still doing ARRIVE_K × park (a lunge at the ring).
+      if (dest && dest.bodyId == null && dest.kind === 'ecliptic' && d <= UNIVERSE.ARRIVE_RANGE_KPC) {
+        const park = starOrbitRadiusKpc({
+          radius: Math.max(1e-6, sub.star.radius) * UNIVERSE.RSUN_KM,
+        });
+        return Math.min(this.closeSpeed(d, dt), this.worldCloseSpeed(d, park, dt));
+      }
+      return this.closeSpeed(d, dt);
+    }
     return null;
   }
 
@@ -477,23 +490,10 @@ export class VoyageApproach {
       const c = galToCart(course.pos);
       this.hostTmp.set(c.x - this.ship.at.x, c.y - this.ship.at.y, c.z - this.ship.at.z);
       const graze = rayImpact(this.hostTmp, this.ship.fwd) >= park * UNIVERSE.ORBIT_ARRIVE_GRAZE;
-      if (d <= park && graze) {
-        if (dest.kind === 'ecliptic') this.voyage.pendingArriveOrbit = true;
-        this.port.stopWarp();
-        return;
-      }
-      const tCa =
-        this.hostTmp.x * this.ship.fwd.x +
-        this.hostTmp.y * this.ship.fwd.y +
-        this.hostTmp.z * this.ship.fwd.z;
-      if (graze && tCa > 0 && step >= d - park) {
-        const inv = 1 / d;
-        const remain = d - park;
-        this.port.moveBubble(
-          this.hostTmp.x * inv * remain,
-          this.hostTmp.y * inv * remain,
-          this.hostTmp.z * inv * remain,
-        );
+      // Same arrival band as a world: the tangent converges on
+      // the park sphere without crossing it — capture owns the
+      // last stretch.
+      if (d <= park * (1 + UNIVERSE.ORBIT_ARRIVE_BAND) && graze) {
         if (dest.kind === 'ecliptic') this.voyage.pendingArriveOrbit = true;
         this.port.stopWarp();
         return;

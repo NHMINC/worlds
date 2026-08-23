@@ -451,13 +451,21 @@ export const UNIVERSE = {
    */
   NAV_ARC_MARGIN: 0.6,
   /**
-   * Lock-on capture into a named ring. After the graze-safe
-   * approach reaches the shell, the ship does not teleport onto
-   * the rail — it eases position and heading onto the ring at
-   * this rate (1/s), same family as ARRIVE_HOLD, then Lock-on
-   * ends and In Orbit begins.
+   * Lock-on capture into a named ring: position and heading
+   * ease onto the ring at this rate (1/s). Sized WITH the
+   * flight limits so the slide and the roll finish together —
+   * at 1.4 the position landed in under a second and then sat
+   * waiting for the bank (a rushed slide, then a pause). The
+   * glide is the point: take more time, arrive settled.
    */
-  ORBIT_CAPTURE: 1.4,
+  ORBIT_CAPTURE: 0.6,
+  /**
+   * Terminal touch rate (1/s): the speed floor at the slot is
+   * this × the park radius, so the last park radius takes
+   * ~1/this seconds. The old floor was ARRIVE_K (1.2/s): the
+   * final approach crossed in 0.8 s — a lunge, not a glide.
+   */
+  ORBIT_GLIDE_K: 0.25,
   /**
    * Lock-on insertion window in ring radii. The fly-to is a
    * TANGENT of the park sphere from the first frame — the nose
@@ -473,6 +481,15 @@ export const UNIVERSE = {
    * the park radius or we keep flying the tangent.
    */
   ORBIT_ARRIVE_GRAZE: 0.9,
+  /**
+   * Arrival band over the park radius. A tangent trajectory
+   * converges on the sphere without crossing it, so a hairline
+   * "at the shell" test never fires and the ship circles the
+   * park forever. Once inside park × (1 + this) with a grazing
+   * heading, cruise hands the last stretch to capture — the
+   * slide onto the ring is capture's job, done at ORBIT_CAPTURE.
+   */
+  ORBIT_ARRIVE_BAND: 0.15,
   ARRIVE_WARP: 0.001,
   /**
    * Close-crawl beat (fence / this). Leave-orbit escape
@@ -531,10 +548,11 @@ export const UNIVERSE = {
    * already used on the star. Through the insert window
    * (ORBIT_INSERT ring radii) k eases to
    * ORBIT_CAPTURE / ORBIT_INSERT, so the last stretch
-   * lasts the capture, not a 0.8 s snap. Blend is
-   * remain / (remain + window): at one window out, k is
-   * halfway; at ten windows, it is almost ARRIVE_K.
-   * Astern ignores the slot and keeps the close-crawl.
+   * lasts the capture, not a snap. The touch floor is
+   * ORBIT_GLIDE_K × park. Blend is remain / (remain +
+   * window): at one window out, k is halfway; at ten
+   * windows, it is almost ARRIVE_K. Astern ignores the
+   * slot and keeps the close-crawl.
    */
   get WORLD_SLOT_K(): number {
     return this.ORBIT_CAPTURE / this.ORBIT_INSERT;
