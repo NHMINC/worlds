@@ -82,6 +82,13 @@ export class Trackball {
     this.rel.set(-1, 0, 0);
   }
 
+  /** Change of heart mid-recall: stay out, re-lock where we are. */
+  abortHome(world: DroneWorld): void {
+    if (this.phase !== 'home') return;
+    this.phase = null;
+    this.captureLock(this.lockId, world);
+  }
+
   look(dx: number, dy: number, world: DroneWorld): void {
     if (this.phase) return;
     if (this.lock) {

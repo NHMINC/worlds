@@ -1154,10 +1154,16 @@ export class GalaxyView {
     this.wake();
   }
 
-  /** Tap: on if off, off if on. Returns the new state. */
+  /**
+   * Strict two-way toggle on INTENT: out ↔ back. A drone flying
+   * home already counts as "off" — tapping then is "no, stay
+   * out" (the home aborts and the trackball resumes in place),
+   * never a third state. Returns the new intent.
+   */
   toggleDrone(): boolean {
-    this.setDrone(!this.drone);
-    return Boolean(this.drone);
+    const out = Boolean(this.drone && this.drone.phase !== 'home');
+    this.setDrone(!out);
+    return Boolean(this.drone && this.drone.phase !== 'home');
   }
 
   setDrone(on: boolean, ease = true): void {
@@ -1174,7 +1180,12 @@ export class GalaxyView {
       this.wake();
       return;
     }
-    if (this.drone) return;
+    if (this.drone) {
+      // Mid-recall change of heart: stay out, re-lock in place.
+      this.drone.abortHome(this.bridge.world());
+      this.wake();
+      return;
+    }
     // Launch must always work inside a sphere: a Leave burn is
     // simply cancelled (the old early-return made the button dead
     // for the whole burn), and a just-teleported host attaches

@@ -538,26 +538,19 @@ export function GalaxyExplorer(props: Props) {
             )}
             <button
               type="button"
-              className={`gx-look-btn${frame.drone ? ' is-on' : ''}`}
+              className={`gx-look-btn${frame.drone && frame.dronePhase !== 'home' ? ' is-on' : ''}`}
               aria-label="Trackball"
-              aria-pressed={frame.drone}
-              disabled={frame.departing}
+              aria-pressed={frame.drone && frame.dronePhase !== 'home'}
               title={
-                frame.departing
-                  ? 'Leaving orbit — then the drone'
-                  : frame.dronePhase === 'home'
-                  ? 'Landing on the ship…'
+                frame.dronePhase === 'home'
+                  ? 'Landing on the ship — tap to stay out'
                   : frame.dronePhase === 'launch'
                     ? 'Lifting into target…'
                     : frame.drone
                       ? 'Return to the ship'
                       : 'Launch drone — lift into target lock'
               }
-              onClick={() => {
-                const on = viewRef.current?.toggleDrone();
-                if (on == null) return;
-                setFrame((prev) => (prev.drone === on ? prev : { ...prev, drone: on }));
-              }}
+              onClick={() => viewRef.current?.toggleDrone()}
             >
               <IconTrackball size={18} />
             </button>
