@@ -238,15 +238,15 @@ toy — Godus blocks on a real-sized globe.
   (`HOVER_FILL`): the whole disk in
   frame with edge padding on the
   shorter field, on the live
-  screen. Equatorial /
+  screen.   Equatorial /
   ecliptic share one inertial film:
   the forward limb sits on the
   midline (`ORBIT_LIMB_FILL` 50%)
-  and the horizon runs from a level
-  line (huge body at
-  `ORBIT_VIEW_H_KM`) to a curve that
-  almost touches the lower corners.
-  Same law for a planet, a moon, or
+  and the horizon is the corner
+  curve of occupancy — rock plus
+  drawn air, or a giant's cloud
+  photosphere. Same law for a
+  planet, a moon, a giant, or
   the host star; insertion eases
   that pitch as a **ship attitude**
   (no second camera). The
@@ -301,13 +301,16 @@ toy — Godus blocks on a real-sized globe.
  arc through the target (`NAV_ARC_MARGIN`); capture is a
   terminal rendezvous that slides on the park sphere and latches
   with a ULP-floored slack (the black-hole lesson). A world's
-  size is surface plus atmosphere: `AIR_SHELL_H` (7 scale
-  heights) is both the drawn sky shell's top and the occupancy
-  the film is cut for — not the bare rock, or a thick
-  atmosphere overflows the picture and the park sits on the
-  shell mesh (in the air). `ORBIT_SKIN_CLEAR` (1.05) keeps the
-  camera in vacuum, the same clearance the star film uses over
-  the corona. Saved rides re-derive their radius on restore.
+  size is its visible ball: `AIR_SHELL_H` (7 scale heights) is
+  both the drawn sky shell's top and the occupancy the film is
+  cut for — not the bare rock, or a thick atmosphere overflows
+  the picture and the park sits on the shell mesh (in the air).
+  A gas giant IS its atmosphere: occupancy is the cloud
+  photosphere, same film. An Earth-scale flatten
+  (`ORBIT_VIEW_H_KM`) used to skim every giant; it is retired.
+  `ORBIT_SKIN_CLEAR` (1.05) keeps the camera in vacuum, the
+  same clearance the star film uses over the corona. Saved
+  rides re-derive their radius on restore.
   Clouds are not a painted deck; aerosol opacity lives
   inside `airExtinction` / the scattering integral. The **cosmic
   background** is the other decreed fake: we cannot mint the

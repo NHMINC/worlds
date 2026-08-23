@@ -549,15 +549,6 @@ export const UNIVERSE = {
    */
   WORLD_ORBIT_CLEAR_KM: 10_000,
   /**
-   * Host-pass orbit rings. The chart names a plane (polar /
-   * equatorial) or hover — not an altitude. Inertial distance
-   * is the limb film (`ORBIT_LIMB_*`, `ORBIT_VIEW_H_KM`).
-   * Hover is a face-on area fill. Gas floors the skin so a
-   * giant is not a clip. The 10 000 km figure is a transfer
-   * graze, not the park.
-   */
-  WORLD_ORBIT_GAS_FLOOR: 0.35,
-  /**
    * Drone camera. Pinch / wheel thrusts along the look at a
    * fraction of the subject distance (`SOI_ZOOM`). The ship
    * helm does not zoom — that was a fake slide. Roll is a
@@ -587,21 +578,13 @@ export const UNIVERSE = {
    * SIDE-ON: prograde, yawed toward the body so the near limb
    * sits this fraction across the HORIZONTAL field (½ = the
    * vertical centre line: the body confined to the left half),
-   * rolled so the ring plane is level. Distance follows the
-   * sphere: a huge body hits ORBIT_VIEW_H_KM; a smaller world
-   * parks where the limb curve almost touches the corners of
-   * the decreed film (`ORBIT_LIMB_CORNER` inset on CAM_FOV ×
-   * CAM_ASPECT). Insertion eases from full-ahead to this yaw.
-   * The helm does not zoom or free-look on the ring.
+   * rolled so the ring plane is level. Distance is the corner
+   * curve of occupancy (`ORBIT_LIMB_CORNER` inset on CAM_FOV ×
+   * CAM_ASPECT) — same picture on a moon and a giant. Insertion
+   * eases from full-ahead to this yaw. The helm does not zoom
+   * or free-look on the ring.
    */
   ORBIT_LIMB_FILL: 0.5,
-  /**
-   * Absolute height (km) that flattens a huge body, measured
-   * above occupancy (surface + air), not the bare rock.
-   * Worlds smaller than the corner curve pull in until the
-   * limb of that ball reaches the corners.
-   */
-  ORBIT_VIEW_H_KM: 10_000,
   /** Inset on the lower corners (1 = exact corners). */
   ORBIT_LIMB_CORNER: 0.92,
   /**

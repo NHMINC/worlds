@@ -1,11 +1,10 @@
 /**
  * Host-pass orbits. The chart names a plane, not an altitude.
- * Polar / equatorial / ecliptic share one inertial film: the
- * limb sits on the midline and the horizon runs from a level
- * line (huge body) to a curve that almost touches the lower
- * corners (smaller worlds). Hover faces the ball at a fixed
- * area fill. Distance is an output of that picture plus a
- * skin floor — not a menu of LEO / MEO / GEO.
+ * Equatorial / ecliptic share one inertial film: the limb sits
+ * on the midline. A world's size is its occupancy — rock plus
+ * drawn air, or a giant's cloud photosphere — and the park is
+ * that ball's corner curve. Distance is an output of that
+ * picture plus a skin floor — not a menu of LEO / MEO / GEO.
  */
 import { UNIVERSE, airExtinction } from './physics';
 import type { BodySpec } from './systemgen';
@@ -65,21 +64,16 @@ export function sideFovDeg(fovDeg: number, aspect: number): number {
   return (2 * Math.atan(Math.tan(v * 0.5) * Math.max(1e-6, aspect)) * 180) / Math.PI;
 }
 
-function gasFloor(body: BodySpec): number {
-  return body.kind === 'gas' ? UNIVERSE.WORLD_ORBIT_GAS_FLOOR : 0;
-}
-
 /**
  * Closest legal camera (km from centre). The body's size is
- * surface PLUS its atmosphere: the air term is the drawn sky
- * shell's own top (AIR_SHELL_H scale heights, scaleH in planet
- * radii), so no park or fence ever sits inside the visible air.
+ * its visible ball: rock PLUS the drawn sky shell (AIR_SHELL_H
+ * scale heights), or a gas giant's cloud photosphere (the
+ * mesh IS the atmosphere — there is no second shell).
  */
 export function viewSkinKm(R: number, body?: BodySpec): number {
   const r = Math.max(R, 1);
   let extra = r * 0.002;
   if (body) {
-    extra = Math.max(extra, gasFloor(body) * r);
     const ext = airExtinction(body.physics);
     if (ext) extra = Math.max(extra, UNIVERSE.AIR_SHELL_H * ext.scaleH * r);
   }
@@ -87,21 +81,17 @@ export function viewSkinKm(R: number, body?: BodySpec): number {
 }
 
 /**
- * Inertial park (km from centre). The body's size is its
- * occupancy (surface + air); the film is cut for THAT ball
- * so a thick atmosphere cannot overflow the picture or park
- * the camera on the sky-shell mesh. A huge body hits
- * ORBIT_VIEW_H_KM above the air and the horizon flattens;
- * a pebble hits the cleared skin and stays small.
+ * Inertial park (km from centre). The film is cut for the
+ * occupancy ball so a thick atmosphere (or a giant's cloud
+ * deck) cannot overflow the picture. Same picture on a pebble
+ * and a Jupiter — a 10 000 km flatten was an Earth-scale
+ * height that pulled every giant into a cloud-top skim.
  */
 export function limbViewRadiusKm(R: number, body?: BodySpec): number {
   const occ = viewSkinKm(R, body);
   const a = orbitLimbCornerAlpha();
   const want = occ / Math.max(1e-8, Math.sin(a));
-  const lo = occ * UNIVERSE.ORBIT_SKIN_CLEAR;
-  const hi = occ + UNIVERSE.ORBIT_VIEW_H_KM;
-  if (hi < lo) return lo;
-  return Math.min(hi, Math.max(lo, want));
+  return Math.max(occ * UNIVERSE.ORBIT_SKIN_CLEAR, want);
 }
 
 /** Body radius + absolute transfer / graze floor (km from centre). */
@@ -194,11 +184,9 @@ export function starGrazeKm(radiusKm: number): number {
 
 /**
  * Host-star ecliptic: the corner film, floored outside the
- * corona. The world flat-horizon cap (ORBIT_VIEW_H_KM over the
- * skin) must not apply — 10,000 km over a photosphere parked
- * the ship inside the fire (a giant's cap even fell below the
- * skin floor and returned a graze). Kepler ω from GM☉ · mass
- * at that radius.
+ * corona. Worlds use the same film of occupancy; stars must
+ * not inherit an Earth-scale flatten over the photosphere.
+ * Kepler ω from GM☉ · mass at that radius.
  */
 export function starOrbitRadiusKpc(star: { radius: number }): number {
   const R = starFilmRKm(star.radius);
