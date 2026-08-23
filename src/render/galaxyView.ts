@@ -43,6 +43,7 @@ import {
   shellFloorKm,
   starOrbitOmega,
   starOrbitRadiusKpc,
+  starSkinKm,
   type WorldOrbitKind,
 } from '../world/worldOrbit';
 import { regionName, sketchMatches, type GalaxyFilterName } from '../world/sectors';
@@ -754,12 +755,9 @@ export class GalaxyView {
           this.voyage.riding.omega = isHangOrbit(kind) ? 0 : orbitOmega(rt.spec, kind);
         }
       } else if (this.locale.obj) {
-        const star = this.locale.spec?.star ?? {
-          radius: Math.max(1e-6, this.locale.obj.star.radius) * UNIVERSE.RSUN_KM,
-          mass: Math.max(0.08, this.locale.obj.star.mass),
-        };
-        this.voyage.riding.r = starOrbitRadiusKpc(star);
-        this.voyage.riding.omega = starOrbitOmega(star, this.voyage.riding.r);
+        const mass = Math.max(0.08, this.locale.spec?.star.mass ?? this.locale.obj.star.mass);
+        this.voyage.riding.r = starOrbitRadiusKpc({ radius: this.locale.starRadiusKm() });
+        this.voyage.riding.omega = starOrbitOmega({ mass }, this.voyage.riding.r);
       }
       this.voyage.rideE1.set(s.riding.e1[0], s.riding.e1[1], s.riding.e1[2]);
       this.voyage.rideE2.set(s.riding.e2[0], s.riding.e2[1], s.riding.e2[2]);
@@ -795,9 +793,63 @@ export class GalaxyView {
       this.droneRideT = s.drone.rideT;
       this.placeDrone();
     }
+    this.normalizeRestoredPose();
     this.pendingSession = null;
     this.applyCam();
     return true;
+  }
+
+  /**
+   * Boot heal: a save from an older build (or an older law) can
+   * hold a pose inside a hard fence — inside the sun, inside a
+   * body's shell — where the fences that would have prevented it
+   * now pin it in place. Restore is a state copy, so the copy is
+   * normalized ONCE here: any fence-violating eye lifts radially
+   * to the appropriate park (star ecliptic park / the body's
+   * free-fly park). A saved ride needs no heal — placeRide pins
+   * the eye to the ring exactly, under current laws.
+   */
+  private normalizeRestoredPose(): void {
+    if (!this.locale.obj || this.voyage.riding) return;
+    const at = this.ship.at;
+    // Bodies first: their parks sit far outside the star wall,
+    // so a body lift can never land inside the star's fence.
+    for (const rt of this.locale.sys.bodies) {
+      this.locale.bodyFromEye(at, rt, this.hostTmp);
+      const d = this.hostTmp.length();
+      const wall = shellFloorKm(rt.spec) * KM_TO_KPC;
+      if (!(d < wall)) continue;
+      const park = this.approach.parkBodyKpc(rt.spec);
+      this.locale.bodyCatalog(rt, this.hostTmp2);
+      if (d > 1e-18) {
+        at.set(
+          this.hostTmp2.x - (this.hostTmp.x / d) * park,
+          this.hostTmp2.y - (this.hostTmp.y / d) * park,
+          this.hostTmp2.z - (this.hostTmp.z / d) * park,
+        );
+      } else {
+        this.orientArc();
+        at.set(
+          this.hostTmp2.x - this.ship.fwd.x * park,
+          this.hostTmp2.y - this.ship.fwd.y * park,
+          this.hostTmp2.z - this.ship.fwd.z * park,
+        );
+      }
+    }
+    const starR = this.locale.starRadiusKm();
+    const wall = starSkinKm(starR) * KM_TO_KPC;
+    const cart = galToCart(this.locale.obj.pos);
+    this.hostTmp.set(at.x - cart.x, at.y - cart.y, at.z - cart.z);
+    const d = this.hostTmp.length();
+    if (d < wall) {
+      const park = starOrbitRadiusKpc({ radius: starR });
+      if (d > 1e-18) this.hostTmp.multiplyScalar(park / d);
+      else {
+        this.orientArc();
+        this.hostTmp.copy(this.ship.fwd).negate().multiplyScalar(park);
+      }
+      at.set(cart.x + this.hostTmp.x, cart.y + this.hostTmp.y, cart.z + this.hostTmp.z);
+    }
   }
 
   private emitSession(force = false): void {
