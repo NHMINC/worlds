@@ -84,10 +84,14 @@ export class DroneBridge {
    * ride flew off to trackball a planet instead of the sun.
    */
   private orbitId(): string | null {
+    // What the ship is physically AT wins: the ride (or the
+    // capture flying onto it) beats a merely NAMED dest — a
+    // course set from orbit made the drone launch across the
+    // system to the plan instead of the body beneath the ship.
     if (this.voyage.capturing) return this.voyage.capturing.bodyId;
+    if (this.voyage.riding) return this.voyage.riding.bodyId;
     const dest = this.destOrbit();
     if (dest) return dest.bodyId;
-    if (this.voyage.riding) return this.voyage.riding.bodyId;
     return this.port.worldId() ?? this.port.courseBodyId() ?? null;
   }
 
