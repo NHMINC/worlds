@@ -269,7 +269,8 @@ export class GalaxyView {
   private readonly raycaster = new THREE.Raycaster();
   private readonly ndc = new THREE.Vector2();
   private lastT = performance.now();
-  private lastDt = 1 / 60;
+  /** Universe-clock frame step (dt × TIME_SCALE) — the ship's dt. */
+  private lastDtU = 1 / 60;
   private viewW = 0;
   private viewH = 0;
 
@@ -1079,6 +1080,7 @@ export class GalaxyView {
    * hostObj === dest.
    */
   goToWorldOrbit(bodyId: string, kind: WorldOrbitKind): void {
+    if (this.timeHeld()) return;
     const starId = this.sight.focusObj?.id ?? this.locale.obj?.id;
     if (starId == null) return;
     this.setCourseBerth({ starId, bodyId, orbit: kind });
@@ -1090,7 +1092,7 @@ export class GalaxyView {
   }
 
   setCourseBerth(dest: Berth): void {
-    if (this.mode !== 'region') return;
+    if (this.mode !== 'region' || this.timeHeld()) return;
     if (this.drone) this.setDrone(false);
     const obj = objectAt(this.seed, dest.starId);
     if (!obj) return;
@@ -1138,6 +1140,7 @@ export class GalaxyView {
    * nearest the ship — this retargets; it does not hop.
    */
   centerLook(): void {
+    if (this.timeHeld()) return;
     if (this.mode !== 'region' || !this.locale.obj || !this.drone) return;
     this.drone.toggleLock(this.bridge.world());
     this.placeDrone();
@@ -1152,7 +1155,7 @@ export class GalaxyView {
   }
 
   setDrone(on: boolean): void {
-    if (this.mode !== 'region' || !this.locale.obj) return;
+    if (this.mode !== 'region' || !this.locale.obj || this.timeHeld()) return;
     if (!on) {
       if (!this.drone) return;
       // Instant return: the cut, then the ship camera — which is
@@ -1575,7 +1578,7 @@ export class GalaxyView {
    * free and the helm comes back. A live dest is kept.
    */
   leaveOrbit(): void {
-    if (this.drone) return;
+    if (this.drone || this.timeHeld()) return;
     if (!this.voyage.riding && !this.voyage.capturing) return;
     const vEsc = this.approach.departEscapeSpeed();
     this.breakOrbit();
@@ -1613,7 +1616,7 @@ export class GalaxyView {
 
   /** Latch warp on (fixed cruise) or off (stop). A tap, not a hold. */
   setWarp(on: boolean): void {
-    if (this.drone) return;
+    if (this.drone || this.timeHeld()) return;
     if (this.mode !== 'region') return;
     if (this.voyage.departing) return;
     if (on && (this.voyage.riding || this.voyage.capturing)) return;
@@ -1624,7 +1627,7 @@ export class GalaxyView {
 
   /** Ahead / astern. Only while stopped — a running warp keeps the gear. */
   setGear(astern: boolean): void {
-    if (this.mode !== 'region' || this.voyage.thrustOn) return;
+    if (this.mode !== 'region' || this.voyage.thrustOn || this.timeHeld()) return;
     if (this.voyage.astern === astern) return;
     this.voyage.astern = astern;
     this.wake();
@@ -1706,6 +1709,17 @@ export class GalaxyView {
       c.y - this.ship.at.y,
       c.z - this.ship.at.z,
     );
+  }
+
+  /**
+   * Speed-up (TIME_SCALE > 1) is for WATCHING or skipping ahead,
+   * not for flying: the ship binds to the universe clock (the
+   * autopilot consumes universe-dt, so a live course or ride
+   * stays coherent with the fast-forwarded worlds) and every
+   * manual verb no-ops until the clock returns to 1.
+   */
+  private timeHeld(): boolean {
+    return UNIVERSE.TIME_SCALE > 1;
   }
 
   private worldRt(id: string | null | undefined): HostBodyRT | null {
@@ -1920,7 +1934,7 @@ export class GalaxyView {
     } else if (this.voyage.pendingArriveOrbit && this.destOrbit()) {
       this.pilot.enterRide();
     } else if (this.voyage.capturing) {
-      this.navigator.captureTick(this.lastDt, tSys);
+      this.navigator.captureTick(this.lastDtU, tSys);
     } else if (this.voyage.riding) {
       this.pilot.placeRide(tSys);
     } else {
@@ -1947,7 +1961,7 @@ export class GalaxyView {
     if (this.mode !== 'region') return;
     const maxV = force ? null : this.approach.moveCap();
     if (maxV != null) {
-      const max = maxV * Math.max(this.lastDt, 1 / 120);
+      const max = maxV * Math.max(this.lastDtU, 1 / 120);
       const len = Math.hypot(vx, vy, vz);
       if (len > max) {
         const s = max / len;
@@ -2173,12 +2187,16 @@ export class GalaxyView {
     const now = performance.now();
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
-    this.lastDt = dt;
-    this.approach.lastDt = dt;
+    // The ship lives on the universe clock: at speed-up the
+    // autopilot fast-forwards WITH the worlds it is chasing
+    // (a wall-clock ship could never catch a geared planet).
+    const dtU = dt * UNIVERSE.TIME_SCALE;
+    this.lastDtU = dtU;
+    this.approach.lastDt = dtU;
     // The truth snapshot guidance reads this frame.
-    this.nav.tick(dt, (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE);
-    this.navigator.guide(dt);
-    this.approach.cruise(dt);
+    this.nav.tick(dtU, (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE);
+    this.navigator.guide(dtU);
+    this.approach.cruise(dtU);
     this.tickRoll(dt);
     // Motion is the universal wake: input, warp, and settling
     // all end as pose drift. Hover, a parked Home pick, and a
