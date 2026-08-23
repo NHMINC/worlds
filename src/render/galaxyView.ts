@@ -1152,8 +1152,7 @@ export class GalaxyView {
   }
 
   setDrone(on: boolean, ease = true): void {
-    if (this.voyage.departing) return;
-    if (this.mode !== 'region' || !this.locale.obj || !this.locale.root) return;
+    if (this.mode !== 'region' || !this.locale.obj) return;
     if (!on) {
       if (!this.drone) return;
       if (!ease || this.drone.phase === 'home') {
@@ -1166,15 +1165,31 @@ export class GalaxyView {
       return;
     }
     if (this.drone) return;
+    // Launch must always work inside a sphere: a Leave burn is
+    // simply cancelled (the old early-return made the button dead
+    // for the whole burn), and a just-teleported host attaches
+    // its frame on demand instead of refusing the first tap.
     this.voyage.clearDepart();
+    if (!this.locale.star) this.locale.attachFurnace(this.locale.obj);
+    const root = this.locale.root;
+    if (!root) return;
+    this.locale.orient(root);
     const tSys = (this.epochUnix + performance.now() / 1000) * UNIVERSE.TIME_SCALE;
     this.droneRideT = tSys;
-    this.hostTmpQ.copy(this.locale.root.quaternion).conjugate();
-    this.locale.hostEyeKm(this.orbitTmp2);
+    this.hostTmpQ.copy(root.quaternion).conjugate();
+    // Spawn eye from the SHIP's own position (exact-difference
+    // precision law), never from the root pin — a stale pin put
+    // the drone at the star's centre on the attach-on-demand path.
+    const cart = galToCart(this.locale.obj.pos);
+    this.orbitTmp2
+      .set(this.ship.at.x - cart.x, this.ship.at.y - cart.y, this.ship.at.z - cart.z)
+      .applyQuaternion(this.hostTmpQ)
+      .multiplyScalar(1 / KM_TO_KPC);
+    const eyeKm = this.orbitTmp2.clone();
     const fwd = this.droneLocalLook(this.ship.fwd, this.hostTmpQ);
     const up = this.droneLocalLook(this.ship.up, this.hostTmpQ);
     this.drone = new Trackball();
-    this.drone.launch(this.orbitTmp2, fwd, up, this.bridge.world());
+    this.drone.launch(eyeKm, fwd, up, this.bridge.world());
     this.placeDrone();
     this.applyCam();
     this.wake();
