@@ -1,20 +1,55 @@
 /**
- * The star, for now, is its observable surface and nothing
- * else: one white sphere at the photosphere radius the physics
- * uses everywhere (the stellar clock's R, the same kilometres
- * the fences and parks are built from). No corona shell, no
- * glare quad — those drew light out to several radii, so a
- * ship correctly parked at 4.2 R still LOOKED like it was
- * inside the sun, and nobody could tell whether navigation or
- * drawing was wrong. Navigation first; the furnace look
- * returns later as a law.
+ * The star: its observable surface, drawn as a law. The disk is
+ * a blackbody at the stellar clock's Teff (Stefan–Boltzmann
+ * from L and R — the same colour law the catalog uses), shaded
+ * by Eddington grey-atmosphere limb darkening, at the exact
+ * photosphere radius the fences and parks are built from.
+ * NOTHING draws past the surface — no corona shell, no glare
+ * quad (those once drew light out beyond the hard wall, so a
+ * correctly parked ship looked like it was inside the sun).
+ * Granulation / spots / flares and a corona kept inside the
+ * wall are later stages.
  *
- * The PointLight stays — worlds still need their sun's light
- * (inverse-square, referenced at A_HAB).
+ * The PointLight is the illumination law: lightColor,
+ * inverse-square referenced at A_HAB.
  */
 import * as THREE from 'three';
-import { UNIVERSE } from '../world/physics';
+import { UNIVERSE, starTeff } from '../world/physics';
 import type { StarSpec } from '../world/systemgen';
+
+const PHOTO_VERT = /* glsl */ `
+varying vec3 vN;
+varying vec3 vWorld;
+void main() {
+  vN = normal;
+  vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+// Eddington–Barbier grey atmosphere: I = I0 (2/5 + 3/5 μ).
+// Cooler photospheres carry more line opacity, so the limb
+// coefficient walks up — one law, Teff as input. The centre
+// sits above 1 and clips toward white; the limb keeps the
+// Teff colour under the LDR.
+const PHOTO_FRAG = /* glsl */ `
+precision highp float;
+uniform vec3 uColor;
+uniform vec3 uCam;
+uniform float uTeff;
+varying vec3 vN;
+varying vec3 vWorld;
+void main() {
+  vec3 n = normalize(vN);
+  vec3 view = normalize(uCam - vWorld);
+  float mu = max(dot(n, view), 0.0);
+  float uLD = mix(0.42, 0.68, clamp((6200.0 - uTeff) / 2800.0, 0.0, 1.0));
+  float limb = (1.0 - uLD) + uLD * mu;
+  vec3 hot = mix(uColor, vec3(1.0), 0.2 + 0.35 * clamp((uTeff - 3800.0) / 5000.0, 0.0, 1.0));
+  vec3 c = mix(uColor, hot, mu) * (limb * 1.18);
+  gl_FragColor = vec4(c, 1.0);
+}
+`;
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
@@ -40,7 +75,16 @@ export function makeStar(spec: StarSpec): StarView {
   // The observable surface: the photosphere radius in km.
   // Floored at 1 km so a compact remnant still has a surface.
   const surfaceKm = Math.max(1, spec.radius);
-  const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const color = new THREE.Color(spec.color);
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: PHOTO_VERT,
+    fragmentShader: PHOTO_FRAG,
+    uniforms: {
+      uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
+      uCam: { value: new THREE.Vector3() },
+      uTeff: { value: starTeff(spec.luminosity, spec.radius) },
+    },
+  });
   const ball = new THREE.Mesh(new THREE.SphereGeometry(surfaceKm, 64, 48), mat);
   group.add(ball);
 
@@ -82,6 +126,7 @@ export function makeStar(spec: StarSpec): StarView {
     surfaceKm,
     marker,
     update(camPos: THREE.Vector3): void {
+      (mat.uniforms.uCam.value as THREE.Vector3).copy(camPos);
       const d = camPos.length();
       if (!(d > 0)) {
         marker.visible = false;

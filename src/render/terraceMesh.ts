@@ -381,6 +381,7 @@ uniform float uWaterLevel;
 uniform float uTime;
 uniform vec3 uLightDir;
 uniform float uSunIrr;     // display irradiance at this orbit (inverse-square)
+uniform vec3 uSunColor;    // the star's light colour (Teff law)
 uniform float uWarpFreq;
 // ONE temperature law (mirror of toygen.insolationAt): local temperature is
 // time-averaged insolation. Spinners get a latitude gradient; worlds locked
@@ -627,7 +628,7 @@ void main() {
   vec3 night = c * vec3(0.24, 0.30, 0.46);
   // Inverse-square at THIS orbit (uSunIrr is the display knee of
   // L · (A_HAB / a)²). Inner worlds wash; the outer system fades.
-  vec3 col = mix(night, c * q * uSunIrr, day);
+  vec3 col = mix(night, c * q * uSunIrr * uSunColor, day);
 
   // The air along this ray: per-channel extinction of the ground plus the
   // sunlight the path scatters toward the camera. Blue-hazed distance by
@@ -738,6 +739,7 @@ export function makeTerrainMaterial(opts: TerrainMaterialOptions = {}): THREE.Sh
       uTime: { value: 0 },
       uLightDir: { value: new THREE.Vector3(0, 0, 1) },
       uSunIrr: { value: 1 },
+      uSunColor: { value: new THREE.Vector3(1, 1, 1) },
       uWarpFreq: { value: 40 },
       uTempBase: { value: opts.tempBase ?? 0.5 },
       uTempSpan: { value: opts.tempSpan ?? 0.35 },
@@ -817,6 +819,7 @@ uniform vec3 uSurf;
 uniform vec3 uDeep;
 uniform vec3 uLightDir;
 uniform float uSunIrr;     // display irradiance at this orbit (inverse-square)
+uniform vec3 uSunColor;    // the star's light colour (Teff law)
 uniform float uTime;
 uniform float uWaveFreq;
 // Camera position in the body's local (unit-radius) frame: bodies now sit
@@ -1001,7 +1004,7 @@ void main() {
   // not dye the sun the sky's colour (the same lesson as foam).
   vec3 alb = c; // true color, for the torch: darkness hides it, light returns it
   float dayW = smoothstep(-0.14, 0.10, dot(n0, uLightDir));
-  c = mix(c * vec3(0.26, 0.32, 0.50), c * uSunIrr, dayW);
+  c = mix(c * vec3(0.26, 0.32, 0.50), c * uSunIrr * uSunColor, dayW);
 
   // Cox–Munk glitter path. The geometric sphere is the macrosurface;
   // waves are a slope distribution whose variance is sea-state energy
@@ -1035,7 +1038,9 @@ void main() {
   // saturates the inner path; the NDF still sets the falloff.
   float glintAmt = clamp(shape * ${UNIVERSE.GLINT_GAIN} * uSunIrr, 0.0, 1.0)
                  * dayW * (1.0 - ice);
-  vec3 glintC = vec3(1.0, 0.94, 0.78);
+  // The glint is a reflection of the SUN: its colour, walked
+  // toward white at the saturated core.
+  vec3 glintC = mix(uSunColor, vec3(1.0), 0.35);
 
   // Fresnel reflection: at grazing incidence the sea is a MIRROR (Schlick
   // reflectance walks toward 1). The reflected ray first asks the
@@ -1210,6 +1215,7 @@ export function makeWaterMaterial(opts: WaterMaterialOptions = {}): THREE.Shader
       uDeep: { value: new THREE.Vector3(...(opts.deep ?? WATER_DEEP)) },
       uLightDir: { value: new THREE.Vector3(0, 0, 1) },
       uSunIrr: { value: 1 },
+      uSunColor: { value: new THREE.Vector3(1, 1, 1) },
       uTime: { value: 0 },
       uWaveFreq: { value: 170 },
       uCamPos: { value: new THREE.Vector3(0, 0, 3) },

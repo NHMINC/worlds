@@ -148,7 +148,14 @@ export class RockyGlobe {
     return true;
   }
 
-  update(cam: THREE.Camera, tSys: number, L: number, posKm: THREE.Vector3, spinQ: THREE.Quaternion): void {
+  update(
+    cam: THREE.Camera,
+    tSys: number,
+    L: number,
+    posKm: THREE.Vector3,
+    spinQ: THREE.Quaternion,
+    sunColor?: THREE.Vector3,
+  ): void {
     const assets = this.assets;
     if (!assets) return;
     const qInv = this.tmpQ.copy(spinQ).conjugate();
@@ -165,6 +172,9 @@ export class RockyGlobe {
     const apply = (mat: THREE.ShaderMaterial): void => {
       (mat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
       if (mat.uniforms.uSunIrr) mat.uniforms.uSunIrr.value = sunIrr;
+      if (sunColor && mat.uniforms.uSunColor) {
+        (mat.uniforms.uSunColor.value as THREE.Vector3).copy(sunColor);
+      }
       if (mat.uniforms.uSunLum) mat.uniforms.uSunLum.value = sunLum;
       if (mat.uniforms.uTime) mat.uniforms.uTime.value = shaderT;
       (mat.uniforms.uCamPos.value as THREE.Vector3).copy(camL);

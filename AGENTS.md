@@ -472,18 +472,23 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - Light comes from the **loaded** star at the origin. Day/night is spin
   + orbit as functions of `(spec, unix time t)` — deterministic, no
   “bake a sun behind the camera.”
-- **The star draws as its observable surface — for now.** One
-  white sphere at the photosphere radius, the SAME kilometres the
-  fences and parks use (`locale.starRadiusKm()` is the one size
-  law: minted spec, else the catalog through
-  `starSpecFromState`'s `max(1e-6, R☉)·RSUN_KM`). The corona
-  shell and glare quad are retired: they drew light out past the
-  4 R hard wall, so a ship correctly parked at 4.2 R still LOOKED
-  inside the sun and navigation could not be judged by eye.
-  Navigation first; the furnace look (Teff blackbody, Eddington
-  limb darkening, dynamo activity, Thomson corona — the previous
-  `star.ts`, in git history) returns later as a law drawn INSIDE
-  the surface radius, never past the wall. The PointLight stays
+- **The star draws as its observable surface.** One sphere at
+  the photosphere radius, the SAME kilometres the fences and
+  parks use (`locale.starRadiusKm()` is the one size law: minted
+  spec, else the catalog through `starSpecFromState`'s
+  `max(1e-6, R☉)·RSUN_KM`). The disk is a blackbody at the
+  stellar clock's Teff with Eddington grey-atmosphere limb
+  darkening — the same colour law the catalog pins use. NOTHING
+  draws past the surface: the old corona shell and glare quad
+  put light beyond the 4 R hard wall, so a correctly parked ship
+  looked like it was inside the sun. Illumination is the
+  PointLight (`lightColor`, inverse-square at `A_HAB`) plus
+  `uSunColor` on the world shaders — terrain day term, water day
+  term, and the Cox–Munk glint are all tinted by the star's
+  light, so a red dwarf's worlds are lit red. Later stages, each
+  kept inside the wall: the eye's glare law (`starEyeFlux` PSF),
+  then dynamo activity (granules / spots / flares) and a Thomson
+  corona. The PointLight stays
   (inverse-square, referenced at `A_HAB`). Below the visual
   threshold the star wears a **marker**: a billboarded ring of
   fixed angular size (`STAR_MARK_ANG`) that appears when the

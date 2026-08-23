@@ -297,6 +297,9 @@ export class GalaxyView {
   private drone: Trackball | null = null;
   /** Ship ↔ drone camera handover count — the UI blinks on it. */
   private camCut = 0;
+  /** The host star's light colour (Teff law), cached per host. */
+  private readonly sunColor = new THREE.Vector3(1, 1, 1);
+  private sunColorId = -1;
   private readonly orbitTmp = new THREE.Vector3();
   private readonly orbitTmp2 = new THREE.Vector3();
   /** Scratch for look-vector slerp (attitude nudges). */
@@ -1821,6 +1824,11 @@ export class GalaxyView {
       : rocky;
     let budget = 8;
     const L = this.locale.spec.star.luminosity;
+    if (this.sunColorId !== this.locale.starId) {
+      const c = new THREE.Color(this.locale.spec.star.lightColor);
+      this.sunColor.set(c.r, c.g, c.b);
+      this.sunColorId = this.locale.starId;
+    }
     for (const rt of ordered) {
       const g = this.locale.globes.get(rt.spec.id);
       if (!g) continue;
@@ -1834,7 +1842,7 @@ export class GalaxyView {
         budget -= performance.now() - t0;
         this.wake(2);
       }
-      if (g.ready) g.update(this.camera, tSys, L, rt.pos, rt.spinQ);
+      if (g.ready) g.update(this.camera, tSys, L, rt.pos, rt.spinQ, this.sunColor);
     }
   }
 
