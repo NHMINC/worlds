@@ -144,13 +144,20 @@ export function orbitRadiusKpc(body: BodySpec, kind: string): number {
   return orbitRadiusKm(body, kind) / UNIVERSE.KPC_KM;
 }
 
-/** Mean-motion ω (rad / universe-second) at that ring. */
+/** The decreed ride gear: RIDE_GEAR × Kepler, capped at
+ *  RIDE_OMEGA_MAX but never below the true rate. */
+function rideGear(omega: number): number {
+  return Math.max(omega, Math.min(omega * UNIVERSE.RIDE_GEAR, UNIVERSE.RIDE_OMEGA_MAX));
+}
+
+/** Ride mean-motion ω (rad / universe-second) at that ring —
+ *  true Kepler through the decreed RIDE_GEAR. */
 export function orbitOmega(body: BodySpec, kind: string): number {
   const aM = orbitRadiusKm(body, kind) * 1000;
   const Rm = Math.max(body.radius, 1) * 1000;
   const M = body.physics.densityRel * UNIVERSE.RHO_EARTH * (4 / 3) * Math.PI * Rm * Rm * Rm;
   const mu = UNIVERSE.G_SI * Math.max(M, 1);
-  return Math.sqrt(mu / (aM * aM * aM));
+  return rideGear(Math.sqrt(mu / (aM * aM * aM)));
 }
 
 /**
@@ -204,5 +211,5 @@ export function starOrbitRadiusKpc(star: { radius: number }): number {
 export function starOrbitOmega(star: { mass: number }, aKpc: number): number {
   const aM = Math.max(aKpc, 1e-18) * UNIVERSE.KPC_KM * 1000;
   const mu = UNIVERSE.GM_SUN * Math.max(star.mass, 0.08);
-  return Math.sqrt(mu / (aM * aM * aM));
+  return rideGear(Math.sqrt(mu / (aM * aM * aM)));
 }
