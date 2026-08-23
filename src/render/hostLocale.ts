@@ -212,6 +212,14 @@ export class HostLocale {
     return out;
   }
 
+  /** Eye → star in catalog kpc — the exact-difference law. */
+  starFromEye(shipAt: THREE.Vector3, out: THREE.Vector3): THREE.Vector3 {
+    const lock = this.obj;
+    if (!lock) return out.set(0, 0, 0);
+    const c = galToCart(lock.pos);
+    return out.set(c.x - shipAt.x, c.y - shipAt.y, c.z - shipAt.z);
+  }
+
   /**
    * Camera → body in catalog kpc. Order is the precision law:
    * star − eye is an exact difference of two nearby ~8 kpc

@@ -29,6 +29,7 @@ import { Sight, type GalaxyFocus } from './sight';
 import { DroneBridge } from './droneBridge';
 import { VoyagePilot, type PilotPort } from './voyagePilot';
 import { ShipControls } from './shipControls';
+import { NavWorld } from './navWorld';
 import { VoyageApproach } from './voyageApproach';
 
 export type { GalaxyFocus } from './sight';
@@ -200,6 +201,8 @@ export class GalaxyView {
   private readonly voyage = new Voyage();
   /** The autopilot's hands: rate-limited attitude + throttle. */
   private readonly fcs = new ShipControls(this.ship);
+  /** The navigation truth — one snapshot per frame. */
+  private nav!: NavWorld;
   /** Ring geometry — insertions, captures, ride placement. */
   private readonly pilot: VoyagePilot;
   /** Approach laws — cruise gears, speed caps, parks, fences. */
@@ -389,6 +392,7 @@ export class GalaxyView {
         this.updateWorldSubject();
       },
     };
+    this.nav = new NavWorld(this.ship, this.locale);
     this.pilot = new VoyagePilot(this.ship, this.fcs, this.voyage, this.locale, this.camera, pilotPort);
     this.approach = new VoyageApproach(this.ship, this.fcs, this.voyage, this.locale, this.camera, pilotPort);
     this.sight = new Sight(seed, {
@@ -2089,6 +2093,10 @@ export class GalaxyView {
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
     this.lastDt = dt;
+    this.pilot.lastDt = dt;
+    this.approach.lastDt = dt;
+    // The truth snapshot guidance reads this frame.
+    this.nav.tick(dt, (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE);
     this.pilot.holdCourse(dt);
     this.approach.cruise(dt);
     this.tickRoll(dt);
