@@ -26,7 +26,8 @@ export type DroneWorld = {
   coreOf(id: string | null, out: THREE.Vector3): number;
   /** km from core so the disk covers ARRIVE_FILL of the shorter FOV. */
   fillKm(R: number): number;
-  reticleTarget(): { id: string | null } | null;
+  /** Pip content from the DRONE's pose (host-root km). */
+  reticleTarget(eye: THREE.Vector3, fwd: THREE.Vector3): { id: string | null } | null;
 };
 
 export class Trackball {
@@ -139,7 +140,7 @@ export class Trackball {
       this.lock = false;
       return;
     }
-    const aim = world.reticleTarget();
+    const aim = world.reticleTarget(this.eye, this.fwd);
     if (!aim) return;
     this.captureLock(aim.id, world);
   }

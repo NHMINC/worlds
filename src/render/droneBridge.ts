@@ -11,7 +11,6 @@ import { fillViewRadius, type WorldOrbitKind } from '../world/worldOrbit';
 import type { DroneWorld } from './drone';
 import type { HostBodyRT } from './hostSystem';
 import { nearestBody } from './hostLook';
-import { ShipFlight } from './flight';
 import { Voyage } from './voyage';
 import { HostLocale } from './hostLocale';
 import { Sight, RETICLE_LOCK } from './sight';
@@ -30,7 +29,6 @@ export class DroneBridge {
   /** Nearest-core position in host-root km (drone lock / stay-out). */
   private readonly corePos = new THREE.Vector3();
 
-  private readonly ship: ShipFlight;
   private readonly voyage: Voyage;
   private readonly locale: HostLocale;
   private readonly sight: Sight;
@@ -38,14 +36,12 @@ export class DroneBridge {
   private readonly port: BridgePort;
 
   constructor(
-    ship: ShipFlight,
     voyage: Voyage,
     locale: HostLocale,
     sight: Sight,
     camera: THREE.PerspectiveCamera,
     port: BridgePort,
   ) {
-    this.ship = ship;
     this.voyage = voyage;
     this.locale = locale;
     this.sight = sight;
@@ -67,7 +63,7 @@ export class DroneBridge {
         return R;
       },
       fillKm: (R) => fillViewRadius(Math.max(R, 1), this.camera.fov, this.camera.aspect),
-      reticleTarget: () => this.reticleTarget(),
+      reticleTarget: (eye, fwd) => this.reticleTarget(eye, fwd),
     };
   }
 
@@ -81,18 +77,18 @@ export class DroneBridge {
 
   /**
    * Core the drone backs off from and locks: the body the ship
-   * is on (capture / ride / latched world). `null` is the star
-   * only when there is no world in that chain.
+   * is on (capture / ride / dest), else the latched / course
+   * world. A star berth's bodyId is null ON PURPOSE — a ??
+   * chain conflated that null with "no berth" and fell through
+   * to a bystander world, so a drone launched from the star
+   * ride flew off to trackball a planet instead of the sun.
    */
   private orbitId(): string | null {
-    return (
-      this.voyage.capturing?.bodyId ??
-      this.destOrbit()?.bodyId ??
-      this.voyage.riding?.bodyId ??
-      this.port.worldId() ??
-      this.port.courseBodyId() ??
-      null
-    );
+    if (this.voyage.capturing) return this.voyage.capturing.bodyId;
+    const dest = this.destOrbit();
+    if (dest) return dest.bodyId;
+    if (this.voyage.riding) return this.voyage.riding.bodyId;
+    return this.port.worldId() ?? this.port.courseBodyId() ?? null;
   }
 
   private subject(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number } {
@@ -129,22 +125,23 @@ export class DroneBridge {
     return { id: null, R: this.starRadiusKm() };
   }
 
-  /** Body (or the star) in the centre pip. Null if the pip is empty. */
-  private reticleTarget(): { id: string | null } | null {
+  /**
+   * Body (or the star) in the centre pip. Null if the pip is
+   * empty. The star cone is evaluated in the DRONE's own frame
+   * (host-root km: the star is the origin, so star-ward is
+   * −eye) — the old test dotted the SHIP's nose against the
+   * star from the SHIP's position, so Target could never lock
+   * the star from a drone flying somewhere else.
+   */
+  private reticleTarget(eye: THREE.Vector3, fwd: THREE.Vector3): { id: string | null } | null {
     if (this.sight.focusBodyId && this.worldRt(this.sight.focusBodyId)) {
       return { id: this.sight.focusBodyId };
     }
     const sel = this.port.selectedBodyId();
     if (sel && this.worldRt(sel)) return { id: sel };
-    const root = this.locale.root;
-    if (!root) return null;
-    const d = root.position.length();
-    if (d < 1e-18) return { id: null };
-    const inv = 1 / d;
-    const dot =
-      root.position.x * inv * this.ship.fwd.x +
-      root.position.y * inv * this.ship.fwd.y +
-      root.position.z * inv * this.ship.fwd.z;
+    const d = eye.length();
+    if (d < 1e-9) return { id: null };
+    const dot = -(eye.x * fwd.x + eye.y * fwd.y + eye.z * fwd.z) / d;
     if (dot >= Math.cos(RETICLE_LOCK)) return { id: null };
     return null;
   }

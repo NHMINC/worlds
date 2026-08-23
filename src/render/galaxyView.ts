@@ -423,7 +423,7 @@ export class GalaxyView {
       worldRt: (id) => this.worldRt(id),
       bodyHud: (rt) => this.hudForBody(rt),
     });
-    this.bridge = new DroneBridge(this.ship, this.voyage, this.locale, this.sight, this.camera, {
+    this.bridge = new DroneBridge(this.voyage, this.locale, this.sight, this.camera, {
       worldId: () => this.worldId,
       courseBodyId: () => this.courseBodyId,
       selectedBodyId: () => this.selectedBodyId,
