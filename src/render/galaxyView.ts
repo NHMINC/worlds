@@ -28,6 +28,7 @@ import { Helm } from './helm';
 import { Sight, type GalaxyFocus } from './sight';
 import { DroneBridge } from './droneBridge';
 import { VoyagePilot, type PilotPort } from './voyagePilot';
+import { ShipControls } from './shipControls';
 import { VoyageApproach } from './voyageApproach';
 
 export type { GalaxyFocus } from './sight';
@@ -197,6 +198,8 @@ export class GalaxyView {
   private readonly ship = new ShipFlight();
   /** Flight state machine — berth, ride, capture, depart, warp. */
   private readonly voyage = new Voyage();
+  /** The autopilot's hands: rate-limited attitude + throttle. */
+  private readonly fcs = new ShipControls(this.ship);
   /** Ring geometry — insertions, captures, ride placement. */
   private readonly pilot: VoyagePilot;
   /** Approach laws — cruise gears, speed caps, parks, fences. */
@@ -386,8 +389,8 @@ export class GalaxyView {
         this.updateWorldSubject();
       },
     };
-    this.pilot = new VoyagePilot(this.ship, this.voyage, this.locale, this.camera, pilotPort);
-    this.approach = new VoyageApproach(this.ship, this.voyage, this.locale, this.camera, pilotPort);
+    this.pilot = new VoyagePilot(this.ship, this.fcs, this.voyage, this.locale, this.camera, pilotPort);
+    this.approach = new VoyageApproach(this.ship, this.fcs, this.voyage, this.locale, this.camera, pilotPort);
     this.sight = new Sight(seed, {
       region: () => this.mode === 'region',
       orient: () => this.orientArc(),

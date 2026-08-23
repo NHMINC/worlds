@@ -403,6 +403,23 @@ export const UNIVERSE = {
   AIM_RANGE_KPC: 1,
   ARRIVE_HOLD: 3,
   /**
+   * Flight control limits (shipControls.ts) — the autopilot's
+   * hands obey these; guidance plans arcs it can actually fly.
+   * TURN/ROLL are rad/s (the old per-frame clamp allowed ~33
+   * rad/s — the end-over-end tumble). ACCEL is a 1/s spin-up
+   * rate, scale-free from crawl to warp; cuts bind instantly.
+   */
+  SHIP_TURN_RATE: 0.9,
+  SHIP_ROLL_RATE: 0.8,
+  SHIP_ACCEL: 2.5,
+  /**
+   * Feasible-arc margin (navigator): commanded speed is capped
+   * at this fraction of SHIP_TURN_RATE × the local arc radius —
+   * never fly faster than the nose can turn the arc, or the
+   * ship circles its target instead of arriving.
+   */
+  NAV_ARC_MARGIN: 0.6,
+  /**
    * Lock-on capture into a named ring. After the graze-safe
    * approach reaches the shell, the ship does not teleport onto
    * the rail — it eases position and heading onto the ring at

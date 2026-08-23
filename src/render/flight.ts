@@ -20,7 +20,6 @@ export class ShipFlight {
 
   private readonly t0 = new THREE.Vector3();
   private readonly t1 = new THREE.Vector3();
-  private readonly t2 = new THREE.Vector3();
 
   /** Yaw around current up, pitch around fwd × up. */
   look(dx: number, dy: number): void {
@@ -107,82 +106,6 @@ export class ShipFlight {
   addEuler(dYaw: number, dPitch: number, dRoll = 0): void {
     const e = this.toEuler();
     this.setEuler(e.yaw + dYaw, THREE.MathUtils.clamp(e.pitch + dPitch, -1.45, 1.45), e.roll + dRoll);
-  }
-
-  /**
-   * Slerp the nose toward `fwd`. Then bank so `zenith` is
-   * screen-up, ease roll toward world-up (hang / hover face),
-   * or leave the bank (heading hold).
-   */
-  easeToward(
-    dt: number,
-    rate: number,
-    fwdX: number,
-    fwdY: number,
-    fwdZ: number,
-    zenX: number | null,
-    zenY: number | null,
-    zenZ: number | null,
-    faceBody: boolean,
-  ): void {
-    const flen = Math.hypot(fwdX, fwdY, fwdZ);
-    if (flen < 1e-15) return;
-    const tx = fwdX / flen;
-    const ty = fwdY / flen;
-    const tz = fwdZ / flen;
-    const cx = this.fwd.x;
-    const cy = this.fwd.y;
-    const cz = this.fwd.z;
-    const dot = THREE.MathUtils.clamp(cx * tx + cy * ty + cz * tz, -1, 1);
-    let k = 1 - Math.exp(-rate * dt);
-    const ang = Math.acos(dot);
-    const maxStep = 0.55;
-    if (ang > 1e-6 && ang * k > maxStep) k = maxStep / ang;
-    let bx: number;
-    let by: number;
-    let bz: number;
-    if (dot > 0.999999) {
-      bx = tx;
-      by = ty;
-      bz = tz;
-    } else if (dot < -0.999999) {
-      if (zenX != null && zenY != null && zenZ != null) this.t2.set(zenX, zenY, zenZ);
-      else this.t2.copy(WORLD_UP);
-      this.t2.addScaledVector(this.fwd, -this.t2.dot(this.fwd));
-      if (this.t2.lengthSq() < 1e-16) {
-        this.t2.crossVectors(this.fwd, WORLD_UP);
-        if (this.t2.lengthSq() < 1e-16) this.t2.set(1, 0, 0);
-      }
-      this.t2.normalize();
-      this.t1.copy(this.fwd).applyAxisAngle(this.t2, Math.PI * k);
-      bx = this.t1.x;
-      by = this.t1.y;
-      bz = this.t1.z;
-    } else {
-      const omega = Math.acos(dot);
-      const so = Math.sin(omega);
-      const a = Math.sin((1 - k) * omega) / so;
-      const b = Math.sin(k * omega) / so;
-      bx = a * cx + b * tx;
-      by = a * cy + b * ty;
-      bz = a * cz + b * tz;
-    }
-    this.lookAt(bx, by, bz);
-    if (zenX != null && zenY != null && zenZ != null) {
-      this.t0.set(zenX, zenY, zenZ);
-      this.t0.addScaledVector(this.fwd, -this.t0.dot(this.fwd));
-      if (this.t0.lengthSq() < 1e-16) return;
-      this.t0.normalize();
-      this.up.lerp(this.t0, k);
-      this.orthonormalize();
-    } else if (faceBody) {
-      this.t0.copy(WORLD_UP);
-      this.t0.addScaledVector(this.fwd, -this.t0.dot(this.fwd));
-      if (this.t0.lengthSq() < 1e-16) return;
-      this.t0.normalize();
-      this.up.lerp(this.t0, k);
-      this.orthonormalize();
-    }
   }
 
   applyCam(cam: THREE.PerspectiveCamera): void {

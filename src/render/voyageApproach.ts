@@ -11,6 +11,7 @@ import { galToCart, type GalaxyObject } from '../world/galaxy';
 import { type BodySpec } from '../world/systemgen';
 import { type HostBodyRT } from './hostSystem';
 import { ShipFlight } from './flight';
+import { ShipControls } from './shipControls';
 import { Voyage } from './voyage';
 import { HostLocale } from './hostLocale';
 import { type PilotPort } from './voyagePilot';
@@ -40,6 +41,7 @@ export class VoyageApproach {
   private readonly hostTmp2 = new THREE.Vector3();
 
   private readonly ship: ShipFlight;
+  private readonly fcs: ShipControls;
   private readonly voyage: Voyage;
   private readonly locale: HostLocale;
   private readonly camera: THREE.PerspectiveCamera;
@@ -47,12 +49,14 @@ export class VoyageApproach {
 
   constructor(
     ship: ShipFlight,
+    fcs: ShipControls,
     voyage: Voyage,
     locale: HostLocale,
     camera: THREE.PerspectiveCamera,
     port: PilotPort,
   ) {
     this.ship = ship;
+    this.fcs = fcs;
     this.voyage = voyage;
     this.locale = locale;
     this.camera = camera;
@@ -242,8 +246,7 @@ export class VoyageApproach {
     if (!d) return;
     const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
     d.v += (d.vEsc - d.v) * k;
-    this.ship.fwd.copy(d.dir);
-    this.ship.orthonormalize();
+    this.fcs.point(d.dir.x, d.dir.y, d.dir.z);
     this.port.moveBubble(d.dir.x * d.v * dt, d.dir.y * d.v * dt, d.dir.z * d.v * dt, true);
     this.port.applyCam();
     if (d.vEsc - d.v <= d.vEsc * 0.03 + 1e-18) this.voyage.finishDepart();
@@ -372,11 +375,13 @@ export class VoyageApproach {
   cruise(dt: number): void {
     if (!this.port.region()) {
       this.voyage.thrustOn = false;
+      this.fcs.brake();
       this.voyage.thrustSpeed = 0;
       return;
     }
     if (this.port.droneLive()) {
       this.voyage.thrustOn = false;
+      this.fcs.brake();
       this.voyage.thrustSpeed = 0;
       this.voyage.clearDepart();
       return;
@@ -401,6 +406,7 @@ export class VoyageApproach {
     if (this.voyage.capturing) {
       // Capture owns the stick — cruise waits.
       this.voyage.thrustOn = false;
+      this.fcs.brake();
       this.voyage.thrustSpeed = 0;
       return;
     }
@@ -422,8 +428,15 @@ export class VoyageApproach {
         ? orbitRadiusKpc(world.spec, dest.kind)
         : null;
     const cap = this.moveCap(dt);
-    const v = cap ?? UNIVERSE.GALAXY_WARP;
-    this.voyage.thrustSpeed = this.voyage.thrustOn ? v : 0;
+    const vCmd = cap ?? UNIVERSE.GALAXY_WARP;
+    if (!this.voyage.thrustOn) {
+      this.fcs.brake();
+      this.voyage.thrustSpeed = 0;
+      return;
+    }
+    // Throttle: spin-up eases at SHIP_ACCEL; a lower cap (brake
+    // gears, fences, the feasible-arc law) binds this frame.
+    this.voyage.thrustSpeed = this.fcs.throttle(dt, vCmd);
     if (this.voyage.thrustSpeed <= 0) return;
     let step = this.voyage.thrustSpeed * dt;
     if (world && orbitPark != null && !this.voyage.astern) {

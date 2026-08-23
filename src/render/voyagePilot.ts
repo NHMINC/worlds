@@ -16,6 +16,7 @@ import { galToCart, type GalaxyObject } from '../world/galaxy';
 import { type HostBodyRT } from './hostSystem';
 import { planOrbitInsert, type InsertMode } from './orbitInsert';
 import { ShipFlight } from './flight';
+import { ShipControls } from './shipControls';
 import { Voyage } from './voyage';
 import { HostLocale } from './hostLocale';
 import {
@@ -72,6 +73,7 @@ export class VoyagePilot {
   private readonly hostTmpQ = new THREE.Quaternion();
 
   private readonly ship: ShipFlight;
+  private readonly fcs: ShipControls;
   private readonly voyage: Voyage;
   private readonly locale: HostLocale;
   private readonly camera: THREE.PerspectiveCamera;
@@ -79,12 +81,14 @@ export class VoyagePilot {
 
   constructor(
     ship: ShipFlight,
+    fcs: ShipControls,
     voyage: Voyage,
     locale: HostLocale,
     camera: THREE.PerspectiveCamera,
     port: PilotPort,
   ) {
     this.ship = ship;
+    this.fcs = fcs;
     this.voyage = voyage;
     this.locale = locale;
     this.camera = camera;
@@ -848,7 +852,7 @@ export class VoyagePilot {
         lz = this.lookSlerp.z;
       }
     }
-    this.ship.easeToward(
+    this.fcs.steer(
       dt,
       UNIVERSE.ARRIVE_HOLD,
       lx,
@@ -879,7 +883,7 @@ export class VoyagePilot {
     zenZ: number | null,
     faceBody: boolean,
   ): void {
-    this.ship.easeToward(dt, rate, fwdX, fwdY, fwdZ, zenX, zenY, zenZ, faceBody);
+    this.fcs.steer(dt, rate, fwdX, fwdY, fwdZ, zenX, zenY, zenZ, faceBody);
   }
 
   /**
