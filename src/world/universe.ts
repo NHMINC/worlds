@@ -110,6 +110,15 @@ export const UNIVERSE = {
    * ~14,000 km keeps the whole stack hundreds of ULPs wide.
    */
   STAR_FILM_R_MIN: 0.02,
+  /**
+   * Sub-threshold star highlight (star.ts marker): the ring's
+   * angular radius on screen (rad). It appears when the surface
+   * subtends less than HALF this — so it can never overlap a
+   * readable disk, and it hands off to the disk on approach. A
+   * neutron star at its film park (thousands of true radii out)
+   * keeps the ring; the class label hangs off it.
+   */
+  STAR_MARK_ANG: 0.022,
 
   /**
    * Flare visibility. Activity (starActivity) decides whether the

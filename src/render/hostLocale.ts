@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import { galToCart, type GalaxyObject } from '../world/galaxy';
+import type { StellarState } from '../world/stellar';
 import {
   eclipticPole,
   starSpecFromState,
@@ -55,6 +56,8 @@ export class HostLocale {
   spec: SystemSpec | null = null;
   /** Goldberg globes for every rocky body of the host. */
   readonly globes = new Map<string, RockyGlobe>();
+  /** Class tag inside the star's sub-threshold marker. */
+  private starLabel: { sprite: THREE.Sprite; tex: THREE.CanvasTexture; mat: THREE.SpriteMaterial } | null = null;
 
   private readonly pole = new THREE.Vector3();
   private readonly alignQ = new THREE.Quaternion();
@@ -97,6 +100,7 @@ export class HostLocale {
       this.spec = null;
     }
     this.star = makeStar(star);
+    this.attachStarLabel(lock.star);
     this.ensureRoot().add(this.star.group);
     this.starId = lock.id;
     // The photosphere replaces the pin. The catalog freezes on
@@ -108,9 +112,87 @@ export class HostLocale {
   detachFurnace(): void {
     if (!this.star) return;
     this.root?.remove(this.star.group);
+    this.dropStarLabel();
     this.star.dispose();
     this.star = null;
     this.hooks.furnaceGone();
+  }
+
+  /**
+   * What the sub-threshold marker is pointing at: the catalog's
+   * own stellar state — MK class for living stars, the remnant
+   * phase otherwise. Truth from `evolve`, not a painted tag.
+   * A sprite (screen-facing, offset above the ring via
+   * sprite.center so roll cannot move it) inside the marker
+   * group, so the marker law owns its visibility.
+   */
+  private attachStarLabel(st: StellarState): void {
+    if (!this.star || typeof document === 'undefined') return;
+    let text: string;
+    switch (st.phase) {
+      case 'black_hole':
+        text = 'Black hole';
+        break;
+      case 'pulsar':
+        text = 'Pulsar';
+        break;
+      case 'neutron_star':
+        text = 'Neutron star';
+        break;
+      case 'white_dwarf':
+        text = st.wdType ? `White dwarf ${st.wdType}` : 'White dwarf';
+        break;
+      case 'wolf_rayet':
+        text = 'Wolf–Rayet';
+        break;
+      case 'carbon_star':
+        text = 'Carbon star';
+        break;
+      case 'brown_dwarf':
+        text = 'Brown dwarf';
+        break;
+      default:
+        text = st.mk
+          ? `${st.mk}${st.sub ?? ''}${st.lumClass ? ` ${st.lumClass}` : ''} star`
+          : 'Star';
+    }
+    const c = document.createElement('canvas');
+    const g = c.getContext('2d')!;
+    g.font = '600 34px system-ui, sans-serif';
+    const w = Math.ceil(g.measureText(text).width) + 24;
+    c.width = w;
+    c.height = 48;
+    const g2 = c.getContext('2d')!;
+    g2.font = '600 34px system-ui, sans-serif';
+    g2.textBaseline = 'middle';
+    g2.textAlign = 'center';
+    g2.fillStyle = 'rgba(159, 216, 255, 0.95)';
+    g2.fillText(text, w / 2, 26);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mat = new THREE.SpriteMaterial({
+      map: tex,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    // Marker units: the ring is radius ~0.9. Keep the text a
+    // fixed fraction of the ring; center-offset puts it above.
+    const h = 0.34;
+    sprite.scale.set((h * w) / 48, h, 1);
+    sprite.center.set(0.5, -3.6);
+    sprite.renderOrder = 31;
+    this.starLabel = { sprite, tex, mat };
+    this.star.marker.add(sprite);
+  }
+
+  private dropStarLabel(): void {
+    if (!this.starLabel) return;
+    this.starLabel.sprite.removeFromParent();
+    this.starLabel.tex.dispose();
+    this.starLabel.mat.dispose();
+    this.starLabel = null;
   }
 
   /**

@@ -481,8 +481,17 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   limb darkening, dynamo activity, Thomson corona — the previous
   `star.ts`, in git history) returns later as a law drawn INSIDE
   the surface radius, never past the wall. The PointLight stays
-  (inverse-square, referenced at `A_HAB`). Renderer:
-  `src/render/star.ts`.
+  (inverse-square, referenced at `A_HAB`). Below the visual
+  threshold the star wears a **marker**: a billboarded ring of
+  fixed angular size (`STAR_MARK_ANG`) that appears when the
+  surface subtends less than half of it — so it can never
+  overlap a readable disk, hands off to the disk on approach,
+  and stays on at a remnant's park (a neutron star's film park
+  is thousands of true radii out; the trackball drone is how you
+  go closer). The tag inside it is the catalog's own stellar
+  state (MK class, or the remnant phase) — truth from `evolve`,
+  not paint. Renderer: `src/render/star.ts`; label:
+  `hostLocale.attachStarLabel`.
 - **The explorer is the harvest, not a magnifier ball.**
   The **system chart** (orbits icon next to Cosmic engineer)
   is the same rank-spaced orbits-and-moons schematic as the
