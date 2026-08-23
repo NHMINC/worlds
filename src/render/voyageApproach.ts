@@ -22,6 +22,7 @@ import {
   orbitOmega,
   orbitRadiusKpc,
   shellFloorKm,
+  viewSkinKm,
   starOrbitOmega,
   starFilmRKm,
   starOrbitRadiusKpc,
@@ -360,7 +361,7 @@ export class VoyageApproach {
 
   parkBodyKpc(b: BodySpec): number {
     const clear = clearRadiusKm(b) * KM_TO_KPC;
-    const R = Math.max(1, b.radius) * KM_TO_KPC;
+    const R = viewSkinKm(Math.max(1, b.radius), b) * KM_TO_KPC;
     return Math.max(clear, fillViewRadius(R, this.camera.fov, this.camera.aspect));
   }
 

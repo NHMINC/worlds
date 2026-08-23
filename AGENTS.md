@@ -299,8 +299,16 @@ toy — Godus blocks on a real-sized globe.
  patches: the transfer corridor latches its tangent side until
  the blocking ball clears; speed is capped by the osculating
  arc through the target (`NAV_ARC_MARGIN`); capture is a
- terminal rendezvous that slides on the park sphere and latches
- with a ULP-floored slack (the black-hole lesson). Clouds are not a painted deck; aerosol opacity lives
+  terminal rendezvous that slides on the park sphere and latches
+  with a ULP-floored slack (the black-hole lesson). A world's
+  size is surface plus atmosphere: `AIR_SHELL_H` (7 scale
+  heights) is both the drawn sky shell's top and the occupancy
+  the film is cut for — not the bare rock, or a thick
+  atmosphere overflows the picture and the park sits on the
+  shell mesh (in the air). `ORBIT_SKIN_CLEAR` (1.05) keeps the
+  camera in vacuum, the same clearance the star film uses over
+  the corona. Saved rides re-derive their radius on restore.
+  Clouds are not a painted deck; aerosol opacity lives
   inside `airExtinction` / the scattering integral. The **cosmic
   background** is the other decreed fake: we cannot mint the
   observable universe. It is SCENE CONTENT of the one galaxy

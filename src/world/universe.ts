@@ -596,9 +596,10 @@ export const UNIVERSE = {
    */
   ORBIT_LIMB_FILL: 0.5,
   /**
-   * Absolute height (km) that flattens a huge body. Stars and
-   * giants sit near R + this; worlds smaller than the corner
-   * curve pull in until the limb reaches the corners.
+   * Absolute height (km) that flattens a huge body, measured
+   * above occupancy (surface + air), not the bare rock.
+   * Worlds smaller than the corner curve pull in until the
+   * limb of that ball reaches the corners.
    */
   ORBIT_VIEW_H_KM: 10_000,
   /** Inset on the lower corners (1 = exact corners). */
@@ -606,13 +607,20 @@ export const UNIVERSE = {
   /**
    * Where a body's air ENDS, in scale heights — the top of the
    * drawn sky shell AND the body's occupancy radius share this
-   * one number: a body's size is surface + atmosphere, so parks
-   * and fences can never place the ship inside the drawn air.
+   * one number: a body's size is surface + atmosphere.
    * (The skin once added 2.2·scaleH in the wrong UNITS — radii
    * read as km — so the air added nothing and rides parked
    * inside the shell.)
    */
   AIR_SHELL_H: 7,
+  /**
+   * Vacuum clearance on that occupancy. The limb film parks
+   * outside this so the camera sits in vacuum, not on the
+   * sky-shell mesh — AT the air top is still in the volume
+   * (BackSide shell, ray starts at the camera). Same 5 % the
+   * star film uses over the corona.
+   */
+  ORBIT_SKIN_CLEAR: 1.05,
   /**
    * The drone's launch film: the FULL disk in frame with edge
    * padding — its diameter covers this fraction of the SHORTER

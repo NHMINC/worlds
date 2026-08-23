@@ -87,16 +87,19 @@ export function viewSkinKm(R: number, body?: BodySpec): number {
 }
 
 /**
- * Inertial park (km from centre). The film wants the corner
- * curve; a huge body hits ORBIT_VIEW_H_KM first and the
- * horizon flattens; a pebble hits the skin and stays small.
+ * Inertial park (km from centre). The body's size is its
+ * occupancy (surface + air); the film is cut for THAT ball
+ * so a thick atmosphere cannot overflow the picture or park
+ * the camera on the sky-shell mesh. A huge body hits
+ * ORBIT_VIEW_H_KM above the air and the horizon flattens;
+ * a pebble hits the cleared skin and stays small.
  */
 export function limbViewRadiusKm(R: number, body?: BodySpec): number {
-  const r = Math.max(R, 1);
+  const occ = viewSkinKm(R, body);
   const a = orbitLimbCornerAlpha();
-  const want = r / Math.max(1e-8, Math.sin(a));
-  const lo = viewSkinKm(r, body);
-  const hi = r + UNIVERSE.ORBIT_VIEW_H_KM;
+  const want = occ / Math.max(1e-8, Math.sin(a));
+  const lo = occ * UNIVERSE.ORBIT_SKIN_CLEAR;
+  const hi = occ + UNIVERSE.ORBIT_VIEW_H_KM;
   if (hi < lo) return lo;
   return Math.min(hi, Math.max(lo, want));
 }
