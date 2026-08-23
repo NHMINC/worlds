@@ -614,20 +614,6 @@ export const UNIVERSE = {
    */
   AIR_SHELL_H: 7,
   /**
-   * Ride-clock gear — a decreed toy stretch, the TIME_SCALE of
-   * rides. True Kepler at the film park is ~160 min for EVERY
-   * rocky world (park is 1.5 R and period at fixed a/R depends
-   * only on density, so radius cancels): physically right,
-   * visually a crawl at whole-disk distance. The ride's mean
-   * motion runs at RIDE_GEAR × Kepler, capped by RIDE_OMEGA_MAX
-   * (rad/s of sky) so compact-remnant rides — already minutes —
-   * do not become a blur; the cap never pushes below true
-   * Kepler. Planet ORBITS stay on the true clock; only the
-   * ridden ring is geared. 1 restores truth.
-   */
-  RIDE_GEAR: 10,
-  RIDE_OMEGA_MAX: 0.05,
-  /**
    * The drone's launch film: the FULL disk in frame with edge
    * padding — its diameter covers this fraction of the SHORTER
    * live field, so portrait pads the sides and landscape pads
