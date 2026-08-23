@@ -98,7 +98,13 @@ toy — Godus blocks on a real-sized globe.
   re-exported by `physics.ts`).** Spatial
   scale is SI (`AU_KM`, `RSUN_KM`, `REARTH_KM`, `KPC_KM`). Time default
   is 1:1; `TIME_SCALE` is a live observer rate (time-lapse), not a hidden
-  gearbox. Hex coarseness (`MAX_FINE_F`) is the remaining toy. Keep every
+  gearbox. THE SHIP IS BOUND TO THAT CLOCK: the autopilot (truth
+  snapshot, guidance, cruise, capture) consumes universe-dt, so at
+  speed-up a live course fast-forwards coherently with the worlds it
+  chases — a wall-clock ship could never catch a geared planet.
+  Speed-up is for watching or skipping ahead, not flying: while
+  `TIME_SCALE` > 1 every manual verb (look, warp, gear, drone, leave
+  orbit, set course) no-ops. Hex coarseness (`MAX_FINE_F`) is the remaining toy. Keep every
   compression **visible and named**. “Exaggerate within laws” (great
   sunsets, readable water) means turning a knob in `UNIVERSE` or a
   documented optical approximation, not a one-off `if (sunset) color = orange`.
