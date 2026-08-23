@@ -24,7 +24,7 @@ export type DroneWorld = {
   /** Core of the body the ship is orbiting (star only if that berth is the star). */
   subject(eye: THREE.Vector3): { id: string | null; pos: THREE.Vector3; R: number };
   coreOf(id: string | null, out: THREE.Vector3): number;
-  /** km from core so the disk covers ARRIVE_FILL of the shorter FOV. */
+  /** km from core: the FULL disk with edge padding (HOVER_FILL of the shorter live FOV). */
   fillKm(R: number): number;
   /** Pip content from the DRONE's pose (host-root km). */
   reticleTarget(eye: THREE.Vector3, fwd: THREE.Vector3): { id: string | null } | null;
@@ -54,11 +54,10 @@ export class Trackball {
 
   /**
    * Spawn from the ship's host-km eye / look. Park that pose
-   * as the dock target. Launch lifts along ship-up facing
-   * forward, then locks trackball on the ship's orbit subject
-   * AT THE SHIP'S OWN DISTANCE, looking at the body — not the
-   * full-disk fill park, which on a close limb ride sat several
-   * radii out and left the pilot flying all the way back.
+   * as the dock target. Launch lifts along ship-up, backs away
+   * until the WHOLE body fits the frame with edge padding (the
+   * hover film, on the live screen), and only then locks the
+   * trackball on the ship's orbit subject.
    */
   launch(eye: THREE.Vector3, fwd: THREE.Vector3, up: THREE.Vector3, world: DroneWorld): void {
     this.eye.copy(eye);
@@ -231,8 +230,8 @@ export class Trackball {
     if (this.t0.lengthSq() < 1e-12) this.t0.copy(this.parkedUp);
     if (this.t0.lengthSq() < 1e-12) this.t0.copy(this.parkedFwd).negate();
     this.t0.normalize();
-    // Hold the ship's own distance (floored just off the skin).
-    this.pullD = Math.max(this.parkedEye.distanceTo(this.core), R * 1.002);
+    // The hover film: the whole body in frame with padding.
+    this.pullD = Math.max(world.fillKm(R), R * 1.002);
     this.rel.copy(this.t0).multiplyScalar(this.pullD);
     this.launchLeg = 'pull';
   }

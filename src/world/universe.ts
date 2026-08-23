@@ -577,10 +577,10 @@ export const UNIVERSE = {
    * ORBIT_VIEW_H_KM and the horizon is almost level; a smaller
    * world parks where the limb curve almost touches the lower
    * corners of the decreed film (`ORBIT_LIMB_CORNER` inset on
-   * CAM_FOV × CAM_ASPECT). Hover faces the ball so the disk
-   * covers ORBIT_HOVER_AREA of that film. Insertion eases
-   * from full-ahead to this pitch. The helm does not zoom
-   * or free-look on the ring.
+   * CAM_FOV × CAM_ASPECT). Hover faces the ball at the hover
+   * film (HOVER_FILL). Insertion eases from full-ahead to
+   * this pitch. The helm does not zoom or free-look on the
+   * ring.
    */
   ORBIT_LIMB_FILL: 0.5,
   /**
@@ -591,8 +591,14 @@ export const UNIVERSE = {
   ORBIT_VIEW_H_KM: 10_000,
   /** Inset on the lower corners (1 = exact corners). */
   ORBIT_LIMB_CORNER: 0.92,
-  /** Hover: projected disk area / film area. */
-  ORBIT_HOVER_AREA: 0.6,
+  /**
+   * Hover film (hover park + the drone's launch pull-back):
+   * the FULL disk in frame with edge padding — its diameter
+   * covers this fraction of the SHORTER field, so portrait
+   * pads the sides and landscape pads top / bottom. The old
+   * 60%-of-screen-AREA law overflowed the frame vertically.
+   */
+  HOVER_FILL: 0.72,
   /** Vertical field of the explorer camera (degrees). */
   CAM_FOV: 50,
   /**

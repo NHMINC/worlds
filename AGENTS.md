@@ -227,9 +227,12 @@ toy — Godus blocks on a real-sized globe.
   the screen (`SOI_TWIST` rad/s) —
   right / clockwise is negative twist
   — in flight only. Hover hangs
-  full-forward at the face so the
-  disk covers `ORBIT_HOVER_AREA` of
-  the film. Equatorial / polar /
+  full-forward at the face at the
+  hover film (`HOVER_FILL`): the
+  whole disk with edge padding on
+  the shorter field. The drone's
+  launch pull-back uses the same
+  film on the live screen. Equatorial / polar /
   ecliptic share one inertial film:
   the forward limb sits on the
   midline (`ORBIT_LIMB_FILL` 50%)
@@ -501,7 +504,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   — Lock-on is always ecliptic. Pick one and warp
   auto-engages; distance is the film law, not an
   altitude menu. Hover hangs facing the disk at
-  `ORBIT_HOVER_AREA`. Equatorial / polar /
+  the hover film (`HOVER_FILL`:
+  the whole sphere with padding on
+  the shorter field). Equatorial / polar /
   ecliptic pitch so the top of the sphere sits on
   the midline (`ORBIT_LIMB_FILL`) — a huge body
   is a level horizon, a smaller one curves toward

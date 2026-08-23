@@ -7,6 +7,7 @@
  * launch / dock / tick stay with the conductor.
  */
 import * as THREE from 'three';
+import { UNIVERSE } from '../world/physics';
 import { fillViewRadius, type WorldOrbitKind } from '../world/worldOrbit';
 import type { DroneWorld } from './drone';
 import type { HostBodyRT } from './hostSystem';
@@ -62,7 +63,8 @@ export class DroneBridge {
         out.copy(this.corePos);
         return R;
       },
-      fillKm: (R) => fillViewRadius(Math.max(R, 1), this.camera.fov, this.camera.aspect),
+      fillKm: (R) =>
+        fillViewRadius(Math.max(R, 1), this.camera.fov, this.camera.aspect, UNIVERSE.HOVER_FILL),
       reticleTarget: (eye, fwd) => this.reticleTarget(eye, fwd),
     };
   }

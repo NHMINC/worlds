@@ -137,17 +137,13 @@ export function limbViewRadiusKm(R: number, body?: BodySpec): number {
 }
 
 /**
- * Hover park: face-on disk covers ORBIT_HOVER_AREA of the
- * decreed film. Same picture on every body.
+ * Hover park: the FULL disk in the decreed film with edge
+ * padding (HOVER_FILL of the shorter field). Same picture on
+ * every body; portrait pads the sides, landscape the top.
  */
 export function hoverViewRadiusKm(R: number, body?: BodySpec): number {
   const r = Math.max(R, 1);
-  const half = ((UNIVERSE.CAM_FOV * Math.PI) / 180) * 0.5;
-  const T = Math.tan(half);
-  const k = Math.sqrt((4 * UNIVERSE.CAM_ASPECT * UNIVERSE.ORBIT_HOVER_AREA) / Math.PI);
-  const tanA = T * k;
-  const a = Math.atan(tanA);
-  const want = r / Math.max(1e-8, Math.sin(a));
+  const want = fillViewRadius(r, UNIVERSE.CAM_FOV, UNIVERSE.CAM_ASPECT, UNIVERSE.HOVER_FILL);
   return Math.max(viewSkinKm(r, body), want);
 }
 
@@ -163,16 +159,16 @@ export function clearRadiusKm(body: { radius: number }): number {
  * eats the screen. Named rings use the limb / hover films; this
  * is the third picture, for a stop with no ring named.
  */
-export function fillHalfAngle(fovDeg: number, aspect: number): number {
+export function fillHalfAngle(fovDeg: number, aspect: number, fill = UNIVERSE.ARRIVE_FILL): number {
   const vFov = (fovDeg * Math.PI) / 180;
   const a = Math.max(1e-6, aspect);
   const hFov = 2 * Math.atan(Math.tan(vFov * 0.5) * a);
-  return 0.5 * UNIVERSE.ARRIVE_FILL * Math.min(vFov, hFov);
+  return 0.5 * fill * Math.min(vFov, hFov);
 }
 
 /** Distance (same unit as R) at which a ball of radius R fills that film. */
-export function fillViewRadius(R: number, fovDeg: number, aspect: number): number {
-  return R / Math.max(1e-8, Math.tan(fillHalfAngle(fovDeg, aspect)));
+export function fillViewRadius(R: number, fovDeg: number, aspect: number, fill = UNIVERSE.ARRIVE_FILL): number {
+  return R / Math.max(1e-8, Math.tan(fillHalfAngle(fovDeg, aspect, fill)));
 }
 
 /**
