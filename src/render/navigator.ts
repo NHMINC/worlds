@@ -64,6 +64,7 @@ export class Navigator {
   private readonly tanA = new THREE.Vector3();
   private readonly tanB = new THREE.Vector3();
   private readonly lookSlerp = new THREE.Vector3();
+  private readonly latchUp = new THREE.Vector3();
   private readonly orbitQ = new THREE.Quaternion();
 
   private readonly ship: ShipFlight;
@@ -372,7 +373,9 @@ export class Navigator {
     // Side-on parked look: fwd prograde yawed to the limb, up =
     // fwd × nadir (body left).
     this.pilot.limbParkFwd(rt, cap.kind, this.voyage.rideE2, this.voyage.rideE1, this.lookSlerp);
-    this.tmp.crossVectors(this.lookSlerp, this.tmp2.copy(this.voyage.rideE1).negate()).normalize();
+    this.latchUp
+      .crossVectors(this.lookSlerp, this.tmp2.copy(this.voyage.rideE1).negate())
+      .normalize();
     const posErr = this.rendezvous(
       dt,
       tx,
@@ -386,11 +389,11 @@ export class Navigator {
       this.lookSlerp.x,
       this.lookSlerp.y,
       this.lookSlerp.z,
-      this.tmp.x,
-      this.tmp.y,
-      this.tmp.z,
+      this.latchUp.x,
+      this.latchUp.y,
+      this.latchUp.z,
     );
-    if (posErr <= this.latchSlack(r)) {
+    if (posErr <= this.latchSlack(r) && this.attitudeSettled()) {
       this.voyage.capturing = null;
       this.pilot.beginRide(rt, cap.kind, cap.dir, tSys);
     }
@@ -411,7 +414,9 @@ export class Navigator {
     // Same limb-down as a world ring: look along the upper
     // tangent so the photosphere sits in the lower half.
     this.pilot.pitchLimbFwd(this.voyage.rideE2, this.voyage.rideE1, this.pilot.starLimbR(), r, this.lookSlerp);
-    this.tmp.crossVectors(this.lookSlerp, this.tmp2.copy(this.voyage.rideE1).negate()).normalize();
+    this.latchUp
+      .crossVectors(this.lookSlerp, this.tmp2.copy(this.voyage.rideE1).negate())
+      .normalize();
     const posErr = this.rendezvous(
       dt,
       tx,
@@ -425,16 +430,27 @@ export class Navigator {
       this.lookSlerp.x,
       this.lookSlerp.y,
       this.lookSlerp.z,
-      this.tmp.x,
-      this.tmp.y,
-      this.tmp.z,
+      this.latchUp.x,
+      this.latchUp.y,
+      this.latchUp.z,
     );
-    if (posErr <= this.latchSlack(r)) {
+    if (posErr <= this.latchSlack(r) && this.attitudeSettled()) {
       this.voyage.capturing = null;
       this.pilot.beginStarRide(dir, tSys);
     }
     this.port.applyCam();
     this.port.wake();
+  }
+
+  /**
+   * The latch bolts the ride pose, so the ship must already BE
+   * in it: nose on the parked look and roll settled, within
+   * ORBIT_LATCH_ANG — or orbit entry ends on a sudden tilt.
+   * lookSlerp / latchUp still hold this frame's parked look.
+   */
+  private attitudeSettled(): boolean {
+    const lim = Math.cos(UNIVERSE.ORBIT_LATCH_ANG);
+    return this.ship.fwd.dot(this.lookSlerp) >= lim && this.ship.up.dot(this.latchUp) >= lim;
   }
 
   /**

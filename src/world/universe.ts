@@ -420,6 +420,14 @@ export const UNIVERSE = {
    */
   SHIP_TURN_RATE: 0.9,
   SHIP_ROLL_RATE: 0.8,
+  /**
+   * Capture latch attitude gate (rad): the ride only latches
+   * once the nose AND the roll have settled onto the parked
+   * side-on look — the latch bolts the ride pose, and latching
+   * on position alone snapped whatever roll was still easing
+   * (a sudden tilt on orbit entry).
+   */
+  ORBIT_LATCH_ANG: 0.02,
   SHIP_ACCEL: 2.5,
   /**
    * Feasible-arc margin (navigator): commanded speed is capped
