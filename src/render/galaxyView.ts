@@ -305,6 +305,8 @@ export class GalaxyView {
   private pendingPlace: LastPlace | null = null;
   /** Exact ship / drone pose — applied once the host frame exists. */
   private pendingSession: SessionSnap | null = null;
+  /** Berth chosen while the drone was out — begins at dock. */
+  private pendingBerth: Berth | null = null;
   private lastPlaceKey = '';
   private lastSessionJson = '';
   private lastSessionWrite = 0;
@@ -1060,8 +1062,9 @@ export class GalaxyView {
   /**
    * Name a berth and latch warp-ahead. Reticle / plate / chart
    * only — a tap does not call this. Works from catalog or
-   * another system's SOI. While the drone is out this is a
-   * no-op — dock it first. Drag aborts; Stop only kills thrust.
+   * another system's SOI. While the drone is out the berth is
+   * QUEUED: the drone lands first, then the course begins at
+   * dock. Drag aborts; Stop only kills thrust.
    */
   setCourse(obj: GalaxyObject): void {
     this.setCourseBerth({ starId: obj.id, bodyId: null, orbit: 'ecliptic' });
@@ -1091,7 +1094,13 @@ export class GalaxyView {
   }
 
   setCourseBerth(dest: Berth): void {
-    if (this.mode !== 'region' || this.drone) return;
+    if (this.mode !== 'region') return;
+    if (this.drone) {
+      // Land the drone, then navigate: the dock consumes this.
+      this.pendingBerth = dest;
+      this.setDrone(false);
+      return;
+    }
     const obj = objectAt(this.seed, dest.starId);
     if (!obj) return;
     if (this.voyage.riding || this.voyage.capturing) this.breakOrbit();
@@ -1158,6 +1167,7 @@ export class GalaxyView {
       if (!ease || this.drone.phase === 'home') {
         this.drone = null;
         this.restoreShipCam();
+        this.consumeBerth();
         return;
       }
       this.drone.beginHome();
@@ -1247,7 +1257,15 @@ export class GalaxyView {
     if (done === 'docked') {
       this.drone = null;
       this.restoreShipCam();
+      this.consumeBerth();
     }
+  }
+
+  /** A berth queued behind a drone recall begins once docked. */
+  private consumeBerth(): void {
+    const berth = this.pendingBerth;
+    this.pendingBerth = null;
+    if (berth) this.setCourseBerth(berth);
   }
 
   private clearCourse(): void {
@@ -1861,6 +1879,7 @@ export class GalaxyView {
     this.selectedBodyId = null;
     this.pendingPlace = null;
     this.drone = null;
+    this.pendingBerth = null;
     this.voyage.clearRide();
     if (!this.voyage.route.live) {
       this.courseBodyId = null;
