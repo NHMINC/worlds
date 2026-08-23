@@ -188,8 +188,15 @@ toy — Godus blocks on a real-sized globe.
   deflects to its tangent — inside the
   sphere the aim goes tangent, so
   departure spirals out; and a hard wall
-  at 1.12 radii clamps every move (warp,
-  zoom, roll), entry only. Orbit rings
+  clamps every move (warp,
+  zoom, roll), entry only. A star is a
+  furnace: its wall is the corona skin
+  (`STAR_CORONA_R`), its graze sits just
+  off that wall, and the ecliptic park
+  just outside the graze (wall < graze
+  < park) — the star's ball counts on
+  EVERY course, because a star dest
+  targets the ring, never the core. Orbit rings
   draw under a sagitta law — segments
   chosen so the line deviates by less
   than a quarter body radius, so bodies

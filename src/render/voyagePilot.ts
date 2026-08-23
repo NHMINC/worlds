@@ -25,6 +25,7 @@ import {
   orbitLimbPitch,
   orbitOmega,
   orbitRadiusKpc,
+  starFilmRKm,
   starGrazeKm,
   starOrbitOmega,
   starOrbitRadiusKpc,
@@ -557,12 +558,14 @@ export class VoyagePilot {
     this.aimOrbitBank(fx, fy, fz, zx, zy, zz);
   }
 
-  /** Photosphere radius in catalog kpc — ecliptic limb uses this as R. */
+  /** Star film radius in catalog kpc — ecliptic limb uses this as
+   *  R, floored like every star film so a remnant's pitch matches
+   *  the ring the film actually parked on. */
   private starLimbR(): number {
     const km =
       this.locale.spec?.star.radius ??
       Math.max(1e-6, this.locale.obj?.star.radius ?? 1) * UNIVERSE.RSUN_KM;
-    return Math.max(km, 1) * KM_TO_KPC;
+    return starFilmRKm(km) * KM_TO_KPC;
   }
 
   /**

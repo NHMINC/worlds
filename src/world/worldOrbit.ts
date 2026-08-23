@@ -214,6 +214,16 @@ export function escapeSpeedKpcS(omega: number, rKpc: number): number {
 }
 
 /**
+ * The star film's working radius: the photosphere, floored at
+ * STAR_FILM_R_MIN for compact remnants — a 30 km black hole
+ * scales the whole wall/graze/park stack below one catalog
+ * float64 ULP at 8 kpc, and the ordering law drowns in noise.
+ */
+export function starFilmRKm(radiusKm: number): number {
+  return Math.max(radiusKm, UNIVERSE.RSUN_KM * UNIVERSE.STAR_FILM_R_MIN, 1);
+}
+
+/**
  * A star's view skin is its drawn corona (STAR_CORONA_R
  * photosphere radii): films, hard walls, and transfer grazes
  * all stay outside the fire. Ordering law for a star course —
@@ -221,7 +231,7 @@ export function escapeSpeedKpcS(omega: number, rKpc: number): number {
  * can always tangent past the ball and still reach the ring.
  */
 export function starSkinKm(radiusKm: number): number {
-  return Math.max(radiusKm, 1) * UNIVERSE.STAR_CORONA_R;
+  return starFilmRKm(radiusKm) * UNIVERSE.STAR_CORONA_R;
 }
 
 /** Transfer graze around the photosphere — just off the wall. */
@@ -238,7 +248,7 @@ export function starGrazeKm(radiusKm: number): number {
  * at that radius.
  */
 export function starOrbitRadiusKpc(star: { radius: number }): number {
-  const R = Math.max(star.radius, 1);
+  const R = starFilmRKm(star.radius);
   const want = R / Math.max(1e-8, Math.sin(orbitLimbCornerAlpha()));
   return Math.max(starSkinKm(R) * 1.05, want) / UNIVERSE.KPC_KM;
 }

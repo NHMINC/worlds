@@ -100,6 +100,16 @@ export const UNIVERSE = {
    * fire, not 10,000 km over the photosphere like a world.
    */
   STAR_CORONA_R: 4,
+  /**
+   * Compact-remnant film floor (solar radii). A pulsar or black
+   * hole is tens of km — a film scaled to that puts wall, graze
+   * and park within a fraction of one float64 ULP of a catalog
+   * coordinate at 8 kpc (~55 km), so the ordering law becomes
+   * unevaluable noise and orbit entry never latches. Every star
+   * film (ride, fences, free-fly park) floors the radius here:
+   * ~14,000 km keeps the whole stack hundreds of ULPs wide.
+   */
+  STAR_FILM_R_MIN: 0.02,
 
   /**
    * Flare visibility. Activity (starActivity) decides whether the

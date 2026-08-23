@@ -22,6 +22,7 @@ import {
   orbitRadiusKpc,
   shellFloorKm,
   starOrbitOmega,
+  starFilmRKm,
   starOrbitRadiusKpc,
   starSkinKm,
   type WorldOrbitKind,
@@ -345,12 +346,10 @@ export class VoyageApproach {
    * `worldOrbit.fillViewRadius`, on the live camera frame.
    */
   private parkKpc(obj: GalaxyObject): number {
-    // Remnants are point-sized (pulsar ~1e-5 R☉). Fill-park on that
-    // radius is ~1e-15 kpc — closer than holdCourse will aim, so
-    // warp never Stops. Floor at a WD photosphere: one law, every
-    // compact object still has a reachable park.
-    const Rsun = Math.max(0.01, obj.star.radius);
-    const R = Rsun * UNIVERSE.RSUN_KM * KM_TO_KPC;
+    // Remnants are point-sized (pulsar ~1e-5 R☉). Fill-park on
+    // that radius is ~1e-15 kpc — below a catalog ULP at 8 kpc.
+    // One floor for every star film: STAR_FILM_R_MIN.
+    const R = starFilmRKm(obj.star.radius * UNIVERSE.RSUN_KM) * KM_TO_KPC;
     return fillViewRadius(R, this.camera.fov, this.camera.aspect);
   }
 
