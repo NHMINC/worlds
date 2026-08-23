@@ -119,9 +119,11 @@ export class VoyageApproach {
     }
     this.hostTmp2.copy(this.locale.root.position);
     // A star is a furnace: the hard wall is the corona skin, not
-    // a photosphere graze — nothing flies into the fire.
-    const starR = Math.max(1, this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM);
-    fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starSkinKm(starR));
+    // a photosphere graze — nothing flies into the fire. The
+    // radius is the locale's ONE star size (spec, else the
+    // catalog law) — a fixed-RSUN fallback put a giant's wall
+    // inside its own photosphere.
+    fence(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starSkinKm(this.locale.starRadiusKm()));
     return allowed;
   }
 

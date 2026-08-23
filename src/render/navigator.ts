@@ -421,11 +421,7 @@ export class Navigator {
   /** Capture onto the host-star ecliptic ring. */
   private starCapture(dt: number, tSys: number, dir: THREE.Vector3): void {
     if (!this.locale.obj) return;
-    const star = this.locale.spec?.star ?? {
-      radius: Math.max(1e-6, this.locale.obj.star.radius) * UNIVERSE.RSUN_KM,
-      mass: Math.max(0.08, this.locale.obj.star.mass),
-    };
-    const r = starOrbitRadiusKpc(star);
+    const r = starOrbitRadiusKpc({ radius: this.locale.starRadiusKm() });
     this.pilot.prepareStarRideBasis(dir);
     this.tmp2.copy(this.voyage.rideE1).multiplyScalar(r);
     const c = galToCart(this.locale.obj.pos);

@@ -175,10 +175,6 @@ export class HostLocale {
     this.globes.clear();
   }
 
-  starRadiusKm(): number {
-    return Math.max(1, this.spec?.star.radius ?? UNIVERSE.RSUN_KM);
-  }
-
   // ------------------------------------------------- km ↔ kpc bridges
 
   /** Body spin in the oriented km frame. */
@@ -210,6 +206,22 @@ export class HostLocale {
     out.y += c.y;
     out.z += c.z;
     return out;
+  }
+
+  /**
+   * Photosphere radius, km — THE star size every consumer must
+   * share: the minted spec when the system assembled, else the
+   * catalog state through the same law `starSpecFromState`
+   * applies (`max(1e-6, R☉) · RSUN_KM`). Fences, parks, the
+   * drawn sphere, and guidance all read this one number; a
+   * fixed-RSUN fallback here once put a giant's hard wall deep
+   * inside its own photosphere.
+   */
+  starRadiusKm(): number {
+    const spec = this.spec?.star.radius;
+    if (spec != null) return Math.max(1, spec);
+    const cat = this.obj?.star.radius ?? 1;
+    return Math.max(1, Math.max(1e-6, cat) * UNIVERSE.RSUN_KM);
   }
 
   /** Eye → star in catalog kpc — the exact-difference law. */

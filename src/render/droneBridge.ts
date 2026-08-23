@@ -7,7 +7,6 @@
  * launch / dock / tick stay with the conductor.
  */
 import * as THREE from 'three';
-import { UNIVERSE } from '../world/physics';
 import { fillViewRadius, type WorldOrbitKind } from '../world/worldOrbit';
 import type { DroneWorld } from './drone';
 import type { HostBodyRT } from './hostSystem';
@@ -111,7 +110,7 @@ export class DroneBridge {
   }
 
   private starRadiusKm(): number {
-    return Math.max(1, this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM);
+    return this.locale.starRadiusKm();
   }
 
   /**
