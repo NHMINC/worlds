@@ -636,7 +636,7 @@ void main() {
   vec3 tau = vec3(0.0);
   if (uAirSigma > 0.0) {
     vec3 air = airScatter(uCamPos, vPos, uLightDir, tau);
-    col = col * exp(-tau) + air;
+    col = col * exp(-tau) + air * uSunColor;
   }
 
   // Torch: a headlamp riding the camera, faded in by the engine when
@@ -1055,7 +1055,7 @@ void main() {
       vec3 skyR = vec3(0.0);
       if (uAirSigma > 0.0) {
         vec3 rtau;
-        skyR = airScatter(vPos, vPos + rd * 1.5, uLightDir, rtau);
+        skyR = airScatter(vPos, vPos + rd * 1.5, uLightDir, rtau) * uSunColor;
       }
       float Fw = F;
       if (uEnvOn > 0.5) {
@@ -1140,7 +1140,7 @@ void main() {
   vec3 tau = vec3(0.0);
   if (uAirSigma > 0.0) {
     vec3 air = airScatter(uCamPos, vPos, uLightDir, tau);
-    c = c * exp(-tau) + air;
+    c = c * exp(-tau) + air * uSunColor;
     // A sea is a surface with albedo, not a column of air: even a long
     // path keeps a little of the water's own color, or the limb dissolves
     // into the sky and the horizon line vanishes.

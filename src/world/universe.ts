@@ -84,6 +84,13 @@ export const UNIVERSE = {
    */
   STAR_GLARE_ANG: 0.12,
   STAR_GLARE_GAIN: 3.4,
+  /**
+   * Hard cap on the glare's angular radius (rad). The eye's halo
+   * may never grow past this — a parked ship keeps a bounded
+   * glow beyond the limb instead of a wash that hides where the
+   * photosphere is (the navigation-vs-drawing lesson).
+   */
+  STAR_GLARE_CAP: 0.35,
 
   /**
    * K-corona + wind: Thomson column of photosphere light. CORONA is
@@ -93,6 +100,13 @@ export const UNIVERSE = {
    */
   STAR_CORONA: 0.95,
   STAR_WIND: 0.72,
+  /**
+   * How far the DRAWN corona reaches (photosphere radii). Must
+   * stay far inside STAR_CORONA_R (the hard wall) — the old
+   * shell drew to the wall and a correctly parked ship looked
+   * swallowed. The glow dies in the maths before this edge.
+   */
+  STAR_CORONA_DRAW: 1.6,
   /**
    * Corona / wind shell outer radius, in photosphere radii —
    * drawn by star.ts and treated as the star's VIEW SKIN: a

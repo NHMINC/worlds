@@ -84,9 +84,12 @@ void main() {
 // and a clear one stays invisible.
 const SKY_GLOW_FRAG = /* glsl */ `
 ${SKY_COMMON}
+uniform vec3 uSunColor;
 void main() {
   vec3 tau;
-  vec3 sky = skyRay(tau);
+  // In-scatter is SUNLIGHT the air redirects: it carries the
+  // star's spectrum. The torch is the ship's own lamp — white.
+  vec3 sky = skyRay(tau) * uSunColor;
   sky += torchGlow(uCamPos, vPos);
   gl_FragColor = vec4(sky, 1.0);
 }
@@ -136,6 +139,7 @@ export function makeSkyShellMaterials(
     uAeroW: { value: new THREE.Vector3(...air.aeroW) },
     uTorch: { value: 0 },
     uTorchDir: { value: new THREE.Vector3(0, 0, -1) },
+    uSunColor: { value: new THREE.Vector3(1, 1, 1) },
   };
   const ext = new THREE.ShaderMaterial({
     vertexShader: ATMO_VERT,

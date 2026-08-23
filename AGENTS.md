@@ -481,14 +481,21 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   darkening — the same colour law the catalog pins use. NOTHING
   draws past the surface: the old corona shell and glare quad
   put light beyond the 4 R hard wall, so a correctly parked ship
-  looked like it was inside the sun. Illumination is the
-  PointLight (`lightColor`, inverse-square at `A_HAB`) plus
-  `uSunColor` on the world shaders — terrain day term, water day
-  term, and the Cox–Munk glint are all tinted by the star's
-  light, so a red dwarf's worlds are lit red. Later stages, each
-  kept inside the wall: the eye's glare law (`starEyeFlux` PSF),
-  then dynamo activity (granules / spots / flares) and a Thomson
-  corona. The PointLight stays
+  looked like it was inside the sun. The disk carries the dynamo
+  (granules from the convective envelope, spots and flares from
+  `starActivity`); the K-corona and wind are Thomson scatter of
+  that photosphere's light (`starWind`), Baumbach r⁻⁶ + Parker
+  r⁻², drawn only to `STAR_CORONA_DRAW` (1.6 R — far inside the
+  4 R wall). Glare is the eye (`starEyeFlux` through one radial
+  PSF), its angular radius CAPPED at `STAR_GLARE_CAP` so a
+  parked ship wears a bounded halo, never a swallowing wash.
+  Illumination is the PointLight (`lightColor`, inverse-square
+  at `A_HAB`) plus `uSunColor` on the world shaders — terrain
+  and water day terms, the Cox–Munk glint, AND the air's
+  in-scatter (terrain / water paths, the water's sky
+  reflection, and the sky shell's glow pass): scattered light
+  carries the star's spectrum, extinction stays the air's own.
+  A red dwarf's worlds are lit red under amber skies. The PointLight stays
   (inverse-square, referenced at `A_HAB`). Below the visual
   threshold the star wears a **marker**: a billboarded ring of
   fixed angular size (`STAR_MARK_ANG`) that appears when the
