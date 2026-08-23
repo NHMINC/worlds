@@ -14,6 +14,7 @@ import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import { galToCart, type GalaxyObject } from '../world/galaxy';
 import { type HostBodyRT } from './hostSystem';
+import { planOrbitInsert } from './orbitInsert';
 import { ShipFlight } from './flight';
 import { Voyage } from './voyage';
 import { HostLocale } from './hostLocale';
@@ -114,23 +115,20 @@ export class VoyagePilot {
       this.voyage.pendingArriveOrbit = false;
       this.port.stopWarp();
       if (this.locale.root) {
-        this.hostTmp.copy(this.locale.root.position).negate().normalize();
+        this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.locale.root.quaternion);
+        this.hostTmp.copy(this.locale.root.position);
       } else {
+        this.voyage.rideNorth.copy(this.worldUp);
         const c = galToCart(this.locale.obj.pos);
-        this.hostTmp.set(
-          this.ship.at.x - c.x,
-          this.ship.at.y - c.y,
-          this.ship.at.z - c.z,
-        );
-        if (this.hostTmp.lengthSq() < 1e-28) {
-          this.ship.orthonormalize();
-          this.hostTmp.copy(this.ship.fwd).negate();
-        } else this.hostTmp.normalize();
+        this.hostTmp.set(c.x - this.ship.at.x, c.y - this.ship.at.y, c.z - this.ship.at.z);
       }
       this.voyage.capturing = {
         bodyId: null,
         kind: 'ecliptic',
-        dir: this.hostTmp.clone(),
+        dir: this.insertContact(
+          this.hostTmp,
+          starOrbitRadiusKpc({ radius: this.locale.starRadiusKm() }),
+        ),
       };
       return;
     }
@@ -138,18 +136,45 @@ export class VoyagePilot {
     if (!rt || this.locale.obj?.id !== this.voyage.route.dest?.starId) return;
     this.voyage.pendingArriveOrbit = false;
     this.port.stopWarp();
-    this.locale.bodyFromEye(this.ship.at, rt, this.orbitTmp2).negate();
-    if (this.orbitTmp2.lengthSq() < 1e-28) {
-      this.ship.orthonormalize();
-      this.orbitTmp2.copy(this.ship.fwd).negate();
-    }
-    this.orbitTmp2.normalize();
-    // Capture burn — ease onto the rail, then latch In Orbit.
+    this.locale.bodyFromEye(this.ship.at, rt, this.orbitTmp2);
+    const r = orbitRadiusKpc(rt.spec, pending.kind);
+    this.locale.spinWorld(rt, this.orbitQ);
+    this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
+    // Contact radial of the heading-chosen tangent — not the
+    // near-face body→eye. Capture eases onto THAT point, so a
+    // near-shell arrival still slides around instead of slamming.
+    const dir = this.insertContact(this.orbitTmp2, r);
     this.voyage.capturing = {
       bodyId: pending.bodyId,
       kind: pending.kind,
-      dir: this.orbitTmp2.clone(),
+      dir,
     };
+  }
+
+  /**
+   * Body→contact of the latched insert tangent. Rewrites
+   * `eyeToBody` through the same planner the guide flies.
+   */
+  private insertContact(eyeToBody: THREE.Vector3, r: number): THREE.Vector3 {
+    if (eyeToBody.lengthSq() < 1e-28) {
+      this.ship.orthonormalize();
+      eyeToBody.copy(this.ship.fwd);
+    }
+    const side = { sign: this.voyage.insertSide };
+    planOrbitInsert(
+      eyeToBody,
+      r,
+      this.voyage.rideNorth,
+      'inertial',
+      UNIVERSE.ORBIT_INSERT,
+      this.hostTmp,
+      this.voyage.rideE1,
+      this.voyage.rideE2,
+      this.ship.fwd,
+      side,
+    );
+    this.voyage.insertSide = side.sign;
+    return this.voyage.rideE1.clone();
   }
 
   /**

@@ -1,18 +1,28 @@
 /**
- * Lock-on orbital insertion. The ship does not dive at a core and
- * pretend: the fly-to point slides forward along the chosen ring
- * so the nose (forward under autopilot) yaws onto prograde as the
- * shell is reached. Hover is the exception — it aims the hang
- * face and looks at the full sphere.
+ * Lock-on orbital insertion. The ship flies a TANGENT of the
+ * chosen ring so the nose is already prograde at contact —
+ * never a dive at the near face and a 90° slam on the shell
+ * (that turn drove the ship into the body). Two tangents, two
+ * senses: pick the one closer to the current heading (enter
+ * on the other side when the near-side turn is the sharp one)
+ * and latch that side until the dest changes.
  *
- * eyeToBody is eye→body on entry and eye→aim on exit.
- * outLook is the desired nose (matches aim for inertial approach;
- * hang / hover look at the body).
+ * eyeToBody is eye→body on entry and eye→contact on exit.
+ * outLook is the fly-to (the tangent itself).
+ * u, v come back as contact radial and prograde.
  * Returns blend 0 (far transfer) … 1 (at the shell).
  */
 import * as THREE from 'three';
 
 export type InsertMode = 'inertial' | 'hang' | 'hover';
+
+/** Perpendicular distance of a unit ray `dir` from the body (rel = eye→body). */
+export function rayImpact(rel: THREE.Vector3, dir: THREE.Vector3): number {
+  const cx = rel.y * dir.z - rel.z * dir.y;
+  const cy = rel.z * dir.x - rel.x * dir.z;
+  const cz = rel.x * dir.y - rel.y * dir.x;
+  return Math.hypot(cx, cy, cz);
+}
 
 export function planOrbitInsert(
   eyeToBody: THREE.Vector3,
@@ -23,6 +33,8 @@ export function planOrbitInsert(
   outLook: THREE.Vector3,
   u: THREE.Vector3,
   v: THREE.Vector3,
+  fwd: THREE.Vector3,
+  side: { sign: number },
 ): number {
   const bx = eyeToBody.x;
   const by = eyeToBody.y;
@@ -48,32 +60,88 @@ export function planOrbitInsert(
   u.set(-bx, -by, -bz);
   u.addScaledVector(normal, -u.dot(normal));
   if (u.lengthSq() < 1e-24) {
-    v.crossVectors(normal, eyeToBody);
+    v.crossVectors(normal, fwd);
+    if (v.lengthSq() < 1e-24) v.crossVectors(normal, eyeToBody);
     if (v.lengthSq() < 1e-24) v.set(1, 0, 0).cross(normal);
     u.copy(v);
   }
   u.normalize();
-  // Prograde in the plane.
   v.crossVectors(normal, u);
   if (v.lengthSq() < 1e-24) v.set(1, 0, 0);
   v.normalize();
 
+  const dPlane = Math.abs(-bx * u.x - by * u.y - bz * u.z);
+  // Two contacts: the exterior tangents when outside the ring
+  // cylinder, a short lead along the ring when already on or
+  // inside it (a 90° chord from the near face would cut the
+  // occupancy ball).
+  let c = 0;
+  let s = 0;
+  if (dPlane > r * 1.000001) {
+    const a = Math.acos(Math.min(1, r / dPlane));
+    c = Math.cos(a);
+    s = Math.sin(a);
+  } else {
+    const lead = 0.25;
+    c = Math.cos(lead);
+    s = Math.sin(lead);
+  }
+
+  const pick = pickSide(bx, by, bz, r, c, s, u, v, fwd, side.sign);
+  side.sign = pick;
+  // Contact on the ring: rotate nadir by ±α (or the short lead).
+  const cu = c;
+  const sv = pick * s;
+  const tx = u.x * cu + v.x * sv;
+  const ty = u.y * cu + v.y * sv;
+  const tz = u.z * cu + v.z * sv;
+  u.set(tx, ty, tz);
+  v.crossVectors(normal, u);
+  if (v.lengthSq() < 1e-24) v.set(1, 0, 0);
+  v.normalize();
+
+  // eye → contact = (body→contact) − (body→eye) = r·û + eye→body.
+  eyeToBody.set(bx + r * u.x, by + r * u.y, bz + r * u.z);
+  outLook.copy(eyeToBody);
+
   const remain = Math.max(0, d - r);
   const far = Math.max(r * farRadii, 1e-12);
   let blend = 1 - Math.min(1, remain / far);
-  blend = blend * blend * (3 - 2 * blend);
+  return blend * blend * (3 - 2 * blend);
+}
 
-  // Aim point on the ring slides from nadir (φ=0) toward a
-  // quarter-orbit lead (φ=π/2). From outside, eye→I starts as
-  // "in to the near-side shell" and becomes prograde at contact.
-  const phi = blend * Math.PI * 0.5;
-  const cp = Math.cos(phi);
-  const sp = Math.sin(phi);
-  eyeToBody.set(
-    bx + r * (u.x * cp + v.x * sp),
-    by + r * (u.y * cp + v.y * sp),
-    bz + r * (u.z * cp + v.z * sp),
-  );
-  outLook.copy(eyeToBody);
-  return blend;
+/** +1 / −1: the tangent whose fly-to is closer to `fwd`. */
+function pickSide(
+  bx: number,
+  by: number,
+  bz: number,
+  r: number,
+  c: number,
+  s: number,
+  u: THREE.Vector3,
+  v: THREE.Vector3,
+  fwd: THREE.Vector3,
+  latched: number,
+): number {
+  if (latched === 1 || latched === -1) return latched;
+  const d0 = aimDot(bx, by, bz, r, c, s, u, v, fwd);
+  const d1 = aimDot(bx, by, bz, r, c, -s, u, v, fwd);
+  return d0 >= d1 ? 1 : -1;
+}
+
+function aimDot(
+  bx: number,
+  by: number,
+  bz: number,
+  r: number,
+  c: number,
+  sv: number,
+  u: THREE.Vector3,
+  v: THREE.Vector3,
+  fwd: THREE.Vector3,
+): number {
+  const ax = bx + r * (u.x * c + v.x * sv);
+  const ay = by + r * (u.y * c + v.y * sv);
+  const az = bz + r * (u.z * c + v.z * sv);
+  return ax * fwd.x + ay * fwd.y + az * fwd.z;
 }

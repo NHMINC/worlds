@@ -15,6 +15,7 @@ import { ShipControls } from './shipControls';
 import { Voyage } from './voyage';
 import { HostLocale } from './hostLocale';
 import { type PilotPort } from './voyagePilot';
+import { rayImpact } from './orbitInsert';
 import {
   clearRadiusKm,
   fillViewRadius,
@@ -147,15 +148,17 @@ export class VoyageApproach {
   }
 
   /**
-   * Close on a world shell at the first contact on the way.
-   * Inside: back out radially (planet still ahead). True when
-   * this frame consumed the step.
+   * Close on a world shell at the first GRAZE on the way.
+   * A dive at the near face is not arrival — that used to pin
+   * the ship on the shell and slam a 90° turn into the body.
+   * Inside the park: lift out, keep flying the tangent.
    */
   closeWorldShell(rt: HostBodyRT, park: number, step: number, onPark: () => void): boolean {
     this.locale.bodyFromEye(this.ship.at, rt, this.hostTmp);
     const d = Math.max(this.hostTmp.length(), 1e-18);
     const slack = Math.max(park * 0.002, 1e-18);
-    if (Math.abs(d - park) <= slack) {
+    const graze = rayImpact(this.hostTmp, this.ship.fwd) >= park * UNIVERSE.ORBIT_ARRIVE_GRAZE;
+    if (Math.abs(d - park) <= slack && graze) {
       onPark();
       return true;
     }
@@ -164,14 +167,22 @@ export class VoyageApproach {
       const go = Math.min(step, remain);
       const k = go / d;
       this.port.moveBubble(-this.hostTmp.x * k, -this.hostTmp.y * k, -this.hostTmp.z * k);
-      if (go >= remain * 0.999) onPark();
       return true;
     }
     const t = this.firstShellHit(this.hostTmp, this.ship.fwd, park);
     if (t != null && t <= step) {
-      this.port.moveBubble(this.ship.fwd.x * t, this.ship.fwd.y * t, this.ship.fwd.z * t);
-      onPark();
-      return true;
+      if (graze) {
+        this.port.moveBubble(this.ship.fwd.x * t, this.ship.fwd.y * t, this.ship.fwd.z * t);
+        onPark();
+        return true;
+      }
+      // Dive into the near face: stop short of punching in, but
+      // do not freeze on contact — the next yaw lets cruise
+      // slide toward the tangent.
+      if (t > slack) {
+        this.port.moveBubble(this.ship.fwd.x * t, this.ship.fwd.y * t, this.ship.fwd.z * t);
+        return true;
+      }
     }
     return false;
   }
@@ -463,23 +474,25 @@ export class VoyageApproach {
       };
       const park =
         dest.kind === 'ecliptic' ? starOrbitRadiusKpc(star) : this.parkKpc(course);
-      if (d <= park) {
+      const c = galToCart(course.pos);
+      this.hostTmp.set(c.x - this.ship.at.x, c.y - this.ship.at.y, c.z - this.ship.at.z);
+      const graze = rayImpact(this.hostTmp, this.ship.fwd) >= park * UNIVERSE.ORBIT_ARRIVE_GRAZE;
+      if (d <= park && graze) {
         if (dest.kind === 'ecliptic') this.voyage.pendingArriveOrbit = true;
         this.port.stopWarp();
         return;
       }
-      const c = galToCart(course.pos);
       const tCa =
-        (c.x - this.ship.at.x) * this.ship.fwd.x +
-        (c.y - this.ship.at.y) * this.ship.fwd.y +
-        (c.z - this.ship.at.z) * this.ship.fwd.z;
-      if (tCa > 0 && step >= d - park) {
+        this.hostTmp.x * this.ship.fwd.x +
+        this.hostTmp.y * this.ship.fwd.y +
+        this.hostTmp.z * this.ship.fwd.z;
+      if (graze && tCa > 0 && step >= d - park) {
         const inv = 1 / d;
         const remain = d - park;
         this.port.moveBubble(
-          (c.x - this.ship.at.x) * inv * remain,
-          (c.y - this.ship.at.y) * inv * remain,
-          (c.z - this.ship.at.z) * inv * remain,
+          this.hostTmp.x * inv * remain,
+          this.hostTmp.y * inv * remain,
+          this.hostTmp.z * inv * remain,
         );
         if (dest.kind === 'ecliptic') this.voyage.pendingArriveOrbit = true;
         this.port.stopWarp();

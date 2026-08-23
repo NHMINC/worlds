@@ -13,6 +13,10 @@
  *     v ≤ NAV_ARC_MARGIN · SHIP_TURN_RATE · d / sinθ — never fly
  *     faster than you can turn the arc you are on. Without this
  *     the ship circled its target instead of arriving.
+ *   - **Tangent insertion**: the fly-to is a graze of the park
+ *     sphere, the side closer to the current heading (the other
+ *     side when a near-face slam would be the sharp turn). Arrival
+ *     is that graze, not a dive at the near face.
  *   - **Terminal rendezvous** (was the capture position lerp):
  *     close the ring point exponentially THROUGH the same
  *     fence-checked bubble step every other move uses, with the
@@ -541,7 +545,8 @@ export class Navigator {
     this.locale.spinWorld(rt, this.orbitQ);
     this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
     this.lookSlerp.copy(this.voyage.rideNorth);
-    return planOrbitInsert(
+    const side = { sign: this.voyage.insertSide };
+    const blend = planOrbitInsert(
       eyeToBody,
       r,
       this.lookSlerp,
@@ -550,7 +555,11 @@ export class Navigator {
       this.tmp2,
       this.voyage.rideE1,
       this.voyage.rideE2,
+      this.ship.fwd,
+      side,
     );
+    this.voyage.insertSide = side.sign;
+    return blend;
   }
 
   /** Star ecliptic insertion. eyeToBody → fly-to; returns blend. */
@@ -564,7 +573,8 @@ export class Navigator {
     } else {
       this.voyage.rideNorth.copy(this.worldUp);
     }
-    return planOrbitInsert(
+    const side = { sign: this.voyage.insertSide };
+    const blend = planOrbitInsert(
       eyeToBody,
       r,
       this.voyage.rideNorth,
@@ -573,7 +583,11 @@ export class Navigator {
       this.tmp2,
       this.voyage.rideE1,
       this.voyage.rideE2,
+      this.ship.fwd,
+      side,
     );
+    this.voyage.insertSide = side.sign;
+    return blend;
   }
 
 }

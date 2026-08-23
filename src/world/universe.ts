@@ -459,12 +459,20 @@ export const UNIVERSE = {
    */
   ORBIT_CAPTURE: 1.4,
   /**
-   * Lock-on insertion window in ring radii. Over this approach
-   * the fly-to point slides forward along the rail so the nose
-   * yaws onto prograde (or the hang face) before contact — a
-   * planned insertion, not a dive at the core.
+   * Lock-on insertion window in ring radii. The fly-to is a
+   * TANGENT of the park sphere from the first frame — the nose
+   * is already prograde at contact. This window only eases the
+   * side-on bank / limb yaw. (The old law slid the aim from the
+   * near face to a 90° lead; that slam drove the ship into the
+   * body.)
    */
   ORBIT_INSERT: 6,
+  /**
+   * Arrival is a graze of the park sphere, not a dive at the
+   * near face. Impact parameter must reach this fraction of
+   * the park radius or we keep flying the tangent.
+   */
+  ORBIT_ARRIVE_GRAZE: 0.9,
   ARRIVE_WARP: 0.001,
   /**
    * Close-crawl beat (fence / this). Leave-orbit escape

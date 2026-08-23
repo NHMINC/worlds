@@ -297,8 +297,13 @@ toy — Godus blocks on a real-sized globe.
  which turn the nose at `SHIP_TURN_RATE` and roll at
  `SHIP_ROLL_RATE` (rad/s, never per-frame). Guidance laws, not
  patches: the transfer corridor latches its tangent side until
- the blocking ball clears; speed is capped by the osculating
- arc through the target (`NAV_ARC_MARGIN`); capture is a
+  the blocking ball clears; speed is capped by the osculating
+  arc through the target (`NAV_ARC_MARGIN`); insertion flies a
+  TANGENT of the park sphere — the heading-chosen side, latched
+  — so the nose is already prograde at contact (a near-face
+  dive plus a 90° slam drove the ship into the body). Arrival
+  is that graze (`ORBIT_ARRIVE_GRAZE`), not a radial hit.
+  Capture is a
   terminal rendezvous that slides on the park sphere and latches
   with a ULP-floored slack (the black-hole lesson). A world's
   size is its visible ball: `AIR_SHELL_H` (7 scale heights) is

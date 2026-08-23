@@ -53,6 +53,13 @@ export class Voyage {
   thrustSpeed = 0;
   /** Lock-on insertion blend 0…1 (far transfer → at the shell). */
   insertBlend = 0;
+  /**
+   * Latched insert tangent (+1 / −1). 0 = pick this frame.
+   * The two sides are the two orbital senses; we keep the one
+   * the nose already favours so a near-side slam cannot flip
+   * to the other and back.
+   */
+  insertSide = 0;
   /** Cruise reached the ring this frame — capture once bodies pose. */
   pendingArriveOrbit = false;
   /** Left a ring with no dest — HUD Free roam. */
@@ -77,6 +84,7 @@ export class Voyage {
     this.route.begin(dest);
     this.pendingArriveOrbit = false;
     this.insertBlend = 0;
+    this.insertSide = 0;
     this.proximity = false;
   }
 
@@ -85,6 +93,7 @@ export class Voyage {
     this.route.abort();
     this.pendingArriveOrbit = false;
     this.insertBlend = 0;
+    this.insertSide = 0;
   }
 
   /** Rail latched: dest reached, autopilot off, thrust dead. */
@@ -94,6 +103,7 @@ export class Voyage {
     this.capturing = null;
     this.pendingArriveOrbit = false;
     this.insertBlend = 0;
+    this.insertSide = 0;
     this.thrustOn = false;
     this.thrustSpeed = 0;
   }
@@ -107,6 +117,7 @@ export class Voyage {
     this.riding = null;
     this.capturing = null;
     this.insertBlend = 0;
+    this.insertSide = 0;
     this.pendingArriveOrbit = false;
     if (this.route.live) return true;
     this.proximity = true;
