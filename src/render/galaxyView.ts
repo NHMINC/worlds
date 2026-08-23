@@ -30,6 +30,7 @@ import { DroneBridge } from './droneBridge';
 import { VoyagePilot, type PilotPort } from './voyagePilot';
 import { ShipControls } from './shipControls';
 import { NavWorld } from './navWorld';
+import { Navigator } from './navigator';
 import { VoyageApproach } from './voyageApproach';
 
 export type { GalaxyFocus } from './sight';
@@ -203,6 +204,8 @@ export class GalaxyView {
   private readonly fcs = new ShipControls(this.ship);
   /** The navigation truth — one snapshot per frame. */
   private nav!: NavWorld;
+  /** Guidance: corridor, feasible speed, terminal rendezvous. */
+  private navigator!: Navigator;
   /** Ring geometry — insertions, captures, ride placement. */
   private readonly pilot: VoyagePilot;
   /** Approach laws — cruise gears, speed caps, parks, fences. */
@@ -391,10 +394,21 @@ export class GalaxyView {
         this.updateArriveSubject();
         this.updateWorldSubject();
       },
+      arcCap: () => this.navigator.speedCap,
     };
     this.nav = new NavWorld(this.ship, this.locale);
-    this.pilot = new VoyagePilot(this.ship, this.fcs, this.voyage, this.locale, this.camera, pilotPort);
+    this.pilot = new VoyagePilot(this.ship, this.voyage, this.locale, this.camera, pilotPort);
     this.approach = new VoyageApproach(this.ship, this.fcs, this.voyage, this.locale, this.camera, pilotPort);
+    this.navigator = new Navigator(
+      this.ship,
+      this.fcs,
+      this.voyage,
+      this.locale,
+      this.nav,
+      this.camera,
+      this.pilot,
+      pilotPort,
+    );
     this.sight = new Sight(seed, {
       region: () => this.mode === 'region',
       orient: () => this.orientArc(),
@@ -1837,9 +1851,9 @@ export class GalaxyView {
     } else if (this.voyage.departing) {
       // Escape burn owns the stick — do not recapture the ring.
     } else if (this.voyage.pendingArriveOrbit && this.destOrbit()) {
-      this.pilot.enterRide(tSys);
+      this.pilot.enterRide();
     } else if (this.voyage.capturing) {
-      this.pilot.tickCapture(this.lastDt, tSys);
+      this.navigator.captureTick(this.lastDt, tSys);
     } else if (this.voyage.riding) {
       this.pilot.placeRide(tSys);
     } else {
@@ -2093,11 +2107,10 @@ export class GalaxyView {
     const dt = Math.min(0.05, (now - this.lastT) / 1000);
     this.lastT = now;
     this.lastDt = dt;
-    this.pilot.lastDt = dt;
     this.approach.lastDt = dt;
     // The truth snapshot guidance reads this frame.
     this.nav.tick(dt, (this.epochUnix + now / 1000) * UNIVERSE.TIME_SCALE);
-    this.pilot.holdCourse(dt);
+    this.navigator.guide(dt);
     this.approach.cruise(dt);
     this.tickRoll(dt);
     // Motion is the universal wake: input, warp, and settling

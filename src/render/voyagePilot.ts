@@ -14,9 +14,7 @@ import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
 import { galToCart, type GalaxyObject } from '../world/galaxy';
 import { type HostBodyRT } from './hostSystem';
-import { planOrbitInsert, type InsertMode } from './orbitInsert';
 import { ShipFlight } from './flight';
-import { ShipControls } from './shipControls';
 import { Voyage } from './voyage';
 import { HostLocale } from './hostLocale';
 import {
@@ -27,7 +25,6 @@ import {
   orbitOmega,
   orbitRadiusKpc,
   starFilmRKm,
-  starGrazeKm,
   starOrbitOmega,
   starOrbitRadiusKpc,
   type WorldOrbitKind,
@@ -57,23 +54,20 @@ export interface PilotPort {
   breakOrbit(): void;
   /** Re-latch the SOI / world place subjects after a move. */
   updateSubjects(): void;
+  /** Navigator's feasible-arc speed cap (kpc/s), null = free. */
+  arcCap(): number | null;
 }
 
 export class VoyagePilot {
-  /** Frame dt (s), written by the conductor at frame start. */
-  lastDt = 1 / 60;
-
   private readonly worldUp = new THREE.Vector3(0, 1, 0);
   private readonly orbitTmp = new THREE.Vector3();
   private readonly orbitTmp2 = new THREE.Vector3();
   private readonly orbitQ = new THREE.Quaternion();
   private readonly lookSlerp = new THREE.Vector3();
   private readonly hostTmp = new THREE.Vector3();
-  private readonly hostTmp2 = new THREE.Vector3();
   private readonly hostTmpQ = new THREE.Quaternion();
 
   private readonly ship: ShipFlight;
-  private readonly fcs: ShipControls;
   private readonly voyage: Voyage;
   private readonly locale: HostLocale;
   private readonly camera: THREE.PerspectiveCamera;
@@ -81,14 +75,12 @@ export class VoyagePilot {
 
   constructor(
     ship: ShipFlight,
-    fcs: ShipControls,
     voyage: Voyage,
     locale: HostLocale,
     camera: THREE.PerspectiveCamera,
     port: PilotPort,
   ) {
     this.ship = ship;
-    this.fcs = fcs;
     this.voyage = voyage;
     this.locale = locale;
     this.camera = camera;
@@ -115,7 +107,7 @@ export class VoyagePilot {
     this.ship.lookBank(fwdX, fwdY, fwdZ, zenX, zenY, zenZ);
   }
 
-  enterRide(tSys: number): void {
+  enterRide(): void {
     const pending = this.destOrbit();
     if (!pending) return;
     if (pending.bodyId == null) {
@@ -142,7 +134,6 @@ export class VoyagePilot {
         kind: 'ecliptic',
         dir: this.hostTmp.clone(),
       };
-      this.tickCapture(this.lastDt || 1 / 60, tSys);
       return;
     }
     const rt = this.worldRt(pending.bodyId);
@@ -161,125 +152,6 @@ export class VoyagePilot {
       kind: pending.kind,
       dir: this.orbitTmp2.clone(),
     };
-    this.aimLimbParkLook(rt, pending.kind, this.orbitTmp2);
-    this.tickCapture(this.lastDt || 1 / 60, tSys);
-  }
-
-  /**
-   * Soft-seek the eye and nose onto the chosen ring. When close
-   * enough, beginRide latches In Orbit and Lock-on ends.
-   */
-  tickCapture(dt: number, tSys: number): void {
-    const cap = this.voyage.capturing;
-    if (!cap || !this.locale.obj) return;
-    if (cap.bodyId == null) {
-      this.tickStarCapture(dt, tSys, cap.dir);
-      return;
-    }
-    const rt = this.worldRt(cap.bodyId);
-    if (!rt) {
-      this.voyage.capturing = null;
-      return;
-    }
-    const r = orbitRadiusKpc(rt.spec, cap.kind);
-    const hang = isHangOrbit(cap.kind);
-    this.locale.spinWorld(rt, this.orbitQ);
-    // Desired ring offset from the body (catalog), same law as placeRide.
-    if (hang) {
-      this.voyage.rideLocal.copy(cap.dir).applyQuaternion(this.orbitQ.clone().conjugate());
-      this.orbitTmp2.copy(this.voyage.rideLocal).applyQuaternion(this.orbitQ).multiplyScalar(r);
-    } else {
-      this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-      this.layoutInertialPlane(cap.kind, cap.dir);
-      // Capture holds the arrival longitude (theta = 0 on E1).
-      this.orbitTmp2.copy(this.voyage.rideE1).multiplyScalar(r);
-    }
-    // Desired eye = body + offset.
-    this.locale.bodyCatalog(rt, this.orbitTmp);
-    const tx = this.orbitTmp.x + this.orbitTmp2.x;
-    const ty = this.orbitTmp.y + this.orbitTmp2.y;
-    const tz = this.orbitTmp.z + this.orbitTmp2.z;
-    // Hang / hover: nose into the body (full sphere). Inertial:
-    // zenith along offset, fwd prograde (body below).
-    if (hang) {
-      this.orbitTmp.copy(this.orbitTmp2);
-      if (this.orbitTmp.lengthSq() < 1e-28) this.orbitTmp.copy(cap.dir);
-      this.orbitTmp.normalize();
-      // Look at the sphere: fwd = −radial out.
-      this.easeCapturePose(
-        dt,
-        tx,
-        ty,
-        tz,
-        -this.orbitTmp.x,
-        -this.orbitTmp.y,
-        -this.orbitTmp.z,
-        this.orbitTmp.x,
-        this.orbitTmp.y,
-        this.orbitTmp.z,
-      );
-    } else {
-      this.limbParkFwd(rt, cap.kind, this.voyage.rideE2, this.voyage.rideE1, this.lookSlerp);
-      this.easeCapturePose(
-        dt,
-        tx,
-        ty,
-        tz,
-        this.lookSlerp.x,
-        this.lookSlerp.y,
-        this.lookSlerp.z,
-        this.voyage.rideE1.x,
-        this.voyage.rideE1.y,
-        this.voyage.rideE1.z,
-      );
-    }
-    const posErr = Math.hypot(tx - this.ship.at.x, ty - this.ship.at.y, tz - this.ship.at.z);
-    const slack = Math.max(r * 0.002, 1e-18);
-    if (posErr <= slack) {
-      this.voyage.capturing = null;
-      this.beginRide(rt, cap.kind, cap.dir, tSys);
-    }
-    this.port.applyCam();
-    this.port.wake();
-  }
-
-  /** Capture onto the host-star ecliptic ring. */
-  private tickStarCapture(dt: number, tSys: number, dir: THREE.Vector3): void {
-    if (!this.locale.obj) return;
-    const star = this.locale.spec?.star ?? {
-      radius: Math.max(1e-6, this.locale.obj.star.radius) * UNIVERSE.RSUN_KM,
-      mass: Math.max(0.08, this.locale.obj.star.mass),
-    };
-    const r = starOrbitRadiusKpc(star);
-    this.prepareStarRideBasis(dir);
-    this.orbitTmp2.copy(this.voyage.rideE1).multiplyScalar(r);
-    const c = galToCart(this.locale.obj.pos);
-    const tx = c.x + this.orbitTmp2.x;
-    const ty = c.y + this.orbitTmp2.y;
-    const tz = c.z + this.orbitTmp2.z;
-    // Same limb-down as a world ring: look along the upper
-    // tangent so the photosphere sits in the lower half.
-    this.pitchLimbFwd(this.voyage.rideE2, this.voyage.rideE1, this.starLimbR(), r, this.lookSlerp);
-    this.easeCapturePose(
-      dt,
-      tx,
-      ty,
-      tz,
-      this.lookSlerp.x,
-      this.lookSlerp.y,
-      this.lookSlerp.z,
-      this.voyage.rideE1.x,
-      this.voyage.rideE1.y,
-      this.voyage.rideE1.z,
-    );
-    const posErr = Math.hypot(tx - this.ship.at.x, ty - this.ship.at.y, tz - this.ship.at.z);
-    const slack = Math.max(r * 0.002, 1e-18);
-    if (posErr <= slack) {
-      this.voyage.capturing = null;
-      this.beginStarRide(dir, tSys);
-    }
-    this.port.applyCam();
-    this.port.wake();
   }
 
   /**
@@ -287,7 +159,7 @@ export class VoyagePilot {
    * Equatorial (and the same geometry for a world arrival):
    * arrival projected into the equator.
    */
-  private layoutInertialPlane(kind: WorldOrbitKind, arrival: THREE.Vector3): void {
+  layoutInertialPlane(kind: WorldOrbitKind, arrival: THREE.Vector3): void {
     this.voyage.rideE1.copy(arrival);
     if (this.voyage.rideE1.lengthSq() < 1e-16) this.voyage.rideE1.copy(this.ship.fwd).negate();
     this.voyage.rideE1.normalize();
@@ -310,7 +182,7 @@ export class VoyagePilot {
   }
 
   /** Ecliptic plane basis: pole from host frame, arrival projected in-plane. */
-  private prepareStarRideBasis(dirCatalog: THREE.Vector3): void {
+  prepareStarRideBasis(dirCatalog: THREE.Vector3): void {
     if (this.locale.root) {
       this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.locale.root.quaternion);
     } else {
@@ -331,53 +203,6 @@ export class VoyagePilot {
     this.voyage.rideE2.crossVectors(this.voyage.rideNorth, this.voyage.rideE1);
     if (this.voyage.rideE2.lengthSq() < 1e-16) this.voyage.rideE2.crossVectors(this.voyage.rideE1, this.worldUp);
     this.voyage.rideE2.normalize();
-  }
-
-  /**
-   * Ease the eye onto the ring. Soft-seek the nose onto the
-   * parked look via look-vector slerp (no Euler corkscrew).
-   */
-  private easeCapturePose(
-    dt: number,
-    tx: number,
-    ty: number,
-    tz: number,
-    fwdX: number,
-    fwdY: number,
-    fwdZ: number,
-    zenX: number,
-    zenY: number,
-    zenZ: number,
-  ): void {
-    const k = 1 - Math.exp(-UNIVERSE.ORBIT_CAPTURE * dt);
-    this.ship.at.x += (tx - this.ship.at.x) * k;
-    this.ship.at.y += (ty - this.ship.at.y) * k;
-    this.ship.at.z += (tz - this.ship.at.z) * k;
-    if (this.locale.root && this.locale.obj) {
-      const cart = galToCart(this.locale.obj.pos);
-      this.orbitTmp.set(
-        this.ship.at.x - cart.x,
-        this.ship.at.y - cart.y,
-        this.ship.at.z - cart.z,
-      );
-      this.locale.root.position.copy(this.orbitTmp).negate();
-      this.locale.root.updateMatrixWorld(true);
-    }
-    // Hang capture: fwd ≈ −zenith → face the sphere (roll → 0).
-    const face =
-      fwdX * zenX + fwdY * zenY + fwdZ * zenZ <
-      -0.7 * Math.hypot(fwdX, fwdY, fwdZ) * Math.hypot(zenX, zenY, zenZ);
-    this.easeLookToward(
-      dt,
-      UNIVERSE.ORBIT_CAPTURE,
-      fwdX,
-      fwdY,
-      fwdZ,
-      face ? null : zenX,
-      face ? null : zenY,
-      face ? null : zenZ,
-      face,
-    );
   }
 
   /** dirCatalog is body → camera at first contact, unit. The ring starts there. */
@@ -565,7 +390,7 @@ export class VoyagePilot {
   /** Star film radius in catalog kpc — ecliptic limb uses this as
    *  R, floored like every star film so a remnant's pitch matches
    *  the ring the film actually parked on. */
-  private starLimbR(): number {
+  starLimbR(): number {
     const km =
       this.locale.spec?.star.radius ??
       Math.max(1e-6, this.locale.obj?.star.radius ?? 1) * UNIVERSE.RSUN_KM;
@@ -576,7 +401,7 @@ export class VoyagePilot {
    * Prograde pitched toward the body (−zenith) so the forward
    * limb fills ORBIT_LIMB_FILL. Same law for a world or the star.
    */
-  private pitchLimbFwd(
+  pitchLimbFwd(
     prograde: THREE.Vector3,
     zenith: THREE.Vector3,
     R: number,
@@ -600,7 +425,7 @@ export class VoyagePilot {
    * Park look for an inertial limb ring: prograde pitched toward
    * the body so the forward limb fills ORBIT_LIMB_FILL.
    */
-  private limbParkFwd(
+  limbParkFwd(
     rt: HostBodyRT,
     kind: WorldOrbitKind,
     prograde: THREE.Vector3,
@@ -620,327 +445,4 @@ export class VoyagePilot {
     );
   }
 
-  /** Write the parked limb look (capture start — matches the insert ease). */
-  private aimLimbParkLook(rt: HostBodyRT, kind: WorldOrbitKind, zenith: THREE.Vector3): void {
-    if (!isLimbOrbit(kind)) return;
-    this.locale.spinWorld(rt, this.orbitQ);
-    this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-    this.voyage.rideE1.copy(zenith);
-    if (this.voyage.rideE1.lengthSq() < 1e-16) return;
-    this.voyage.rideE1.normalize();
-    this.voyage.rideE2.crossVectors(this.voyage.rideNorth, this.voyage.rideE1);
-    if (this.voyage.rideE2.lengthSq() < 1e-16) {
-      this.ship.orthonormalize();
-      this.voyage.rideE2.crossVectors(this.ship.right, this.voyage.rideE1);
-    }
-    if (this.voyage.rideE2.lengthSq() < 1e-16) return;
-    this.voyage.rideE2.normalize();
-    this.limbParkFwd(rt, kind, this.voyage.rideE2, this.voyage.rideE1, this.lookSlerp);
-    this.aimOrbitBank(
-      this.lookSlerp.x,
-      this.lookSlerp.y,
-      this.lookSlerp.z,
-      this.voyage.rideE1.x,
-      this.voyage.rideE1.y,
-      this.voyage.rideE1.z,
-    );
-  }
-
-  /**
-   * Transfer route. Space is empty; bodies are balls. The only
-   * illegal move is into one. If we sit inside a non-target
-   * graze, climb out. If the sightline hits a ball, take the
-   * shorter of the two tangents (larger dot with the desired
-   * aim). One peel per frame — the next frame sees the next
-   * ball. No maze, no corridor search.
-   */
-  private routeAim(aim: THREE.Vector3, targetId: string | null): void {
-    if (!this.locale.obj || !this.locale.root) return;
-    const dT = aim.length();
-    if (!(dT > 1e-18)) return;
-
-    // Inside a non-target graze → only way is out.
-    let escapeD = Infinity;
-    let ex = 0;
-    let ey = 0;
-    let ez = 0;
-    const noteEscape = (rx: number, ry: number, rz: number, radiusKm: number, grazeOverrideKm?: number): void => {
-      const dO = Math.hypot(rx, ry, rz);
-      if (!(dO > 1e-18) || dO >= escapeD) return;
-      const R = Math.max(radiusKm, 1);
-      const grazeKm = grazeOverrideKm ?? Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
-      if (dO >= grazeKm * KM_TO_KPC) return;
-      escapeD = dO;
-      ex = rx;
-      ey = ry;
-      ez = rz;
-    };
-    for (const rt of this.locale.sys.bodies) {
-      if (rt.spec.id === targetId) continue;
-      this.locale.bodyFromEye(this.ship.at, rt, this.hostTmp2);
-      noteEscape(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
-    }
-    {
-      // The star's ball counts on every course — a star dest
-      // targets the RING, not the core. Graze sits just off the
-      // corona wall, under the park (wall < graze < park).
-      const starR = this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM;
-      this.hostTmp2.copy(this.locale.root.position);
-      noteEscape(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starR, starGrazeKm(starR));
-    }
-    if (escapeD < Infinity) {
-      const inv = dT / Math.max(escapeD, 1e-18);
-      aim.set(-ex * inv, -ey * inv, -ez * inv);
-      return;
-    }
-
-    // Nearest ball the desired aim would enter.
-    this.hostTmp.copy(aim).multiplyScalar(1 / dT);
-    let bx = 0;
-    let by = 0;
-    let bz = 0;
-    let bestD = Infinity;
-    let bestSin = 0;
-    const consider = (rx: number, ry: number, rz: number, radiusKm: number, grazeOverrideKm?: number): void => {
-      const dO = Math.hypot(rx, ry, rz);
-      if (!(dO > 1e-18) || dO >= dT || dO >= bestD) return;
-      const dOT = Math.hypot(aim.x - rx, aim.y - ry, aim.z - rz);
-      const R = Math.max(radiusKm, 1);
-      const grazeKm = grazeOverrideKm ?? Math.max(UNIVERSE.ROUTE_GRAZE * R, R + UNIVERSE.WORLD_ORBIT_CLEAR_KM);
-      const graze = Math.min(grazeKm * KM_TO_KPC, dOT * 0.9);
-      if (!(graze > 0)) return;
-      const sinMin = Math.min(1, graze / dO);
-      const cosMin = Math.sqrt(Math.max(0, 1 - sinMin * sinMin));
-      const cosA = (aim.x * rx + aim.y * ry + aim.z * rz) / (dT * dO);
-      if (cosA <= cosMin) return;
-      bestD = dO;
-      bestSin = sinMin;
-      bx = rx;
-      by = ry;
-      bz = rz;
-    };
-    for (const rt of this.locale.sys.bodies) {
-      if (rt.spec.id === targetId) continue;
-      this.locale.bodyFromEye(this.ship.at, rt, this.hostTmp2);
-      consider(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, rt.spec.radius);
-    }
-    {
-      const starR = this.locale.spec?.star.radius ?? UNIVERSE.RSUN_KM;
-      this.hostTmp2.copy(this.locale.root.position);
-      consider(this.hostTmp2.x, this.hostTmp2.y, this.hostTmp2.z, starR, starGrazeKm(starR));
-    }
-    if (!(bestD < Infinity)) return;
-
-    // Two tangents; keep the one closer to the desired aim.
-    this.hostTmp2.set(bx, by, bz).normalize();
-    this.orbitTmp2.crossVectors(this.hostTmp2, this.hostTmp);
-    if (this.orbitTmp2.lengthSq() < 1e-24) {
-      this.orbitTmp2.crossVectors(this.hostTmp2, this.worldUp);
-      if (this.orbitTmp2.lengthSq() < 1e-24) this.orbitTmp2.set(1, 0, 0);
-    }
-    this.orbitTmp2.normalize();
-    const ang = Math.asin(bestSin);
-    this.voyage.rideE1.copy(this.hostTmp2).applyAxisAngle(this.orbitTmp2, ang);
-    this.voyage.rideE2.copy(this.hostTmp2).applyAxisAngle(this.orbitTmp2, -ang);
-    const pick = this.voyage.rideE1.dot(this.hostTmp) >= this.voyage.rideE2.dot(this.hostTmp) ? this.voyage.rideE1 : this.voyage.rideE2;
-    aim.copy(pick).multiplyScalar(dT);
-  }
-
-  /** Ease the nose onto the Lock-on insertion. Off in orbit / proximity / capture. */
-  holdCourse(dt: number): void {
-    if (!this.voyage.route.live) return;
-    if (!this.port.region()) return;
-    if (this.voyage.riding || this.port.droneLive() || this.voyage.capturing || this.voyage.departing) return;
-    if (this.port.looking()) return;
-    let insertBlend = 0;
-    // Eye→body before insert rewrite — zenith = radial out (−eye→body).
-    let zenX = 0;
-    let zenY = 0;
-    let zenZ = 0;
-    let haveZen = false;
-    if (this.port.courseBodyId() && this.locale.obj && this.voyage.route.dest?.starId === this.locale.obj.id) {
-      const rt = this.worldRt(this.port.courseBodyId());
-      if (!rt) return;
-      this.locale.bodyFromEye(this.ship.at, rt, this.orbitTmp);
-      zenX = -this.orbitTmp.x;
-      zenY = -this.orbitTmp.y;
-      zenZ = -this.orbitTmp.z;
-      haveZen = this.orbitTmp.lengthSq() > 1e-28;
-      const dest = this.destOrbit();
-      if (dest && dest.bodyId === rt.spec.id) {
-        insertBlend = this.applyPendingInsert(rt, dest.kind, this.orbitTmp);
-      }
-      this.routeAim(this.orbitTmp, rt.spec.id);
-    } else if (this.port.courseObj()) {
-      const course = this.port.courseObj()!;
-      const p = galToCart(course.pos);
-      this.orbitTmp.set(
-        p.x - this.ship.at.x,
-        p.y - this.ship.at.y,
-        p.z - this.ship.at.z,
-      );
-      zenX = -this.orbitTmp.x;
-      zenY = -this.orbitTmp.y;
-      zenZ = -this.orbitTmp.z;
-      haveZen = this.orbitTmp.lengthSq() > 1e-28;
-      const dest = this.destOrbit();
-      if (dest && dest.bodyId == null && dest.kind === 'ecliptic') {
-        insertBlend = this.applyStarInsert(course, this.orbitTmp);
-      }
-      if (this.locale.obj && course.id === this.locale.obj.id) {
-        this.routeAim(this.orbitTmp, null);
-      }
-    } else {
-      return;
-    }
-    const dx = this.orbitTmp.x;
-    const dy = this.orbitTmp.y;
-    const dz = this.orbitTmp.z;
-    const d = Math.hypot(dx, dy, dz);
-    if (d < 1e-15) return;
-    this.port.courseDist(d);
-    this.voyage.insertBlend = insertBlend;
-    // Hang / hover face the sphere. Inertial banks body-below
-    // only inside the insert window. Far lock-on is a heading
-    // hold — passing zenith here snapped roll (away-from-star
-    // = screen-up) on the Set course tap and the sky jumped.
-    const dest = this.destOrbit();
-    const hangLook =
-      dest != null && dest.bodyId != null && isHangOrbit(dest.kind);
-    const bank = !hangLook && haveZen && insertBlend > 1e-4;
-    // Limb pitch is a ship attitude (not a second camera).
-    let lx = dx;
-    let ly = dy;
-    let lz = dz;
-    if (bank && dest?.bodyId && isLimbOrbit(dest.kind)) {
-      const rt = this.worldRt(dest.bodyId);
-      if (rt) {
-        const zlen = Math.hypot(zenX, zenY, zenZ);
-        const flen = Math.hypot(dx, dy, dz);
-        if (zlen > 1e-18 && flen > 1e-18) {
-          const R = Math.max(rt.spec.radius, 1) * KM_TO_KPC;
-          const rd = orbitRadiusKpc(rt.spec, dest.kind);
-          const pitch = orbitLimbPitch(R, rd, this.camera.fov, UNIVERSE.ORBIT_LIMB_FILL) * insertBlend;
-          const c = Math.cos(pitch);
-          const s = Math.sin(pitch);
-          lx = (dx / flen) * c - (zenX / zlen) * s;
-          ly = (dy / flen) * c - (zenY / zlen) * s;
-          lz = (dz / flen) * c - (zenZ / zlen) * s;
-        }
-      }
-    } else if (bank && dest && dest.bodyId == null && dest.kind === 'ecliptic' && this.port.courseObj()) {
-      const courseStar = this.port.courseObj()!;
-      const zlen = Math.hypot(zenX, zenY, zenZ);
-      const flen = Math.hypot(dx, dy, dz);
-      if (zlen > 1e-18 && flen > 1e-18) {
-        const star = {
-          radius: Math.max(1e-6, courseStar.star.radius) * UNIVERSE.RSUN_KM,
-        };
-        const rd = starOrbitRadiusKpc(star);
-        this.lookSlerp.set(dx / flen, dy / flen, dz / flen);
-        this.orbitTmp2.set(zenX / zlen, zenY / zlen, zenZ / zlen);
-        this.pitchLimbFwd(
-          this.lookSlerp,
-          this.orbitTmp2,
-          this.starLimbR(),
-          rd,
-          this.lookSlerp,
-          insertBlend,
-        );
-        lx = this.lookSlerp.x;
-        ly = this.lookSlerp.y;
-        lz = this.lookSlerp.z;
-      }
-    }
-    this.fcs.steer(
-      dt,
-      UNIVERSE.ARRIVE_HOLD,
-      lx,
-      ly,
-      lz,
-      bank ? zenX : null,
-      bank ? zenY : null,
-      bank ? zenZ : null,
-      hangLook,
-    );
-    this.port.applyCam();
-    this.port.wake();
-  }
-
-  /**
-   * Nudge attitude without corkscrews. Slerp the nose toward
-   * `fwd`; then either bank so `zenith` is screen-up, ease roll
-   * to 0 (hang / hover face), or leave roll alone.
-   */
-  private easeLookToward(
-    dt: number,
-    rate: number,
-    fwdX: number,
-    fwdY: number,
-    fwdZ: number,
-    zenX: number | null,
-    zenY: number | null,
-    zenZ: number | null,
-    faceBody: boolean,
-  ): void {
-    this.fcs.steer(dt, rate, fwdX, fwdY, fwdZ, zenX, zenY, zenZ, faceBody);
-  }
-
-  /**
-   * Rewrite eye→body into an insertion fly-to for the pending
-   * body ring. Returns the 0…1 insert blend.
-   */
-  private applyPendingInsert(rt: HostBodyRT, kind: WorldOrbitKind, eyeToBody: THREE.Vector3): number {
-    const r = orbitRadiusKpc(rt.spec, kind);
-    const mode = this.insertModeOf(kind);
-    this.locale.spinWorld(rt, this.orbitQ);
-    this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.orbitQ);
-    if (coerceOrbitKind(kind) === 'polar') {
-      this.lookSlerp.crossVectors(this.voyage.rideNorth, eyeToBody);
-      if (this.lookSlerp.lengthSq() < 1e-24) {
-        this.lookSlerp.crossVectors(this.voyage.rideNorth, this.ship.fwd);
-        if (this.lookSlerp.lengthSq() < 1e-24) this.lookSlerp.set(1, 0, 0);
-      }
-      this.lookSlerp.normalize();
-    } else {
-      this.lookSlerp.copy(this.voyage.rideNorth);
-    }
-    return planOrbitInsert(
-      eyeToBody,
-      r,
-      this.lookSlerp,
-      mode,
-      UNIVERSE.ORBIT_INSERT,
-      this.orbitTmp2,
-      this.voyage.rideE1,
-      this.voyage.rideE2,
-    );
-  }
-
-  /** Star ecliptic insertion. eyeToBody → fly-to; returns blend. */
-  private applyStarInsert(obj: GalaxyObject, eyeToBody: THREE.Vector3): number {
-    const star = {
-      radius: Math.max(1e-6, obj.star.radius) * UNIVERSE.RSUN_KM,
-    };
-    const r = starOrbitRadiusKpc(star);
-    if (this.locale.root && this.locale.obj?.id === obj.id) {
-      this.voyage.rideNorth.set(0, 0, 1).applyQuaternion(this.locale.root.quaternion);
-    } else {
-      this.voyage.rideNorth.copy(this.worldUp);
-    }
-    return planOrbitInsert(
-      eyeToBody,
-      r,
-      this.voyage.rideNorth,
-      'inertial',
-      UNIVERSE.ORBIT_INSERT,
-      this.orbitTmp2,
-      this.voyage.rideE1,
-      this.voyage.rideE2,
-    );
-  }
-
-  private insertModeOf(kind: WorldOrbitKind): InsertMode {
-    return isHangOrbit(kind) ? 'hover' : 'inertial';
-  }
 }

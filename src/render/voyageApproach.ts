@@ -428,7 +428,11 @@ export class VoyageApproach {
         ? orbitRadiusKpc(world.spec, dest.kind)
         : null;
     const cap = this.moveCap(dt);
-    const vCmd = cap ?? UNIVERSE.GALAXY_WARP;
+    // Guidance's feasible-arc law caps the gears: never fly
+    // faster than the nose can turn the arc being flown.
+    const arc = this.port.arcCap();
+    let vCmd = cap ?? UNIVERSE.GALAXY_WARP;
+    if (arc != null && arc < vCmd) vCmd = arc;
     if (!this.voyage.thrustOn) {
       this.fcs.brake();
       this.voyage.thrustSpeed = 0;
