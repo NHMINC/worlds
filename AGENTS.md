@@ -301,13 +301,22 @@ toy — Godus blocks on a real-sized globe.
   by its distance to the aim in both corridor branches — the
   graze is a margin, not a wall: a close moon's ring sits
   inside its giant's graze ball, and an uncapped escape branch
-  bounced that course on the giant's graze forever. Fences
+  bounced that course on the giant's graze forever. The escape
+  OUT is the depth-weighted sum over EVERY containing ball — a
+  moon ring sits inside its own ball and its parent's, and
+  escaping only the nearest aimed the ship into the giant at
+  full throttle. Fences
   PUSH: `clampAdvance` stops the ship's own step at a wall
   (drift-inflated — the wall is where the body will be), and
   `resolveFences` shoves the eye out when a Kepler wall
   overtakes a ship still turning. Speed is capped by the
   osculating
-  arc through the target (`NAV_ARC_MARGIN`); insertion flies a
+  arc through the target (`NAV_ARC_MARGIN`) AND by the wall
+  ahead: never approach a wall faster than the nose can leave
+  it (time-to-wall covers the turn still owed) — the no-stall
+  law: the nose never drags through a planet. Arrival at or
+  below the park radius belongs to capture unconditionally;
+  the graze test rules only the band above. Insertion flies a
   TANGENT of the park sphere — the heading-chosen side, latched
   — so the nose is already prograde at contact (a near-face
   dive plus a 90° slam drove the ship into the body). Arrival

@@ -210,15 +210,13 @@ export class VoyageApproach {
     this.locale.bodyFromEye(this.ship.at, rt, this.hostTmp);
     const d = Math.max(this.hostTmp.length(), 1e-18);
     const graze = rayImpact(this.hostTmp, this.ship.fwd) >= park * UNIVERSE.ORBIT_ARRIVE_GRAZE;
-    if (d <= park * (1 + UNIVERSE.ORBIT_ARRIVE_BAND) && graze) {
+    // In the band above the park, enter only on a graze. AT or
+    // BELOW the park radius the ship is already inside the slot
+    // — capture owns it unconditionally (its rendezvous slides
+    // out on the park sphere); refusing and cruising the lead
+    // aim ground the nose on the destination's own wall.
+    if (d <= park || (d <= park * (1 + UNIVERSE.ORBIT_ARRIVE_BAND) && graze)) {
       onPark();
-      return true;
-    }
-    if (d < park) {
-      const remain = park - d;
-      const go = Math.min(step, remain);
-      const k = go / d;
-      this.port.moveBubble(-this.hostTmp.x * k, -this.hostTmp.y * k, -this.hostTmp.z * k);
       return true;
     }
     const t = this.firstShellHit(this.hostTmp, this.ship.fwd, park);
@@ -541,10 +539,9 @@ export class VoyageApproach {
       const c = galToCart(course.pos);
       this.hostTmp.set(c.x - this.ship.at.x, c.y - this.ship.at.y, c.z - this.ship.at.z);
       const graze = rayImpact(this.hostTmp, this.ship.fwd) >= park * UNIVERSE.ORBIT_ARRIVE_GRAZE;
-      // Same arrival band as a world: the tangent converges on
-      // the park sphere without crossing it — capture owns the
-      // last stretch.
-      if (d <= park * (1 + UNIVERSE.ORBIT_ARRIVE_BAND) && graze) {
+      // Same arrival law as a world: graze in the band above the
+      // park; at or below the park radius capture owns it.
+      if (d <= park || (d <= park * (1 + UNIVERSE.ORBIT_ARRIVE_BAND) && graze)) {
         if (dest.kind === 'ecliptic') this.voyage.pendingArriveOrbit = true;
         this.port.stopWarp();
         return;

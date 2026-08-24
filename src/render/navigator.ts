@@ -181,6 +181,22 @@ export class Navigator {
       this.speedCap =
         (UNIVERSE.NAV_ARC_MARGIN * UNIVERSE.SHIP_TURN_RATE * d) / (2 * sinHalf);
     }
+    // Never approach a wall faster than the nose can leave it.
+    // The arc law watches the AIM (far away) and is blind to a
+    // near wall dead ahead: leaving a moon ring with the nose
+    // still on the parent, the clamped step pinned the ship on
+    // the wall and it GROUND there while the nose came around
+    // (nose-dragged through the planet). The corridor aim always
+    // clears every wall, so the pointing error IS the turn still
+    // owed: time-to-wall must cover time-to-turn, with margin.
+    const errAng = Math.acos(cosT);
+    if (errAng > 0.02) {
+      const s = this.wallAhead();
+      if (s != null) {
+        const cap = (UNIVERSE.NAV_ARC_MARGIN * UNIVERSE.SHIP_TURN_RATE * s) / errAng;
+        if (this.speedCap == null || cap < this.speedCap) this.speedCap = cap;
+      }
+    }
 
     // Banking engages only inside the insert window. Far
     // lock-on is a heading hold — passing zenith here snapped
@@ -262,6 +278,28 @@ export class Navigator {
   }
 
   /**
+   * First wall hit along the nose (catalog kpc). Null when the
+   * nose ray clears every wall. Positions in the truth are
+   * eye-relative, so the ray starts at the origin.
+   */
+  private wallAhead(): number | null {
+    let s: number | null = null;
+    const f = this.ship.fwd;
+    for (const o of this.nav.objects) {
+      const R = o.wallKm * KM_TO_KPC;
+      const d2 = o.pos.lengthSq();
+      if (d2 <= R * R) return 0;
+      const b = f.x * o.pos.x + f.y * o.pos.y + f.z * o.pos.z;
+      if (b <= 0) continue;
+      const disc = b * b - (d2 - R * R);
+      if (disc <= 0) continue;
+      const t = b - Math.sqrt(disc);
+      if (t > 0 && (s == null || t < s)) s = t;
+    }
+    return s;
+  }
+
+  /**
    * Transfer corridor. Space is empty; bodies are balls; the only
    * illegal move is into one. Inside a non-target graze, the only
    * way is out. If the sightline hits a ball, take a tangent —
@@ -282,22 +320,39 @@ export class Navigator {
     const dT = aim.length();
     if (!(dT > 1e-18)) return;
 
-    // Inside a non-target ROUTING ball → only way is out. (The
-    // star's ball counts on every course — a star dest targets
-    // the RING, not the core.)
+    // Inside a non-target ROUTING ball → only way is out. The
+    // out is the depth-weighted sum over EVERY ball we are
+    // inside — a moon ring sits inside its own ball AND its
+    // parent's, and escaping only the nearest aimed the ship
+    // straight into the parent's interior at full throttle
+    // (a 3 s reversal ground the nose on the giant's wall).
+    // (The star's ball counts on every course — a star dest
+    // targets the RING, not the core.)
     let escD = Infinity;
     let escObj: (typeof objs)[number] | null = null;
+    let outX = 0;
+    let outY = 0;
+    let outZ = 0;
     for (const o of objs) {
       if (o.id != null && o.id === targetId) continue;
       const dO = o.pos.length();
-      if (!(dO > 1e-18) || dO >= escD) continue;
+      if (!(dO > 1e-18)) continue;
       const dOT = Math.hypot(aim.x - o.pos.x, aim.y - o.pos.y, aim.z - o.pos.z);
-      if (dO >= Math.min(o.grazeKm * KM_TO_KPC, dOT * 0.9)) continue;
-      escD = dO;
-      escObj = o;
+      const ball = Math.min(o.grazeKm * KM_TO_KPC, dOT * 0.9);
+      if (dO >= ball) continue;
+      const w = (1 - dO / ball) / dO;
+      outX -= o.pos.x * w;
+      outY -= o.pos.y * w;
+      outZ -= o.pos.z * w;
+      if (dO < escD) {
+        escD = dO;
+        escObj = o;
+      }
     }
     if (escObj) {
-      aim.copy(escObj.pos).multiplyScalar(-dT / Math.max(escD, 1e-18));
+      const ol = Math.hypot(outX, outY, outZ);
+      if (ol > 1e-18) aim.set((outX / ol) * dT, (outY / ol) * dT, (outZ / ol) * dT);
+      else aim.copy(escObj.pos).multiplyScalar(-dT / Math.max(escD, 1e-18));
       this.lockBall = undefined;
       return;
     }
