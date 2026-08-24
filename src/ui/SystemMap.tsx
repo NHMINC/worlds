@@ -7,8 +7,9 @@ import { keplerPlane, type SystemSpec } from '../world/systemgen';
  * rank-spaced (the real spacing is geometric, so even rings read better than
  * a physical scale), but every body rides its live orbital angle, so the map
  * drifts in real time. In the explorer the chart is zoomable — pinch / wheel
- * / drag — and a tap opens the orbit picker (the parent warps onto the
- * chosen ring). Reticle Set course is autopilot to the fill park.
+ * / drag — and a tap sets course: a world berths equatorial, the SUN berths
+ * ecliptic (the star is a destination like any other, not only the
+ * first-entry park). Reticle Set course is autopilot to the fill park.
  */
 
 export interface MapMoon {
