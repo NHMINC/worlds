@@ -102,18 +102,21 @@ export const UNIVERSE = {
   /**
    * Host-star glare — the eye looking at the furnace from
    * inside the system. Size and intensity fall with DISTANCE
-   * (d / A_HAB)^DIST, not with raw L/d². Flux-starved glare
-   * hid every M dwarf behind a marker: the planet was lit,
-   * the sun was a pixel. L0 is the luminosity floor (an M
-   * dwarf still shines); L_P lifts the bright end. THETA
-   * collapses the glare once the photosphere resolves so a
-   * parked close-up is the skin, not a second white circle.
+   * (A_HAB / d)^DIST. Closer = the sky burns; further = it
+   * dies. L0 is the luminosity floor (an M dwarf still shines);
+   * L_P lifts the bright end. SKY is the max half-width (rad)
+   * so a close-planet sun can fill the sky — collapsing glare
+   * when the disk subtended (the old THETA) made a hard white
+   * cutout against black, welding glass from a nearby world.
+   * I_MAX knees the wash so the sky fires without wiping the
+   * planet. The photosphere still owns the disk; this is the
+   * sky around it.
    */
-  STAR_GLARE_ANG: 0.14,
-  STAR_GLARE_GAIN: 3.2,
-  STAR_GLARE_CAP: 0.22,
-  STAR_GLARE_THETA: 0.055,
-  STAR_GLARE_DIST: 0.5,
+  STAR_GLARE_ANG: 0.16,
+  STAR_GLARE_GAIN: 3.4,
+  STAR_GLARE_SKY: 1.15,
+  STAR_GLARE_I_MAX: 4.2,
+  STAR_GLARE_DIST: 0.65,
   STAR_GLARE_L0: 0.5,
   STAR_GLARE_L_P: 0.28,
 
