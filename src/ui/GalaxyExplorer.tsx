@@ -862,7 +862,8 @@ export function GalaxyExplorer(props: Props) {
           closeOnTravel={false}
           onTravel={(id) => {
             setMapOpen(false);
-            viewRef.current?.goToWorldOrbit(id, 'equatorial');
+            if (id == null) viewRef.current?.goToStarOrbit();
+            else viewRef.current?.goToWorldOrbit(id, 'equatorial');
           }}
           onClose={() => setMapOpen(false)}
         />

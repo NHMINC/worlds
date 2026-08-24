@@ -34,13 +34,17 @@ interface Props {
   planets: MapPlanet[];
   currentBodyId?: string;
   angleOf: (id: string) => number;
-  onTravel?: (id: string) => void;
+  /** null = the star itself (ecliptic berth). */
+  onTravel?: (id: string | null) => void;
   onClose: () => void;
   /** Pinch / wheel zoom and drag-pan. Explorer chart. */
   zoomable?: boolean;
   /** Explorer chart: keep the map open so the orbit picker can sit on it. */
   closeOnTravel?: boolean;
 }
+
+/** data-body sentinel for the star — body ids never collide with it. */
+const STAR_TAP = '__star__';
 
 const RING_MIN = 26;
 const RING_MAX = 96;
@@ -189,7 +193,7 @@ export function SystemMap(props: Props) {
     else groupRefs.current.delete(id);
   };
 
-  const travel = (id: string) => {
+  const travel = (id: string | null) => {
     if (!props.onTravel) return;
     props.onTravel(id);
     if (props.closeOnTravel !== false) props.onClose();
@@ -249,7 +253,7 @@ export function SystemMap(props: Props) {
     tap.current.live = false;
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const id = el?.closest?.('[data-body]')?.getAttribute('data-body');
-    if (id) travel(id);
+    if (id) travel(id === STAR_TAP ? null : id);
   };
 
   return (
@@ -284,9 +288,19 @@ export function SystemMap(props: Props) {
               <circle key={`ring-${p.id}`} className="sm-ring" cx="0" cy="0" r={ringR(i)} />
             ))}
 
-            {/* The star. */}
+            {/* The star — tappable like any world (ecliptic berth). */}
             <circle cx="0" cy="0" r="16" fill="url(#sm-star-glow)" />
-            <circle cx="0" cy="0" r="6" fill={props.starColor} />
+            <circle cx="0" cy="0" r="6" fill={props.starColor} pointerEvents="none" />
+            <circle
+              className="sm-body sm-star-hit"
+              cx="0"
+              cy="0"
+              r="10"
+              data-body={STAR_TAP}
+              onClick={!zoomable && props.onTravel ? () => travel(null) : undefined}
+            >
+              <title>{props.starName}</title>
+            </circle>
 
             {/* Planets ride their rings; moons ride their planets. */}
             {planets.map((p) => {
@@ -334,9 +348,9 @@ export function SystemMap(props: Props) {
         <p className="modal-note sysmap-note">
           {zoomable
             ? props.onTravel
-              ? 'Pinch or scroll to zoom. Drag to pan. Tap a world to pick an orbit.'
+              ? 'Pinch or scroll to zoom. Drag to pan. Tap a world — or the sun — to fly there.'
               : 'Pinch or scroll to zoom. Drag to pan.'
-            : 'Tap a world to fly there.'}
+            : 'Tap a world — or the sun — to fly there.'}
         </p>
       </div>
     </div>

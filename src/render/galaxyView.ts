@@ -1086,6 +1086,17 @@ export class GalaxyView {
     this.setCourseBerth({ starId, bodyId, orbit: kind });
   }
 
+  /**
+   * Chart pick of the SUN: the star itself is a berth like any
+   * world (ecliptic ring) — not only the first-entry park.
+   */
+  goToStarOrbit(): void {
+    if (this.timeHeld()) return;
+    const starId = this.sight.focusObj?.id ?? this.locale.obj?.id;
+    if (starId == null) return;
+    this.setCourseBerth({ starId, bodyId: null, orbit: 'ecliptic' });
+  }
+
   /** Live dest ring — the Course owns it, nobody shadows it. */
   private destOrbit(): { bodyId: string | null; kind: WorldOrbitKind } | null {
     return this.voyage.route.destOrbit();

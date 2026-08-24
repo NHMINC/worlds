@@ -547,7 +547,8 @@ body,
   filter: brightness(1.35);
 }
 
-.sm-moon-hit {
+.sm-moon-hit,
+.sm-star-hit {
   fill: transparent;
 }
 
