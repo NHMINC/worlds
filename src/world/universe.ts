@@ -68,12 +68,20 @@ export const UNIVERSE = {
   /**
    * Photosphere display luminance (the disk before the eye's knee).
    * A real photosphere is ~10⁹× the sky; an LDR screen cannot span
-   * that, so this one number is the exposure that lifts the centre
-   * toward white-hot while the limb keeps Teff colour. Universe-
-   * level, never per-star — Teff only tints, it does not dim the
-   * furnace. Continuous in μ: a stepped core is a painted circle.
+   * that. This is the furnace exposure: the face is bright, the
+   * centre clips toward white-hot, the limb keeps Teff. Full
+   * Eddington at μ = 0 is welding glass — we keep the shape
+   * (centre brighter than limb) on a high floor (STAR_DISK_FLOOR).
+   * Universe-level, never per-star.
    */
   STAR_DISK_LUM: 3.8,
+  /**
+   * Display limb floor (0–1). Physical Eddington on a G star
+   * falls to ~0.4 — that is the welding-glass disk. The eye
+   * saturates; the floor stays high so the whole body blazes
+   * and only the rim keeps colour.
+   */
+  STAR_DISK_FLOOR: 0.78,
 
   /**
    * Granulation contrast on the photosphere (peak, at a fully
@@ -84,25 +92,25 @@ export const UNIVERSE = {
 
   /**
    * Chromosphere: the limb continued. CHROMA multiplies the
-   * already-darkened edge (Eddington at μ = 0) and the shine
-   * decays as exp(−Δr / (R·CHROMA_H)). A peak above that edge
-   * is a hoop; keep this ≤ 1 so brightness is monotonic off
-   * the disk.
+   * DISPLAY edge (floor × face, not welding-glass μ = 0) and
+   * the shine is exp + Lorentzian, 1 at the limb. A peak above
+   * that edge is a hoop. CHROMA_H is the decay length in R.
    */
-  STAR_CHROMA: 0.85,
-  STAR_CHROMA_H: 0.07,
+  STAR_CHROMA: 1.0,
+  STAR_CHROMA_H: 0.14,
 
   /**
    * Unresolved-disk bloom — the eye's PSF on a star that has
    * not yet become a surface. Angular half-width at A_HAB for
-   * L=1 (radians); GAIN is the core. Both are multiplied by
-   * e^(−θ / STAR_MARK_ANG) so a parked, resolved sun wears the
-   * chromosphere, not a second white circle. CAP is the max
-   * width past the limb while still unresolved.
+   * L=1 (radians); GAIN is the core. Weight is e^(−θ / THETA)
+   * so a small disk in the sky still blazes and a parked sun
+   * (θ ~ 0.25) does not grow a second white circle. CAP is
+   * the max width past the limb while still unresolved.
    */
   STAR_GLARE_ANG: 0.12,
-  STAR_GLARE_GAIN: 2.2,
+  STAR_GLARE_GAIN: 2.4,
   STAR_GLARE_CAP: 0.18,
+  STAR_GLARE_THETA: 0.055,
 
   /**
    * K-corona + wind: Thomson column of photosphere light. CORONA is
@@ -118,7 +126,7 @@ export const UNIVERSE = {
    * Must stay far inside STAR_CORONA_R (the hard wall). Tight:
    * 1.6 R plus a Parker fill was a second, blue, circle.
    */
-  STAR_CORONA_DRAW: 1.22,
+  STAR_CORONA_DRAW: 1.48,
   /**
    * Corona / wind shell outer radius, in photosphere radii —
    * drawn by star.ts and treated as the star's VIEW SKIN: a

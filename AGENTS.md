@@ -529,10 +529,11 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   core). Granules are Worley cells at `STAR_GRAN` contrast,
   luminance only; spots and flares follow `starActivity`. Shine
   is the limb continued: chromosphere (`STAR_CHROMA`,
-  `STAR_CHROMA_H`) starts at the Eddington edge and decays
+  `STAR_CHROMA_H`) starts at the display edge (`STAR_DISK_FLOOR`
+  — full Eddington is welding glass) and decays
   (a peak above that edge is a hoop), plus a tight Baumbach
   r⁻⁶ haze, in one glow pass that dies before
-  `STAR_CORONA_DRAW` (1.22 R — far inside the 4 R wall). A
+  `STAR_CORONA_DRAW` (1.48 R — far inside the 4 R wall). A
   resolved disk is not a point: there is no glare quad and no
   ciliary spike. Unresolved disks keep a soft flux bloom
   (`STAR_GLARE_*`) that collapses as the surface subtends. The

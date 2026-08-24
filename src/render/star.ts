@@ -17,17 +17,13 @@
  * dynamo (`starActivity`). Granulation is luminance, never a
  * second albedo — a marble planet was the old cool/hot mix.
  *
- * Shine is the limb continued, in one glow pass: chromosphere
- * starts at the Eddington edge brightness and decays (never a
- * hoop above that edge), plus a tight Baumbach r⁻⁶ haze. The
- * Parker wind is a column law, not a filled disc. Both die
- * before STAR_CORONA_DRAW, far inside the 4 R wall. No ciliary
- * spikes: those are a point-source PSF, and a resolved disk
- * is not a point.
+ * Shine is the limb continued: the DISPLAY edge (high floor —
+ * full Eddington is welding glass) decays as exp + Lorentzian,
+ * never a hoop, plus a tight Baumbach r⁻⁶ haze. The Parker
+ * wind is a column law, not a filled disc.
  *
- * Distant, still-unresolved disks keep a soft flux bloom that
- * collapses as the surface subtends (STAR_GLARE_* × e^(−θ/θ0)).
- * A parked sun wears the skin, not a second white circle.
+ * Distant disks keep a soft flux bloom, e^(−θ / STAR_GLARE_THETA).
+ * A parked sun blazes from the furnace disk, not a second circle.
  *
  * EVERY star shader works in the group's LOCAL km frame — uCam
  * is worldToLocal kilometres. Mixing km uniforms with world-kpc
@@ -131,6 +127,7 @@ uniform float uSeed;
 uniform float uTeff;
 uniform float uActivity;
 uniform float uDiskLum;
+uniform float uDiskFloor;
 uniform float uFlare;
 uniform float uGran;
 uniform float uPhotoR;
@@ -155,12 +152,13 @@ void main() {
   vec3 view = -rd;
   float mu = max(dot(n, view), 0.0);
 
-  // Eddington-Barbier grey atmosphere: I = I0 (1 − u + u μ).
-  // Cooler photospheres have more line opacity, so u walks up —
-  // still one law, Teff as input. Continuous: cel steps painted
-  // a concentric core inside the disk.
-  float uLD = mix(0.42, 0.68, clamp((6200.0 - uTeff) / 2800.0, 0.0, 1.0));
-  float limb = (1.0 - uLD) + uLD * mu;
+  // Display limb law: physical Eddington shape (centre > limb,
+  // cooler stars darken more) remapped onto STAR_DISK_FLOOR so
+  // the body stays a furnace. Raw μ = 0 at u ~ 0.6 is welding glass.
+  float uPhys = mix(0.42, 0.68, clamp((6200.0 - uTeff) / 2800.0, 0.0, 1.0));
+  float phys = (1.0 - uPhys) + uPhys * mu;
+  float limb = uDiskFloor + (1.0 - uDiskFloor) * (phys - (1.0 - uPhys)) / max(uPhys, 1e-4);
+  limb = clamp(limb, uDiskFloor, 1.0);
 
   // Convection cells. Radiative envelopes (hot) have almost none;
   // contrast ramps in as the envelope becomes convective. Scale is
@@ -196,12 +194,14 @@ void main() {
     1.0 - red * (1.0 - mu),
     1.0 - red * 1.35 * (1.0 - mu)
   );
-  // Exposure: only the very centre lifts toward white-hot. A wide
-  // mix painted a featureless core and hid the skin; the outer
-  // disk must keep Teff and limb darkening so it reads as a sphere.
-  float heat = pow(mu, 2.6) * clamp(uDiskLum * 0.12, 0.0, 0.40);
+  // Furnace exposure: the whole disk is bright; the centre clips
+  // toward white-hot; the rim keeps Teff. Welding glass was a
+  // ~1× multiply on a 0.4 limb. STAR_DISK_LUM is the extra face
+  // gain, not a painted core.
+  float face = mix(1.22, 1.22 + 0.26 * uDiskLum, pow(mu, 1.45));
+  float heat = pow(mu, 1.7) * 0.52;
   c = mix(c, vec3(1.0), heat);
-  c *= limb * gran * mix(0.88, 1.16, mu);
+  c *= limb * gran * face;
   c += uColor * flares * 1.8;
   gl_FragColor = vec4(c, 1.0);
 }
@@ -222,6 +222,7 @@ uniform float uOuterR;
 uniform float uCorona;
 uniform float uChroma;
 uniform float uChromaH;
+uniform float uDiskFloor;
 uniform float uBloom;
 uniform float uBloomAng;
 varying vec3 vPos;
@@ -257,18 +258,18 @@ void main() {
   float impact = length(closest);
   vec3 around = impact > 1e-8 ? closest / impact : vec3(0.0, 1.0, 0.0);
 
-  // Shine is the limb CONTINUED, not a second circle. Eddington at
-  // μ = 0 is the disk's edge brightness; we start there and decay.
-  // A Gaussian peaked AT the limb sat above that edge — a white
-  // hoop — and the Parker r⁻² fill painted a blue disc around it.
-  float uLD = mix(0.42, 0.68, clamp((6200.0 - uTeff) / 2800.0, 0.0, 1.0));
-  float limbI = 1.0 - uLD;
+  // Shine is the DISPLAY limb continued — same floor × face as
+  // the photosphere edge, then exp + Lorentzian (1 at x = 0).
+  // Welding-glass μ = 0 as the start made a dim ball; a peak
+  // above the edge made a hoop.
+  float limbI = 1.22 * uDiskFloor;
   float h = max(uPhotoR * uChromaH, 1e-4);
   float x = max(impact - uPhotoR, 0.0) / h;
-  float shine = limbI * uChroma * exp(-x);
+  float shine = limbI * uChroma * (0.60 * exp(-x) + 0.40 / (1.0 + 5.5 * x * x));
   shine *= 0.94 + 0.10 * fbm(around * 5.5 + vec3(uTime * 0.06, uSeed, 0.0));
   float cool = clamp((5200.0 - uTeff) / 2400.0, 0.0, 1.0);
-  vec3 shineCol = mix(uColor, vec3(1.0, 0.32, 0.20), 0.28 * cool);
+  vec3 shineCol = mix(uColor, vec3(1.0), 0.45 * exp(-x));
+  shineCol = mix(shineCol, vec3(1.0, 0.32, 0.20), 0.22 * cool * (1.0 - exp(-x)));
   vec3 acc = shineCol * shine;
 
   // Baumbach r⁻⁶ only, and dead close to the limb. The wind is a
@@ -345,6 +346,7 @@ export function makeStar(spec: StarSpec): StarView {
       uTeff: { value: teff },
       uActivity: { value: activity },
       uDiskLum: { value: UNIVERSE.STAR_DISK_LUM },
+      uDiskFloor: { value: UNIVERSE.STAR_DISK_FLOOR },
       uFlare: { value: UNIVERSE.STAR_FLARE },
       uGran: { value: UNIVERSE.STAR_GRAN },
       uPhotoR: { value: surfaceKm },
@@ -371,6 +373,7 @@ export function makeStar(spec: StarSpec): StarView {
       uCorona: { value: UNIVERSE.STAR_CORONA },
       uChroma: { value: UNIVERSE.STAR_CHROMA },
       uChromaH: { value: UNIVERSE.STAR_CHROMA_H },
+      uDiskFloor: { value: UNIVERSE.STAR_DISK_FLOOR },
       uBloom: { value: 0 },
       uBloomAng: { value: UNIVERSE.STAR_GLARE_ANG },
       uBoundR: { value: glow0 },
@@ -432,7 +435,7 @@ export function makeStar(spec: StarSpec): StarView {
       // Bloom is the unresolved-disk PSF. It collapses as soon as
       // the surface is a readable disk — a parked sun must not grow
       // a second white circle.
-      const bloomFade = Math.exp(-angSurface / Math.max(UNIVERSE.STAR_MARK_ANG, 1e-4));
+      const bloomFade = Math.exp(-angSurface / Math.max(UNIVERSE.STAR_GLARE_THETA, 1e-4));
       const bloomAng = Math.min(
         UNIVERSE.STAR_GLARE_CAP,
         UNIVERSE.STAR_GLARE_ANG * Math.sqrt(Math.max(flux, 1e-4)),
