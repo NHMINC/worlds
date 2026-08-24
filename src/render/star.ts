@@ -22,8 +22,10 @@
  * never a hoop, plus a tight Baumbach r⁻⁶ haze. The Parker
  * wind is a column law, not a filled disc.
  *
- * Distant disks keep a soft flux bloom, e^(−θ / STAR_GLARE_THETA).
- * A parked sun blazes from the furnace disk, not a second circle.
+ * From a planet the host wears DISTANCE glare (falls as you
+ * recede; luminosity is a lift, not a gate). Once the
+ * photosphere resolves, that glare lets go — the close-up
+ * is the skin, not a second circle.
  *
  * EVERY star shader works in the group's LOCAL km frame — uCam
  * is worldToLocal kilometres. Mixing km uniforms with world-kpc
@@ -36,7 +38,6 @@ import * as THREE from 'three';
 import {
   UNIVERSE,
   starActivity,
-  starEyeFlux,
   starTeff,
 } from '../world/physics';
 import type { StarSpec } from '../world/systemgen';
@@ -285,13 +286,16 @@ void main() {
   }
   acc += uColor * thom * (dt * 0.035 / max(uPhotoR, 1e-6));
 
-  // Unresolved bloom: the eye's PSF on a disk that has not yet
-  // become a surface. Weight arrives as uBloom (already collapsed
-  // by angular size); the Gaussian has no hard edge.
+  // Host glare: distance-weighted PSF. Core bleaches (a star
+  // is too bright to hold colour at the photocentre); wings
+  // keep Teff. Soft Gaussian + Lorentzian — no hard disc.
   if (uBloom > 0.001) {
     float ang = acos(clamp(dot(rd, normalize(-uCam)), -1.0, 1.0));
-    float bloom = uBloom * exp(-pow(ang / max(uBloomAng, 1e-4), 2.0));
-    acc += uColor * bloom;
+    float s = ang / max(uBloomAng, 1e-4);
+    float core = exp(-s * s);
+    float tail = 0.40 / (1.0 + 7.0 * s * s);
+    vec3 bCol = mix(uColor, vec3(1.0), 0.78 * core);
+    acc += bCol * uBloom * (core + tail);
   }
 
   float a = clamp(max(acc.r, max(acc.g, acc.b)), 0.0, 1.0);
@@ -430,20 +434,26 @@ export function makeStar(spec: StarSpec): StarView {
         marker.visible = false;
         return;
       }
-      const flux = starEyeFlux(spec.luminosity, Math.max(d, surfaceKm * 1.05));
       const angSurface = Math.asin(Math.min(1, surfaceKm / d));
-      // Bloom is the unresolved-disk PSF. It collapses as soon as
-      // the surface is a readable disk — a parked sun must not grow
-      // a second white circle.
+      // Glare falls with distance from the star. Luminosity lifts
+      // the bright end but L0 keeps a nearby dwarf findable —
+      // L/d² made every M star a pixel you had to mark.
+      const dRef = UNIVERSE.A_HAB * UNIVERSE.AU_KM;
+      const dist = dRef / Math.max(d, surfaceKm * UNIVERSE.STAR_CORONA_R);
+      const distTerm = Math.pow(dist, UNIVERSE.STAR_GLARE_DIST);
+      const lumTerm =
+        UNIVERSE.STAR_GLARE_L0 +
+        (1 - UNIVERSE.STAR_GLARE_L0) *
+          Math.pow(Math.min(Math.max(spec.luminosity, 0), 8), UNIVERSE.STAR_GLARE_L_P);
+      const scale = distTerm * lumTerm;
       const bloomFade = Math.exp(-angSurface / Math.max(UNIVERSE.STAR_GLARE_THETA, 1e-4));
-      const bloomAng = Math.min(
-        UNIVERSE.STAR_GLARE_CAP,
-        UNIVERSE.STAR_GLARE_ANG * Math.sqrt(Math.max(flux, 1e-4)),
-      );
-      glowMat.uniforms.uBloom.value =
-        UNIVERSE.STAR_GLARE_GAIN * Math.pow(Math.max(flux, 0.03), 0.42) * bloomFade;
+      const bloomAng = Math.min(UNIVERSE.STAR_GLARE_CAP, UNIVERSE.STAR_GLARE_ANG * scale);
+      glowMat.uniforms.uBloom.value = UNIVERSE.STAR_GLARE_GAIN * scale * bloomFade;
       glowMat.uniforms.uBloomAng.value = Math.max(bloomAng, 1e-4);
-      const outerKm = Math.max(glow0, d * Math.tan(angSurface + bloomAng * bloomFade));
+      const outerKm = Math.max(
+        glow0,
+        d * Math.tan(angSurface + bloomAng * bloomFade * 2.2),
+      );
       glowMat.uniforms.uOuterR.value = outerKm;
       glowMat.uniforms.uBoundR.value = outerKm;
 
