@@ -142,6 +142,13 @@ export const UNIVERSE = {
    * LDR screen. Prominences are the same events seen on the limb.
    */
   STAR_FLARE: 1.2,
+  /**
+   * Ciliary starburst: the eye's lens fibrils spread a bright
+   * source into soft radial rays — part of the same PSF as the
+   * glare's Gaussian core + Lorentzian tail, not a painted
+   * sprite. 0 is a clean halo; this is the ray gain on the tail.
+   */
+  STAR_SPIKE: 0.55,
 
   /**
    * Display knee for body irradiance. Raw 1/r² at the inner edge is

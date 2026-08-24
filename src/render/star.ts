@@ -13,13 +13,19 @@
  * never look swallowed again (the old shell reached the wall).
  *
  * Glare is the eye: flux through the pupil (starEyeFlux,
- * inverse-square referenced at A_HAB) spread as ONE radially
- * uniform falloff. The halo HUGS THE LIMB: its width past the
- * disk's own angular radius is capped at STAR_GLARE_CAP — a
- * distant sun is a hard bright point, a parked one wears a
- * bounded halo past the limb, never a wash that hides where
- * the surface is (and never zero: an absolute cap used to
- * swallow the whole halo behind a close disk).
+ * inverse-square referenced at A_HAB) as the eye's PSF —
+ * Gaussian core, Lorentzian tail, and the ciliary starburst
+ * (STAR_SPIKE): soft radial rays, the lens part of looking at
+ * a sun. The halo HUGS THE LIMB: its width past the disk's own
+ * angular radius is capped at STAR_GLARE_CAP — a distant sun
+ * is a hard bright point, a parked one wears a bounded halo
+ * past the limb, never a wash that hides where the surface is
+ * (and never zero: an absolute cap used to swallow the whole
+ * halo behind a close disk).
+ *
+ * EVERY star shader works in the group's LOCAL km frame — see
+ * PHOTO_VERT. Mixing km uniforms with world-kpc varyings is how
+ * the sun lit whole systems while wearing no glow of its own.
  *
  * The sub-threshold marker ring and the PointLight (the
  * illumination law) ride along unchanged.
@@ -36,12 +42,19 @@ import type { StarSpec } from '../world/systemgen';
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
+// LOCAL-frame law: every star shader works in the group's own km
+// frame — uCam arrives in local km (worldToLocal), so positions
+// must stay local too. The old verts handed WORLD kpc positions to
+// km-frame math: the km numbers drowned the kpc ones, the corona's
+// per-pixel ray collapsed to a constant, and the glare quad blew up
+// to astronomical size so every on-screen pixel sampled its centre
+// (inside the disk hole) and discarded — the sun never wore a glow.
 const PHOTO_VERT = /* glsl */ `
 varying vec3 vN;
-varying vec3 vWorld;
+varying vec3 vPos;
 void main() {
   vN = normal;
-  vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
+  vPos = position;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
@@ -97,12 +110,12 @@ uniform float uActivity;
 uniform float uDiskLum;
 uniform float uFlare;
 varying vec3 vN;
-varying vec3 vWorld;
+varying vec3 vPos;
 ${STAR_NOISE}
 
 void main() {
   vec3 n = normalize(vN);
-  vec3 view = normalize(uCam - vWorld);
+  vec3 view = normalize(uCam - vPos);
   // Eddington-Barbier grey atmosphere: I = I0 (2/5 + 3/5 μ). Cooler
   // photospheres have more line opacity, so the limb coefficient walks
   // up a little — still one law, Teff as input.
@@ -158,11 +171,10 @@ void main() {
 `;
 
 const CORONA_VERT = /* glsl */ `
-varying vec3 vWorld;
+varying vec3 vPos;
 void main() {
-  vec4 w = modelMatrix * vec4(position, 1.0);
-  vWorld = w.xyz;
-  gl_Position = projectionMatrix * viewMatrix * w;
+  vPos = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
 
@@ -180,10 +192,10 @@ uniform float uPhotoR;
 uniform float uOuterR;
 uniform float uCorona;
 uniform float uWind;
-varying vec3 vWorld;
+varying vec3 vPos;
 
 void main() {
-  vec3 rd = normalize(vWorld - uCam);
+  vec3 rd = normalize(vPos - uCam);
   vec3 ro = uCam;
   // Chord through the corona sphere. Camera may sit inside (close
   // approach): t0 starts at 0. Rays that strike the photosphere stop
@@ -231,9 +243,12 @@ varying vec2 vUv;
 void main() {
   // View-space billboard centred on the star (group origin). Depth is
   // the star's depth so a world in front of the disk eclipses the wash
-  // and sky pixels (no depth) still receive it.
+  // and sky pixels (no depth) still receive it. uScale is LOCAL km;
+  // the modelView column length converts it into view units — adding
+  // raw km to a kpc-view centre was the every-pixel-discards bug.
   vec4 center = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-  vec3 ext = vec3(position.xy * uScale, 0.0);
+  float ws = length(modelViewMatrix[0].xyz);
+  vec3 ext = vec3(position.xy * uScale * ws, 0.0);
   gl_Position = projectionMatrix * vec4(center.xyz + ext, 1.0);
   vUv = position.xy;
 }
@@ -245,20 +260,25 @@ uniform vec3 uColor;
 uniform float uFlux;
 uniform float uGain;
 uniform float uDisk;
+uniform float uSpike;
 varying vec2 vUv;
 
 void main() {
   float r = length(vUv);
   if (r > 1.0) discard;
   // The photosphere mesh owns the disk. This is the glare: the eye's
-  // response to raw flux, ONE radially uniform falloff. Inverse-square
-  // lives in uFlux (the quad is sized to the capped angle too), so a
-  // distant sun is a small bright point and a close one wears a
-  // bounded halo. The window term reaches exactly zero at the quad
-  // edge — the glow ends in the maths, never as a visible rim.
+  // response to raw flux — Gaussian core, Lorentzian tail (the same
+  // PSF shape as the harvest pins), plus the ciliary starburst: the
+  // eye's lens fibrils spread a bright source into soft radial rays.
+  // Inverse-square lives in uFlux (the quad is sized to the capped
+  // angle too), so a distant sun is a small bright point and a close
+  // one wears a bounded halo. The window term reaches exactly zero at
+  // the quad edge — the glow ends in the maths, never a visible rim.
   float f = pow(max(uFlux, 0.03), 0.42);
   float core = exp(-r * r * 16.0) * (0.65 + 0.9 * clamp(uFlux, 0.0, 2.5));
-  float tail = (0.5 * f) / (0.04 + 3.4 * r * r);
+  float phi = atan(vUv.y, vUv.x);
+  float rays = pow(abs(cos(phi * 3.0)), 24.0) + 0.6 * pow(abs(sin(phi * 3.0)), 24.0);
+  float tail = (0.5 * f) / (0.04 + 3.4 * r * r) * (1.0 + uSpike * rays);
   float window = 1.0 - r * r;
   window *= window;
   // Soft hole over the disk so we do not double-paint the globe.
@@ -359,6 +379,7 @@ export function makeStar(spec: StarSpec): StarView {
       uGain: { value: UNIVERSE.STAR_GLARE_GAIN },
       uScale: { value: surfaceKm * 1.5 },
       uDisk: { value: 0.12 },
+      uSpike: { value: UNIVERSE.STAR_SPIKE },
     },
     transparent: true,
     depthWrite: false,
