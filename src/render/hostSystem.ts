@@ -1,105 +1,30 @@
 /**
- * Host Kepler clock: ellipses + unit spheres scaled to each
- * body's radius. RockyGlobe skins the rocky balls (same
- * group); gas stays a sphere. Cruise / look / furnace stay
- * in `galaxyView`.
+ * Host Kepler clock: ellipses + a group per body, scaled to
+ * radius. RockyGlobe grows the terrace on rocky groups; gas
+ * uses the chemistry mesh. No stand-in Lambert balls — those
+ * were orbit-building scaffolding. Cruise / look / furnace
+ * stay in `galaxyView`.
  */
 import * as THREE from 'three';
-import { UNIVERSE } from '../world/physics';
+import { UNIVERSE, starIrradiance, starIrradianceDisplay } from '../world/physics';
 import { keplerPlane, type BodySpec, type SystemSpec } from '../world/systemgen';
+import { makeGasGiant } from './gasGiant';
 
 const AU_KM = UNIVERSE.AU_KM;
 const KM_TO_KPC = 1 / UNIVERSE.KPC_KM;
 
-/** Shared unit sphere for host Kepler balls. */
-const BALL_GEO = new THREE.SphereGeometry(1, 32, 24);
-
-/** Magenta = body is not on its Kepler ring (cleanroom diagnostic). */
-const BALL_ON = new THREE.Color(0xffffff);
-const BALL_OFF = new THREE.Color(0xff2a7a);
-
-/** Latitude-band texture so each world reads as a ball, not a flat tint. */
-function ballTexture(rgb: [number, number, number]): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 32;
-  const g = c.getContext('2d')!;
-  const [r, gv, b] = rgb.map((x) => Math.round(Math.min(1, Math.max(0, x)) * 255));
-  g.fillStyle = `rgb(${r},${gv},${b})`;
-  g.fillRect(0, 0, 64, 32);
-  const dark = `rgb(${(r * 0.55) | 0},${(gv * 0.55) | 0},${(b * 0.55) | 0})`;
-  const lite = `rgb(${Math.min(255, (r * 1.15) | 0)},${Math.min(255, (gv * 1.15) | 0)},${Math.min(255, (b * 1.15) | 0)})`;
-  for (let y = 0; y < 32; y += 4) {
-    g.fillStyle = y % 8 === 0 ? dark : lite;
-    g.fillRect(0, y, 64, 2);
-  }
-  g.strokeStyle = 'rgba(255,255,255,0.35)';
-  g.beginPath();
-  g.moveTo(32, 0);
-  g.lineTo(32, 32);
-  g.stroke();
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-function makeBall(rgb: [number, number, number]): THREE.Mesh {
-  return new THREE.Mesh(
-    BALL_GEO,
-    new THREE.MeshLambertMaterial({ map: ballTexture(rgb), color: 0xffffff }),
-  );
-}
-
-/**
- * Kilometres from `rel` (orbit-centre → body) to the Kepler ellipse
- * in the (orbX, orbY) plane. Out-of-plane height counts too.
- */
-function keplerPathMissKm(
-  rel: THREE.Vector3,
-  orbX: THREE.Vector3,
-  orbY: THREE.Vector3,
-  aKm: number,
-  ecc: number,
-): number {
-  const a = Math.max(aKm, 1e-9);
-  const e = Math.min(Math.max(ecc, 0), 0.999);
-  const bAxis = a * Math.sqrt(Math.max(0, 1 - e * e));
-  const xo = rel.dot(orbX);
-  const yo = rel.dot(orbY);
-  const zo =
-    rel.x * (orbX.y * orbY.z - orbX.z * orbY.y) +
-    rel.y * (orbX.z * orbY.x - orbX.x * orbY.z) +
-    rel.z * (orbX.x * orbY.y - orbX.y * orbY.x);
-  let cosE = xo / a + e;
-  let sinE = yo / Math.max(bAxis, 1e-18);
-  const n = Math.hypot(cosE, sinE);
-  if (n > 1e-12) {
-    cosE /= n;
-    sinE /= n;
-  } else {
-    cosE = 1;
-    sinE = 0;
-  }
-  const ex = a * (cosE - e);
-  const ey = bAxis * sinE;
-  return Math.hypot(xo - ex, yo - ey, zo);
-}
-
-/** One body on the host clock — sphere + matching Kepler ring. */
+/** One body on the host clock — group + matching Kepler ring. */
 export interface HostBodyRT {
   spec: BodySpec;
   group: THREE.Group;
   orbitLine: THREE.Line;
-  /** Kepler stand-in. RockyGlobe hides this when the terrace is on. */
-  placeholder: THREE.Object3D | null;
+  /** Gas chemistry mesh, if this body is a giant. */
+  gasMat: THREE.ShaderMaterial | null;
   orbX: THREE.Vector3;
   orbY: THREE.Vector3;
   tiltQ: THREE.Quaternion;
   pos: THREE.Vector3;
   spinQ: THREE.Quaternion;
-  /** Last paint: on the Kepler ring, or flagged off. */
-  onOrbitPath: boolean;
 }
 
 /**
@@ -122,8 +47,8 @@ export class HostSystem {
   }
 
   /**
-   * Mint Kepler ellipses + textured spheres for every body.
-   * Clears any previous pack first.
+   * Mint Kepler ellipses for every body. Rocky groups stay
+   * empty until RockyGlobe attaches; gas gets its own mesh.
    */
   build(root: THREE.Group, spec: SystemSpec): void {
     this.clear(root);
@@ -133,8 +58,12 @@ export class HostSystem {
       if (!b.parent) outer = Math.max(outer, b.orbitRadius);
       const group = new THREE.Group();
       group.scale.setScalar(Math.max(b.radius, 1));
-      const ball = makeBall(b.meanColor);
-      group.add(ball);
+      let gasMat: THREE.ShaderMaterial | null = null;
+      if (b.kind === 'gas' && b.gas) {
+        const gas = makeGasGiant(b.gas);
+        group.add(gas.group);
+        gasMat = gas.material;
+      }
       root.add(group);
 
       const orbX = new THREE.Vector3(1, 0, 0);
@@ -206,13 +135,12 @@ export class HostSystem {
         spec: b,
         group,
         orbitLine,
-        placeholder: ball,
+        gasMat,
         orbX,
         orbY,
         tiltQ,
         pos: new THREE.Vector3(),
         spinQ: new THREE.Quaternion(),
-        onOrbitPath: true,
       };
       byId.set(b.id, rt);
       this.bodies.push(rt);
@@ -226,8 +154,7 @@ export class HostSystem {
       root?.remove(rt.orbitLine);
       rt.group.traverse((o) => {
         const mesh = o as THREE.Mesh;
-        // Shared BALL_GEO — do not dispose it.
-        if (mesh.geometry && mesh.geometry !== BALL_GEO) mesh.geometry.dispose();
+        if (mesh.geometry) mesh.geometry.dispose();
         const mat = mesh.material;
         const kill = (m: THREE.Material) => {
           const mapped = m as THREE.MeshLambertMaterial;
@@ -244,24 +171,16 @@ export class HostSystem {
     this.outerAu = 1;
   }
 
-  /**
-   * Pose every body on the Kepler clock. Magenta tint when a
-   * ball cannot find itself on its ring (or a moon has no parent).
-   */
-  update(t: number, camera: THREE.Camera, root: THREE.Group | null): void {
+  /** Pose every body on the Kepler clock. */
+  update(t: number, camera: THREE.Camera, root: THREE.Group | null, L = 1): void {
     const byId = new Map<string, HostBodyRT>();
     for (const rt of this.bodies) byId.set(rt.spec.id, rt);
     for (const rt of this.bodies) {
       const b = rt.spec;
       const { xo, yo } = keplerPlane(b.orbitRadius, b.orbitPeriod, b.orbitPhase, b.ecc, t);
-      let center: THREE.Vector3 | null = null;
       if (b.parent) {
         const parent = byId.get(b.parent);
-        if (!parent) {
-          this.paintBall(rt, false);
-          continue;
-        }
-        center = parent.pos;
+        if (!parent) continue;
         rt.pos.set(
           parent.pos.x + rt.orbX.x * xo + rt.orbY.x * yo,
           parent.pos.y + rt.orbX.y * xo + rt.orbY.y * yo,
@@ -289,13 +208,16 @@ export class HostSystem {
       rt.spinQ.premultiply(rt.tiltQ);
       rt.group.position.copy(rt.pos);
       rt.group.quaternion.copy(rt.spinQ);
-
-      const aKm = b.parent ? b.orbitRadius : b.orbitRadius * AU_KM;
-      if (center) this.tmp.copy(rt.pos).sub(center);
-      else this.tmp.copy(rt.pos);
-      const miss = keplerPathMissKm(this.tmp, rt.orbX, rt.orbY, aKm, b.ecc);
-      const tol = Math.max(1, Math.max(b.radius, 1) * 0.05, aKm * 1e-6);
-      this.paintBall(rt, miss <= tol);
+      if (rt.gasMat) {
+        const lightL = this.tmp
+          .copy(rt.pos)
+          .multiplyScalar(-1)
+          .normalize()
+          .applyQuaternion(this.tmpQ.copy(rt.spinQ).conjugate());
+        (rt.gasMat.uniforms.uLightDir.value as THREE.Vector3).copy(lightL);
+        const aPhys = Math.max(rt.pos.length() / AU_KM, 0.02);
+        rt.gasMat.uniforms.uSunIrr.value = starIrradianceDisplay(starIrradiance(L, aPhys));
+      }
     }
     root?.updateMatrixWorld(true);
     const cam = camera.position;
@@ -304,14 +226,5 @@ export class HostSystem {
       const dSurfKm = cam.distanceTo(this.tmp) / KM_TO_KPC - rt.spec.radius;
       rt.orbitLine.visible = dSurfKm > rt.spec.radius * 3 + 2;
     }
-  }
-
-  private paintBall(rt: HostBodyRT, onPath: boolean): void {
-    if (rt.onOrbitPath === onPath) return;
-    rt.onOrbitPath = onPath;
-    const mesh = rt.placeholder as THREE.Mesh | null;
-    if (!mesh) return;
-    const mat = mesh.material as THREE.MeshLambertMaterial;
-    mat.color.copy(onPath ? BALL_ON : BALL_OFF);
   }
 }

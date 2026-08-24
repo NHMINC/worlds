@@ -1817,9 +1817,9 @@ export class GalaxyView {
   }
 
   /**
-   * Skin only: grow the toy globe on each rocky Kepler ball
+   * Skin only: grow the toy globe on each rocky Kepler group
    * (latched / coursed first). Rings, helm, and the clock stay
-   * where they are. The placeholder hides when the terrace is on.
+   * where they are. No stand-in ball — the terrace is the world.
    */
   private tickGlobes(tSys: number): void {
     if (!this.locale.spec) {

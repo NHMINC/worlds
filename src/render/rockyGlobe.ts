@@ -45,7 +45,6 @@ export class RockyGlobe {
   private readonly spec: BodySpec;
   private readonly system: SystemSpec;
   private readonly group: THREE.Group;
-  private readonly placeholder: THREE.Object3D | null;
   private readonly tmp = new THREE.Vector3();
   private readonly tmp2 = new THREE.Vector3();
   private readonly tmpQ = new THREE.Quaternion();
@@ -57,12 +56,11 @@ export class RockyGlobe {
   private step = 0.01;
   private tideAmp = 0;
 
-  constructor(spec: BodySpec, system: SystemSpec, group: THREE.Group, placeholder: THREE.Object3D | null) {
+  constructor(spec: BodySpec, system: SystemSpec, group: THREE.Group) {
     this.bodyId = spec.id;
     this.spec = spec;
     this.system = system;
     this.group = group;
-    this.placeholder = placeholder;
     const f = frequencyForSize(spec.size);
     const grid = getGrid(f);
     const levels = generateLevels(spec.seed, grid);
@@ -204,7 +202,6 @@ export class RockyGlobe {
       this.assets = null;
     }
     this.job = null;
-    if (this.placeholder) this.placeholder.visible = true;
   }
 
   private attach(geometry: THREE.BufferGeometry, grid: GeoGrid): void {
@@ -304,7 +301,6 @@ export class RockyGlobe {
     }
 
     this.group.add(root);
-    if (this.placeholder) this.placeholder.visible = false;
     this.assets = { root, terrain, geometry, terrainMat, waterMat, water, atmoMat };
   }
 }

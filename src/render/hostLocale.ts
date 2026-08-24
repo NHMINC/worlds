@@ -52,7 +52,7 @@ export class HostLocale {
   root: THREE.Group | null = null;
   /** Galaxy fill on objects in the bubble — ARRIVE_SKY_GAIN, not a flood. */
   fill: THREE.AmbientLight | null = null;
-  /** Kepler balls + rings — own file, not the galaxy flight. */
+  /** Kepler groups + rings — own file, not the galaxy flight. */
   readonly sys = new HostSystem();
   spec: SystemSpec | null = null;
   /** Goldberg globes for every rocky body of the host. */
@@ -90,6 +90,7 @@ export class HostLocale {
 
   attachFurnace(lock: GalaxyObject): void {
     this.detachFurnace();
+    this.dropGlobes();
     this.clearBodies();
     // Fallback star hashes the same address systemAt uses, so a
     // failed system mint still shows the catalog star's true name.
@@ -239,13 +240,13 @@ export class HostLocale {
   }
 
   updateBodies(t: number, camera: THREE.PerspectiveCamera): void {
-    this.sys.update(t, camera, this.root);
+    this.sys.update(t, camera, this.root, this.spec?.star.luminosity ?? 1);
   }
 
-  /** Grow a Goldberg globe on a rocky Kepler ball, once. */
+  /** Grow a Goldberg globe on a rocky Kepler group, once. */
   mintGlobe(rt: HostBodyRT): void {
     if (!this.spec || rt.spec.kind !== 'rocky' || this.globes.has(rt.spec.id)) return;
-    this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.spec, rt.group, rt.placeholder));
+    this.globes.set(rt.spec.id, new RockyGlobe(rt.spec, this.spec, rt.group));
   }
 
   globeOf(id: string | null | undefined): RockyGlobe | null {

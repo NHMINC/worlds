@@ -1202,7 +1202,7 @@ Code map (start here):
 | Ship pose + stick (catalog kpc, in or out of SOI) | `src/render/flight.ts` |
 | Trackball drone (own nav; join = launch / dock) | `src/render/drone.ts` |
 | Course berth + derived legs | `src/world/course.ts` |
-| Host solar system (Kepler balls + rings under the sphere) | `src/render/hostSystem.ts` |
+| Host solar system (Kepler groups + rings under the sphere) | `src/render/hostSystem.ts` |
 | Host look (Center = nearest body core) | `src/render/hostLook.ts` |
 | Host nav HUD (derived from course + place) | `src/render/hostNav.ts` |
 | Host orbit insertion (prograde approach) | `src/render/orbitInsert.ts` |
