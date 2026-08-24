@@ -22,11 +22,10 @@
  * never a hoop, plus a tight Baumbach r⁻⁶ haze. The Parker
  * wind is a column law, not a filled disc.
  *
- * From a planet the host wears DISTANCE glare: closer = the
- * sky burns (up to STAR_GLARE_SKY), further = it dies.
- * Luminosity is a lift, not a gate. The photosphere owns the
- * disk; glare is the sky around it — never killed just because
- * the disk is large (that was the hard white cutout).
+ * From a planet the host wears DISTANCE glare (falls as you
+ * recede; luminosity is a lift, not a gate). Once the
+ * photosphere resolves, that glare lets go — the close-up
+ * is the skin, not a second circle.
  *
  * EVERY star shader works in the group's LOCAL km frame — uCam
  * is worldToLocal kilometres. Mixing km uniforms with world-kpc
@@ -294,10 +293,9 @@ void main() {
     float ang = acos(clamp(dot(rd, normalize(-uCam)), -1.0, 1.0));
     float s = ang / max(uBloomAng, 1e-4);
     float core = exp(-s * s);
-    float tail = 0.45 / (1.0 + 5.5 * s * s);
-    float sky = 0.28 * exp(-ang / max(uBloomAng * 1.7, 0.12));
+    float tail = 0.40 / (1.0 + 7.0 * s * s);
     vec3 bCol = mix(uColor, vec3(1.0), 0.78 * core);
-    acc += bCol * uBloom * (core + tail + sky);
+    acc += bCol * uBloom * (core + tail);
   }
 
   float a = clamp(max(acc.r, max(acc.g, acc.b)), 0.0, 1.0);
@@ -448,20 +446,14 @@ export function makeStar(spec: StarSpec): StarView {
         (1 - UNIVERSE.STAR_GLARE_L0) *
           Math.pow(Math.min(Math.max(spec.luminosity, 0), 8), UNIVERSE.STAR_GLARE_L_P);
       const scale = distTerm * lumTerm;
-      // Width grows as you approach — a close planet sets the
-      // sky on fire. Killing glare when the disk subtended was
-      // the hard white cutout: the sun filled the frame and
-      // wore no sky. Intensity knees so the wash does not wipe
-      // the planet.
-      const bloomAng = Math.min(UNIVERSE.STAR_GLARE_SKY, UNIVERSE.STAR_GLARE_ANG * scale);
-      const bloomI = Math.min(
-        UNIVERSE.STAR_GLARE_I_MAX,
-        UNIVERSE.STAR_GLARE_GAIN * Math.pow(Math.max(scale, 1e-4), 0.42),
-      );
-      glowMat.uniforms.uBloom.value = bloomI;
+      const bloomFade = Math.exp(-angSurface / Math.max(UNIVERSE.STAR_GLARE_THETA, 1e-4));
+      const bloomAng = Math.min(UNIVERSE.STAR_GLARE_CAP, UNIVERSE.STAR_GLARE_ANG * scale);
+      glowMat.uniforms.uBloom.value = UNIVERSE.STAR_GLARE_GAIN * scale * bloomFade;
       glowMat.uniforms.uBloomAng.value = Math.max(bloomAng, 1e-4);
-      const glowAng = Math.min(1.2, Math.max(angSurface + 0.04, bloomAng));
-      const outerKm = Math.max(glow0, d * Math.tan(glowAng));
+      const outerKm = Math.max(
+        glow0,
+        d * Math.tan(angSurface + bloomAng * bloomFade * 2.2),
+      );
       glowMat.uniforms.uOuterR.value = outerKm;
       glowMat.uniforms.uBoundR.value = outerKm;
 

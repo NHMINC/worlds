@@ -535,13 +535,12 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   r⁻⁶ haze, in one glow pass that dies before
   `STAR_CORONA_DRAW` (1.48 R — far inside the 4 R wall). A
   resolved disk is not a point: there is no glare quad and no
-  ciliary spike.   From a planet the host wears distance glare
-  (`STAR_GLARE_*` — falls with d/A_HAB; closer = the sky
-  burns, up to `STAR_GLARE_SKY`; luminosity is a lift, not
-  a gate). The photosphere owns the disk; glare is the sky
-  around it. The old stack (tessellated globe + corona shell
-  + hole-punched glare) read as a marble core inside a
-  bigger white circle.
+  ciliary spike. From a planet the host wears distance glare
+  (`STAR_GLARE_*` — falls with d/A_HAB; luminosity is a lift,
+  not a gate, so an M dwarf is still a sun). It collapses
+  once the photosphere resolves. The
+  old stack (tessellated globe + corona shell + hole-punched
+  glare) read as a marble core inside a bigger white circle.
   Illumination is the PointLight (`lightColor`, inverse-square
   at `A_HAB`) plus `uSunColor` on the world shaders — terrain
   and water day terms, the Cox–Munk glint, AND the air's
