@@ -68,40 +68,50 @@ export const UNIVERSE = {
   /**
    * Photosphere display luminance (the disk before the eye's knee).
    * A real photosphere is ~10⁹× the sky; an LDR screen cannot span
-   * that, so this one number is the exposure that makes the core
-   * clip to white and the limb keep colour. Universe-level, never
-   * per-star — Teff only tints, it does not dim the furnace.
+   * that, so this one number is the exposure that lifts the centre
+   * toward white-hot while the limb keeps Teff colour. Universe-
+   * level, never per-star — Teff only tints, it does not dim the
+   * furnace. Continuous in μ: a stepped core is a painted circle.
    */
   STAR_DISK_LUM: 3.8,
 
   /**
-   * Eye/optics glare: ONE radially uniform falloff around the disk.
-   * Angular half-width at A_HAB·AU_KM for L=1 (radians); scales
-   * as sqrt(flux) so a close approach widens the wash and the outer
-   * system keeps a bright point. GLARE_GAIN is the core brightness.
-   * The sun should only dominate the frame when you are looking at
-   * it up close — not filter the whole system view.
+   * Granulation contrast on the photosphere (peak, at a fully
+   * convective envelope). Real granules are a few percent;
+   * more than this reads as a marble planet, not a skin.
+   */
+  STAR_GRAN: 0.08,
+
+  /**
+   * Chromosphere: the shining skin at the limb. CHROMA is the
+   * emission gain; CHROMA_H is the Gaussian thickness as a
+   * fraction of the photosphere radius (toy-stretched so the
+   * rim is readable, the way HII_GYR stretches a nebula).
+   */
+  STAR_CHROMA: 1.65,
+  STAR_CHROMA_H: 0.032,
+
+  /**
+   * Unresolved-disk bloom — the eye's PSF on a star that has
+   * not yet become a surface. Angular half-width at A_HAB for
+   * L=1 (radians); GAIN is the core. Both are multiplied by
+   * e^(−θ / STAR_MARK_ANG) so a parked, resolved sun wears the
+   * chromosphere, not a second white circle. CAP is the max
+   * width past the limb while still unresolved.
    */
   STAR_GLARE_ANG: 0.12,
-  STAR_GLARE_GAIN: 3.4,
-  /**
-   * Hard cap on the halo's width BEYOND the limb (rad). The
-   * glare's angular radius is the disk's own plus this — a
-   * parked ship keeps a bounded glow past the limb instead of a
-   * wash that hides the photosphere (the navigation-vs-drawing
-   * lesson). Capping the TOTAL angle was a bug: a parked disk
-   * subtends more than the cap, and the sun wore no glow at all.
-   */
-  STAR_GLARE_CAP: 0.35,
+  STAR_GLARE_GAIN: 2.2,
+  STAR_GLARE_CAP: 0.18,
 
   /**
    * K-corona + wind: Thomson column of photosphere light. CORONA is
    * the r⁻⁶ limb (Baumbach); WIND is the r⁻² Parker outflow that
    * carries streamers into the system. Both scatter the star's own
-   * colour — a blue star does not grow an orange halo.
+   * colour — a blue star does not grow an orange halo. Dim: this
+   * is haze past the skin, not a filled disc.
    */
-  STAR_CORONA: 0.95,
-  STAR_WIND: 0.72,
+  STAR_CORONA: 0.55,
+  STAR_WIND: 0.38,
   /**
    * How far the DRAWN corona reaches (photosphere radii). Must
    * stay far inside STAR_CORONA_R (the hard wall) — the old
@@ -142,13 +152,6 @@ export const UNIVERSE = {
    * LDR screen. Prominences are the same events seen on the limb.
    */
   STAR_FLARE: 1.2,
-  /**
-   * Ciliary starburst: the eye's lens fibrils spread a bright
-   * source into soft radial rays — part of the same PSF as the
-   * glare's Gaussian core + Lorentzian tail, not a painted
-   * sprite. 0 is a clean halo; this is the ray gain on the tail.
-   */
-  STAR_SPIKE: 0.55,
 
   /**
    * Display knee for body irradiance. Raw 1/r² at the inner edge is

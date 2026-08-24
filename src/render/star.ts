@@ -1,31 +1,37 @@
 /**
- * The star as a law, not a sticker — drawn INSIDE the wall.
+ * The star as a SKIN, not stacked discs.
  *
- * The disk is a blackbody at the stellar clock's Teff
- * (Stefan–Boltzmann from L and R), shaded by Eddington
- * grey-atmosphere limb darkening. Granules are convection cells
- * whose contrast follows the convective envelope; spots and
- * flares are the dynamo (starActivity). The K-corona and wind
- * are Thomson scatter of THAT photosphere's light (starWind) —
- * a blue star does not grow an orange halo — Baumbach r⁻⁶ plus
- * Parker r⁻², drawn only out to STAR_CORONA_DRAW photosphere
- * radii: well inside the 4 R hard wall, so a parked ship can
- * never look swallowed again (the old shell reached the wall).
+ * A photosphere is the τ ≈ 1 surface of a furnace. What you see
+ * is that surface plus the thin chromosphere sitting on it — one
+ * shining body. The old stack (tessellated globe + corona shell +
+ * hole-punched glare quad) read as a marble core inside a bigger
+ * white circle with corners. Those were layers, not a sun.
  *
- * Glare is the eye: flux through the pupil (starEyeFlux,
- * inverse-square referenced at A_HAB) as the eye's PSF —
- * Gaussian core, Lorentzian tail, and the ciliary starburst
- * (STAR_SPIKE): soft radial rays, the lens part of looking at
- * a sun. The halo HUGS THE LIMB: its width past the disk's own
- * angular radius is capped at STAR_GLARE_CAP — a distant sun
- * is a hard bright point, a parked one wears a bounded halo
- * past the limb, never a wash that hides where the surface is
- * (and never zero: an absolute cap used to swallow the whole
- * halo behind a close disk).
+ * The disk is an ANALYTICAL sphere (ray–sphere in the fragment
+ * shader). The mesh is only a bounding volume, so the limb has no
+ * tessellation angles. Colour is the stellar clock's Teff
+ * (Stefan–Boltzmann from L and R), shaded by a continuous
+ * Eddington grey-atmosphere law — no cel bands, those painted a
+ * concentric “core.” Granules are convective cells at a few
+ * percent contrast (Worley F2−F1); spots and flares follow the
+ * dynamo (`starActivity`). Granulation is luminance, never a
+ * second albedo — a marble planet was the old cool/hot mix.
  *
- * EVERY star shader works in the group's LOCAL km frame — see
- * PHOTO_VERT. Mixing km uniforms with world-kpc varyings is how
- * the sun lit whole systems while wearing no glow of its own.
+ * Shine is the skin extending off the limb, in one glow pass:
+ * a thin chromosphere (Teff-tinted emission, H ≈ STAR_CHROMA_H)
+ * plus the K-corona and Parker wind as Thomson scatter of THAT
+ * photosphere's light (`starWind`) — a blue star does not grow
+ * an orange halo. Both die in the maths before STAR_CORONA_DRAW,
+ * far inside the 4 R hard wall. No ciliary spikes: those are a
+ * point-source PSF, and a resolved disk is not a point.
+ *
+ * Distant, still-unresolved disks keep a soft flux bloom that
+ * collapses as the surface subtends (STAR_GLARE_* × e^(−θ/θ0)).
+ * A parked sun wears the skin, not a second white circle.
+ *
+ * EVERY star shader works in the group's LOCAL km frame — uCam
+ * is worldToLocal kilometres. Mixing km uniforms with world-kpc
+ * varyings is how a previous glare quad blew up and vanished.
  *
  * The sub-threshold marker ring and the PointLight (the
  * illumination law) ride along unchanged.
@@ -42,20 +48,14 @@ import type { StarSpec } from '../world/systemgen';
 
 const Z_AXIS = new THREE.Vector3(0, 0, 1);
 
-// LOCAL-frame law: every star shader works in the group's own km
-// frame — uCam arrives in local km (worldToLocal), so positions
-// must stay local too. The old verts handed WORLD kpc positions to
-// km-frame math: the km numbers drowned the kpc ones, the corona's
-// per-pixel ray collapsed to a constant, and the glare quad blew up
-// to astronomical size so every on-screen pixel sampled its centre
-// (inside the disk hole) and discarded — the sun never wore a glow.
-const PHOTO_VERT = /* glsl */ `
-varying vec3 vN;
+const SKIN_VERT = /* glsl */ `
+uniform float uBoundR;
 varying vec3 vPos;
 void main() {
-  vN = normal;
-  vPos = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  // Unit-sphere mesh × bound radius = group-local km. Mesh scale
+  // stays 1 so uCam (group worldToLocal) and vPos share a frame.
+  vPos = position * uBoundR;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(vPos, 1.0);
 }
 `;
 
@@ -69,6 +69,11 @@ float hash13(vec3 p) {
   p = fract(p * 0.1031);
   p += dot(p, p.zyx + 31.32);
   return fract((p.x + p.y) * p.z);
+}
+vec3 hash33(vec3 p) {
+  p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p.xxy + p.yxx) * p.zyx);
 }
 float vnoise(vec3 p) {
   vec3 i = floor(p);
@@ -91,6 +96,25 @@ float fbm(vec3 p) {
   }
   return s;
 }
+// Cellular convection: F2 − F1 on the sphere. Real granules are
+// cells with dark lanes, not marble fBm — that was the “visible
+// core” texture. Contrast is applied by the caller, a few percent.
+float granule(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  float f1 = 8.0;
+  float f2 = 8.0;
+  for (int z = -1; z <= 1; z++)
+  for (int y = -1; y <= 1; y++)
+  for (int x = -1; x <= 1; x++) {
+    vec3 g = vec3(float(x), float(y), float(z));
+    vec3 o = hash33(i + g);
+    float d = length(f - g - o);
+    if (d < f1) { f2 = f1; f1 = d; }
+    else if (d < f2) f2 = d;
+  }
+  return clamp((f2 - f1) * 1.8, 0.0, 1.0);
+}
 vec3 hashDir(float i, float seed) {
   float a = hash21(vec2(i, seed)) * 6.2831853;
   float z = hash21(vec2(seed, i + 3.1)) * 2.0 - 1.0;
@@ -109,37 +133,50 @@ uniform float uTeff;
 uniform float uActivity;
 uniform float uDiskLum;
 uniform float uFlare;
-varying vec3 vN;
+uniform float uGran;
+uniform float uPhotoR;
 varying vec3 vPos;
 ${STAR_NOISE}
 
 void main() {
-  vec3 n = normalize(vN);
-  vec3 view = normalize(uCam - vPos);
-  // Eddington-Barbier grey atmosphere: I = I0 (2/5 + 3/5 μ). Cooler
-  // photospheres have more line opacity, so the limb coefficient walks
-  // up a little — still one law, Teff as input.
+  vec3 rd = normalize(vPos - uCam);
+  vec3 ro = uCam;
+  float R = uPhotoR;
+  float b = dot(ro, rd);
+  float c0 = dot(ro, ro) - R * R;
+  float disc = b * b - c0;
+  if (disc <= 0.0) discard;
+  float s = sqrt(disc);
+  float t = -b - s;
+  if (t < 0.0) t = -b + s;
+  if (t < 0.0) discard;
+
+  vec3 p = ro + rd * t;
+  vec3 n = normalize(p);
+  vec3 view = -rd;
   float mu = max(dot(n, view), 0.0);
+
+  // Eddington-Barbier grey atmosphere: I = I0 (1 − u + u μ).
+  // Cooler photospheres have more line opacity, so u walks up —
+  // still one law, Teff as input. Continuous: cel steps painted
+  // a concentric core inside the disk.
   float uLD = mix(0.42, 0.68, clamp((6200.0 - uTeff) / 2800.0, 0.0, 1.0));
   float limb = (1.0 - uLD) + uLD * mu;
 
-  // Convection cells. Radiative envelopes (hot) have almost no
-  // granulation; the contrast ramps in as the envelope becomes
-  // convective. Scale is a few cells across the disk — readable, not
-  // a noise texture. Lanes stay shallow: real granulation is a few
-  // percent — deep lanes read as a dirty, dim ball.
+  // Convection cells. Radiative envelopes (hot) have almost none;
+  // contrast ramps in as the envelope becomes convective. Scale is
+  // a few cells across the disk. STAR_GRAN is the peak contrast —
+  // real granulation is a few percent, not a dirty ball.
   float conv = clamp((6800.0 - uTeff) / 2800.0, 0.0, 1.0);
-  float gFreq = mix(4.5, 8.5, clamp((uTeff - 3200.0) / 4000.0, 0.0, 1.0));
-  float cells = fbm(n * gFreq + vec3(uTime * 0.11, uSeed, -uTime * 0.07));
-  float gran = mix(1.0, mix(0.72, 1.22, cells), max(conv, 0.35));
+  float gFreq = mix(5.5, 9.0, clamp((uTeff - 3200.0) / 4000.0, 0.0, 1.0));
+  vec3 drift = n * gFreq + vec3(uTime * 0.07, uSeed, -uTime * 0.045);
+  float cells = granule(drift);
+  float gran = 1.0 + uGran * conv * (cells - 0.5);
 
-  // Spots: cooler magnetic concentrations. Coverage follows activity.
   float spotN = fbm(n * 5.2 + vec3(uSeed * 3.1, 4.2, uTime * 0.02));
   float spots = smoothstep(1.0 - 0.22 * uActivity, 1.0 - 0.08 * uActivity, spotN);
-  gran *= mix(1.0, 0.42, spots * uActivity);
+  gran *= mix(1.0, 0.55, spots * uActivity);
 
-  // Surface flares: reconnection patches. A handful of sites persist;
-  // intensity is a sharp pulse so you see them fire, not shimmer.
   float flares = 0.0;
   for (int i = 0; i < 5; i++) {
     vec3 ax = hashDir(float(i), uSeed);
@@ -151,55 +188,49 @@ void main() {
   }
   flares *= uActivity * uFlare;
 
-  // Cel bands on the live disk so the sun matches the worlds it lights:
-  // three calm steps, then the furnace underneath.
-  float bands = 0.88 + 0.10 * smoothstep(0.12, 0.30, mu) + 0.10 * smoothstep(0.52, 0.74, mu);
-  vec3 hot = mix(uColor, vec3(1.0), 0.22 + 0.35 * clamp((uTeff - 3800.0) / 5000.0, 0.0, 1.0));
-  vec3 cool = uColor * vec3(0.72, 0.48, 0.26);
-  vec3 c = mix(cool, hot, clamp(gran, 0.0, 1.4));
-  // A photosphere is a FURNACE: the centre sits well above the LDR
-  // clip (uDiskLum is that overdrive), so the core is white-hot and
-  // granulation reads mid-disk; only the limb falls through the clip
-  // and keeps Teff colour (Eddington darkening does the falling).
-  // The old centre gain barely reached 1 and the whole disk was a
-  // dull gradient — lit planets under a dim sun.
-  float lum = mix(0.95, 0.5 * uDiskLum, mu * mu);
-  c *= limb * bands * lum * gran;
-  c += hot * flares * 2.6;
+  // Limb samples cooler layers — the same slant that darkens also
+  // reddens, more for a line-rich cool photosphere. Luminance
+  // granulation only: tinting cells was the marble core.
+  float red = mix(0.12, 0.42, clamp((6200.0 - uTeff) / 2800.0, 0.0, 1.0));
+  vec3 c = uColor * vec3(
+    1.0,
+    1.0 - red * (1.0 - mu),
+    1.0 - red * 1.35 * (1.0 - mu)
+  );
+  // Exposure: limb keeps Teff colour; the centre lifts toward
+  // white-hot. Smooth in μ — a step here is another painted core.
+  float heat = smoothstep(0.28, 1.0, mu * mu) * clamp(uDiskLum * 0.24, 0.0, 0.72);
+  c = mix(c, vec3(1.0), heat);
+  c *= limb * gran * mix(0.72, 1.18, mu);
+  c += uColor * flares * 1.8;
   gl_FragColor = vec4(c, 1.0);
 }
 `;
 
-const CORONA_VERT = /* glsl */ `
-varying vec3 vPos;
-void main() {
-  vPos = position;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}
-`;
-
-// The corona is ONE smooth radial glow — light radiating out
-// uniformly. Density is Baumbach r⁻⁶ plus a Parker r⁻² wind,
-// integrated along the chord, with a window that reaches exactly
-// zero before the mesh edge so the shell has no visible rim.
-// The shell tops out at STAR_CORONA_DRAW photosphere radii —
-// far inside the hard wall.
-const CORONA_FRAG = /* glsl */ `
+// Shine: chromosphere skin + Thomson corona, and (when the disk
+// has not resolved) a soft flux bloom. One pass, dies before the
+// mesh edge — the glow is the limb, never a second circle.
+const GLOW_FRAG = /* glsl */ `
 precision highp float;
 uniform vec3 uColor;
 uniform vec3 uCam;
+uniform float uTime;
+uniform float uSeed;
+uniform float uTeff;
 uniform float uPhotoR;
 uniform float uOuterR;
 uniform float uCorona;
 uniform float uWind;
+uniform float uChroma;
+uniform float uChromaH;
+uniform float uBloom;
+uniform float uBloomAng;
 varying vec3 vPos;
+${STAR_NOISE}
 
 void main() {
   vec3 rd = normalize(vPos - uCam);
   vec3 ro = uCam;
-  // Chord through the corona sphere. Camera may sit inside (close
-  // approach): t0 starts at 0. Rays that strike the photosphere stop
-  // there — the globe owns those pixels.
   float b = dot(ro, rd);
   float c0 = dot(ro, ro) - uOuterR * uOuterR;
   float disc = b * b - c0;
@@ -208,85 +239,66 @@ void main() {
   float t0 = max(-b - s, 0.0);
   float t1 = -b + s;
   if (t1 <= t0) discard;
+
+  // The photosphere owns its pixels. Shine starts at the limb.
   float cp = dot(ro, ro) - uPhotoR * uPhotoR;
   float discP = b * b - cp;
   if (discP > 0.0) {
     float tHit = -b - sqrt(discP);
-    if (tHit > t0) t1 = min(t1, tHit);
-    if (tHit > 0.0 && tHit < t0 + 1e-4) discard;
+    if (tHit < 0.0) tHit = -b + sqrt(discP);
+    if (tHit > 0.0) {
+      if (tHit < t0 + 1e-4) discard;
+      t1 = min(t1, tHit);
+    }
   }
   if (t1 <= t0) discard;
 
-  vec3 acc = vec3(0.0);
+  float tca = max(-b, 0.0);
+  vec3 closest = ro + rd * tca;
+  float impact = length(closest);
+  vec3 around = impact > 1e-8 ? closest / impact : vec3(0.0, 1.0, 0.0);
+
+  // Chromosphere: the skin. A thin Gaussian at r = R, Teff-tinted
+  // (Hα-red on cool stars, ionized blue-white on hot). A little
+  // convective boil so the rim is a living membrane, not a hoop.
+  float h = max(uPhotoR * uChromaH, 1e-4);
+  float chroma = exp(-pow((impact - uPhotoR) / h, 2.0));
+  float boil = 0.72 + 0.40 * fbm(around * 7.0 + vec3(uTime * 0.09, uSeed, -uTime * 0.05));
+  chroma *= boil;
+  float hot = clamp((uTeff - 5200.0) / 6000.0, 0.0, 1.0);
+  float cool = clamp((5200.0 - uTeff) / 2400.0, 0.0, 1.0);
+  vec3 chromaCol = mix(uColor, vec3(1.0, 0.28, 0.18), 0.40 * cool);
+  chromaCol = mix(chromaCol, vec3(0.72, 0.86, 1.0), 0.35 * hot);
+
+  vec3 acc = chromaCol * (uChroma * chroma);
+
+  // K-corona + wind along the chord. Dim on purpose: this is the
+  // haze past the skin, not a filled disc. Window reaches zero
+  // well inside the mesh so the shell has no rim.
   float dt = (t1 - t0) / 8.0;
+  vec3 thom = vec3(0.0);
   for (int i = 0; i < 8; i++) {
     vec3 p = ro + rd * (t0 + (float(i) + 0.5) * dt);
     float r = max(length(p), uPhotoR);
     float rhoC = pow(uPhotoR / r, 6.0);
     float rhoW = pow(uPhotoR / r, 2.0);
-    // Fade the wind term to zero well inside the shell: the glow dies
-    // in the maths, not at the geometry, so there is no circle.
-    float window = smoothstep(uOuterR, uOuterR * 0.45, r);
-    acc += uColor * (uCorona * rhoC + uWind * rhoW * window) * dt * 0.28;
+    float window = smoothstep(uOuterR, mix(uPhotoR, uOuterR, 0.42), r);
+    thom += (uCorona * rhoC + uWind * rhoW) * window;
   }
-  acc /= max(uPhotoR, 1e-6);
+  acc += uColor * thom * (dt * 0.07 / max(uPhotoR, 1e-6));
+
+  // Unresolved bloom: the eye's PSF on a disk that has not yet
+  // become a surface. Weight arrives as uBloom (already collapsed
+  // by angular size); the Gaussian has no hard edge.
+  if (uBloom > 0.001) {
+    float ang = acos(clamp(dot(rd, normalize(-uCam)), -1.0, 1.0));
+    float bloom = uBloom * exp(-pow(ang / max(uBloomAng, 1e-4), 2.0));
+    acc += uColor * bloom;
+  }
 
   float a = clamp(max(acc.r, max(acc.g, acc.b)), 0.0, 1.0);
-  if (a < 0.004) discard;
-  gl_FragColor = vec4(acc, a);
-}
-`;
-
-const GLARE_VERT = /* glsl */ `
-uniform float uScale;
-varying vec2 vUv;
-void main() {
-  // View-space billboard centred on the star (group origin). Depth is
-  // the star's depth so a world in front of the disk eclipses the wash
-  // and sky pixels (no depth) still receive it. uScale is LOCAL km;
-  // the modelView column length converts it into view units — adding
-  // raw km to a kpc-view centre was the every-pixel-discards bug.
-  vec4 center = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-  float ws = length(modelViewMatrix[0].xyz);
-  vec3 ext = vec3(position.xy * uScale * ws, 0.0);
-  gl_Position = projectionMatrix * vec4(center.xyz + ext, 1.0);
-  vUv = position.xy;
-}
-`;
-
-const GLARE_FRAG = /* glsl */ `
-precision highp float;
-uniform vec3 uColor;
-uniform float uFlux;
-uniform float uGain;
-uniform float uDisk;
-uniform float uSpike;
-varying vec2 vUv;
-
-void main() {
-  float r = length(vUv);
-  if (r > 1.0) discard;
-  // The photosphere mesh owns the disk. This is the glare: the eye's
-  // response to raw flux — Gaussian core, Lorentzian tail (the same
-  // PSF shape as the harvest pins), plus the ciliary starburst: the
-  // eye's lens fibrils spread a bright source into soft radial rays.
-  // Inverse-square lives in uFlux (the quad is sized to the capped
-  // angle too), so a distant sun is a small bright point and a close
-  // one wears a bounded halo. The window term reaches exactly zero at
-  // the quad edge — the glow ends in the maths, never a visible rim.
-  float f = pow(max(uFlux, 0.03), 0.42);
-  float core = exp(-r * r * 16.0) * (0.65 + 0.9 * clamp(uFlux, 0.0, 2.5));
-  float phi = atan(vUv.y, vUv.x);
-  float rays = pow(abs(cos(phi * 3.0)), 24.0) + 0.6 * pow(abs(sin(phi * 3.0)), 24.0);
-  float tail = (0.5 * f) / (0.04 + 3.4 * r * r) * (1.0 + uSpike * rays);
-  float window = 1.0 - r * r;
-  window *= window;
-  // Soft hole over the disk so we do not double-paint the globe.
-  float ring = smoothstep(uDisk * 0.72, uDisk * 1.15, r);
-  vec3 c = uColor * ((core + tail) * uGain * window) * ring;
-  float a = clamp(max(c.r, max(c.g, c.b)), 0.0, 1.0);
   if (a < 0.003) discard;
-  gl_FragColor = vec4(c, a);
+  gl_FragColor = vec4(acc, a);
 }
 `;
 
@@ -318,21 +330,16 @@ export interface StarView {
 
 export function makeStar(spec: StarSpec): StarView {
   const group = new THREE.Group();
-  // The observable surface: the photosphere radius in km.
-  // Floored at 1 km so a compact remnant still has a surface.
   const surfaceKm = Math.max(1, spec.radius);
   const teff = starTeff(spec.luminosity, spec.radius);
   const activity = starActivity(teff, spec.luminosity);
   const wind = starWind(spec.luminosity, teff);
   const seed = hashName(spec.name);
   const color = new THREE.Color(spec.color);
-  // The drawn corona tops out far inside the hard wall
-  // (STAR_CORONA_R): drawing to the wall is how a parked ship
-  // once looked swallowed.
-  const outerR = surfaceKm * UNIVERSE.STAR_CORONA_DRAW;
+  const glow0 = surfaceKm * UNIVERSE.STAR_CORONA_DRAW;
 
   const photoMat = new THREE.ShaderMaterial({
-    vertexShader: PHOTO_VERT,
+    vertexShader: SKIN_VERT,
     fragmentShader: PHOTO_FRAG,
     uniforms: {
       uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
@@ -343,22 +350,35 @@ export function makeStar(spec: StarSpec): StarView {
       uActivity: { value: activity },
       uDiskLum: { value: UNIVERSE.STAR_DISK_LUM },
       uFlare: { value: UNIVERSE.STAR_FLARE },
+      uGran: { value: UNIVERSE.STAR_GRAN },
+      uPhotoR: { value: surfaceKm },
+      uBoundR: { value: surfaceKm * 1.06 },
     },
   });
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(surfaceKm, 64, 48), photoMat);
+  // Bounding volume only — a little fat so a coarse tessellation
+  // still covers the analytical limb. The fragment discards misses.
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 24), photoMat);
   ball.renderOrder = 11;
   group.add(ball);
 
-  const coronaMat = new THREE.ShaderMaterial({
-    vertexShader: CORONA_VERT,
-    fragmentShader: CORONA_FRAG,
+  const glowMat = new THREE.ShaderMaterial({
+    vertexShader: SKIN_VERT,
+    fragmentShader: GLOW_FRAG,
     uniforms: {
       uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
       uCam: { value: new THREE.Vector3() },
+      uTime: { value: 0 },
+      uSeed: { value: seed },
+      uTeff: { value: teff },
       uPhotoR: { value: surfaceKm },
-      uOuterR: { value: outerR },
+      uOuterR: { value: glow0 },
       uCorona: { value: UNIVERSE.STAR_CORONA },
       uWind: { value: UNIVERSE.STAR_WIND * wind },
+      uChroma: { value: UNIVERSE.STAR_CHROMA },
+      uChromaH: { value: UNIVERSE.STAR_CHROMA_H },
+      uBloom: { value: 0 },
+      uBloomAng: { value: UNIVERSE.STAR_GLARE_ANG },
+      uBoundR: { value: glow0 },
     },
     transparent: true,
     depthWrite: false,
@@ -366,37 +386,10 @@ export function makeStar(spec: StarSpec): StarView {
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
   });
-  const corona = new THREE.Mesh(new THREE.SphereGeometry(outerR, 48, 32), coronaMat);
-  corona.renderOrder = 12;
-  group.add(corona);
+  const glow = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), glowMat);
+  glow.renderOrder = 12;
+  group.add(glow);
 
-  const glareMat = new THREE.ShaderMaterial({
-    vertexShader: GLARE_VERT,
-    fragmentShader: GLARE_FRAG,
-    uniforms: {
-      uColor: { value: new THREE.Vector3(color.r, color.g, color.b) },
-      uFlux: { value: 1 },
-      uGain: { value: UNIVERSE.STAR_GLARE_GAIN },
-      uScale: { value: surfaceKm * 1.5 },
-      uDisk: { value: 0.12 },
-      uSpike: { value: UNIVERSE.STAR_SPIKE },
-    },
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-  });
-  const glare = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), glareMat);
-  glare.frustumCulled = false;
-  glare.renderOrder = 13;
-  group.add(glare);
-
-  // Marker law: the ring holds STAR_MARK_ANG on screen and turns
-  // on when the surface subtends less than half of it — the ring
-  // can never overlap a readable disk, and it hands off to the
-  // disk on the way in. One law for a black hole at park and the
-  // Sun mid-cruise.
   const marker = new THREE.Group();
   const ringMat = new THREE.MeshBasicMaterial({
     color: 0x9fd8ff,
@@ -412,7 +405,6 @@ export function makeStar(spec: StarSpec): StarView {
   marker.visible = false;
   group.add(marker);
 
-  // Inverse-square: illuminance at A_HAB · AU_KM equals 2.5 for L=1.
   const dRef = UNIVERSE.A_HAB * UNIVERSE.AU_KM;
   const light = new THREE.PointLight(
     new THREE.Color(spec.lightColor),
@@ -432,36 +424,31 @@ export function makeStar(spec: StarSpec): StarView {
     update(camPos: THREE.Vector3, time: number): void {
       (photoMat.uniforms.uCam.value as THREE.Vector3).copy(camPos);
       photoMat.uniforms.uTime.value = time;
-      (coronaMat.uniforms.uCam.value as THREE.Vector3).copy(camPos);
+      (glowMat.uniforms.uCam.value as THREE.Vector3).copy(camPos);
+      glowMat.uniforms.uTime.value = time;
 
       const d = camPos.length();
       if (!(d > 0)) {
         marker.visible = false;
         return;
       }
-      // Glare at the eye: the halo HUGS THE LIMB. Its width is
-      // capped BEYOND the disk's own angular radius — an absolute
-      // cap swallowed the whole halo behind a parked photosphere
-      // (the disk subtends ~0.7 rad at the ecliptic park, the cap
-      // was 0.35: the sun wore no glow at all up close).
       const flux = starEyeFlux(spec.luminosity, Math.max(d, surfaceKm * 1.05));
       const angSurface = Math.asin(Math.min(1, surfaceKm / d));
-      const halo = Math.min(
+      // Bloom is the unresolved-disk PSF. It collapses as soon as
+      // the surface is a readable disk — a parked sun must not grow
+      // a second white circle.
+      const bloomFade = Math.exp(-angSurface / Math.max(UNIVERSE.STAR_MARK_ANG, 1e-4));
+      const bloomAng = Math.min(
         UNIVERSE.STAR_GLARE_CAP,
         UNIVERSE.STAR_GLARE_ANG * Math.sqrt(Math.max(flux, 1e-4)),
       );
-      const ang = Math.min(1.35, angSurface + halo);
-      const scale = d * Math.tan(ang);
-      glareMat.uniforms.uFlux.value = flux;
-      glareMat.uniforms.uScale.value = scale;
-      // The hole over the disk tracks the TRUE limb fraction on the
-      // billboard (tan ratio — the quad is a plane at the star's
-      // depth), so the halo always starts at the limb (the old 0.45
-      // cap painted the wash over the outer disk instead of past it).
-      glareMat.uniforms.uDisk.value = Math.min(
-        0.98,
-        Math.tan(angSurface) / Math.max(Math.tan(ang), 1e-6),
-      );
+      glowMat.uniforms.uBloom.value =
+        UNIVERSE.STAR_GLARE_GAIN * Math.pow(Math.max(flux, 0.03), 0.42) * bloomFade;
+      glowMat.uniforms.uBloomAng.value = Math.max(bloomAng, 1e-4);
+      const outerKm = Math.max(glow0, d * Math.tan(angSurface + bloomAng * bloomFade));
+      glowMat.uniforms.uOuterR.value = outerKm;
+      glowMat.uniforms.uBoundR.value = outerKm;
+
       marker.visible = angSurface < UNIVERSE.STAR_MARK_ANG * 0.5;
       if (!marker.visible) return;
       marker.scale.setScalar(d * Math.tan(UNIVERSE.STAR_MARK_ANG));
@@ -471,10 +458,8 @@ export function makeStar(spec: StarSpec): StarView {
     dispose(): void {
       ball.geometry.dispose();
       photoMat.dispose();
-      corona.geometry.dispose();
-      coronaMat.dispose();
-      glare.geometry.dispose();
-      glareMat.dispose();
+      glow.geometry.dispose();
+      glowMat.dispose();
       ring.geometry.dispose();
       ringMat.dispose();
     },

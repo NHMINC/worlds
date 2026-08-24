@@ -517,23 +517,26 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
 - Light comes from the **loaded** star at the origin. Day/night is spin
   + orbit as functions of `(spec, unix time t)` — deterministic, no
   “bake a sun behind the camera.”
-- **The star draws as its observable surface.** One sphere at
-  the photosphere radius, the SAME kilometres the fences and
+- **The star draws as a skin, not stacked discs.** One
+  analytical photosphere at the SAME kilometres the fences and
   parks use (`locale.starRadiusKm()` is the one size law: minted
   spec, else the catalog through `starSpecFromState`'s
-  `max(1e-6, R☉)·RSUN_KM`). The disk is a blackbody at the
-  stellar clock's Teff with Eddington grey-atmosphere limb
-  darkening — the same colour law the catalog pins use. NOTHING
-  draws past the surface: the old corona shell and glare quad
-  put light beyond the 4 R hard wall, so a correctly parked ship
-  looked like it was inside the sun. The disk carries the dynamo
-  (granules from the convective envelope, spots and flares from
-  `starActivity`); the K-corona and wind are Thomson scatter of
-  that photosphere's light (`starWind`), Baumbach r⁻⁶ + Parker
-  r⁻², drawn only to `STAR_CORONA_DRAW` (1.6 R — far inside the
-  4 R wall). Glare is the eye (`starEyeFlux` through one radial
-  PSF), its angular radius CAPPED at `STAR_GLARE_CAP` so a
-  parked ship wears a bounded halo, never a swallowing wash.
+  `max(1e-6, R☉)·RSUN_KM`). The fragment shader ray–sphere hits
+  that radius — the mesh is only a bounding volume, so the limb
+  has no tessellation angles. The disk is a blackbody at the
+  stellar clock's Teff with a continuous Eddington grey-
+  atmosphere law (no cel bands: those painted a concentric
+  core). Granules are Worley cells at `STAR_GRAN` contrast,
+  luminance only; spots and flares follow `starActivity`. Shine
+  is the skin off the limb: a thin chromosphere (`STAR_CHROMA`,
+  `STAR_CHROMA_H`) plus Thomson corona/wind (`starWind`,
+  Baumbach r⁻⁶ + Parker r⁻²) in one glow pass that dies before
+  `STAR_CORONA_DRAW` (1.6 R — far inside the 4 R wall). A
+  resolved disk is not a point: there is no glare quad and no
+  ciliary spike. Unresolved disks keep a soft flux bloom
+  (`STAR_GLARE_*`) that collapses as the surface subtends. The
+  old stack (tessellated globe + corona shell + hole-punched
+  glare) read as a marble core inside a bigger white circle.
   Illumination is the PointLight (`lightColor`, inverse-square
   at `A_HAB`) plus `uSunColor` on the world shaders — terrain
   and water day terms, the Cox–Munk glint, AND the air's
@@ -638,8 +641,9 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   **point sources**: a soft device-pixel Gaussian floor (so a
   1-pixel `GL_POINTS` hop only moves the faint halo) plus the
   eye’s PSF once the wings need more room than that stamp
-  (Gaussian core + Lorentzian tail — the same glare shape as
-  the in-system sun). Magnitude lifts the wings with no
+  (Gaussian core + Lorentzian tail — the eye's PSF on a
+  point source; a resolved in-system sun is a photosphere
+  skin, not this stamp). Magnitude lifts the wings with no
   bright-end cap; it does not stamp a larger disc. Pins add
   straight into the canvas under MAX compositing — a pixel is
   the brightest source covering it; light does not stack.
@@ -1208,7 +1212,7 @@ Code map (start here):
 | Palettes from physics | `src/world/toyPalette.ts` |
 | Per-cell geology (mining truth) | `src/world/geology.ts` |
 | Grid | `src/world/geodesic.ts` |
-| Star (photosphere, corona, wind, glare) | `src/render/star.ts` |
+| Star (analytical photosphere + chromosphere skin) | `src/render/star.ts` |
 | Terrain + water shaders, surf, foam | `src/render/terraceMesh.ts` |
 | Sky shell | `src/render/atmosphere.ts` |
 | Shared air integral | `src/render/scattering.ts` |
