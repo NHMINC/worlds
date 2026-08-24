@@ -17,13 +17,13 @@
  * dynamo (`starActivity`). Granulation is luminance, never a
  * second albedo — a marble planet was the old cool/hot mix.
  *
- * Shine is the skin extending off the limb, in one glow pass:
- * a thin chromosphere (Teff-tinted emission, H ≈ STAR_CHROMA_H)
- * plus the K-corona and Parker wind as Thomson scatter of THAT
- * photosphere's light (`starWind`) — a blue star does not grow
- * an orange halo. Both die in the maths before STAR_CORONA_DRAW,
- * far inside the 4 R hard wall. No ciliary spikes: those are a
- * point-source PSF, and a resolved disk is not a point.
+ * Shine is the limb continued, in one glow pass: chromosphere
+ * starts at the Eddington edge brightness and decays (never a
+ * hoop above that edge), plus a tight Baumbach r⁻⁶ haze. The
+ * Parker wind is a column law, not a filled disc. Both die
+ * before STAR_CORONA_DRAW, far inside the 4 R wall. No ciliary
+ * spikes: those are a point-source PSF, and a resolved disk
+ * is not a point.
  *
  * Distant, still-unresolved disks keep a soft flux bloom that
  * collapses as the surface subtends (STAR_GLARE_* × e^(−θ/θ0)).
@@ -42,7 +42,6 @@ import {
   starActivity,
   starEyeFlux,
   starTeff,
-  starWind,
 } from '../world/physics';
 import type { StarSpec } from '../world/systemgen';
 
@@ -197,11 +196,12 @@ void main() {
     1.0 - red * (1.0 - mu),
     1.0 - red * 1.35 * (1.0 - mu)
   );
-  // Exposure: limb keeps Teff colour; the centre lifts toward
-  // white-hot. Smooth in μ — a step here is another painted core.
-  float heat = smoothstep(0.28, 1.0, mu * mu) * clamp(uDiskLum * 0.24, 0.0, 0.72);
+  // Exposure: only the very centre lifts toward white-hot. A wide
+  // mix painted a featureless core and hid the skin; the outer
+  // disk must keep Teff and limb darkening so it reads as a sphere.
+  float heat = pow(mu, 2.6) * clamp(uDiskLum * 0.12, 0.0, 0.40);
   c = mix(c, vec3(1.0), heat);
-  c *= limb * gran * mix(0.72, 1.18, mu);
+  c *= limb * gran * mix(0.88, 1.16, mu);
   c += uColor * flares * 1.8;
   gl_FragColor = vec4(c, 1.0);
 }
@@ -220,7 +220,6 @@ uniform float uTeff;
 uniform float uPhotoR;
 uniform float uOuterR;
 uniform float uCorona;
-uniform float uWind;
 uniform float uChroma;
 uniform float uChromaH;
 uniform float uBloom;
@@ -258,34 +257,32 @@ void main() {
   float impact = length(closest);
   vec3 around = impact > 1e-8 ? closest / impact : vec3(0.0, 1.0, 0.0);
 
-  // Chromosphere: the skin. A thin Gaussian at r = R, Teff-tinted
-  // (Hα-red on cool stars, ionized blue-white on hot). A little
-  // convective boil so the rim is a living membrane, not a hoop.
+  // Shine is the limb CONTINUED, not a second circle. Eddington at
+  // μ = 0 is the disk's edge brightness; we start there and decay.
+  // A Gaussian peaked AT the limb sat above that edge — a white
+  // hoop — and the Parker r⁻² fill painted a blue disc around it.
+  float uLD = mix(0.42, 0.68, clamp((6200.0 - uTeff) / 2800.0, 0.0, 1.0));
+  float limbI = 1.0 - uLD;
   float h = max(uPhotoR * uChromaH, 1e-4);
-  float chroma = exp(-pow((impact - uPhotoR) / h, 2.0));
-  float boil = 0.72 + 0.40 * fbm(around * 7.0 + vec3(uTime * 0.09, uSeed, -uTime * 0.05));
-  chroma *= boil;
-  float hot = clamp((uTeff - 5200.0) / 6000.0, 0.0, 1.0);
+  float x = max(impact - uPhotoR, 0.0) / h;
+  float shine = limbI * uChroma * exp(-x);
+  shine *= 0.94 + 0.10 * fbm(around * 5.5 + vec3(uTime * 0.06, uSeed, 0.0));
   float cool = clamp((5200.0 - uTeff) / 2400.0, 0.0, 1.0);
-  vec3 chromaCol = mix(uColor, vec3(1.0, 0.28, 0.18), 0.40 * cool);
-  chromaCol = mix(chromaCol, vec3(0.72, 0.86, 1.0), 0.35 * hot);
+  vec3 shineCol = mix(uColor, vec3(1.0, 0.32, 0.20), 0.28 * cool);
+  vec3 acc = shineCol * shine;
 
-  vec3 acc = chromaCol * (uChroma * chroma);
-
-  // K-corona + wind along the chord. Dim on purpose: this is the
-  // haze past the skin, not a filled disc. Window reaches zero
-  // well inside the mesh so the shell has no rim.
+  // Baumbach r⁻⁶ only, and dead close to the limb. The wind is a
+  // column law, not a filled disc — drawing r⁻² to STAR_CORONA_DRAW
+  // was the large blue halo.
   float dt = (t1 - t0) / 8.0;
-  vec3 thom = vec3(0.0);
+  float thom = 0.0;
   for (int i = 0; i < 8; i++) {
     vec3 p = ro + rd * (t0 + (float(i) + 0.5) * dt);
     float r = max(length(p), uPhotoR);
-    float rhoC = pow(uPhotoR / r, 6.0);
-    float rhoW = pow(uPhotoR / r, 2.0);
-    float window = smoothstep(uOuterR, mix(uPhotoR, uOuterR, 0.42), r);
-    thom += (uCorona * rhoC + uWind * rhoW) * window;
+    float window = smoothstep(uOuterR, uPhotoR * 1.05, r);
+    thom += uCorona * pow(uPhotoR / r, 6.0) * window;
   }
-  acc += uColor * thom * (dt * 0.07 / max(uPhotoR, 1e-6));
+  acc += uColor * thom * (dt * 0.035 / max(uPhotoR, 1e-6));
 
   // Unresolved bloom: the eye's PSF on a disk that has not yet
   // become a surface. Weight arrives as uBloom (already collapsed
@@ -333,7 +330,6 @@ export function makeStar(spec: StarSpec): StarView {
   const surfaceKm = Math.max(1, spec.radius);
   const teff = starTeff(spec.luminosity, spec.radius);
   const activity = starActivity(teff, spec.luminosity);
-  const wind = starWind(spec.luminosity, teff);
   const seed = hashName(spec.name);
   const color = new THREE.Color(spec.color);
   const glow0 = surfaceKm * UNIVERSE.STAR_CORONA_DRAW;
@@ -373,7 +369,6 @@ export function makeStar(spec: StarSpec): StarView {
       uPhotoR: { value: surfaceKm },
       uOuterR: { value: glow0 },
       uCorona: { value: UNIVERSE.STAR_CORONA },
-      uWind: { value: UNIVERSE.STAR_WIND * wind },
       uChroma: { value: UNIVERSE.STAR_CHROMA },
       uChromaH: { value: UNIVERSE.STAR_CHROMA_H },
       uBloom: { value: 0 },

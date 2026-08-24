@@ -80,16 +80,17 @@ export const UNIVERSE = {
    * convective envelope). Real granules are a few percent;
    * more than this reads as a marble planet, not a skin.
    */
-  STAR_GRAN: 0.08,
+  STAR_GRAN: 0.12,
 
   /**
-   * Chromosphere: the shining skin at the limb. CHROMA is the
-   * emission gain; CHROMA_H is the Gaussian thickness as a
-   * fraction of the photosphere radius (toy-stretched so the
-   * rim is readable, the way HII_GYR stretches a nebula).
+   * Chromosphere: the limb continued. CHROMA multiplies the
+   * already-darkened edge (Eddington at μ = 0) and the shine
+   * decays as exp(−Δr / (R·CHROMA_H)). A peak above that edge
+   * is a hoop; keep this ≤ 1 so brightness is monotonic off
+   * the disk.
    */
-  STAR_CHROMA: 1.65,
-  STAR_CHROMA_H: 0.032,
+  STAR_CHROMA: 0.85,
+  STAR_CHROMA_H: 0.07,
 
   /**
    * Unresolved-disk bloom — the eye's PSF on a star that has
@@ -110,15 +111,14 @@ export const UNIVERSE = {
    * colour — a blue star does not grow an orange halo. Dim: this
    * is haze past the skin, not a filled disc.
    */
-  STAR_CORONA: 0.55,
+  STAR_CORONA: 0.35,
   STAR_WIND: 0.38,
   /**
-   * How far the DRAWN corona reaches (photosphere radii). Must
-   * stay far inside STAR_CORONA_R (the hard wall) — the old
-   * shell drew to the wall and a correctly parked ship looked
-   * swallowed. The glow dies in the maths before this edge.
+   * How far the DRAWN limb-haze reaches (photosphere radii).
+   * Must stay far inside STAR_CORONA_R (the hard wall). Tight:
+   * 1.6 R plus a Parker fill was a second, blue, circle.
    */
-  STAR_CORONA_DRAW: 1.6,
+  STAR_CORONA_DRAW: 1.22,
   /**
    * Corona / wind shell outer radius, in photosphere radii —
    * drawn by star.ts and treated as the star's VIEW SKIN: a
