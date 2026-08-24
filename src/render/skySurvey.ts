@@ -602,10 +602,7 @@ export class SkySurvey {
       name === 'uArriveFill' ||
       name === 'uArriveHold' ||
       name === 'uAimRange' ||
-      name === 'uWarpCross' ||
-      name === 'uStarBloomThr' ||
-      name === 'uStarBloomRad' ||
-      name === 'uStarBloomGain'
+      name === 'uWarpCross'
     ) {
       return;
     }

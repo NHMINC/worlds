@@ -113,18 +113,6 @@ export const UNIVERSE = {
   STAR_GLARE_THETA: 0.055,
 
   /**
-   * Host-sun screen bloom — the eye on HDR furnace pixels.
-   * Locale draws into a half-float target; pixels brighter
-   * than THR extract, RAD is the blur scatter (half-res
-   * texels), GAIN is the add-back. Not a second disc. The
-   * harvest photograph is never bloomed. Distance falls out:
-   * closer → more hot pixels → more fire.
-   */
-  STAR_BLOOM_THR: 0.92,
-  STAR_BLOOM_RAD: 2.0,
-  STAR_BLOOM_GAIN: 1.25,
-
-  /**
    * K-corona + wind: Thomson column of photosphere light. CORONA is
    * the r⁻⁶ limb (Baumbach); WIND is the r⁻² Parker outflow that
    * carries streamers into the system. Both scatter the star's own
