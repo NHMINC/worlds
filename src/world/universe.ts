@@ -100,22 +100,17 @@ export const UNIVERSE = {
   STAR_CHROMA_H: 0.14,
 
   /**
-   * Host-star glare — the eye looking at the furnace from
-   * inside the system. Size and intensity fall with DISTANCE
-   * (d / A_HAB)^DIST, not with raw L/d². Flux-starved glare
-   * hid every M dwarf behind a marker: the planet was lit,
-   * the sun was a pixel. L0 is the luminosity floor (an M
-   * dwarf still shines); L_P lifts the bright end. THETA
-   * collapses the glare once the photosphere resolves so a
-   * parked close-up is the skin, not a second white circle.
+   * Unresolved-disk bloom — the eye's PSF on a star that has
+   * not yet become a surface. Angular half-width at A_HAB for
+   * L=1 (radians); GAIN is the core. Weight is e^(−θ / THETA)
+   * so a small disk in the sky still blazes and a parked sun
+   * (θ ~ 0.25) does not grow a second white circle. CAP is
+   * the max width past the limb while still unresolved.
    */
-  STAR_GLARE_ANG: 0.14,
-  STAR_GLARE_GAIN: 3.2,
-  STAR_GLARE_CAP: 0.22,
+  STAR_GLARE_ANG: 0.12,
+  STAR_GLARE_GAIN: 2.4,
+  STAR_GLARE_CAP: 0.18,
   STAR_GLARE_THETA: 0.055,
-  STAR_GLARE_DIST: 0.5,
-  STAR_GLARE_L0: 0.5,
-  STAR_GLARE_L_P: 0.28,
 
   /**
    * K-corona + wind: Thomson column of photosphere light. CORONA is
