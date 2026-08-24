@@ -113,6 +113,18 @@ export const UNIVERSE = {
   STAR_GLARE_THETA: 0.055,
 
   /**
+   * Host-star screen bloom — the eye on HDR furnace pixels.
+   * Only the star writes the extract. Planets are a depth
+   * fence (they occlude), never a bloom source. THR is the
+   * extract floor, RAD the blur scatter (half-res texels),
+   * GAIN the add-back. Not a second disc. The harvest
+   * photograph is never bloomed.
+   */
+  STAR_BLOOM_THR: 0.92,
+  STAR_BLOOM_RAD: 2.0,
+  STAR_BLOOM_GAIN: 1.25,
+
+  /**
    * K-corona + wind: Thomson column of photosphere light. CORONA is
    * the r⁻⁶ limb (Baumbach); WIND is the r⁻² Parker outflow that
    * carries streamers into the system. Both scatter the star's own

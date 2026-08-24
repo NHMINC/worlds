@@ -536,9 +536,14 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   `STAR_CORONA_DRAW` (1.48 R — far inside the 4 R wall). A
   resolved disk is not a point: there is no glare quad and no
   ciliary spike. Unresolved disks keep a soft flux bloom
-  (`STAR_GLARE_*`) that collapses as the surface subtends. The
-  old stack (tessellated globe + corona shell + hole-punched
-  glare) read as a marble core inside a bigger white circle.
+  (`STAR_GLARE_*`) that collapses as the surface subtends.
+  The host star then gets a screen-space bloom
+  (`STAR_BLOOM_THR` / `_RAD` / `_GAIN`): only the furnace
+  writes the HDR extract; planets are a depth fence, never
+  a source. Glow is smeared pixels, not another mesh. The
+  harvest photograph is never bloomed. The old stack
+  (tessellated globe + corona shell + hole-punched glare)
+  read as a marble core inside a bigger white circle.
   Illumination is the PointLight (`lightColor`, inverse-square
   at `A_HAB`) plus `uSunColor` on the world shaders — terrain
   and water day terms, the Cox–Munk glint, AND the air's
@@ -555,7 +560,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   is thousands of true radii out; the trackball drone is how you
   go closer). The tag inside it is the catalog's own stellar
   state (MK class, or the remnant phase) — truth from `evolve`,
-  not paint. Renderer: `src/render/star.ts`; label:
+  not paint. Renderer: `src/render/star.ts`; bloom:
+  `src/render/starBloom.ts`; label:
   `hostLocale.attachStarLabel`.
 - **The explorer is the harvest, not a magnifier ball.**
   The **system chart** (orbits icon next to Cosmic engineer)
@@ -599,7 +605,8 @@ Landing, orbiting, and flying are **viewers**, not separate worlds.
   does. Remint / rebake knobs are amber. Live photograph
   knobs already sit on the GPU (smudge brightness and count,
   background-star brightness and count, extinction, shine,
-  nebula glow) — a slide is the next frame.   Approach knobs
+  nebula glow) — a slide is the next frame. Host-star bloom
+  (`STAR_BLOOM_THR` / `_RAD` / `_GAIN`) and approach knobs
   (sphere radius, world sphere, world brake, galaxy dim, approach warp, close crawl,
   park fill, heading hold, reticle range, disk warp) write
   `UNIVERSE` live — a slide is the next frame, no remint.
@@ -1215,6 +1222,7 @@ Code map (start here):
 | Per-cell geology (mining truth) | `src/world/geology.ts` |
 | Grid | `src/world/geodesic.ts` |
 | Star (analytical photosphere + chromosphere skin) | `src/render/star.ts` |
+| Host star bloom (HDR extract / blur; star only) | `src/render/starBloom.ts` |
 | Terrain + water shaders, surf, foam | `src/render/terraceMesh.ts` |
 | Sky shell | `src/render/atmosphere.ts` |
 | Shared air integral | `src/render/scattering.ts` |

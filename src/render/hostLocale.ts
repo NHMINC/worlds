@@ -7,7 +7,8 @@
  * locale state; a live dest lives on `Voyage` and survives.
  *
  * Drawn as a second AU-scale depth pass (`scene`) over the
- * live galaxy — one universe, two depth windows.
+ * live galaxy — one universe, two depth windows. The star
+ * then gets a screen bloom (`starBloom`); planets do not.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';

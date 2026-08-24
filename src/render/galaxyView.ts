@@ -17,6 +17,7 @@ import { SkySurvey } from './skySurvey';
 import { lockedToStar, type BodySpec } from '../world/systemgen';
 import { type HostBodyRT } from './hostSystem';
 import { HostLocale } from './hostLocale';
+import { StarBloom } from './starBloom';
 import { nearestBody } from './hostLook';
 import { type HostNavMode } from './hostNav';
 import { ShipFlight } from './flight';
@@ -252,6 +253,8 @@ export class GalaxyView {
 
   /** The survey photograph — harvest, nebulae, dust, cosmic shell. */
   private readonly sky: SkySurvey;
+  /** Screen-space HDR bloom on the host star only. */
+  private readonly bloom: StarBloom;
 
   private pickRing: THREE.Mesh;
   private hereRing: THREE.Mesh;
@@ -339,6 +342,7 @@ export class GalaxyView {
     // display — a blur that ate ~a third of each star dot's peak
     // brightness: a residual filter nobody decreed.
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.bloom = new StarBloom();
     this.perf = new PerfMeter(this.renderer.getContext());
     // The void is black by decree — vacuum emits nothing.
     this.renderer.setClearColor(new THREE.Color(0, 0, 0), 1);
@@ -1548,6 +1552,7 @@ export class GalaxyView {
     this.viewH = h;
     this.wake();
     this.renderer.setSize(w, h, false);
+    this.bloom.setSize(this.renderer.domElement.width, this.renderer.domElement.height);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
   }
@@ -1579,6 +1584,7 @@ export class GalaxyView {
     (this.pickRing.material as THREE.Material).dispose();
     this.hereRing.geometry.dispose();
     (this.hereRing.material as THREE.Material).dispose();
+    this.bloom.dispose();
     this.renderer.dispose();
   }
 
@@ -2292,10 +2298,11 @@ export class GalaxyView {
     this.perf.beginDraw();
     this.renderer.render(this.scene, this.camera);
     if (this.locale.root && this.locale.obj) {
-      // Close-approach pass: same camera pose, AU-scale depth window,
-      // drawn over the live galaxy. The star is IN the galaxy — the
-      // sky never bakes, blanks, or switches environment; the depth
-      // buffer is simply re-cleared for the near geometry.
+      // Close-approach pass: same camera pose, AU-scale depth
+      // window, drawn over the live galaxy, then a star-only
+      // screen bloom. The sky never bakes, blanks, or switches
+      // environment; locale depth is re-cleared for the near
+      // geometry. Planets are not bloomed.
       const d = this.arriveDist(this.locale.obj);
       const aKpc = this.locale.sys.outerAu * AU_KM * KM_TO_KPC;
       let near = Math.min(d * 0.02, aKpc * 0.01);
@@ -2314,6 +2321,15 @@ export class GalaxyView {
       this.renderer.autoClear = false;
       this.renderer.clearDepth();
       this.renderer.render(this.locale.scene, this.camera);
+      if (this.locale.star) {
+        this.bloom.draw(
+          this.renderer,
+          this.locale.scene,
+          this.locale.star.group,
+          this.locale.star.marker,
+          this.camera,
+        );
+      }
       this.renderer.autoClear = true;
       this.camera.near = near0;
       this.camera.far = far0;

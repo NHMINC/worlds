@@ -286,6 +286,51 @@ export const LIVE_KNOBS: LiveKnob[] = [
     },
   },
   {
+    id: 'starBloomThr',
+    label: 'Sun bloom threshold',
+    group: 'starlight',
+    hint: 'which host-star pixels scatter',
+    about: 'Screen-space bloom on the host star only — planets are a depth fence, never a source, and the harvest photograph is never bloomed. Pixels of the furnace brighter than this extract into the glow. Lower pulls more of the disk into fire; near 1 keeps only the clipped white-hot core. Next frame.',
+    uniform: 'uStarBloomThr',
+    min: 0.4,
+    max: 1.4,
+    step: 0.01,
+    read: () => UNIVERSE.STAR_BLOOM_THR,
+    write: (v) => {
+      UNIVERSE.STAR_BLOOM_THR = v;
+    },
+  },
+  {
+    id: 'starBloomRad',
+    label: 'Sun bloom radius',
+    group: 'starlight',
+    hint: 'how far the furnace smear spreads',
+    about: 'Blur scatter of the host-star bloom, in half-resolution texels. Tight is a rim around the disk; wide is a soft fire that still dies with distance — a far dwarf is a few hot pixels, so the halo stays small. Planets do not generate this. Next frame.',
+    uniform: 'uStarBloomRad',
+    min: 0.3,
+    max: 6,
+    step: 0.05,
+    read: () => UNIVERSE.STAR_BLOOM_RAD,
+    write: (v) => {
+      UNIVERSE.STAR_BLOOM_RAD = v;
+    },
+  },
+  {
+    id: 'starBloomGain',
+    label: 'Sun bloom gain',
+    group: 'starlight',
+    hint: 'how hard the furnace smear adds back',
+    about: 'Intensity of the host-star bloom add-back. 0 is the raw HDR disk with no smear. This is the eye on the star, not harvest Star shine, and not the planets. Next frame.',
+    uniform: 'uStarBloomGain',
+    min: 0,
+    max: 4,
+    step: 0.02,
+    read: () => UNIVERSE.STAR_BLOOM_GAIN,
+    write: (v) => {
+      UNIVERSE.STAR_BLOOM_GAIN = v;
+    },
+  },
+  {
     id: 'shine',
     label: 'Star shine',
     group: 'starlight',
