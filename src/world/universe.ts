@@ -85,10 +85,12 @@ export const UNIVERSE = {
   STAR_GLARE_ANG: 0.12,
   STAR_GLARE_GAIN: 3.4,
   /**
-   * Hard cap on the glare's angular radius (rad). The eye's halo
-   * may never grow past this — a parked ship keeps a bounded
-   * glow beyond the limb instead of a wash that hides where the
-   * photosphere is (the navigation-vs-drawing lesson).
+   * Hard cap on the halo's width BEYOND the limb (rad). The
+   * glare's angular radius is the disk's own plus this — a
+   * parked ship keeps a bounded glow past the limb instead of a
+   * wash that hides the photosphere (the navigation-vs-drawing
+   * lesson). Capping the TOTAL angle was a bug: a parked disk
+   * subtends more than the cap, and the sun wore no glow at all.
    */
   STAR_GLARE_CAP: 0.35,
 

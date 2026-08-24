@@ -14,10 +14,12 @@
  *
  * Glare is the eye: flux through the pupil (starEyeFlux,
  * inverse-square referenced at A_HAB) spread as ONE radially
- * uniform falloff, with its angular radius CAPPED at
- * STAR_GLARE_CAP — a distant sun is a hard bright point, a
- * parked one wears a modest halo past the limb, never a wash
- * that hides where the surface is.
+ * uniform falloff. The halo HUGS THE LIMB: its width past the
+ * disk's own angular radius is capped at STAR_GLARE_CAP — a
+ * distant sun is a hard bright point, a parked one wears a
+ * bounded halo past the limb, never a wash that hides where
+ * the surface is (and never zero: an absolute cap used to
+ * swallow the whole halo behind a close disk).
  *
  * The sub-threshold marker ring and the PointLight (the
  * illumination law) ride along unchanged.
@@ -111,11 +113,12 @@ void main() {
   // Convection cells. Radiative envelopes (hot) have almost no
   // granulation; the contrast ramps in as the envelope becomes
   // convective. Scale is a few cells across the disk — readable, not
-  // a noise texture.
+  // a noise texture. Lanes stay shallow: real granulation is a few
+  // percent — deep lanes read as a dirty, dim ball.
   float conv = clamp((6800.0 - uTeff) / 2800.0, 0.0, 1.0);
   float gFreq = mix(4.5, 8.5, clamp((uTeff - 3200.0) / 4000.0, 0.0, 1.0));
   float cells = fbm(n * gFreq + vec3(uTime * 0.11, uSeed, -uTime * 0.07));
-  float gran = mix(1.0, mix(0.48, 1.28, cells), max(conv, 0.35));
+  float gran = mix(1.0, mix(0.72, 1.22, cells), max(conv, 0.35));
 
   // Spots: cooler magnetic concentrations. Coverage follows activity.
   float spotN = fbm(n * 5.2 + vec3(uSeed * 3.1, 4.2, uTime * 0.02));
@@ -137,14 +140,17 @@ void main() {
 
   // Cel bands on the live disk so the sun matches the worlds it lights:
   // three calm steps, then the furnace underneath.
-  float bands = 0.74 + 0.14 * smoothstep(0.12, 0.30, mu) + 0.12 * smoothstep(0.52, 0.74, mu);
+  float bands = 0.88 + 0.10 * smoothstep(0.12, 0.30, mu) + 0.10 * smoothstep(0.52, 0.74, mu);
   vec3 hot = mix(uColor, vec3(1.0), 0.22 + 0.35 * clamp((uTeff - 3800.0) / 5000.0, 0.0, 1.0));
   vec3 cool = uColor * vec3(0.72, 0.48, 0.26);
   vec3 c = mix(cool, hot, clamp(gran, 0.0, 1.4));
-  // Luminance lives in μ. Centre just above 1 so hot granules clip
-  // to white and the dark lanes stay; the limb stays well under 1
-  // so Teff colour survives the LDR. uDiskLum is the centre gain.
-  float lum = mix(0.82, 0.38 * uDiskLum, mu * mu);
+  // A photosphere is a FURNACE: the centre sits well above the LDR
+  // clip (uDiskLum is that overdrive), so the core is white-hot and
+  // granulation reads mid-disk; only the limb falls through the clip
+  // and keeps Teff colour (Eddington darkening does the falling).
+  // The old centre gain barely reached 1 and the whole disk was a
+  // dull gradient — lit planets under a dim sun.
+  float lum = mix(0.95, 0.5 * uDiskLum, mu * mu);
   c *= limb * bands * lum * gran;
   c += hot * flares * 2.6;
   gl_FragColor = vec4(c, 1.0);
@@ -412,16 +418,29 @@ export function makeStar(spec: StarSpec): StarView {
         marker.visible = false;
         return;
       }
-      // Glare at the eye: capped angular radius, so a parked ship
-      // wears a modest halo past the limb — never a swallowing wash.
+      // Glare at the eye: the halo HUGS THE LIMB. Its width is
+      // capped BEYOND the disk's own angular radius — an absolute
+      // cap swallowed the whole halo behind a parked photosphere
+      // (the disk subtends ~0.7 rad at the ecliptic park, the cap
+      // was 0.35: the sun wore no glow at all up close).
       const flux = starEyeFlux(spec.luminosity, Math.max(d, surfaceKm * 1.05));
-      const ang = Math.min(UNIVERSE.STAR_GLARE_CAP, UNIVERSE.STAR_GLARE_ANG * Math.sqrt(Math.max(flux, 1e-4)));
+      const angSurface = Math.asin(Math.min(1, surfaceKm / d));
+      const halo = Math.min(
+        UNIVERSE.STAR_GLARE_CAP,
+        UNIVERSE.STAR_GLARE_ANG * Math.sqrt(Math.max(flux, 1e-4)),
+      );
+      const ang = Math.min(1.35, angSurface + halo);
       const scale = d * Math.tan(ang);
       glareMat.uniforms.uFlux.value = flux;
       glareMat.uniforms.uScale.value = scale;
-      glareMat.uniforms.uDisk.value = Math.min(0.45, surfaceKm / Math.max(scale, 1e-4));
-
-      const angSurface = Math.asin(Math.min(1, surfaceKm / d));
+      // The hole over the disk tracks the TRUE limb fraction on the
+      // billboard (tan ratio — the quad is a plane at the star's
+      // depth), so the halo always starts at the limb (the old 0.45
+      // cap painted the wash over the outer disk instead of past it).
+      glareMat.uniforms.uDisk.value = Math.min(
+        0.98,
+        Math.tan(angSurface) / Math.max(Math.tan(ang), 1e-6),
+      );
       marker.visible = angSurface < UNIVERSE.STAR_MARK_ANG * 0.5;
       if (!marker.visible) return;
       marker.scale.setScalar(d * Math.tan(UNIVERSE.STAR_MARK_ANG));
