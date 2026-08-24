@@ -6,8 +6,9 @@
  * the ride, or the camera. Attach and detach only tear down
  * locale state; a live dest lives on `Voyage` and survives.
  *
- * Drawn as a second AU-scale depth pass (`scene`) over the
- * live galaxy — one universe, two depth windows.
+ * Drawn as a second AU-scale HDR pass (`scene`) over the
+ * live galaxy, then screen-bloomed (`starBloom`) — one
+ * universe, two depth windows. The harvest is never bloomed.
  */
 import * as THREE from 'three';
 import { UNIVERSE } from '../world/physics';
